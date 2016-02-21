@@ -1,0 +1,79 @@
+;;;
+;;; WinBtrfs
+;;;
+;;;
+;;; Copyright (c) 2016 Mark Harmstone
+;;;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = "LegacyDriver"
+ClassGuid   = {8ecc055d-047f-11d1-a537-0000f8753ed1}
+Provider    = %Me%
+DriverVer   = 02/14/2016,0.1.0.0
+CatalogFile = btrfs.cat
+
+[DestinationDirs]
+DefaultDestDir          = 12
+Btrfs.DriverFiles       = 12            ;%windir%\system32\drivers
+
+;;
+;; Default install sections
+;;
+
+[DefaultInstall]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = Btrfs.DriverFiles
+
+[DefaultInstall.Services]
+AddService  = %ServiceName%,,Btrfs.Service
+
+;;
+;; Default uninstall sections
+;;
+
+[DefaultUninstall]
+DelFiles   = Btrfs.DriverFiles
+
+[DefaultUninstall.Services]
+DelService = %ServiceName%,0x200      ;Ensure service is stopped before deleting
+
+;
+; Services Section
+;
+
+[Btrfs.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys    ;%windir%\system32\drivers\
+ServiceType      = 2                        ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 1                        ;SERVICE_SYSTEM_START
+ErrorControl     = 1
+LoadOrderGroup   = "File System"
+
+;
+; Copy Files
+;
+
+[Btrfs.DriverFiles]
+%DriverName%.sys
+
+[SourceDisksFiles]
+btrfs.sys = 1,,
+
+[SourceDisksNames.x86]
+1 = %DiskId1%,,,\x86
+
+[SourceDisksNames.amd64]
+1 = %DiskId1%,,,\x64
+
+;;
+;; String Section
+;;
+
+[Strings]
+Me                      = "Mark Harmstone"
+ServiceDescription      = "Btrfs driver"
+ServiceName             = "btrfs"
+DriverName              = "btrfs"
+DiskId1                 = "Btrfs Device Installation Disk"
