@@ -1,0 +1,4 @@
+*.opendb
+*.sdf
+
+.vs/
