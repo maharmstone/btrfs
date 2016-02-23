@@ -120,7 +120,7 @@
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
     <PostBuildEvent>
-      <Command>"C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)</Command>
+      <Command>"$(SDK35ToolsPath)signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
 
@@ -184,10 +184,7 @@
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
     <PostBuildEvent>
-      <Command>
-        "C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)
-        "C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll Z:\home\hellas\Desktop\wine\fs\btrfs\inf\btrfs.cat
-      </Command>
+      <Command>"$(SDK35ToolsPath)signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
 
@@ -215,6 +212,7 @@
     <ClCompile Include="src\treefuncs.c" />
     <ClCompile Include="src\write.c" />
   </ItemGroup>
+
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 
 </Project>
