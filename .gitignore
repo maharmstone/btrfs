@@ -1,4 +1,7 @@
 *.opendb
 *.sdf
+*.user
 
 .vs/
+build/
+target/
