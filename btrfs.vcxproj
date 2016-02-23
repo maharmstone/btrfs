@@ -29,86 +29,36 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
 
   <PropertyGroup Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset Condition="'$(DefaultPlatformToolset)'!=''">$(DefaultPlatformToolset)</PlatformToolset>
+    <TargetVersion>Windows7</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>KMDF</DriverType>
+    <DriverTargetPlatform>Desktop</DriverTargetPlatform>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>.\x86\</OutDir>
-    <IntDir>Debug\</IntDir>
+  <PropertyGroup>
+    <IntDir>build\$(Configuration)\$(Platform)</IntDir>
+    <OutDir>target\$(Configuration)\$(Platform)</OutDir>
     <LinkIncremental />
-    <GenerateManifest>false</GenerateManifest>
+    <GenerateManifests>false</GenerateManifests>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>.\x64\</OutDir>
-    <IntDir>$(Platform)\$(Configuration)\</IntDir>
-    <LinkIncremental />
-    <GenerateManifest>false</GenerateManifest>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <OutDir>.\x86\</OutDir>
-    <IntDir>Release\</IntDir>
-    <LinkIncremental />
-    <GenerateManifest>false</GenerateManifest>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>.\x64\</OutDir>
-    <IntDir>$(Platform)\$(Configuration)\</IntDir>
-    <LinkIncremental />
-    <GenerateManifest>false</GenerateManifest>
-  </PropertyGroup>
-  
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>C:\WinDDK\Include\km;C:\WinDDK\Include\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <MinimalRebuild>true</MinimalRebuild>
-      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
-      <PrecompiledHeader />
-      <WarningLevel>Level3</WarningLevel>
-      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
-      <CallingConvention>StdCall</CallingConvention>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib</AdditionalDependencies>
-      <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>C:\WinDDK\Lib\win7\km\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Native</SubSystem>
-      <Driver>Driver</Driver>
-      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
-      <BaseAddress>0x10000</BaseAddress>
-      <RandomizedBaseAddress />
-      <DataExecutionPrevention />
-      <TargetMachine>MachineX86</TargetMachine>
-    </Link>
-  </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <Midl>
-      <TargetEnvironment>X64</TargetEnvironment>
-    </Midl>
+  <ItemDefinitionGroup>
     <ClCompile>
-      <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>C:\WinDDK\Include\km;C:\WinDDK\Include\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_AMD64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <MinimalRebuild>true</MinimalRebuild>
-      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(SDK_INC_PATH);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <PrecompiledHeader />
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CallingConvention>StdCall</CallingConvention>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>ntoskrnl.lib;hal.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>C:\WinDDK\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Native</SubSystem>
@@ -117,75 +67,51 @@
       <BaseAddress>0x10000</BaseAddress>
       <RandomizedBaseAddress />
       <DataExecutionPrevention />
-      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <MinimalRebuild>true</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <!--<PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <!--<PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
+    </ClCompile>
+    <Link>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PostBuildEvent>
       <Command>"$(SDK35ToolsPath)signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\WinDDK\Include\km;C:\WinDDK\Include\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
-      <PrecompiledHeader />
-      <WarningLevel>Level3</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <CallingConvention>StdCall</CallingConvention>
+      <!--<PreprocessorDefinitions>_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib</AdditionalDependencies>
-      <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>C:\WinDDK\Lib\win7\km\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Native</SubSystem>
-      <Driver>Driver</Driver>
-      <OptimizeReferences>true</OptimizeReferences>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
-      <BaseAddress>0x10000</BaseAddress>
-      <RandomizedBaseAddress />
-      <DataExecutionPrevention />
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
     <Midl>
       <TargetEnvironment>X64</TargetEnvironment>
     </Midl>
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\WinDDK\Include\km;C:\WinDDK\Include\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_AMD64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
-      <PrecompiledHeader />
-      <WarningLevel>Level3</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <CallingConvention>StdCall</CallingConvention>
+      <!--<PreprocessorDefinitions>_AMD64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib</AdditionalDependencies>
-      <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>C:\WinDDK\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Native</SubSystem>
-      <Driver>Driver</Driver>
-      <OptimizeReferences>true</OptimizeReferences>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
-      <BaseAddress>0x10000</BaseAddress>
-      <RandomizedBaseAddress />
-      <DataExecutionPrevention />
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
-    <PostBuildEvent>
-      <Command>"$(SDK35ToolsPath)signtool.exe" sign /v /s PrivateCertStore /n "Mark Harmstone" /t http://timestamp.verisign.com/scripts/timstamp.dll $(TargetPath)</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
 
   <ItemGroup>
@@ -212,7 +138,5 @@
     <ClCompile Include="src\treefuncs.c" />
     <ClCompile Include="src\write.c" />
   </ItemGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-
 </Project>
