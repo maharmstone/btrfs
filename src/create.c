@@ -859,7 +859,7 @@ static NTSTATUS STDCALL attach_fcb_to_fileobject(device_extension* Vcb, fcb* fcb
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, fcb* parfcb, ULONG options, fcb** pfcb) {
+static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, fcb* parfcb, ULONG options, fcb** pfcb, SINGLE_LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -935,9 +935,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(dirii, &parfcb->inode_item, sizeof(INODE_ITEM));
-    delete_tree_item(Vcb, &tp);
+    delete_tree_item(Vcb, &tp, rollback);
     
-    insert_tree_item(Vcb, parfcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(Vcb, parfcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL, rollback);
     
     free_traverse_ptr(&tp);
     
@@ -959,12 +959,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     di->type = type;
     RtlCopyMemory(di->name, utf8, utf8len);
     
-    insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_DIR_INDEX, dirpos, di, disize, NULL);
+    insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_DIR_INDEX, dirpos, di, disize, NULL, rollback);
     
     di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
     RtlCopyMemory(di2, di, disize);
     
-    Status = add_dir_item(Vcb, parfcb->subvol, parfcb->inode, crc32, di2, disize);
+    Status = add_dir_item(Vcb, parfcb->subvol, parfcb->inode, crc32, di2, disize, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_item returned %08x\n", Status);
         ExFreePool(utf8);
@@ -976,7 +976,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
-    Status = add_inode_ref(Vcb, parfcb->subvol, inode, parfcb->inode, dirpos, &utf8as);
+    Status = add_inode_ref(Vcb, parfcb->subvol, inode, parfcb->inode, dirpos, &utf8as, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_inode_ref returned %08x\n", Status);
         ExFreePool(utf8);
@@ -1009,7 +1009,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
         sprintf(val, "0x%x", IrpSp->Parameters.Create.FileAttributes);
     
-        set_xattr(Vcb, parfcb->subvol, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val));
+        set_xattr(Vcb, parfcb->subvol, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
     }
     
     parfcb->subvol->lastinode++;
@@ -1082,7 +1082,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     fcb->filepart = *fpus;
         
-    set_xattr(Vcb, parfcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
+    set_xattr(Vcb, parfcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
     
     fcb->full_filename.Length = parfcb->full_filename.Length + (parfcb->full_filename.Length == sizeof(WCHAR) ? 0 : sizeof(WCHAR)) + fcb->filepart.Length;
     fcb->full_filename.MaximumLength = fcb->full_filename.Length;
@@ -1096,7 +1096,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, parfcb->subvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(Vcb, parfcb->subvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
     
     *pfcb = fcb;
     
@@ -1110,7 +1110,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options) {
+static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options, SINGLE_LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb *fcb, *parfcb = NULL;
     ULONG i, j;
@@ -1210,7 +1210,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-            Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar);
+            Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar, rollback);
         
             if (!NT_SUCCESS(Status)) {
                 ERR("file_create2 returned %08x\n", Status);
@@ -1302,7 +1302,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         InsertTailList(&fcb->par->children, &fcb->list_entry);
         
-        set_xattr(Vcb, parfcb->subvol, parfcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)"", 0);
+        set_xattr(Vcb, parfcb->subvol, parfcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)"", 0, rollback);
         
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
@@ -1322,7 +1322,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         }
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         } else {
             WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, parfcb->subvol->id);
         }
@@ -1332,7 +1332,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         RtlCopyMemory(ii, &parfcb->inode_item, sizeof(INODE_ITEM));
         
-        insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL);
+        insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
         
         parfcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         parfcb->subvol->root_item.ctime = now;
@@ -1340,7 +1340,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExFreePool(fpus.Buffer);
         fpus.Buffer = NULL;
     } else {
-        Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &fcb);
+        Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &fcb, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08x\n", Status);
@@ -1541,7 +1541,7 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
     }
 }
 
-static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii) {
+static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_ITEM* newii;
@@ -1556,7 +1556,7 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
     } else {
         WARN("could not find %llx,%x,%llx in subvol %llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, subvol->id);
     }
@@ -1566,12 +1566,12 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
     newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(newii, ii, sizeof(INODE_ITEM));
     
-    insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, 0, newii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, 0, newii, sizeof(INODE_ITEM), NULL, rollback);
     
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, SINGLE_LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION Stack;
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
@@ -1738,14 +1738,14 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             InitializeListHead(&changed_sector_list);
             
             // FIXME - make sure not ADS!
-            Status = truncate_file(fcb, fcb->inode_item.st_size);
+            Status = truncate_file(fcb, fcb->inode_item.st_size, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("truncate_file returned %08x\n", Status);
                 free_fcb(fcb);
                 goto exit;
             }
             
-            Status = update_inode_item(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item);
+            Status = update_inode_item(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_inode_item returned %08x\n", Status);
                 free_fcb(fcb);
@@ -1764,9 +1764,9 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
                 sprintf(val, "0x%x", Stack->Parameters.Create.FileAttributes);
             
-                set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val));
+                set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
             } else
-                delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH);
+                delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
             
             // FIXME - truncate streams
             // FIXME - do we need to alter parent directory's times?
@@ -1843,7 +1843,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         fcb->open_count++;
     } else {
-        Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options);
+        Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
         
 //         if (!NT_SUCCESS(Status))
@@ -1862,6 +1862,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = NULL;
     BOOL top_level;
+    SINGLE_LIST_ENTRY rollback;
     
     TRACE("create (flags = %x)\n", Irp->Flags);
     
@@ -1978,7 +1979,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 //         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
     //     Status = NtfsCreateFile(DeviceObject,
     //                             Irp);
-        Status = create_file(DeviceObject, Irp);
+        Status = create_file(DeviceObject, Irp, &rollback);
 //         ExReleaseResourceLite(&Vpb->DirResource);
         
         release_tree_lock(Vcb, exclusive);

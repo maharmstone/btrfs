@@ -20,12 +20,14 @@
 #define INTERVAL 15000 // in milliseconds
 
 static void do_flush(device_extension* Vcb) {
+    SINGLE_LIST_ENTRY rollback;
+    
     FsRtlEnterFileSystem();
 
     acquire_tree_lock(Vcb, TRUE);
 
     if (Vcb->write_trees > 0)
-        do_write(Vcb);
+        do_write(Vcb, &rollback);
     
     free_tree_cache(&Vcb->tree_cache);
 

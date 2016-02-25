@@ -362,15 +362,15 @@ int keycmp(const KEY* key1, const KEY* key2);
 NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen);
-void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen);
-BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32);
+void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, SINGLE_LIST_ENTRY* rollback);
+BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, SINGLE_LIST_ENTRY* rollback);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r);
-NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize);
-NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8);
+NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback);
 UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode);
-NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index);
-void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject);
+NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback);
+void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback);
 fcb* create_fcb();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
@@ -447,8 +447,8 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
 void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _get_item(device_extension* Vcb, root* r, UINT64 objid, UINT8 objtype, UINT64 offset, void* ptr, UINT32 size, const char* func, const char* file, unsigned int line);
 void STDCALL free_tree_cache(LIST_ENTRY* tc);
-BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp);
-void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
+BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, SINGLE_LIST_ENTRY* rollback);
+void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, SINGLE_LIST_ENTRY* rollback);
 void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write);
 tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line);
 tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char* func, const char* file, unsigned int line);
@@ -472,15 +472,15 @@ void STDCALL free_cache();
 extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 // in write.c
-NTSTATUS STDCALL do_write(device_extension* Vcb);
+NTSTATUS STDCALL do_write(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback);
 NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache);
-NTSTATUS truncate_file(fcb* fcb, UINT64 end);
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list);
-void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list);
-NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length);
-NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset);
-NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list);
+NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS truncate_file(fcb* fcb, UINT64 end, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback);
+void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback);
 void print_trees(LIST_ENTRY* tc);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
@@ -500,7 +500,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, ACCESS_STATE* as);
 // in fileinfo.c
 NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8);
+NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback);
 
 // in reparse.c
 BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject);

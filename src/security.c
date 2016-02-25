@@ -760,6 +760,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     traverse_ptr tp;
     LARGE_INTEGER time;
     BTRFS_TIME now;
+    SINGLE_LIST_ENTRY rollback;
     
     TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, flags);
     
@@ -804,7 +805,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
         goto end;
     }
     
-    delete_tree_item(Vcb, &tp);
+    delete_tree_item(Vcb, &tp, &rollback);
     free_traverse_ptr(&tp);
     
     KeQuerySystemTime(&time);
@@ -831,14 +832,14 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     
-    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL)) {
+    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
         ERR("error - failed to insert INODE_ITEM\n");
         Status = STATUS_INTERNAL_ERROR;
         ExFreePool(ii);
         goto end;
     }
     
-    set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
+    set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;

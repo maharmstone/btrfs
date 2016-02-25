@@ -941,7 +941,7 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
 //     print_trees(tc);
 }
 
-BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp) {
+BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, SINGLE_LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -1045,7 +1045,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     return TRUE;
 }
 
-void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
+void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, SINGLE_LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
 

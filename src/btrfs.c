@@ -420,7 +420,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     return FALSE;
 }
 
-void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen) {
+void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     ULONG xasize;
@@ -475,8 +475,8 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
                 RtlCopyMemory(xa->name, name, strlen(name));
                 RtlCopyMemory(xa->name + strlen(name), data, datalen);
                 
-                delete_tree_item(Vcb, &tp);
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL);
+                delete_tree_item(Vcb, &tp, rollback);
+                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, rollback);
                 
                 break;
             }
@@ -498,8 +498,8 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
                 RtlCopyMemory(xa->name, name, strlen(name));
                 RtlCopyMemory(xa->name + strlen(name), data, datalen);
                 
-                delete_tree_item(Vcb, &tp);
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL);
+                delete_tree_item(Vcb, &tp, rollback);
+                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, rollback);
                 
                 break;
             } else {
@@ -522,13 +522,13 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
         RtlCopyMemory(xa->name, name, strlen(name));
         RtlCopyMemory(xa->name + strlen(name), data, datalen);
         
-        insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL);
+        insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL, rollback);
     }
     
     free_traverse_ptr(&tp);
 }
 
-BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32) {
+BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* xa;
@@ -558,7 +558,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                 
                 newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
                 
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
                 
                 if (newsize == 0) {
                     TRACE("xattr %s deleted\n", name);
@@ -580,7 +580,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                 if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
                     RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
                 
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL);
+                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, rollback);
                 
                 free_traverse_ptr(&tp);
                     
@@ -605,7 +605,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
     }
 }
 
-NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize) {
+NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* di2;
@@ -632,13 +632,13 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
         RtlCopyMemory(di2, tp.item->data, tp.item->size);
         RtlCopyMemory(di2 + tp.item->size, di, disize);
         
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
         
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di2, tp.item->size + disize, NULL);
+        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di2, tp.item->size + disize, NULL, rollback);
         
         ExFreePool(di);
     } else {
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di, disize, NULL);
+        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di, disize, NULL, rollback);
     }
 
     free_traverse_ptr(&tp);
@@ -1832,7 +1832,7 @@ end:
     return Status;
 }
 
-NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8) {
+NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -1856,7 +1856,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
             if (di->n == utf8->Length && RtlCompareMemory(di->name, utf8->Buffer, di->n) == di->n) {
                 ULONG newlen = tp.item->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
                 
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
                 
                 if (newlen == 0) {
                     TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -1875,7 +1875,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
                     if ((UINT8*)&di->name[di->n + di->m] - tp.item->data < tp.item->size)
                         RtlCopyMemory(dioff, &di->name[di->n + di->m], tp.item->size - ((UINT8*)&di->name[di->n + di->m] - tp.item->data));
                     
-                    insert_tree_item(Vcb, subvol, parinode, TYPE_DIR_ITEM, crc32, newdi, newlen, NULL);
+                    insert_tree_item(Vcb, subvol, parinode, TYPE_DIR_ITEM, crc32, newdi, newlen, NULL, rollback);
                 }
                 
                 break;
@@ -1893,7 +1893,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
     return STATUS_SUCCESS;
 }
 
-NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index) {
+NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     BOOL changed = FALSE;
@@ -1920,7 +1920,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
             if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
                 ULONG newlen = tp.item->size - itemlen;
                 
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
                 changed = TRUE;
                 
                 if (newlen == 0) {
@@ -1940,7 +1940,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                     if ((UINT8*)&ir->name[ir->n] - tp.item->data < tp.item->size)
                         RtlCopyMemory(iroff, &ir->name[ir->n], tp.item->size - ((UINT8*)&ir->name[ir->n] - tp.item->data));
                     
-                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL);
+                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL, rollback);
                 }
                 
                 if (index)
@@ -1993,7 +1993,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
             if (ier->dir == parinode && ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
                 ULONG newlen = tp.item->size - itemlen;
                 
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
                 changed = TRUE;
                 
                 if (newlen == 0) {
@@ -2013,7 +2013,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                     if ((UINT8*)&ier->name[ier->n] - tp.item->data < tp.item->size)
                         RtlCopyMemory(ieroff, &ier->name[ier->n], tp.item->size - ((UINT8*)&ier->name[ier->n] - tp.item->data));
                     
-                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL);
+                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL, rollback);
                 }
                 
                 if (index)
@@ -2037,7 +2037,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
+void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
     ULONG bytecount;
     NTSTATUS Status;
     char* utf8 = NULL;
@@ -2078,7 +2078,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
         RtlCopyMemory(s, fcb->adsxattr.Buffer, fcb->adsxattr.Length);
         s[fcb->adsxattr.Length] = 0;
         
-        if (!delete_xattr(fcb->Vcb, fcb->par->subvol, fcb->par->inode, s, fcb->adshash)) {
+        if (!delete_xattr(fcb->Vcb, fcb->par->subvol, fcb->par->inode, s, fcb->adshash, rollback)) {
             ERR("failed to delete xattr %s\n", s);
         }
         
@@ -2105,9 +2105,9 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
 
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         RtlCopyMemory(ii, &fcb->par->inode_item, sizeof(INODE_ITEM));
-        delete_tree_item(fcb->Vcb, &tp);
+        delete_tree_item(fcb->Vcb, &tp, rollback);
         
-        insert_tree_item(fcb->Vcb, fcb->par->subvol, searchkey.obj_id, searchkey.obj_type, 0, ii, sizeof(INODE_ITEM), NULL);
+        insert_tree_item(fcb->Vcb, fcb->par->subvol, searchkey.obj_id, searchkey.obj_type, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
         
         free_traverse_ptr(&tp);
         
@@ -2139,7 +2139,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
     
     // delete DIR_ITEM (0x54)
     
-    Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fcb->utf8);
+    Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fcb->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
         return;
@@ -2149,7 +2149,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
     
     index = 0;
     
-    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fcb->utf8, &index);
+    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fcb->utf8, &index, rollback);
     
     // delete DIR_INDEX (0x60)
     
@@ -2164,7 +2164,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        delete_tree_item(fcb->Vcb, &tp);
+        delete_tree_item(fcb->Vcb, &tp, rollback);
         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     }
     
@@ -2204,9 +2204,9 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
         
         TRACE("replacing (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         
-        delete_tree_item(fcb->Vcb, &tp);
+        delete_tree_item(fcb->Vcb, &tp, rollback);
         
-        if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newii, sizeof(INODE_ITEM), NULL))
+        if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newii, sizeof(INODE_ITEM), NULL, rollback))
             ERR("error - failed to insert item\n");
         
         free_traverse_ptr(&tp);
@@ -2214,7 +2214,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
         goto success2;
     }
     
-    delete_tree_item(fcb->Vcb, &tp);
+    delete_tree_item(fcb->Vcb, &tp, rollback);
     TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     
     // delete XATTR_ITEM (0x18)
@@ -2226,7 +2226,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
         if (tp.item->key.obj_id == fcb->inode) {
             // FIXME - do metadata thing here too?
             if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-                delete_tree_item(fcb->Vcb, &tp);
+                delete_tree_item(fcb->Vcb, &tp, rollback);
                 TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
             }
         } else
@@ -2240,14 +2240,14 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject) {
     InitializeListHead(&changed_sector_list);
     
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &changed_sector_list);
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &changed_sector_list, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08x\n", Status);
             goto exit;
         }
         
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-            update_checksum_tree(fcb->Vcb, &changed_sector_list);
+            update_checksum_tree(fcb->Vcb, &changed_sector_list, rollback);
     }
     
 success2:
@@ -2278,9 +2278,9 @@ success2:
 
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(dirii, &fcb->par->inode_item, sizeof(INODE_ITEM));
-    delete_tree_item(fcb->Vcb, &tp);
+    delete_tree_item(fcb->Vcb, &tp, rollback);
     
-    insert_tree_item(fcb->Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(fcb->Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL, rollback);
     
     free_traverse_ptr(&tp);
     
@@ -2475,6 +2475,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb;
     BOOL top_level;
+    SINGLE_LIST_ENTRY rollback;
 
     TRACE("cleanup\n");
     
@@ -2503,7 +2504,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         if (fcb->open_count == 1 && fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
             acquire_tree_lock(fcb->Vcb, TRUE);
             
-            delete_fcb(fcb, FileObject);
+            delete_fcb(fcb, FileObject, &rollback);
             // FIXME - change allocation size etc. to zero
             
             release_tree_lock(fcb->Vcb, TRUE);

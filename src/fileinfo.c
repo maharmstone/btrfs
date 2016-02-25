@@ -17,7 +17,7 @@
 
 #include "btrfs_drv.h"
 
-static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ULONG defda;
@@ -58,9 +58,9 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
             TRACE("inserting new DOSATTRIB xattr\n");
             sprintf(val, "0x%lx", fbi->FileAttributes);
         
-            set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val));
+            set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
         } else
-            delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH);
+            delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
         
         fcb->atts = fbi->FileAttributes;
         
@@ -97,7 +97,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         }
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         else
             WARN("couldn't find old INODE_ITEM\n");
         
@@ -106,7 +106,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
         
-        if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL)) {
+        if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
             ERR("error - failed to insert item\n");
             ExFreePool(ii);
             return STATUS_INTERNAL_ERROR;
@@ -144,7 +144,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8) {
+static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_EXTREF* ier;
@@ -178,9 +178,9 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
         ier->n = utf8->Length;
         RtlCopyMemory(ier->name, utf8->Buffer, utf8->Length);
         
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
         
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier2, iersize, NULL)) {
+        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier2, iersize, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
@@ -193,7 +193,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
         ier->n = utf8->Length;
         RtlCopyMemory(ier->name, utf8->Buffer, utf8->Length);
     
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier, sizeof(INODE_EXTREF) - 1 + utf8->Length, NULL)) {
+        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier, sizeof(INODE_EXTREF) - 1 + utf8->Length, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
@@ -205,7 +205,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
     return STATUS_SUCCESS;
 }
 
-NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8) {
+NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_REF* ir;
@@ -228,7 +228,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
             if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
                 TRACE("INODE_REF too long, creating INODE_EXTREF\n");
                 free_traverse_ptr(&tp);
-                return add_inode_extref(Vcb, subvol, inode, parinode, index, utf8);
+                return add_inode_extref(Vcb, subvol, inode, parinode, index, utf8, rollback);
             } else {
                 ERR("item would be too long (%u > %u)\n", irsize, maxlen);
                 free_traverse_ptr(&tp);
@@ -244,9 +244,9 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
         ir->n = utf8->Length;
         RtlCopyMemory(ir->name, utf8->Buffer, utf8->Length);
         
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
         
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir2, irsize, NULL)) {
+        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir2, irsize, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
@@ -258,7 +258,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
         ir->n = utf8->Length;
         RtlCopyMemory(ir->name, utf8->Buffer, utf8->Length);
     
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir, sizeof(INODE_REF) - 1 + ir->n, NULL)) {
+        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir, sizeof(INODE_REF) - 1 + ir->n, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
@@ -368,7 +368,7 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
 //     return rc;
 // }
 
-static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, UINT64 inode, UINT64 oldparinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now) {
+static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, UINT64 inode, UINT64 oldparinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, SINGLE_LIST_ENTRY* rollback) {
     UINT64 oldindex, index;
     UINT32 oldcrc32;
     INODE_ITEM* ii;
@@ -395,7 +395,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
         
         if (fcb->inode_item.st_nlink > 1) {
             fcb->inode_item.st_nlink--;
@@ -403,7 +403,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
             RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
             
-            if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL)) {
+            if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
                 ERR("error - failed to insert item\n");
                 free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
@@ -422,7 +422,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     
-    if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL)) {
+    if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
         ERR("error - failed to insert item\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -431,7 +431,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     // delete old DIR_ITEM
     
-    Status = delete_dir_item(Vcb, fcb->subvol, oldparinode, oldcrc32, &fcb->utf8);
+    Status = delete_dir_item(Vcb, fcb->subvol, oldparinode, oldcrc32, &fcb->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
         return Status;
@@ -449,13 +449,13 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    Status = add_dir_item(Vcb, destsubvol, destinode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length);
+    Status = add_dir_item(Vcb, destsubvol, destinode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_item returned %08x\n", Status);
         return Status;
     }
     
-    Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, oldparinode, &fcb->utf8, &oldindex);
+    Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, oldparinode, &fcb->utf8, &oldindex, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_inode_ref returned %08x\n", Status);
         return Status;
@@ -476,7 +476,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
         }
         
         if (!keycmp(&searchkey, &tp.item->key))
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         else
             WARN("couldn't find old DIR_INDEX\n");
         
@@ -512,7 +512,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     // create INODE_REF
     
-    Status = add_inode_ref(Vcb, destsubvol, inode, destinode, index, utf8);
+    Status = add_inode_ref(Vcb, destsubvol, inode, destinode, index, utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_inode_ref returned %08x\n", Status);
         return Status;
@@ -530,7 +530,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    if (!insert_tree_item(Vcb, destsubvol, destinode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL)) {
+    if (!insert_tree_item(Vcb, destsubvol, destinode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL, rollback)) {
         ERR("error - failed to insert item\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -551,14 +551,14 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
             di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             RtlCopyMemory(di, tp.item->data, tp.item->size);
             
-            if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_XATTR_ITEM, tp.item->key.offset, di, tp.item->size, NULL)) {
+            if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_XATTR_ITEM, tp.item->key.offset, di, tp.item->size, NULL, rollback)) {
                 ERR("error - failed to insert item\n");
                 free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             if (!has_hardlink)
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -591,7 +591,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
             
             // FIXME - update ed's generation
                        
-            if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ed, tp.item->size, NULL)) {
+            if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ed, tp.item->size, NULL, rollback)) {
                 ERR("error - failed to insert item\n");
                 free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
@@ -601,7 +601,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                 
                 if (ed2->address != 0) {
-                    Status = add_extent_ref(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset);
+                    Status = add_extent_ref(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset, rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_extent_ref returned %08x\n", Status);
@@ -610,7 +610,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
                     }
                     
                     if (!has_hardlink) {
-                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, NULL);
+                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, NULL, rollback);
                     
                         if (!NT_SUCCESS(Status)) {
                             ERR("remove_extent_ref returned %08x\n", Status);
@@ -622,7 +622,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
             }
             
             if (!has_hardlink)
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -716,7 +716,7 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now) {
+static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, SINGLE_LIST_ENTRY* rollback) {
     UINT64 inode, oldparinode;
     NTSTATUS Status;
     LIST_ENTRY dl;
@@ -729,7 +729,7 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
     
     oldparinode = fcb->subvol == fcb->par->subvol ? fcb->par->inode : SUBVOL_ROOT_INODE;
     
-    Status = move_inode_across_subvols(Vcb, fcb, destsubvol, destinode, inode, oldparinode, utf8, crc32, now);
+    Status = move_inode_across_subvols(Vcb, fcb, destsubvol, destinode, inode, oldparinode, utf8, crc32, now, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("move_inode_across_subvols returned %08x\n", Status);
         return Status;
@@ -780,7 +780,7 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
                 if (dl2->level == level) {
                     TRACE("inode %llx\n", dl2->fcb->inode);
 
-                    Status = move_inode_across_subvols(Vcb, dl2->fcb, destsubvol, dl2->newparinode, dl2->newinode, dl2->fcb->par->inode, &dl2->utf8, dl2->crc32, now);
+                    Status = move_inode_across_subvols(Vcb, dl2->fcb, destsubvol, dl2->newparinode, dl2->newinode, dl2->fcb->par->inode, &dl2->utf8, dl2->crc32, now, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("move_inode_across_subvols returned %08x\n", Status);
                         return Status;
@@ -810,7 +810,7 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index) {
+static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -836,7 +836,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
             if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
                 ULONG newlen = tp.item->size - itemlen;
                 
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
                 
                 if (newlen == 0) {
                     TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -855,7 +855,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                     if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
                         RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
                     
-                    insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL);
+                    insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, rollback);
                 }
                 
                 if (index)
@@ -879,7 +879,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr) {
+static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -901,15 +901,15 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
         ExFreePool(rr);
         
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
@@ -921,7 +921,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid) {
+static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
@@ -957,12 +957,12 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     }
     
     if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
     
     free_traverse_ptr(&tp);
     
     if (datalen > 0) {
-        if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, rollback)) {
             ERR("error - failed to insert item\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -971,7 +971,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb* destfcb, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists) {
+static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb* destfcb, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, SINGLE_LIST_ENTRY* rollback) {
     DIR_ITEM* di;
     NTSTATUS Status;
     KEY searchkey;
@@ -981,7 +981,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     
     // delete old DIR_ITEM
     
-    Status = delete_dir_item(Vcb, fcb->par->subvol, fcb->par->inode, oldcrc32, &fcb->utf8);
+    Status = delete_dir_item(Vcb, fcb->par->subvol, fcb->par->inode, oldcrc32, &fcb->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
         return Status;
@@ -999,7 +999,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    Status = add_dir_item(Vcb, destfcb->subvol, destfcb->inode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length);
+    Status = add_dir_item(Vcb, destfcb->subvol, destfcb->inode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_item returned %08x\n", Status);
         return Status;
@@ -1009,7 +1009,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     
     oldindex = 0;
     
-    Status = delete_root_ref(Vcb, fcb->subvol->id, fcb->par->subvol->id, fcb->par->inode, &fcb->utf8, &oldindex);
+    Status = delete_root_ref(Vcb, fcb->subvol->id, fcb->par->subvol->id, fcb->par->inode, &fcb->utf8, &oldindex, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_root_ref returned %08x\n", Status);
         return Status;
@@ -1032,7 +1032,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
         if (!keycmp(&searchkey, &tp.item->key)) {
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
             
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         } else {
             WARN("could not find old DIR_INDEX entry\n");
         }
@@ -1058,7 +1058,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    if (!insert_tree_item(Vcb, destfcb->subvol, destfcb->inode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL)) {
+    if (!insert_tree_item(Vcb, destfcb->subvol, destfcb->inode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL, rollback)) {
         ERR("error - failed to insert item\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -1071,20 +1071,20 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     rr->n = utf8->Length;
     RtlCopyMemory(rr->name, utf8->Buffer, utf8->Length);
     
-    Status = add_root_ref(Vcb, fcb->subvol->id, destfcb->subvol->id, rr);
+    Status = add_root_ref(Vcb, fcb->subvol->id, destfcb->subvol->id, rr, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_ref returned %08x\n", Status);
         return Status;
     }
     
-    Status = update_root_backref(Vcb, fcb->subvol->id, fcb->par->subvol->id);
+    Status = update_root_backref(Vcb, fcb->subvol->id, fcb->par->subvol->id, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("update_root_backref 1 returned %08x\n", Status);
         return Status;
     }
     
     if (fcb->par->subvol != destfcb->subvol) {
-        Status = update_root_backref(Vcb, fcb->subvol->id, destfcb->subvol->id);
+        Status = update_root_backref(Vcb, fcb->subvol->id, destfcb->subvol->id, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("update_root_backref 1 returned %08x\n", Status);
             return Status;
@@ -1121,7 +1121,7 @@ static BOOL has_open_children(fcb* fcb) {
     return FALSE;
 }
 
-static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists) {
+static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, SINGLE_LIST_ENTRY* rollback) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *oldparfcb, *oldfcb;
     root* parsubvol;
@@ -1240,7 +1240,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (oldfcb)
-        delete_fcb(oldfcb, NULL); // FIXME - make sure this doesn't cause problems if operation later fails
+        delete_fcb(oldfcb, NULL, rollback); // FIXME - make sure this doesn't cause problems if operation later fails
     
     if (fcb->inode == SUBVOL_ROOT_INODE) {
         UNICODE_STRING filename;
@@ -1248,7 +1248,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         filename.Buffer = fn;
         filename.MaximumLength = filename.Length = fnlen * sizeof(WCHAR);
         
-        Status = move_subvol(Vcb, fcb, tfofcb, &utf8, crc32, oldcrc32, &now, ReplaceIfExists);
+        Status = move_subvol(Vcb, fcb, tfofcb, &utf8, crc32, oldcrc32, &now, ReplaceIfExists, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("move_subvol returned %08x\n", Status);
@@ -1260,7 +1260,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         filename.Buffer = fn;
         filename.MaximumLength = filename.Length = fnlen * sizeof(WCHAR);
         
-        Status = move_across_subvols(Vcb, fcb, tfofcb->subvol, tfofcb->inode, &utf8, crc32, &now);
+        Status = move_across_subvols(Vcb, fcb, tfofcb->subvol, tfofcb->inode, &utf8, crc32, &now, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
@@ -1272,7 +1272,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         // delete old DIR_ITEM entry
         
-        Status = delete_dir_item(Vcb, fcb->subvol, fcb->par->inode, oldcrc32, &fcb->utf8);
+        Status = delete_dir_item(Vcb, fcb->subvol, fcb->par->inode, oldcrc32, &fcb->utf8, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_dir_item returned %08x\n", Status);
             return Status;
@@ -1292,7 +1292,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         di->type = fcb->type;
         RtlCopyMemory(di->name, utf8.Buffer, utf8.Length);
         
-        Status = add_dir_item(Vcb, parsubvol, parinode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8.Length);
+        Status = add_dir_item(Vcb, parsubvol, parinode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8.Length, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_dir_item returned %08x\n", Status);
             return Status;
@@ -1300,7 +1300,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         oldindex = 0;
         
-        Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, fcb->par->inode, &fcb->utf8, &oldindex);
+        Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, fcb->par->inode, &fcb->utf8, &oldindex, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_inode_ref returned %08x\n", Status);
             return Status;
@@ -1320,7 +1320,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             }
             
             if (!keycmp(&tp.item->key, &searchkey))
-                delete_tree_item(Vcb, &tp);
+                delete_tree_item(Vcb, &tp, rollback);
             else {
                 WARN("couldn't find DIR_INDEX\n");
             }
@@ -1375,12 +1375,12 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         di->type = fcb->type;
         RtlCopyMemory(di->name, utf8.Buffer, utf8.Length);
         
-        if (!insert_tree_item(Vcb, parsubvol, parinode, TYPE_DIR_INDEX, dirpos, di, disize, NULL))
+        if (!insert_tree_item(Vcb, parsubvol, parinode, TYPE_DIR_INDEX, dirpos, di, disize, NULL, rollback))
             ERR("error - failed to insert item\n");
         
         // create new INODE_REF entry
         
-        Status = add_inode_ref(Vcb, parsubvol, fcb->inode, parinode, dirpos, &utf8);
+        Status = add_inode_ref(Vcb, parsubvol, fcb->inode, parinode, dirpos, &utf8, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_inode_ref returned %08x\n", Status);
             return Status;
@@ -1401,14 +1401,14 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         
         free_traverse_ptr(&tp);
         
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
         
-        if (!insert_tree_item(Vcb, parsubvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL)) {
+        if (!insert_tree_item(Vcb, parsubvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
             WARN("insert_tree_item failed\n");
         }
     }
@@ -1451,12 +1451,12 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->par->inode_item, sizeof(INODE_ITEM));
     
-    if (!insert_tree_item(Vcb, fcb->par->subvol, fcb->par->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL))
+    if (!insert_tree_item(Vcb, fcb->par->subvol, fcb->par->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback))
         WARN("insert_tree_item failed\n");
     
     free_traverse_ptr(&tp);
@@ -1472,12 +1472,12 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp);
+            delete_tree_item(Vcb, &tp, rollback);
         
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         RtlCopyMemory(ii, &tfofcb->inode_item, sizeof(INODE_ITEM));
         
-        if (!insert_tree_item(Vcb, tfofcb->subvol, tfofcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL))
+        if (!insert_tree_item(Vcb, tfofcb->subvol, tfofcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback))
             WARN("insert_tree_item failed\n");
         
         free_traverse_ptr(&tp);
@@ -1552,7 +1552,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only) {
+static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, SINGLE_LIST_ENTRY* rollback) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     LARGE_INTEGER time;
@@ -1579,7 +1579,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             }
         }
         
-        set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data, feofi->EndOfFile.QuadPart);
+        set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data, feofi->EndOfFile.QuadPart, rollback);
         
         fcb->adssize = feofi->EndOfFile.QuadPart;
         
@@ -1629,7 +1629,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
         
         RtlZeroMemory(&data2[datalen], feofi->EndOfFile.QuadPart - datalen);
         
-        set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, feofi->EndOfFile.QuadPart);
+        set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, feofi->EndOfFile.QuadPart, rollback);
         
         fcb->adssize = feofi->EndOfFile.QuadPart;
         
@@ -1659,13 +1659,13 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     }
     
     if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
     else
         WARN("couldn't find existing INODE_ITEM\n");
 
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->par->inode_item, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
     
     free_traverse_ptr(&tp);
     
@@ -1675,7 +1675,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only) {
+static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, SINGLE_LIST_ENTRY* rollback) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     NTSTATUS Status;
@@ -1689,7 +1689,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         return STATUS_FILE_CLOSED;
     
     if (fcb->ads)
-        return stream_set_end_of_file_information(Vcb, Irp, FileObject, advance_only);
+        return stream_set_end_of_file_information(Vcb, Irp, FileObject, advance_only, rollback);
     
     TRACE("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
     TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE");
@@ -1708,7 +1708,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("truncating file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
-        Status = truncate_file(fcb, feofi->EndOfFile.QuadPart);
+        Status = truncate_file(fcb, feofi->EndOfFile.QuadPart, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - truncate_file failed\n");
             return Status;
@@ -1743,7 +1743,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         if (newalloc > oldalloc) {
             // FIXME - we should be doing prealloc rather than inserting a sparse extent here
             
-            Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc);
+            Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
@@ -1784,13 +1784,13 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     }
     
     if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp);
+        delete_tree_item(Vcb, &tp, rollback);
     else
         WARN("couldn't find existing INODE_ITEM\n");
 
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL);
+    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
     
     free_traverse_ptr(&tp);
 
@@ -1829,6 +1829,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     device_extension* Vcb = DeviceObject->DeviceExtension;
     fcb* fcb = IrpSp->FileObject->FsContext;
     BOOL top_level;
+    SINGLE_LIST_ENTRY rollback;
     
     FsRtlEnterFileSystem();
     
@@ -1855,12 +1856,12 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     switch (IrpSp->Parameters.SetFile.FileInformationClass) {
         case FileAllocationInformation:
             TRACE("FileAllocationInformation\n");
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, FALSE);
+            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, FALSE, &rollback);
             break;
 
         case FileBasicInformation:
             TRACE("FileBasicInformation\n");
-            Status = set_basic_information(Vcb, Irp, IrpSp->FileObject);
+            Status = set_basic_information(Vcb, Irp, IrpSp->FileObject, &rollback);
             break;
 
         case FileDispositionInformation:
@@ -1870,7 +1871,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
         case FileEndOfFileInformation:
             TRACE("FileEndOfFileInformation\n");
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly);
+            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly, &rollback);
             break;
 
         case FileLinkInformation:
@@ -1885,7 +1886,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
             // FIXME - make this work with streams
-            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, IrpSp->Parameters.SetFile.ReplaceIfExists);
+            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, IrpSp->Parameters.SetFile.ReplaceIfExists, &rollback);
             break;
 
         case FileValidDataLengthInformation:

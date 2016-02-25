@@ -221,7 +221,7 @@ end:
     return Status;
 }
 
-static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subvol, UINT64 parinode, UINT64 index, PANSI_STRING utf8, UINT8 type) {
+static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subvol, UINT64 parinode, UINT64 index, PANSI_STRING utf8, UINT8 type, SINGLE_LIST_ENTRY* rollback) {
     KEY searchkey;
     UINT32 crc32;
     traverse_ptr tp;
@@ -260,8 +260,8 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
         } while (len > 0);
         
         if (found) {
-            delete_tree_item(Vcb, &tp);
-            insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di, tp.item->size, NULL);
+            delete_tree_item(Vcb, &tp, rollback);
+            insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di, tp.item->size, NULL, rollback);
         } else
             ExFreePool(di);
     } else {
@@ -285,8 +285,8 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
         RtlCopyMemory(di2, di, tp.item->size);
         di2->type = type;
         
-        delete_tree_item(Vcb, &tp);
-        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di2, tp.item->size, NULL);
+        delete_tree_item(Vcb, &tp, rollback);
+        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di2, tp.item->size, NULL, rollback);
     }
     
     free_traverse_ptr(&tp);
@@ -310,6 +310,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL b;
     LARGE_INTEGER offset;
     USHORT i;
+    SINGLE_LIST_ENTRY rollback;
     
     // FIXME - send notification if this succeeds? The attributes will have changed.
     
@@ -396,7 +397,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 utf8.Buffer = ir->name;
                 utf8.Length = utf8.MaximumLength = ir->n;
                 
-                Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, tp.item->key.offset, ir->index, &utf8, BTRFS_TYPE_SYMLINK);
+                Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, tp.item->key.offset, ir->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - change_file_type returned %08x\n", Status);
@@ -446,7 +447,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                     utf8.Buffer = ier->name;
                     utf8.Length = utf8.MaximumLength = ier->n;
                     
-                    Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, ier->dir, ier->index, &utf8, BTRFS_TYPE_SYMLINK);
+                    Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, ier->dir, ier->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("error - change_file_type returned %08x\n", Status);
@@ -476,7 +477,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     fcb->inode_item.st_mode |= __S_IFLNK;
     
-    Status = truncate_file(fcb, 0);
+    Status = truncate_file(fcb, 0, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("truncate_file returned %08x\n", Status);
         goto end;
@@ -503,7 +504,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     offset.QuadPart = 0;
-    Status = write_file2(fcb->Vcb, Irp, offset, target.Buffer, (ULONG*)&target.Length, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE);
+    Status = write_file2(fcb->Vcb, Irp, offset, target.Buffer, (ULONG*)&target.Length, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE, &rollback);
     
     ExFreePool(target.Buffer);
     
