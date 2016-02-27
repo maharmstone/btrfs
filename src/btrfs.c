@@ -71,6 +71,8 @@ BOOL have_sse42 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
 LIST_ENTRY volumes;
+LIST_ENTRY VcbList;
+ERESOURCE global_loading_lock;
 
 #ifdef DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -333,6 +335,8 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     if (comfo)
         ObDereferenceObject(comfo);
 #endif
+    
+    ExDeleteResourceLite(&global_loading_lock);
 }
 
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
@@ -2454,11 +2458,25 @@ static void STDCALL uninit(device_extension* Vcb) {
     LIST_ENTRY *le, *le2;
     chunk* c;
     space* s;
+    UINT64 i;
+    LIST_ENTRY rollback;
     
+    InitializeListHead(&rollback);
+    
+    acquire_tree_lock(Vcb, TRUE);
+
+    if (Vcb->write_trees > 0)
+        do_write(Vcb, &rollback);
+    
+    free_tree_cache(&Vcb->tree_cache);
+    
+    clear_rollback(&rollback);
+
+    release_tree_lock(Vcb, TRUE);
+
     while (Vcb->roots) {
         root* r = Vcb->roots->next;
 
-        // FIXME - also free root trees
         ExDeleteResourceLite(&Vcb->roots->nonpaged->load_tree_lock);
         ExFreePool(Vcb->roots->nonpaged);
         ExFreePool(Vcb->roots);
@@ -2485,15 +2503,21 @@ static void STDCALL uninit(device_extension* Vcb) {
     free_fcb(Vcb->volume_fcb);
     free_fcb(Vcb->root_fcb);
     
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        while ((le = RemoveHeadList(&Vcb->devices[i].disk_holes)) != &Vcb->devices[i].disk_holes) {
+            disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
+            
+            ExFreePool(dh);
+        }
+    }
+    
+    ExFreePool(Vcb->devices);
+    
     ExDeleteResourceLite(&Vcb->fcb_lock);
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
     
-    // FIXME - flush trees
-    
     ZwClose(Vcb->flush_thread_handle);
-    
-    ExFreePool(Vcb);
 }
 
 static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
@@ -2511,10 +2535,6 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     if (DeviceObject == devobj) {
         TRACE("closing file system\n");
-        
-        if (DeviceObject->DeviceExtension)
-            uninit(DeviceObject->DeviceExtension);
-        
         Status = STATUS_SUCCESS;
         goto exit;
     }
@@ -3528,7 +3548,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializeResourceLite(&Vcb->tree_lock);
     Vcb->tree_lock_counter = 0;
     Vcb->open_trees = 0;
-    Vcb->write_trees =0;
+    Vcb->write_trees = 0;
+    
+    ExAcquireResourceExclusiveLite(&global_loading_lock, TRUE);
+    InsertTailList(&VcbList, &Vcb->list_entry);
+    ExReleaseResourceLite(&global_loading_lock);
 
     ExInitializeResourceLite(&Vcb->load_lock);
     FsRtlEnterFileSystem();
@@ -3983,6 +4007,7 @@ end:
 static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
+    LIST_ENTRY* le;
 
     ERR("shutdown\n");
     
@@ -3991,8 +4016,15 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     top_level = is_top_level(Irp);
     
     Status = STATUS_SUCCESS;
-    
-    // FIXME - free Vcb->devices
+
+    le = VcbList.Flink;
+    while ((le = RemoveHeadList(&VcbList)) != &VcbList) {
+        device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        
+        TRACE("shutting down Vcb %p\n", Vcb);
+        
+        uninit(Vcb);
+    }
     
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
@@ -4237,6 +4269,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
 
     InitializeListHead(&volumes);
     look_for_vols(&volumes);
+    
+    InitializeListHead(&VcbList);
+    ExInitializeResourceLite(&global_loading_lock);
     
     IoRegisterFileSystem(DeviceObject);
 
