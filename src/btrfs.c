@@ -4178,13 +4178,13 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     init_serial();
 #endif
 
-   TRACE("DriverEntry\n");
+    TRACE("DriverEntry\n");
    
-   check_cpu();
+    check_cpu();
    
 //    TRACE("check CRC32C: %08x\n", calc_crc32c((UINT8*)"123456789", 9)); // should be e3069283
    
-   drvobj = DriverObject;
+    drvobj = DriverObject;
 
     DriverObject->DriverUnload = DriverUnload;
 
