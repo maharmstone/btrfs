@@ -1866,6 +1866,8 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     TRACE("create (flags = %x)\n", Irp->Flags);
     
+    rollback.Next = NULL;
+    
     FsRtlEnterFileSystem();
     
     top_level = is_top_level(Irp);
@@ -1981,6 +1983,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     //                             Irp);
         Status = create_file(DeviceObject, Irp, &rollback);
 //         ExReleaseResourceLite(&Vpb->DirResource);
+        
+        if (exclusive && !NT_SUCCESS(Status))
+            do_rollback(Vcb, &rollback);
+        else
+            clear_rollback(&rollback);
         
         release_tree_lock(Vcb, exclusive);
         

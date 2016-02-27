@@ -764,6 +764,8 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     
     TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, flags);
     
+    rollback.Next = NULL;
+    
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
     
@@ -847,6 +849,11 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     Status = consider_write(Vcb);
     
 end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+
     release_tree_lock(Vcb, TRUE);
     
     return Status;

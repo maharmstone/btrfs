@@ -1086,3 +1086,13 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, SINGLE_LI
 //         delete_tree_item(&tp2, tc);
 //     }
 }
+
+void clear_rollback(SINGLE_LIST_ENTRY* rollback) {
+    // FIXME
+}
+
+void do_rollback(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+    // FIXME
+    
+    clear_rollback(rollback);
+}

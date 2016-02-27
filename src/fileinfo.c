@@ -1239,8 +1239,13 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    if (oldfcb)
-        delete_fcb(oldfcb, NULL, rollback); // FIXME - make sure this doesn't cause problems if operation later fails
+    if (oldfcb) {
+        Status = delete_fcb(oldfcb, NULL, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_fcb returned %08x\n", Status);
+            goto end;
+        }
+    }
     
     if (fcb->inode == SUBVOL_ROOT_INODE) {
         UNICODE_STRING filename;
@@ -1831,6 +1836,8 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     BOOL top_level;
     SINGLE_LIST_ENTRY rollback;
     
+    rollback.Next = NULL;
+    
     FsRtlEnterFileSystem();
     
     top_level = is_top_level(Irp);
@@ -1907,6 +1914,11 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     
     if (NT_SUCCESS(Status))
         Status = consider_write(Vcb);
+    
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
     
     release_tree_lock(Vcb, TRUE);
     

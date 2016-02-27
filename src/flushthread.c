@@ -22,6 +22,8 @@
 static void do_flush(device_extension* Vcb) {
     SINGLE_LIST_ENTRY rollback;
     
+    rollback.Next = NULL;
+    
     FsRtlEnterFileSystem();
 
     acquire_tree_lock(Vcb, TRUE);
@@ -30,6 +32,8 @@ static void do_flush(device_extension* Vcb) {
         do_write(Vcb, &rollback);
     
     free_tree_cache(&Vcb->tree_cache);
+    
+    clear_rollback(&rollback);
 
     release_tree_lock(Vcb, TRUE);
 

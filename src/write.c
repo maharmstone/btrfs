@@ -5598,6 +5598,8 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     LARGE_INTEGER freq, time1, time2;
     SINGLE_LIST_ENTRY rollback;
     
+    rollback.Next = NULL;
+    
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
     
@@ -5704,8 +5706,14 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
 exit:
-    if (locked)
+    if (locked) {
+        if (NT_SUCCESS(Status))
+            clear_rollback(&rollback);
+        else
+            do_rollback(Vcb, &rollback);
+        
         release_tree_lock(Vcb, TRUE);
+    }
     
 //     time2 = KeQueryPerformanceCounter(NULL);
     

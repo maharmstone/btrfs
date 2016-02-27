@@ -316,6 +316,8 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
+    rollback.Next = NULL;
+    
     if (!FileObject) {
         ERR("FileObject was NULL\n");
         return STATUS_INVALID_PARAMETER;
@@ -512,6 +514,11 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = consider_write(fcb->Vcb);
     
 end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(fcb->Vcb, &rollback);
+
     release_tree_lock(fcb->Vcb, TRUE);
     
     return Status;

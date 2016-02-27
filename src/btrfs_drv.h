@@ -370,7 +370,7 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback);
 UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback);
-void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback);
+NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback);
 fcb* create_fcb();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
@@ -453,6 +453,8 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write);
 tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line);
 tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char* func, const char* file, unsigned int line);
 BOOL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, const char* func, const char* file, unsigned int line);
+void clear_rollback(SINGLE_LIST_ENTRY* rollback);
+void do_rollback(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)

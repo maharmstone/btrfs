@@ -2037,7 +2037,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
     ULONG bytecount;
     NTSTATUS Status;
     char* utf8 = NULL;
@@ -2049,7 +2049,9 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY changed_sector_list;
+#if DEBUG_LEVEL >=3
     LARGE_INTEGER freq, time1, time2;
+#endif
     
     // FIXME - throw error if try to delete subvol root(?)
     
@@ -2057,15 +2059,17 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     
     if (fcb->deleted) {
         ERR("trying to delete already-deleted file\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     if (!fcb->par) {
         ERR("error - trying to delete root FCB\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
+#if DEBUG_LEVEL >=3
     time1 = KeQueryPerformanceCounter(&freq);
+#endif
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -2094,12 +2098,14 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
         
         if (!find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE)) {
             ERR("error - could not find any entries in subvolume %llx\n", fcb->par->subvol->id);
+            Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
         
         if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
             ERR("error - could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->par->inode, fcb->par->subvol->id);
             free_traverse_ptr(&tp);
+            Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
 
@@ -2120,7 +2126,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     Status = RtlUnicodeToUTF8N(NULL, 0, &bytecount, fcb->filepart.Buffer, fcb->filepart.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
-        return;
+        return Status;
     }
     
     utf8 = ExAllocatePoolWithTag(PagedPool, bytecount + 1, ALLOC_TAG);
@@ -2142,7 +2148,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fcb->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
-        return;
+        return Status;
     }
     
     // delete INODE_REF (0xc)
@@ -2160,6 +2166,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
         ERR("error - find_item failed\n");
         free_traverse_ptr(&tp);
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -2177,6 +2184,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     if (!find_item(fcb->Vcb, fcb->subvol, &tp2, &searchkey, FALSE)) {
         ERR("error - find_item failed\n");
         free_traverse_ptr(&tp);
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -2186,6 +2194,7 @@ void delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) 
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - INODE_ITEM not found\n");
         free_traverse_ptr(&tp);
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -2259,12 +2268,14 @@ success2:
     
     if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - could not find INODE_ITEM for parent directory %llx in subvol %llx\n", parinode, fcb->subvol->id);
         free_traverse_ptr(&tp);
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -2314,13 +2325,19 @@ success:
                                 fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                                 FILE_ACTION_REMOVED, NULL);
     
+#if DEBUG_LEVEL >=3
     time2 = KeQueryPerformanceCounter(NULL);
+#endif
     
-    ERR("time = %u (freq = %u)\n", (UINT32)(time2.QuadPart - time1.QuadPart), (UINT32)freq.QuadPart);
+    TRACE("time = %u (freq = %u)\n", (UINT32)(time2.QuadPart - time1.QuadPart), (UINT32)freq.QuadPart);
+    
+    Status = STATUS_SUCCESS;
     
 exit:
     if (utf8)
         ExFreePool(utf8);
+    
+    return Status;
 }
 
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {
@@ -2475,7 +2492,6 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb;
     BOOL top_level;
-    SINGLE_LIST_ENTRY rollback;
 
     TRACE("cleanup\n");
     
@@ -2502,10 +2518,18 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
         
         if (fcb->open_count == 1 && fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
+            SINGLE_LIST_ENTRY rollback;
+            rollback.Next = NULL;
+            
             acquire_tree_lock(fcb->Vcb, TRUE);
             
-            delete_fcb(fcb, FileObject, &rollback);
+            Status = delete_fcb(fcb, FileObject, &rollback);
             // FIXME - change allocation size etc. to zero
+            
+            if (NT_SUCCESS(Status))
+                clear_rollback(&rollback);
+            else
+                do_rollback(fcb->Vcb, &rollback);
             
             release_tree_lock(fcb->Vcb, TRUE);
         }
