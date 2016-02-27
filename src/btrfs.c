@@ -3509,6 +3509,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PARTITION_INFORMATION_EX piex;
     UINT64 i;
     LIST_ENTRY* le;
+    KEY searchkey;
+    traverse_ptr tp;
     
     TRACE("mount_vol called\n");
     
@@ -3731,9 +3733,27 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->fcbs = Vcb->root_fcb;
     
-    if (!get_item(Vcb, Vcb->root_fcb->subvol, Vcb->root_fcb->inode, TYPE_INODE_ITEM, 0, &Vcb->root_fcb->inode_item, sizeof(INODE_ITEM))) {
-        ERR("couldn't find INODE_ITEM for root directory\n");
+    searchkey.obj_id = Vcb->root_fcb->inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    if (!find_item(Vcb, Vcb->root_fcb->subvol, &tp, &searchkey, FALSE)) {
+        ERR("error - could not find any entries in subvolume %llx\n", Vcb->root_fcb->subvol->id);
+        Status = STATUS_INTERNAL_ERROR;
+        goto exit;
     }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        ERR("couldn't find INODE_ITEM for root directory\n");
+        Status = STATUS_INTERNAL_ERROR;
+        free_traverse_ptr(&tp);
+        goto exit;
+    }
+    
+    if (tp.item->size > 0)
+        RtlCopyMemory(&Vcb->root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+    
+    free_traverse_ptr(&tp);
     
     fcb_get_sd(Vcb->root_fcb);
     

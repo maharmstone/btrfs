@@ -743,6 +743,8 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                 UINT64 inode;
                 UINT8 type;
                 ANSI_STRING utf8;
+                KEY searchkey;
+                traverse_ptr tp;
                 
                 if (!find_file_in_dir(Vcb, &parts[i], sf->subvol, sf->inode, &subvol, &inode, &type, &utf8)) {
                     WARN("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
@@ -763,6 +765,8 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                        free_fcb(sf2);
+                        goto end;
                     } else {
                         sf2->filepart.MaximumLength = sf2->filepart.Length = strlen;
                         sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
@@ -771,6 +775,8 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                            free_fcb(sf2);
+                            goto end;
                         }
                     }
                     
@@ -809,9 +815,29 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     
                     sf2->utf8 = utf8;
                     
-                    if (!get_item(sf2->Vcb, sf2->subvol, sf2->inode, TYPE_INODE_ITEM, 0, &sf2->inode_item, sizeof(INODE_ITEM))) {
-                        ERR("couldn't find (%llx,%x,0) in subvol %llx\n", sf2->inode, TYPE_INODE_ITEM, sf2->subvol->id);
+                    searchkey.obj_id = sf2->inode;
+                    searchkey.obj_type = TYPE_INODE_ITEM;
+                    searchkey.offset = 0xffffffffffffffff;
+                    
+                    if (!find_item(sf2->Vcb, sf2->subvol, &tp, &searchkey, FALSE)) {
+                        ERR("error - could not find any entries in subvolume %llx\n", sf2->subvol->id);
+                        free_fcb(sf2);
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto end;
                     }
+                    
+                    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                        ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", sf2->inode, sf2->subvol->id);
+                        Status = STATUS_INTERNAL_ERROR;
+                        free_fcb(sf2);
+                        free_traverse_ptr(&tp);
+                        goto end;
+                    }
+                    
+                    if (tp.item->size > 0)
+                        RtlCopyMemory(&sf2->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+                    
+                    free_traverse_ptr(&tp);
                     
                     sf2->atts = get_file_attributes(Vcb, &sf2->inode_item, sf2->subvol, sf2->inode, sf2->type, sf2->filepart.Buffer[0] == '.', FALSE);
                     
@@ -1682,13 +1708,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         }
         
         TRACE("deleted = %s\n", fcb->deleted ? "TRUE" : "FALSE");
-        
-//         if (!fcb->ads && !get_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, &fcb->inode_item, sizeof(INODE_ITEM), NULL)) { // FIXME - don't do this if already loaded
-//             ERR("couldn't find (%llx,%x,0) in subvol %llx\n", fcb->inode, TYPE_INODE_ITEM, fcb->subvol->id);
-//             Status = STATUS_INTERNAL_ERROR;
-//             free_fcb(fcb);
-//             goto exit;
-//         }
         
         sf = fcb;
         while (sf) {

@@ -446,7 +446,6 @@ BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const 
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
 void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* file, unsigned int line);
-BOOL STDCALL _get_item(device_extension* Vcb, root* r, UINT64 objid, UINT8 objtype, UINT64 offset, void* ptr, UINT32 size, const char* func, const char* file, unsigned int line);
 void STDCALL free_tree_cache(LIST_ENTRY* tc);
 BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, LIST_ENTRY* rollback);
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
@@ -463,7 +462,6 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 #define free_tree(t) _free_tree(t, funcname, __FILE__, __LINE__)
 #define load_tree(t, addr, r) _load_tree(t, addr, r, funcname, __FILE__, __LINE__)
 #define free_traverse_ptr(tp) _free_traverse_ptr(tp, funcname, __FILE__, __LINE__)
-#define get_item(Vcb, r, objid, objtype, offset, ptr, size) _get_item(Vcb, r, objid, objtype, offset, ptr, size, funcname, __FILE__, __LINE__)
 #define do_load_tree(Vcb, th, r, t, td) _do_load_tree(Vcb, th, r, t, td, funcname, __FILE__, __LINE__)  
 
 // in search.c

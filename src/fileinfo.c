@@ -274,6 +274,8 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
     LIST_ENTRY* le;
     fcb* sf2;
     struct _fcb* c;
+    KEY searchkey;
+    traverse_ptr tp;
     
     le = parent->children.Flink;
     
@@ -323,11 +325,27 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
     
     InsertTailList(&parent->children, &sf2->list_entry);
     
-    if (!get_item(sf2->Vcb, sf2->subvol, sf2->inode, TYPE_INODE_ITEM, 0, &sf2->inode_item, sizeof(INODE_ITEM))) {
-        ERR("couldn't find (%llx,%x,0) in subvol %llx\n", sf2->inode, TYPE_INODE_ITEM, sf2->subvol->id);
+    searchkey.obj_id = sf2->inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    if (!find_item(Vcb, sf2->subvol, &tp, &searchkey, FALSE)) {
+        ERR("error - could not find any entries in subvolume %llx\n", sf2->subvol->id);
         free_fcb(sf2);
         return STATUS_INTERNAL_ERROR;
     }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", sf2->inode, sf2->subvol->id);
+        free_traverse_ptr(&tp);
+        free_fcb(sf2);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size > 0)
+        RtlCopyMemory(&sf2->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+    
+    free_traverse_ptr(&tp);
     
     // This is just a quick function for the sake of move_across_subvols. As such, we don't bother
     // with sf2->atts, sf2->sd, or sf2->full_filename.

@@ -60,11 +60,52 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
     if (IrpSp->Parameters.QueryDirectory.FileInformationClass != FileNamesInformation) { // FIXME - object ID and reparse point classes too?
         switch (de->dir_entry_type) {
             case DirEntryType_File:
-                if (!get_item(fcb->Vcb, r, inode, TYPE_INODE_ITEM, 0, &ii, sizeof(INODE_ITEM))) { // FIXME - used cached version
-                    ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
-                    return STATUS_INTERNAL_ERROR;
+            {
+                LIST_ENTRY* le;
+                BOOL found = FALSE;
+                
+                le = fcb->children.Flink;
+                while (le != &fcb->children) {
+                    struct _fcb* c = CONTAINING_RECORD(le, struct _fcb, list_entry);
+                    
+                    if (c->subvol == r && c->inode == inode) {
+                        ii = c->inode_item;
+                        found = TRUE;
+                        break;
+                    }
+                    
+                    le = le->Flink;
                 }
+                
+                if (!found) {
+                    KEY searchkey;
+                    traverse_ptr tp;
+                    
+                    searchkey.obj_id = inode;
+                    searchkey.obj_type = TYPE_INODE_ITEM;
+                    searchkey.offset = 0xffffffffffffffff;
+                    
+                    if (!find_item(fcb->Vcb, r, &tp, &searchkey, FALSE)) {
+                        ERR("error - could not find any entries in subvolume %llx\n", r->id);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                        ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
+                        free_traverse_ptr(&tp);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    RtlZeroMemory(&ii, sizeof(INODE_ITEM));
+                    
+                    if (tp.item->size > 0)
+                        RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+                    
+                    free_traverse_ptr(&tp);
+                }
+                
                 break;
+            }
             
             case DirEntryType_Self:
                 ii = fcb->inode_item;

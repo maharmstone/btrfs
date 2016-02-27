@@ -847,33 +847,6 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
     return TRUE;
 }
 
-BOOL STDCALL _get_item(device_extension* Vcb, root* r, UINT64 objid, UINT8 objtype, UINT64 offset, void* ptr, UINT32 size, const char* func, const char* file, unsigned int line) {
-    traverse_ptr tp;
-    KEY searchkey;
-    
-    searchkey.obj_id = objid;
-    searchkey.obj_type = objtype;
-    searchkey.offset = offset;
-    
-    if (!_find_item(Vcb, r, &tp, &searchkey, FALSE, func, file, line))
-        return FALSE;
-    
-    TRACE("looked for (%llx,%x,%llx), got (%llx,%x,%llx)\n", objid, objtype, offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-    
-    if (keycmp(&tp.item->key, &searchkey)) {
-        _free_traverse_ptr(&tp, func, file, line);
-        return FALSE;
-    }
-    
-    if (size > tp.item->size)
-        size = tp.item->size;
-
-    RtlCopyMemory(ptr, tp.item->data, size);
-    
-    _free_traverse_ptr(&tp, func, file, line);
-    return TRUE;
-}
-
 // static void free_tree_holder(tree_holder* th) {
 //     root* r = th->tree->root;
 //     
