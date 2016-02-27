@@ -238,32 +238,41 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
     }
 
     if (!keycmp(&tp.item->key, &searchkey)) {
-        DIR_ITEM *di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG), *di2;
-        BOOL found = FALSE;
-        ULONG len = tp.item->size;
-        
-        RtlCopyMemory(di, tp.item->data, tp.item->size);
-        
-        di2 = di;
-        do {
-            if (di2->n == utf8->Length && RtlCompareMemory(di2->name, utf8->Buffer, utf8->Length) == utf8->Length) {
-                di2->type = type;
-                found = TRUE;
-                break;
-            }
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        } else {
+            DIR_ITEM *di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG), *di2;
+            BOOL found = FALSE;
+            ULONG len = tp.item->size;
             
-            if (len > sizeof(DIR_ITEM) - sizeof(char) + di2->m + di2->n) {
-                len -= sizeof(DIR_ITEM) - sizeof(char) + di2->m + di2->n;
-                di2 = (DIR_ITEM*)&di2->name[di2->m + di2->n];
+            RtlCopyMemory(di, tp.item->data, tp.item->size);
+            
+            di2 = di;
+            do {
+                if (len < sizeof(DIR_ITEM) || len < sizeof(DIR_ITEM) - 1 + di2->m + di2->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
+                }
+                
+                if (di2->n == utf8->Length && RtlCompareMemory(di2->name, utf8->Buffer, utf8->Length) == utf8->Length) {
+                    di2->type = type;
+                    found = TRUE;
+                    break;
+                }
+                
+                if (len > sizeof(DIR_ITEM) - sizeof(char) + di2->m + di2->n) {
+                    len -= sizeof(DIR_ITEM) - sizeof(char) + di2->m + di2->n;
+                    di2 = (DIR_ITEM*)&di2->name[di2->m + di2->n];
+                } else
+                    break;
+            } while (len > 0);
+            
+            if (found) {
+                delete_tree_item(Vcb, &tp, rollback);
+                insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di, tp.item->size, NULL, rollback);
             } else
-                break;
-        } while (len > 0);
-        
-        if (found) {
-            delete_tree_item(Vcb, &tp, rollback);
-            insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di, tp.item->size, NULL, rollback);
-        } else
-            ExFreePool(di);
+                ExFreePool(di);
+        }
     } else {
         WARN("search for DIR_ITEM by crc32 failed\n");
     }
@@ -280,13 +289,17 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
     }
     
     if (!keycmp(&tp.item->key, &searchkey)) {
-        DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-        DIR_ITEM* di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-        RtlCopyMemory(di2, di, tp.item->size);
-        di2->type = type;
-        
-        delete_tree_item(Vcb, &tp, rollback);
-        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di2, tp.item->size, NULL, rollback);
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        } else {
+            DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+            DIR_ITEM* di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            RtlCopyMemory(di2, di, tp.item->size);
+            di2->type = type;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di2, tp.item->size, NULL, rollback);
+        }
     }
     
     free_traverse_ptr(&tp);
@@ -389,30 +402,39 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_REF) {
-            INODE_REF* ir;
-            ULONG size = tp.item->size;
-            ANSI_STRING utf8;
-            
-            ir = (INODE_REF*)tp.item->data;
-            
-            do {
-                utf8.Buffer = ir->name;
-                utf8.Length = utf8.MaximumLength = ir->n;
+            if (tp.item->size < sizeof(INODE_REF)) {
+                WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+            } else {
+                INODE_REF* ir;
+                ULONG size = tp.item->size;
+                ANSI_STRING utf8;
                 
-                Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, tp.item->key.offset, ir->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
+                ir = (INODE_REF*)tp.item->data;
                 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - change_file_type returned %08x\n", Status);
-                    goto end;
-                }
-                
-                if (size > sizeof(INODE_REF) - 1 + ir->n) {
-                    size -= sizeof(INODE_REF) - 1 + ir->n;
+                do {
+                    if (size < sizeof(INODE_REF) || size < sizeof(INODE_REF) - 1 + ir->n) {
+                        WARN("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        break;
+                    }
                     
-                    ir = (INODE_REF*)&ir->name[ir->n];
-                } else
-                    break;
-            } while (TRUE);
+                    utf8.Buffer = ir->name;
+                    utf8.Length = utf8.MaximumLength = ir->n;
+                    
+                    Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, tp.item->key.offset, ir->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("error - change_file_type returned %08x\n", Status);
+                        goto end;
+                    }
+                    
+                    if (size > sizeof(INODE_REF) - 1 + ir->n) {
+                        size -= sizeof(INODE_REF) - 1 + ir->n;
+                        
+                        ir = (INODE_REF*)&ir->name[ir->n];
+                    } else
+                        break;
+                } while (TRUE);
+            }
         }
         
         b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
@@ -439,30 +461,39 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         do {
             if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                INODE_EXTREF* ier;
-                ULONG size = tp.item->size;
-                ANSI_STRING utf8;
-                
-                ier = (INODE_EXTREF*)tp.item->data;
-                
-                do {
-                    utf8.Buffer = ier->name;
-                    utf8.Length = utf8.MaximumLength = ier->n;
+                if (tp.item->size < sizeof(INODE_EXTREF)) {
+                    WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_EXTREF));
+                } else {
+                    INODE_EXTREF* ier;
+                    ULONG size = tp.item->size;
+                    ANSI_STRING utf8;
                     
-                    Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, ier->dir, ier->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
+                    ier = (INODE_EXTREF*)tp.item->data;
                     
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("error - change_file_type returned %08x\n", Status);
-                        goto end;
-                    }
-                    
-                    if (size > sizeof(INODE_EXTREF) - 1 + ier->n) {
-                        size -= sizeof(INODE_EXTREF) - 1 + ier->n;
+                    do {
+                        if (size < sizeof(INODE_EXTREF) || size < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                            WARN("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                            break;
+                        }
                         
-                        ier = (INODE_EXTREF*)&ier->name[ier->n];
-                    } else
-                        break;
-                } while (TRUE);
+                        utf8.Buffer = ier->name;
+                        utf8.Length = utf8.MaximumLength = ier->n;
+                        
+                        Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, ier->dir, ier->index, &utf8, BTRFS_TYPE_SYMLINK, &rollback);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("error - change_file_type returned %08x\n", Status);
+                            goto end;
+                        }
+                        
+                        if (size > sizeof(INODE_EXTREF) - 1 + ier->n) {
+                            size -= sizeof(INODE_EXTREF) - 1 + ier->n;
+                            
+                            ier = (INODE_EXTREF*)&ier->name[ier->n];
+                        } else
+                            break;
+                    } while (TRUE);
+                }
             }
             
             b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);

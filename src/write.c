@@ -434,14 +434,18 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     
     do {
         if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
-            CHUNK_ITEM* ci = (CHUNK_ITEM*)tp.item->data;
-            
-            if (tp.item->key.offset >= lastaddr + size) {
-                free_traverse_ptr(&tp);
-                return lastaddr;
+            if (tp.item->size < sizeof(CHUNK_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+            } else {
+                CHUNK_ITEM* ci = (CHUNK_ITEM*)tp.item->data;
+                
+                if (tp.item->key.offset >= lastaddr + size) {
+                    free_traverse_ptr(&tp);
+                    return lastaddr;
+                }
+                
+                lastaddr = tp.item->key.offset + ci->size;
             }
-            
-            lastaddr = tp.item->key.offset + ci->size;
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -902,6 +906,12 @@ static NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* 
         goto end;
     }
     
+    if (tp.item->size < sizeof(CHUNK_ITEM2)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM2));
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
     ci = (CHUNK_ITEM2*)tp.item->data;
     
     if (tp.item->key.offset > address || tp.item->key.offset + ci->ci.size < address) {
@@ -1051,7 +1061,9 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                 if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, create new entry with new bits zeroed
                     ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
                     
-                    RtlCopyMemory(ri, tp.item->data, tp.item->size);
+                    if (tp.item->size > 0)
+                        RtlCopyMemory(ri, tp.item->data, tp.item->size);
+                    
                     RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1288,6 +1300,12 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
         return FALSE;
     }
     
+    if (tp.item->size < sizeof(EXTENT_ITEM_SKINNY_METADATA)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_SKINNY_METADATA));
+        free_traverse_ptr(&tp);
+        return FALSE;
+    }
+    
     delete_tree_item(Vcb, &tp, rollback);
     
     eism = (EXTENT_ITEM_SKINNY_METADATA*)tp.item->data;
@@ -1407,6 +1425,13 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
         return;
     }
     
+    if (tp.item->size < sizeof(EXTENT_REF_V0)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
+        free_traverse_ptr(&tp2);
+        free_traverse_ptr(&tp);
+        return;
+    }
+    
     erv0 = (EXTENT_REF_V0*)tp.item->data;
     
     delete_tree_item(Vcb, &tp, rollback);
@@ -1499,6 +1524,12 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             return STATUS_INTERNAL_ERROR;
         }
     } else {
+        if (tp.item->size < sizeof(EXTENT_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
         ei = (EXTENT_ITEM*)tp.item->data;
         
         if (ei->refcount > 1) {
@@ -1570,10 +1601,10 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             if (!td->ignore && !td->inserted) {
                 if (t->header.level > 0) {
                     convert_old_tree_extent(Vcb, td, t, rollback);
-                } else if (td->key.obj_type == TYPE_EXTENT_DATA) {
+                } else if (td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA)) {
                     EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
                     
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                         
                         if (ed2->address != 0) {
@@ -1989,6 +2020,12 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                         return STATUS_INTERNAL_ERROR;
                     }
                     
+                    if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
+                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+                        free_traverse_ptr(&tp);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
                     eit = (EXTENT_ITEM_TREE*)tp.item->data;
                     eit->firstitem = firstitem;
                     
@@ -2104,7 +2141,8 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                         itemptr[i].size = td->size;
                         i++;
                         
-                        RtlCopyMemory(dataptr, td->data, td->size);
+                        if (td->size > 0)
+                            RtlCopyMemory(dataptr, td->data, td->size);
                     }
                     
                     le2 = le2->Flink;
@@ -2242,6 +2280,12 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             if (keycmp(&searchkey, &tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 int3;
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size < sizeof(BLOCK_GROUP_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
                 free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -3181,6 +3225,12 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
     
     ei = (EXTENT_ITEM*)tp.item->data;
     
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
     if (extent_item_is_shared(ei, tp.item->size - sizeof(EXTENT_ITEM))) {
         NTSTATUS Status = convert_shared_data_extent(Vcb, address, size, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -3495,6 +3545,12 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
         return STATUS_SUCCESS;
     }
     
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
     ei = (EXTENT_ITEM*)tp.item->data;
     len = tp.item->size - sizeof(EXTENT_ITEM);
     
@@ -3733,6 +3789,12 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
     
     ei = (EXTENT_ITEM*)tp.item->data;
     
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
     if (!(ei->flags & EXTENT_ITEM_DATA)) {
         ERR("error - EXTENT_ITEM_DATA flag not set\n");
         free_traverse_ptr(&tp);
@@ -3899,6 +3961,18 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 
     do {
         EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+        
+        if (tp.item->size < sizeof(EXTENT_DATA)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         
@@ -4383,6 +4457,11 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     ed = (EXTENT_DATA*)tp.item->data;
     
+    if (tp.item->size < sizeof(EXTENT_DATA)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        goto end;
+    }
+    
     if (ed->type != EXTENT_TYPE_REGULAR) {
         TRACE("not extending extent which is not EXTENT_TYPE_REGULAR\n");
         goto end;
@@ -4409,6 +4488,11 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     }
     
     ed2 = (EXTENT_DATA2*)ed->data;
+    
+    if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+        goto end;
+    }
     
     if (ed2->size - ed2->offset != ed->decoded_size) {
         TRACE("last EXTENT_DATA does not run all the way to the end of the extent\n");
@@ -4452,6 +4536,11 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     ei = (EXTENT_ITEM*)tp2.item->data;
     
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        goto end2;
+    }
+    
     // FIXME - test this
     if (extent_item_is_shared(ei, tp2.item->size - sizeof(EXTENT_ITEM))) {
         NTSTATUS Status = convert_shared_data_extent(Vcb, ed2->address, ed2->size, rollback);
@@ -4473,6 +4562,11 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         }
         
         ei = (EXTENT_ITEM*)tp2.item->data;
+        
+        if (tp.item->size < sizeof(EXTENT_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+            goto end2;
+        }
     }
     
     if (ei->refcount != 1) {
@@ -4567,6 +4661,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     if (start_data > 0) {
         traverse_ptr tp;
         NTSTATUS Status;
+        EXTENT_DATA* ed;
         
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_EXTENT_DATA;
@@ -4597,13 +4692,20 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
 //             free_traverse_ptr(&tp);
 //             return STATUS_INTERNAL_ERROR;
 //         }
+
+        if (tp.item->key.obj_type == TYPE_EXTENT_DATA && tp.item->size >= sizeof(EXTENT_DATA))
+            ed = (EXTENT_DATA*)tp.item->data;
+        else
+            ed = NULL;
         
-        if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size < start_data) {
+        if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || !ed || tp.item->key.offset + ed->decoded_size < start_data) {
             if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA)
                 Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, 0, start_data, rollback);
+            else if (!ed)
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
             else {
-                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size,
-                                              start_data - tp.item->key.offset - ((EXTENT_DATA*)tp.item->data)->decoded_size, rollback);
+                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, tp.item->key.offset + ed->decoded_size,
+                                              start_data - tp.item->key.offset - ed->decoded_size, rollback);
             }
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
@@ -4666,8 +4768,6 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
     traverse_ptr tp, next_tp;
     KEY searchkey;
     UINT32* data;
-    
-    // FIXME - use local tree_cache
     
     if (!Vcb->checksum_root) {
         ERR("no checksum root\n");
@@ -4744,9 +4844,10 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
         while (tp.item->key.offset < endaddr) {
 //             ERR("%llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
             if (tp.item->key.offset >= startaddr) {
-                RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, tp.item->size);
-                
-                RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, tp.item->size / sizeof(UINT32));
+                if (tp.item->size > 0) {
+                    RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, tp.item->size);
+                    RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, tp.item->size / sizeof(UINT32));
+                }
                 
                 delete_tree_item(Vcb, &tp, rollback);
             }
@@ -4858,7 +4959,19 @@ static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
     searchkey.offset = 0xffffffffffffffff;
     
     if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
+        ERR("error - could not find any entries in extent root\n");
+        return 0;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ERR("error - could not find EXTENT_ITEM for %llx\n", address);
+        free_traverse_ptr(&tp);
+        return 0;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        free_traverse_ptr(&tp);
         return 0;
     }
     
@@ -4897,7 +5010,20 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
     }
     
     do {
+        if (tp.item->size < sizeof(EXTENT_DATA)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
         ed = (EXTENT_DATA*)tp.item->data;
+        
+        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
         eds = (EXTENT_DATA2*)&ed->data[0];
         
         b = find_next_item(Vcb, &tp, &next_tp, TRUE);
@@ -5066,6 +5192,11 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
         goto failure;
     }
     
+    if (tp.item->size < sizeof(EXTENT_DATA)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        goto failure;
+    }
+    
     length = oldlength = ((EXTENT_DATA*)tp.item->data)->decoded_size;
     lastoff = tp.item->key.offset;
     
@@ -5079,6 +5210,11 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
         
         free_traverse_ptr(&tp);
         tp = next_tp;
+        
+        if (tp.item->size < sizeof(EXTENT_DATA)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            goto failure;
+        }
         
         length = ((EXTENT_DATA*)tp.item->data)->decoded_size;
     
@@ -5286,6 +5422,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             if (keycmp(&tp.item->key, &searchkey)) {
                 ERR("error - could not find key for xattr\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size < datalen) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
                 free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }

@@ -411,6 +411,15 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         *offset = tp->item->key.offset + 1;
         
         di = (DIR_ITEM*)tp->item->data;
+        
+        if (tp->item->size < sizeof(DIR_ITEM) || tp->item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->size, sizeof(DIR_ITEM));
+            
+            free_traverse_ptr(tp);
+            tp->tree = NULL;
+            return STATUS_INTERNAL_ERROR;
+        }
+        
         de->key = di->key;
         de->name = di->name;
         de->namelen = di->n;
@@ -427,6 +436,14 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
                 *offset = tp->item->key.offset + 1;
                 
                 di = (DIR_ITEM*)tp->item->data;
+                
+                if (tp->item->size < sizeof(DIR_ITEM) || tp->item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->size, sizeof(DIR_ITEM));
+                    
+                    free_traverse_ptr(&next_tp);
+                    return STATUS_INTERNAL_ERROR;
+                }
+        
                 de->key = di->key;
                 de->name = di->name;
                 de->namelen = di->n;

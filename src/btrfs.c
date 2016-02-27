@@ -399,10 +399,22 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
         return FALSE;
     }
     
+    if (tp.item->size < sizeof(DIR_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        free_traverse_ptr(&tp);
+        return FALSE;
+    }
+    
     xa = (DIR_ITEM*)tp.item->data;
     size = tp.item->size;
     
     while (TRUE) {
+        if (size < sizeof(DIR_ITEM) || size < (sizeof(DIR_ITEM) - 1 + xa->m + xa->n)) {
+            WARN("(%llx,%x,%llx) is truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            free_traverse_ptr(&tp);
+            return FALSE;
+        }
+        
         if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
             TRACE("found xattr %s in (%llx,%x,%llx)\n", name, searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             
@@ -459,66 +471,77 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
         
         xa = (DIR_ITEM*)tp.item->data;
         
-        while (TRUE) {
-            ULONG oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-            
-            if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
-                UINT64 pos;
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        } else {
+            while (TRUE) {
+                ULONG oldxasize;
                 
-                // replace
-                newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
-                
-                pos = (UINT8*)xa - tp.item->data;
-                if (pos + oldxasize < tp.item->size) { // copy after changed xattr
-                    RtlCopyMemory(newdata + pos + xasize, tp.item->data + pos + oldxasize, tp.item->size - pos - oldxasize);
+                if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
                 }
                 
-                if (pos > 0) { // copy before changed xattr
-                    RtlCopyMemory(newdata, tp.item->data, pos);
-                    xa = (DIR_ITEM*)(newdata + pos);
-                } else
-                    xa = (DIR_ITEM*)newdata;
+                oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
                 
-                xa->key.obj_id = 0;
-                xa->key.obj_type = 0;
-                xa->key.offset = 0;
-                xa->transid = Vcb->superblock.generation;
-                xa->m = datalen;
-                xa->n = (UINT16)strlen(name);
-                xa->type = BTRFS_TYPE_EA;
-                RtlCopyMemory(xa->name, name, strlen(name));
-                RtlCopyMemory(xa->name + strlen(name), data, datalen);
+                if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
+                    UINT64 pos;
+                    
+                    // replace
+                    newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
+                    
+                    pos = (UINT8*)xa - tp.item->data;
+                    if (pos + oldxasize < tp.item->size) { // copy after changed xattr
+                        RtlCopyMemory(newdata + pos + xasize, tp.item->data + pos + oldxasize, tp.item->size - pos - oldxasize);
+                    }
+                    
+                    if (pos > 0) { // copy before changed xattr
+                        RtlCopyMemory(newdata, tp.item->data, pos);
+                        xa = (DIR_ITEM*)(newdata + pos);
+                    } else
+                        xa = (DIR_ITEM*)newdata;
+                    
+                    xa->key.obj_id = 0;
+                    xa->key.obj_type = 0;
+                    xa->key.offset = 0;
+                    xa->transid = Vcb->superblock.generation;
+                    xa->m = datalen;
+                    xa->n = (UINT16)strlen(name);
+                    xa->type = BTRFS_TYPE_EA;
+                    RtlCopyMemory(xa->name, name, strlen(name));
+                    RtlCopyMemory(xa->name + strlen(name), data, datalen);
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, rollback);
+                    
+                    break;
+                }
                 
-                delete_tree_item(Vcb, &tp, rollback);
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, rollback);
-                
-                break;
-            }
-            
-            if (xa->m + xa->n >= size) { // FIXME - test this works
-                // not found, add to end of data
-                newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
-                
-                RtlCopyMemory(newdata, tp.item->data, tp.item->size);
-                
-                xa = (DIR_ITEM*)((UINT8*)newdata + tp.item->size);
-                xa->key.obj_id = 0;
-                xa->key.obj_type = 0;
-                xa->key.offset = 0;
-                xa->transid = Vcb->superblock.generation;
-                xa->m = datalen;
-                xa->n = (UINT16)strlen(name);
-                xa->type = BTRFS_TYPE_EA;
-                RtlCopyMemory(xa->name, name, strlen(name));
-                RtlCopyMemory(xa->name + strlen(name), data, datalen);
-                
-                delete_tree_item(Vcb, &tp, rollback);
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, rollback);
-                
-                break;
-            } else {
-                xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-                size -= oldxasize;
+                if (xa->m + xa->n >= size) { // FIXME - test this works
+                    // not found, add to end of data
+                    newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
+                    
+                    RtlCopyMemory(newdata, tp.item->data, tp.item->size);
+                    
+                    xa = (DIR_ITEM*)((UINT8*)newdata + tp.item->size);
+                    xa->key.obj_id = 0;
+                    xa->key.obj_type = 0;
+                    xa->key.offset = 0;
+                    xa->transid = Vcb->superblock.generation;
+                    xa->m = datalen;
+                    xa->n = (UINT16)strlen(name);
+                    xa->type = BTRFS_TYPE_EA;
+                    RtlCopyMemory(xa->name, name, strlen(name));
+                    RtlCopyMemory(xa->name + strlen(name), data, datalen);
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, rollback);
+                    
+                    break;
+                } else {
+                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                    size -= oldxasize;
+                }
             }
         }
     } else {
@@ -561,54 +584,70 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
     if (!keycmp(&tp.item->key, &searchkey)) { // key exists
         ULONG size = tp.item->size;
         
-        xa = (DIR_ITEM*)tp.item->data;
-        
-        while (TRUE) {
-            ULONG oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             
-            if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
-                ULONG newsize;
-                UINT8 *newdata, *dioff;
+            free_traverse_ptr(&tp);
+            return FALSE;
+        } else {
+            xa = (DIR_ITEM*)tp.item->data;
+            
+            while (TRUE) {
+                ULONG oldxasize;
                 
-                newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
-                
-                delete_tree_item(Vcb, &tp, rollback);
-                
-                if (newsize == 0) {
-                    TRACE("xattr %s deleted\n", name);
+                if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     free_traverse_ptr(&tp);
+                        
+                    return FALSE;
+                }
+                
+                oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+                
+                if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
+                    ULONG newsize;
+                    UINT8 *newdata, *dioff;
                     
+                    newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (newsize == 0) {
+                        TRACE("xattr %s deleted\n", name);
+                        free_traverse_ptr(&tp);
+                        
+                        return TRUE;
+                    }
+
+                    // FIXME - deleting collisions almost certainly works, but we should test it properly anyway
+                    newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
+
+                    if ((UINT8*)xa > tp.item->data) {
+                        RtlCopyMemory(newdata, tp.item->data, (UINT8*)xa - tp.item->data);
+                        dioff = newdata + ((UINT8*)xa - tp.item->data);
+                    } else {
+                        dioff = newdata;
+                    }
+                    
+                    if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
+                        RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
+                    
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, rollback);
+                    
+                    free_traverse_ptr(&tp);
+                        
                     return TRUE;
                 }
+                
+                if (xa->m + xa->n >= size) { // FIXME - test this works
+                    WARN("xattr %s not found\n", name);
+                    free_traverse_ptr(&tp);
 
-                // FIXME - deleting collisions almost certainly works, but we should test it properly anyway
-                newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
-
-                if ((UINT8*)xa > tp.item->data) {
-                    RtlCopyMemory(newdata, tp.item->data, (UINT8*)xa - tp.item->data);
-                    dioff = newdata + ((UINT8*)xa - tp.item->data);
+                    return FALSE;
                 } else {
-                    dioff = newdata;
+                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                    size -= oldxasize;
                 }
-                
-                if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
-                    RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
-                
-                insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, rollback);
-                
-                free_traverse_ptr(&tp);
-                    
-                return TRUE;
-            }
-            
-            if (xa->m + xa->n >= size) { // FIXME - test this works
-                WARN("xattr %s not found\n", name);
-                free_traverse_ptr(&tp);
-
-                return FALSE;
-            } else {
-                xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-                size -= oldxasize;
             }
         }
     } else {
@@ -643,7 +682,10 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
         }
         
         di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
-        RtlCopyMemory(di2, tp.item->data, tp.item->size);
+        
+        if (tp.item->size > 0)
+            RtlCopyMemory(di2, tp.item->data, tp.item->size);
+        
         RtlCopyMemory(di2 + tp.item->size, di, disize);
         
         delete_tree_item(Vcb, &tp, rollback);
@@ -1012,7 +1054,7 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
 
     if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
         ERR("couldn't find any entries in subvol %llx\n", subvol->id);
-        Status = STATUS_INTERNAL_ERROR; // FIXME - correct error?
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
 
@@ -1028,14 +1070,14 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         free_traverse_ptr(&tp);
         ERR("couldn't find EXTENT_DATA for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
-        Status = STATUS_INTERNAL_ERROR; // FIXME - correct error?
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
     if (tp.item->key.offset > start) {
         ERR("first EXTENT_DATA was after offset\n");
         free_traverse_ptr(&tp);
-        Status = STATUS_INTERNAL_ERROR; // FIXME - correct error?
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -1056,6 +1098,20 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     
     do {
         ed = (EXTENT_DATA*)tp.item->data;
+        
+        if (tp.item->size < sizeof(EXTENT_DATA)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            free_traverse_ptr(&tp);
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+            free_traverse_ptr(&tp);
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
         
         if (tp.item->key.offset + ed->decoded_size < start) {
             ERR("Tried to read beyond end of file\n");
@@ -1860,44 +1916,48 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        DIR_ITEM* di;
-        LONG len;
-        
-        di = (DIR_ITEM*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            if (di->n == utf8->Length && RtlCompareMemory(di->name, utf8->Buffer, di->n) == di->n) {
-                ULONG newlen = tp.item->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
-                
-                delete_tree_item(Vcb, &tp, rollback);
-                
-                if (newlen == 0) {
-                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                } else {
-                    UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        } else {
+            DIR_ITEM* di;
+            LONG len;
+            
+            di = (DIR_ITEM*)tp.item->data;
+            len = tp.item->size;
+            
+            do {
+                if (di->n == utf8->Length && RtlCompareMemory(di->name, utf8->Buffer, di->n) == di->n) {
+                    ULONG newlen = tp.item->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
                     
-                    TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                    if ((UINT8*)di > tp.item->data) {
-                        RtlCopyMemory(newdi, tp.item->data, (UINT8*)di - tp.item->data);
-                        dioff = newdi + ((UINT8*)di - tp.item->data);
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (newlen == 0) {
+                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
-                        dioff = newdi;
+                        UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
+                        
+                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                        if ((UINT8*)di > tp.item->data) {
+                            RtlCopyMemory(newdi, tp.item->data, (UINT8*)di - tp.item->data);
+                            dioff = newdi + ((UINT8*)di - tp.item->data);
+                        } else {
+                            dioff = newdi;
+                        }
+                        
+                        if ((UINT8*)&di->name[di->n + di->m] - tp.item->data < tp.item->size)
+                            RtlCopyMemory(dioff, &di->name[di->n + di->m], tp.item->size - ((UINT8*)&di->name[di->n + di->m] - tp.item->data));
+                        
+                        insert_tree_item(Vcb, subvol, parinode, TYPE_DIR_ITEM, crc32, newdi, newlen, NULL, rollback);
                     }
                     
-                    if ((UINT8*)&di->name[di->n + di->m] - tp.item->data < tp.item->size)
-                        RtlCopyMemory(dioff, &di->name[di->n + di->m], tp.item->size - ((UINT8*)&di->name[di->n + di->m] - tp.item->data));
-                    
-                    insert_tree_item(Vcb, subvol, parinode, TYPE_DIR_ITEM, crc32, newdi, newlen, NULL, rollback);
+                    break;
                 }
                 
-                break;
-            }
-            
-            len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
-            di = (DIR_ITEM*)&di->name[di->n + di->m];
-        } while (len > 0);        
+                len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
+                di = (DIR_ITEM*)&di->name[di->n + di->m];
+            } while (len > 0);
+        }
     } else {
         WARN("could not find DIR_ITEM for crc32 %08x\n", crc32);
     }
@@ -1922,56 +1982,67 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        INODE_REF* ir;
-        ULONG len;
-        
-        ir = (INODE_REF*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            ULONG itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+        if (tp.item->size < sizeof(INODE_REF)) {
+            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+        } else {
+            INODE_REF* ir;
+            ULONG len;
             
-            if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
-                ULONG newlen = tp.item->size - itemlen;
+            ir = (INODE_REF*)tp.item->data;
+            len = tp.item->size;
+            
+            do {
+                ULONG itemlen;
                 
-                delete_tree_item(Vcb, &tp, rollback);
-                changed = TRUE;
-                
-                if (newlen == 0) {
-                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                } else {
-                    UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
-                    
-                    TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                    if ((UINT8*)ir > tp.item->data) {
-                        RtlCopyMemory(newir, tp.item->data, (UINT8*)ir - tp.item->data);
-                        iroff = newir + ((UINT8*)ir - tp.item->data);
-                    } else {
-                        iroff = newir;
-                    }
-                    
-                    if ((UINT8*)&ir->name[ir->n] - tp.item->data < tp.item->size)
-                        RtlCopyMemory(iroff, &ir->name[ir->n], tp.item->size - ((UINT8*)&ir->name[ir->n] - tp.item->data));
-                    
-                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL, rollback);
+                if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
                 }
                 
-                if (index)
-                    *index = ir->index;
+                itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
                 
-                break;
-            }
+                if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
+                    ULONG newlen = tp.item->size - itemlen;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    changed = TRUE;
+                    
+                    if (newlen == 0) {
+                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    } else {
+                        UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
+                        
+                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                        if ((UINT8*)ir > tp.item->data) {
+                            RtlCopyMemory(newir, tp.item->data, (UINT8*)ir - tp.item->data);
+                            iroff = newir + ((UINT8*)ir - tp.item->data);
+                        } else {
+                            iroff = newir;
+                        }
+                        
+                        if ((UINT8*)&ir->name[ir->n] - tp.item->data < tp.item->size)
+                            RtlCopyMemory(iroff, &ir->name[ir->n], tp.item->size - ((UINT8*)&ir->name[ir->n] - tp.item->data));
+                        
+                        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL, rollback);
+                    }
+                    
+                    if (index)
+                        *index = ir->index;
+                    
+                    break;
+                }
+                
+                if (len > itemlen) {
+                    len -= itemlen;
+                    ir = (INODE_REF*)&ir->name[ir->n];
+                } else
+                    break;
+            } while (len > 0);
             
-            if (len > itemlen) {
-                len -= itemlen;
-                ir = (INODE_REF*)&ir->name[ir->n];
-            } else
-                break;
-        } while (len > 0);
-        
-        if (!changed) {
-            WARN("found INODE_REF entry, but couldn't find filename\n");
+            if (!changed) {
+                WARN("found INODE_REF entry, but couldn't find filename\n");
+            }
         }
     } else {
         WARN("could not find INODE_REF entry for inode %llx in %llx\n", searchkey.obj_id, searchkey.offset);
@@ -1995,53 +2066,64 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        INODE_EXTREF* ier;
-        ULONG len;
-        
-        ier = (INODE_EXTREF*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            ULONG itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
+        if (tp.item->size < sizeof(INODE_EXTREF)) {
+            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_EXTREF));
+        } else {
+            INODE_EXTREF* ier;
+            ULONG len;
             
-            if (ier->dir == parinode && ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
-                ULONG newlen = tp.item->size - itemlen;
+            ier = (INODE_EXTREF*)tp.item->data;
+            len = tp.item->size;
+            
+            do {
+                ULONG itemlen;
                 
-                delete_tree_item(Vcb, &tp, rollback);
-                changed = TRUE;
-                
-                if (newlen == 0) {
-                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                } else {
-                    UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
-                    
-                    TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                    if ((UINT8*)ier > tp.item->data) {
-                        RtlCopyMemory(newier, tp.item->data, (UINT8*)ier - tp.item->data);
-                        ieroff = newier + ((UINT8*)ier - tp.item->data);
-                    } else {
-                        ieroff = newier;
-                    }
-                    
-                    if ((UINT8*)&ier->name[ier->n] - tp.item->data < tp.item->size)
-                        RtlCopyMemory(ieroff, &ier->name[ier->n], tp.item->size - ((UINT8*)&ier->name[ier->n] - tp.item->data));
-                    
-                    insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL, rollback);
+                if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
                 }
                 
-                if (index)
-                    *index = ier->index;
+                itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
                 
-                break;
-            }
-            
-            if (len > itemlen) {
-                len -= itemlen;
-                ier = (INODE_EXTREF*)&ier->name[ier->n];
-            } else
-                break;
-        } while (len > 0);
+                if (ier->dir == parinode && ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
+                    ULONG newlen = tp.item->size - itemlen;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    changed = TRUE;
+                    
+                    if (newlen == 0) {
+                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    } else {
+                        UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
+                        
+                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                        if ((UINT8*)ier > tp.item->data) {
+                            RtlCopyMemory(newier, tp.item->data, (UINT8*)ier - tp.item->data);
+                            ieroff = newier + ((UINT8*)ier - tp.item->data);
+                        } else {
+                            ieroff = newier;
+                        }
+                        
+                        if ((UINT8*)&ier->name[ier->n] - tp.item->data < tp.item->size)
+                            RtlCopyMemory(ieroff, &ier->name[ier->n], tp.item->size - ((UINT8*)&ier->name[ier->n] - tp.item->data));
+                        
+                        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL, rollback);
+                    }
+                    
+                    if (index)
+                        *index = ier->index;
+                    
+                    break;
+                }
+                
+                if (len > itemlen) {
+                    len -= itemlen;
+                    ier = (INODE_EXTREF*)&ier->name[ier->n];
+                } else
+                    break;
+            } while (len > 0);
+        }
     } else {
         WARN("couldn't find INODE_EXTREF entry either (offset = %08x)\n", (UINT32)searchkey.offset);
     }
@@ -2207,6 +2289,13 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - INODE_ITEM not found\n");
+        free_traverse_ptr(&tp);
+        Status = STATUS_INTERNAL_ERROR;
+        goto exit;
+    }
+    
+    if (tp.item->size < sizeof(INODE_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
         free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
@@ -2919,11 +3008,15 @@ static void STDCALL look_for_roots(device_extension* Vcb) {
         TRACE("(%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         
         if (tp.item->key.obj_type == TYPE_ROOT_ITEM) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;;
+            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
-            TRACE("root %llx - address %llx\n", tp.item->key.obj_id, ri->block_number);
-            
-            add_root(Vcb, tp.item->key.obj_id, ri->block_number, &tp);
+            if (tp.item->size < offsetof(ROOT_ITEM, byte_limit)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
+            } else {
+                TRACE("root %llx - address %llx\n", tp.item->key.obj_id, ri->block_number);
+                
+                add_root(Vcb, tp.item->key.obj_id, ri->block_number, &tp);
+            }
         }
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -2968,12 +3061,16 @@ static void find_disk_holes(device_extension* Vcb, device* dev) {
     
     do {
         if (tp.item->key.obj_id == dev->devitem.dev_id && tp.item->key.obj_type == TYPE_DEV_EXTENT) {
-            DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
-            
-            if (tp.item->key.offset > lastaddr)
-                add_disk_hole(&dev->disk_holes, lastaddr, tp.item->key.offset - lastaddr);
+            if (tp.item->size >= sizeof(DEV_EXTENT)) {
+                DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+                
+                if (tp.item->key.offset > lastaddr)
+                    add_disk_hole(&dev->disk_holes, lastaddr, tp.item->key.offset - lastaddr);
 
-            lastaddr = tp.item->key.offset + de->length;
+                lastaddr = tp.item->key.offset + de->length;
+            } else {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+            }
         }
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -3036,33 +3133,38 @@ static void STDCALL load_chunk_root(device_extension* Vcb) {
         
         if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM && tp.item->key.offset == 1) {
             // FIXME - this is a hack; make this work with multiple devices!
-            RtlCopyMemory(&Vcb->devices[0].devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
+            if (tp.item->size > 0)
+                RtlCopyMemory(&Vcb->devices[0].devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
-            c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
-            
-            c->size = tp.item->size;
-            c->offset = tp.item->key.offset;
-            c->used = c->oldused = 0;
-            c->space_changed = FALSE;
-            
-            c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-            RtlCopyMemory(c->chunk_item, tp.item->data, tp.item->size);
-            
-            if (c->chunk_item->num_stripes > 0) {
-                CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+            if (tp.item->size < sizeof(CHUNK_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+            } else {            
+                c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
                 
-                c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
+                c->size = tp.item->size;
+                c->offset = tp.item->key.offset;
+                c->used = c->oldused = 0;
+                c->space_changed = FALSE;
                 
-                for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                    c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
-                    TRACE("device %llu = %p\n", i, c->devices[i]);
-                }
-            } else
-                c->devices = NULL;
-            
-            InitializeListHead(&c->space);
+                c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                RtlCopyMemory(c->chunk_item, tp.item->data, tp.item->size);
+                
+                if (c->chunk_item->num_stripes > 0) {
+                    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                    
+                    c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
+                    
+                    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                        c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
+                        TRACE("device %llu = %p\n", i, c->devices[i]);
+                    }
+                } else
+                    c->devices = NULL;
+                
+                InitializeListHead(&c->space);
 
-            InsertTailList(&Vcb->chunks, &c->list_entry);
+                InsertTailList(&Vcb->chunks, &c->list_entry);
+            }
         }
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -3112,6 +3214,12 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         return FALSE;
     }
     
+    if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        free_traverse_ptr(&tp);
+        return FALSE;
+    }
+    
     fsi = (FREE_SPACE_ITEM*)tp.item->data;
     
     if (fsi->generation != Vcb->superblock.cache_generation) {
@@ -3149,6 +3257,12 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (keycmp(&tp2.item->key, &searchkey)) {
         WARN("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        free_traverse_ptr(&tp2);
+        return FALSE;
+    }
+    
+    if (tp2.item->size < sizeof(INODE_ITEM)) {
+        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(INODE_ITEM));
         free_traverse_ptr(&tp2);
         return FALSE;
     }
@@ -3366,11 +3480,16 @@ static void STDCALL find_chunk_usage(device_extension* Vcb) {
         }
         
         if (!keycmp(&searchkey, &tp.item->key)) {
-            bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
-            
-            c->used = c->oldused = bgi->used;
-            
-            TRACE("chunk %llx has %llx bytes used\n", c->offset, c->used);
+            if (tp.item->size >= sizeof(BLOCK_GROUP_ITEM)) {
+                bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
+                
+                c->used = c->oldused = bgi->used;
+                
+                TRACE("chunk %llx has %llx bytes used\n", c->offset, c->used);
+            } else {
+                ERR("(%llx;%llx,%x,%llx) is %u bytes, expected %u\n",
+                    Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+            }
         }
         
         free_traverse_ptr(&tp);

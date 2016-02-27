@@ -170,7 +170,9 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
         }
         
         ier2 = ExAllocatePoolWithTag(PagedPool, iersize, ALLOC_TAG);
-        RtlCopyMemory(ier2, tp.item->data, tp.item->size);
+        
+        if (tp.item->size > 0)
+            RtlCopyMemory(ier2, tp.item->data, tp.item->size);
         
         ier = (INODE_EXTREF*)&ier2[tp.item->size];
         ier->dir = parinode;
@@ -237,7 +239,9 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
         }
         
         ir2 = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
-        RtlCopyMemory(ir2, tp.item->data, tp.item->size);
+        
+        if (tp.item->size > 0)
+            RtlCopyMemory(ir2, tp.item->data, tp.item->size);
         
         ir = (INODE_REF*)&ir2[tp.item->size];
         ir->index = index;
@@ -565,7 +569,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     }
     
     do {
-        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM && tp.item->size > 0) {
             di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             RtlCopyMemory(di, tp.item->data, tp.item->size);
             
@@ -604,43 +608,47 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-            EXTENT_DATA* ed = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-            RtlCopyMemory(ed, tp.item->data, tp.item->size);
-            
-            // FIXME - update ed's generation
-                       
-            if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ed, tp.item->size, NULL, rollback)) {
-                ERR("error - failed to insert item\n");
-                free_traverse_ptr(&tp);
-                return STATUS_INTERNAL_ERROR;
-            }
-         
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            } else {
+                EXTENT_DATA* ed = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                RtlCopyMemory(ed, tp.item->data, tp.item->size);
                 
-                if (ed2->address != 0) {
-                    Status = add_extent_ref(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset, rollback);
+                // FIXME - update ed's generation
+                        
+                if (!insert_tree_item(Vcb, destsubvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ed, tp.item->size, NULL, rollback)) {
+                    ERR("error - failed to insert item\n");
+                    free_traverse_ptr(&tp);
+                    return STATUS_INTERNAL_ERROR;
+                }
+            
+                if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                     
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("add_extent_ref returned %08x\n", Status);
-                        free_traverse_ptr(&tp);
-                        return Status;
-                    }
-                    
-                    if (!has_hardlink) {
-                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, NULL, rollback);
-                    
+                    if (ed2->address != 0) {
+                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset, rollback);
+                        
                         if (!NT_SUCCESS(Status)) {
-                            ERR("remove_extent_ref returned %08x\n", Status);
+                            ERR("add_extent_ref returned %08x\n", Status);
                             free_traverse_ptr(&tp);
                             return Status;
                         }
+                        
+                        if (!has_hardlink) {
+                            Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, NULL, rollback);
+                        
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("remove_extent_ref returned %08x\n", Status);
+                                free_traverse_ptr(&tp);
+                                return Status;
+                            }
+                        }
                     }
                 }
+                
+                if (!has_hardlink)
+                    delete_tree_item(Vcb, &tp, rollback);
             }
-            
-            if (!has_hardlink)
-                delete_tree_item(Vcb, &tp, rollback);
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
@@ -687,35 +695,43 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
     
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_DIR_INDEX) {
-            DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-            struct _fcb* child;
-            dir_list* dl2;
-            
-            // FIXME - what about subvols?
-            if (di->key.obj_type == TYPE_INODE_ITEM) {
-                TRACE("moving inode %llx\n", di->key.obj_id);
+            if (tp.item->size < sizeof(DIR_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            } else {
+                DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+                struct _fcb* child;
+                dir_list* dl2;
                 
-                *empty = FALSE;
-                
-                Status = get_fcb_from_dir_item(fcb->Vcb, &child, fcb, fcb->subvol, di);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("get_fcb_from_dir_item returned %08x\n", Status);
-                    free_traverse_ptr(&tp);
-                    return Status;
+                if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n + di->m) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                } else {
+                    // FIXME - what about subvols?
+                    if (di->key.obj_type == TYPE_INODE_ITEM) {
+                        TRACE("moving inode %llx\n", di->key.obj_id);
+                        
+                        *empty = FALSE;
+                        
+                        Status = get_fcb_from_dir_item(fcb->Vcb, &child, fcb, fcb->subvol, di);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("get_fcb_from_dir_item returned %08x\n", Status);
+                            free_traverse_ptr(&tp);
+                            return Status;
+                        }
+                        
+                        
+                        dl2 = ExAllocatePoolWithTag(PagedPool, sizeof(dir_list), ALLOC_TAG);
+                        dl2->fcb = child;
+                        dl2->level = level;
+                        dl2->newparinode = newparinode;
+                        
+                        dl2->utf8.Length = dl2->utf8.MaximumLength = di->n;
+                        dl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dl2->utf8.MaximumLength, ALLOC_TAG);
+                        RtlCopyMemory(dl2->utf8.Buffer, di->name, dl2->utf8.Length);
+                        dl2->crc32 = calc_crc32c(0xfffffffe, (UINT8*)dl2->utf8.Buffer, (ULONG)dl2->utf8.Length);
+                        
+                        InsertTailList(dl, &dl2->list_entry);
+                    }
                 }
-                
-                
-                dl2 = ExAllocatePoolWithTag(PagedPool, sizeof(dir_list), ALLOC_TAG);
-                dl2->fcb = child;
-                dl2->level = level;
-                dl2->newparinode = newparinode;
-                
-                dl2->utf8.Length = dl2->utf8.MaximumLength = di->n;
-                dl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dl2->utf8.MaximumLength, ALLOC_TAG);
-                RtlCopyMemory(dl2->utf8.Buffer, di->name, dl2->utf8.Length);
-                dl2->crc32 = calc_crc32c(0xfffffffe, (UINT8*)dl2->utf8.Buffer, (ULONG)dl2->utf8.Length);
-                
-                InsertTailList(dl, &dl2->list_entry);
             }
         }
         
@@ -842,52 +858,63 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
-        ROOT_REF* rr;
-        ULONG len;
-        
-        rr = (ROOT_REF*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            ULONG itemlen = sizeof(ROOT_REF) - sizeof(char) + rr->n;
+        if (tp.item->size < sizeof(ROOT_REF)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+        } else {
+            ROOT_REF* rr;
+            ULONG len;
             
-            if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
-                ULONG newlen = tp.item->size - itemlen;
+            rr = (ROOT_REF*)tp.item->data;
+            len = tp.item->size;
+            
+            do {
+                ULONG itemlen;
                 
-                delete_tree_item(Vcb, &tp, rollback);
-                
-                if (newlen == 0) {
-                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                } else {
-                    UINT8 *newrr = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
-                    
-                    TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                    if ((UINT8*)rr > tp.item->data) {
-                        RtlCopyMemory(newrr, tp.item->data, (UINT8*)rr - tp.item->data);
-                        rroff = newrr + ((UINT8*)rr - tp.item->data);
-                    } else {
-                        rroff = newrr;
-                    }
-                    
-                    if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
-                        RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
-                    
-                    insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, rollback);
+                if (len < sizeof(ROOT_REF) || len < sizeof(ROOT_REF) - 1 + rr->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
                 }
                 
-                if (index)
-                    *index = rr->index;
+                itemlen = sizeof(ROOT_REF) - sizeof(char) + rr->n;
                 
-                break;
-            }
-            
-            if (len > itemlen) {
-                len -= itemlen;
-                rr = (ROOT_REF*)&rr->name[rr->n];
-            } else
-                break;
-        } while (len > 0);        
+                if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
+                    ULONG newlen = tp.item->size - itemlen;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (newlen == 0) {
+                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    } else {
+                        UINT8 *newrr = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
+                        
+                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                        if ((UINT8*)rr > tp.item->data) {
+                            RtlCopyMemory(newrr, tp.item->data, (UINT8*)rr - tp.item->data);
+                            rroff = newrr + ((UINT8*)rr - tp.item->data);
+                        } else {
+                            rroff = newrr;
+                        }
+                        
+                        if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
+                            RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
+                        
+                        insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, rollback);
+                    }
+                    
+                    if (index)
+                        *index = rr->index;
+                    
+                    break;
+                }
+                
+                if (len > itemlen) {
+                    len -= itemlen;
+                    rr = (ROOT_REF*)&rr->name[rr->n];
+                } else
+                    break;
+            } while (len > 0);
+        }
     } else {
         WARN("could not find ROOT_REF entry for subvol %llx in %llx\n", searchkey.offset, searchkey.obj_id);
     }
@@ -915,7 +942,10 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         UINT8* rr2;
         
         rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
-        RtlCopyMemory(rr2, tp.item->data, tp.item->size);
+        
+        if (tp.item->size > 0)
+            RtlCopyMemory(rr2, tp.item->data, tp.item->size);
+        
         RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
         ExFreePool(rr);
         
@@ -923,12 +953,14 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         
         if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, rollback)) {
             ERR("error - failed to insert item\n");
+            ExFreePool(rr2);
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
         if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, rollback)) {
             ERR("error - failed to insert item\n");
+            ExFreePool(rr);
             free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
@@ -954,7 +986,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) {
+    if (!keycmp(&tp.item->key, &searchkey) && tp.item->size > 0) {
         datalen = tp.item->size;
         
         data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
@@ -982,6 +1014,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     if (datalen > 0) {
         if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, rollback)) {
             ERR("error - failed to insert item\n");
+            ExFreePool(data);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -1632,6 +1665,12 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             return STATUS_INTERNAL_ERROR;
         }
         
+        if (tp.item->size < datalen) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
         maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
         
         free_traverse_ptr(&tp);
@@ -1759,6 +1798,12 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         oldalloc = 0;
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
             oldalloc = tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size;
         }
         
@@ -2196,16 +2241,25 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            ULONG len = tp.item->size;
-            DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
-            
-            do {
-                if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref))
-                    num_streams++;
+            if (tp.item->size < sizeof(DIR_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            } else {
+                ULONG len = tp.item->size;
+                DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
                 
-                len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
-                xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
-            } while (len > 0);
+                do {
+                    if (len < sizeof(DIR_ITEM) || len < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                        ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        break;
+                    }
+                    
+                    if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref))
+                        num_streams++;
+                    
+                    len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
+                    xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
+                } while (len > 0);
+            }
         }
         
         b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
@@ -2237,54 +2291,63 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     i = 1;
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            ULONG len = tp.item->size;
-            DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
-            ULONG stringlen;
-            
-            do {
-                if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref)) {
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
-                    if (!NT_SUCCESS(Status)) {
-                        UINT64 j;
-                        
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        
-                        for (j = i; j < num_streams; j++)
-                            streams[j].name.Buffer = NULL;
-                        
-                        goto end;
-                    }
-                    
-                    streams[i].name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                        
-                    Status = RtlUTF8ToUnicodeN(streams[i].name.Buffer, stringlen, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        UINT64 j;
-                        
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        
-                        ExFreePool(streams[i].name.Buffer);
-                        for (j = i; j < num_streams; j++)
-                            streams[j].name.Buffer = NULL;
-                        
-                        goto end;
-                    }
-                    
-                    streams[i].name.Length = streams[i].name.MaximumLength = stringlen;
-                    
-                    streams[i].size = xa->m;
-                    reqsize = sector_align(reqsize, sizeof(LONGLONG));
-                    reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + streams[i].name.Length;
-                    
-                    TRACE("streams[%llu].name = %.*S (length = %u)\n", i, streams[i].name.Length / sizeof(WCHAR), streams[i].name.Buffer, streams[i].name.Length / sizeof(WCHAR));
-
-                    i++;
-                }
+            if (tp.item->size < sizeof(DIR_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            } else {
+                ULONG len = tp.item->size;
+                DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
+                ULONG stringlen;
                 
-                len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
-                xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
-            } while (len > 0);
+                do {
+                    if (len < sizeof(DIR_ITEM) || len < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                        ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        break;
+                    }
+                    
+                    if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref)) {
+                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
+                        if (!NT_SUCCESS(Status)) {
+                            UINT64 j;
+                            
+                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                            
+                            for (j = i; j < num_streams; j++)
+                                streams[j].name.Buffer = NULL;
+                            
+                            goto end;
+                        }
+                        
+                        streams[i].name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                            
+                        Status = RtlUTF8ToUnicodeN(streams[i].name.Buffer, stringlen, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            UINT64 j;
+                            
+                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                            
+                            ExFreePool(streams[i].name.Buffer);
+                            for (j = i; j < num_streams; j++)
+                                streams[j].name.Buffer = NULL;
+                            
+                            goto end;
+                        }
+                        
+                        streams[i].name.Length = streams[i].name.MaximumLength = stringlen;
+                        
+                        streams[i].size = xa->m;
+                        reqsize = sector_align(reqsize, sizeof(LONGLONG));
+                        reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + streams[i].name.Length;
+                        
+                        TRACE("streams[%llu].name = %.*S (length = %u)\n", i, streams[i].name.Length / sizeof(WCHAR), streams[i].name.Buffer, streams[i].name.Length / sizeof(WCHAR));
+
+                        i++;
+                    }
+                    
+                    len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
+                    xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
+                } while (len > 0);
+            }
         }
         
         b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
