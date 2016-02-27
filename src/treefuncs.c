@@ -49,6 +49,17 @@ typedef struct {
     read_tree_stripe* stripes;
 } read_tree_context;
 
+enum rollback_type {
+    ROLLBACK_INSERT_ITEM,
+    ROLLBACK_DELETE_ITEM
+};
+
+typedef struct {
+    enum rollback_type type;
+    void* ptr;
+    LIST_ENTRY list_entry;
+} rollback_item;
+
 static NTSTATUS STDCALL read_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_tree_stripe* stripe = conptr;
     read_tree_context* context = (read_tree_context*)stripe->context;
@@ -941,6 +952,16 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
 //     print_trees(tc);
 }
 
+static void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
+    rollback_item* ri;
+    
+    ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+    
+    ri->type = type;
+    ri->ptr = ptr;
+    InsertTailList(rollback, &ri->list_entry);
+}
+
 BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
@@ -1042,6 +1063,8 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     // FIXME - free this correctly
     
+    add_rollback(rollback, ROLLBACK_INSERT_ITEM, td);
+    
     return TRUE;
 }
 
@@ -1085,6 +1108,8 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 // 
 //         delete_tree_item(&tp2, tc);
 //     }
+
+    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp->item);
 }
 
 void clear_rollback(LIST_ENTRY* rollback) {
