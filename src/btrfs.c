@@ -1538,7 +1538,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
                                          
             // should also be FILE_FILE_COMPRESSION when supported
             data->MaximumComponentNameLength = 255; // FIXME - check
-            data->FileSystemNameLength = orig_fs_name_len * sizeof(WCHAR);
+            data->FileSystemNameLength = orig_fs_name_len;
             RtlCopyMemory(data->FileSystemName, fs_name, fs_name_len);
             
             BytesCopied = sizeof(FILE_FS_ATTRIBUTE_INFORMATION) - sizeof(WCHAR) + fs_name_len;
