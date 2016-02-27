@@ -972,6 +972,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     LIST_ENTRY* le;
     KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
+    traverse_ptr* tp2;
     
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, tc, ptp);
     
@@ -1063,7 +1064,11 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     // FIXME - free this correctly
     
-    add_rollback(rollback, ROLLBACK_INSERT_ITEM, td);
+    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2->tree = tp.tree;
+    tp2->item = td;
+    
+    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
     return TRUE;
 }
@@ -1071,6 +1076,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
+    traverse_ptr* tp2;
 
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
     
@@ -1109,15 +1115,76 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 //         delete_tree_item(&tp2, tc);
 //     }
 
-    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp->item);
+    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2->tree = tp->tree;
+    tp2->item = tp->item;
+
+    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
 }
 
 void clear_rollback(LIST_ENTRY* rollback) {
-    // FIXME
+    LIST_ENTRY* le;
+    rollback_item* ri;
+    
+    while ((le = RemoveHeadList(rollback)) != rollback) {
+        ri = CONTAINING_RECORD(le, rollback_item, list_entry);
+        
+        switch (ri->type) {
+            case ROLLBACK_INSERT_ITEM:
+            case ROLLBACK_DELETE_ITEM:
+                ExFreePool(ri->ptr);
+                break;
+        }
+        
+        ExFreePool(ri);
+    }
 }
 
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
-    // FIXME
+    LIST_ENTRY* le;
+    rollback_item* ri;
     
-    clear_rollback(rollback);
+    while ((le = RemoveHeadList(rollback)) != rollback) {
+        ri = CONTAINING_RECORD(le, rollback_item, list_entry);
+        
+        switch (ri->type) {
+            case ROLLBACK_INSERT_ITEM:
+            {
+                traverse_ptr* tp = ri->ptr;
+                
+                if (!tp->item->ignore) {
+                    tp->item->ignore = TRUE;
+                    tp->tree->header.num_items--;
+                
+                    if (tp->tree->header.level == 0)
+                        tp->tree->size -= sizeof(leaf_node) + tp->item->size;
+                    else
+                        tp->tree->size -= sizeof(internal_node);
+                }
+                
+                ExFreePool(tp);
+                break;
+            }
+                
+            case ROLLBACK_DELETE_ITEM:
+            {
+                traverse_ptr* tp = ri->ptr;
+                
+                if (tp->item->ignore) {
+                    tp->item->ignore = FALSE;
+                    tp->tree->header.num_items++;
+                
+                    if (tp->tree->header.level == 0)
+                        tp->tree->size += sizeof(leaf_node) + tp->item->size;
+                    else
+                        tp->tree->size += sizeof(internal_node);
+                }
+                
+                ExFreePool(tp);
+                break;
+            }
+        }
+        
+        ExFreePool(ri);
+    }
 }
