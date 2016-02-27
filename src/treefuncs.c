@@ -941,7 +941,7 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
 //     print_trees(tc);
 }
 
-BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, SINGLE_LIST_ENTRY* rollback) {
+BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -1045,7 +1045,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     return TRUE;
 }
 
-void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, SINGLE_LIST_ENTRY* rollback) {
+void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
 
@@ -1087,11 +1087,11 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, SINGLE_LI
 //     }
 }
 
-void clear_rollback(SINGLE_LIST_ENTRY* rollback) {
+void clear_rollback(LIST_ENTRY* rollback) {
     // FIXME
 }
 
-void do_rollback(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
     // FIXME
     
     clear_rollback(rollback);

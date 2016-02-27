@@ -859,7 +859,7 @@ static NTSTATUS STDCALL attach_fcb_to_fileobject(device_extension* Vcb, fcb* fcb
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, fcb* parfcb, ULONG options, fcb** pfcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, fcb* parfcb, ULONG options, fcb** pfcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -1110,7 +1110,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb *fcb, *parfcb = NULL;
     ULONG i, j;
@@ -1541,7 +1541,7 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
     }
 }
 
-static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_ITEM* newii;
@@ -1571,7 +1571,7 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION Stack;
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
@@ -1862,11 +1862,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = NULL;
     BOOL top_level;
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
     TRACE("create (flags = %x)\n", Irp->Flags);
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     FsRtlEnterFileSystem();
     

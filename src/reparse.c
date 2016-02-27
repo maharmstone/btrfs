@@ -221,7 +221,7 @@ end:
     return Status;
 }
 
-static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subvol, UINT64 parinode, UINT64 index, PANSI_STRING utf8, UINT8 type, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subvol, UINT64 parinode, UINT64 index, PANSI_STRING utf8, UINT8 type, LIST_ENTRY* rollback) {
     KEY searchkey;
     UINT32 crc32;
     traverse_ptr tp;
@@ -310,13 +310,13 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL b;
     LARGE_INTEGER offset;
     USHORT i;
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
     // FIXME - send notification if this succeeds? The attributes will have changed.
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     if (!FileObject) {
         ERR("FileObject was NULL\n");

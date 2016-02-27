@@ -420,7 +420,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     return FALSE;
 }
 
-void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, SINGLE_LIST_ENTRY* rollback) {
+void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     ULONG xasize;
@@ -528,7 +528,7 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     free_traverse_ptr(&tp);
 }
 
-BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, SINGLE_LIST_ENTRY* rollback) {
+BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* xa;
@@ -605,7 +605,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
     }
 }
 
-NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* di2;
@@ -1832,7 +1832,7 @@ end:
     return Status;
 }
 
-NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -1893,7 +1893,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
     return STATUS_SUCCESS;
 }
 
-NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     BOOL changed = FALSE;
@@ -2037,7 +2037,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     ULONG bytecount;
     NTSTATUS Status;
     char* utf8 = NULL;
@@ -2518,8 +2518,8 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
         
         if (fcb->open_count == 1 && fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
-            SINGLE_LIST_ENTRY rollback;
-            rollback.Next = NULL;
+            LIST_ENTRY rollback;
+            InitializeListHead(&rollback);
             
             acquire_tree_lock(fcb->Vcb, TRUE);
             

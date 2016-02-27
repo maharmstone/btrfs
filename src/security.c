@@ -760,11 +760,11 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     traverse_ptr tp;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
     TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, flags);
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;

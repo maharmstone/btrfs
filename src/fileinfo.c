@@ -17,7 +17,7 @@
 
 #include "btrfs_drv.h"
 
-static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ULONG defda;
@@ -144,7 +144,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_EXTREF* ier;
@@ -205,7 +205,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
     return STATUS_SUCCESS;
 }
 
-NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_REF* ir;
@@ -368,7 +368,7 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
 //     return rc;
 // }
 
-static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, UINT64 inode, UINT64 oldparinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, UINT64 inode, UINT64 oldparinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, LIST_ENTRY* rollback) {
     UINT64 oldindex, index;
     UINT32 oldcrc32;
     INODE_ITEM* ii;
@@ -716,7 +716,7 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, LIST_ENTRY* rollback) {
     UINT64 inode, oldparinode;
     NTSTATUS Status;
     LIST_ENTRY dl;
@@ -810,7 +810,7 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -879,7 +879,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -921,7 +921,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
@@ -971,7 +971,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb* destfcb, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb* destfcb, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
     DIR_ITEM* di;
     NTSTATUS Status;
     KEY searchkey;
@@ -1121,7 +1121,7 @@ static BOOL has_open_children(fcb* fcb) {
     return FALSE;
 }
 
-static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *oldparfcb, *oldfcb;
     root* parsubvol;
@@ -1557,7 +1557,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     LARGE_INTEGER time;
@@ -1680,7 +1680,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     NTSTATUS Status;
@@ -1834,9 +1834,9 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     device_extension* Vcb = DeviceObject->DeviceExtension;
     fcb* fcb = IrpSp->FileObject->FsContext;
     BOOL top_level;
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     FsRtlEnterFileSystem();
     

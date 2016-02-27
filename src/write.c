@@ -62,9 +62,9 @@ typedef struct {
     BOOL deleted;
 } changed_sector;
 
-static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, SINGLE_LIST_ENTRY* rollback);
+static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
-static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, SINGLE_LIST_ENTRY* rollback);
+static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -459,7 +459,7 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     return lastaddr;
 }
 
-static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64 size, SINGLE_LIST_ENTRY* rollback) {
+static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64 size, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
@@ -615,7 +615,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     return STATUS_SUCCESS;
 }
 
-static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, SINGLE_LIST_ENTRY* rollback) {
+static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     UINT64 max_stripe_size, max_chunk_size, stripe_size;
     UINT64 total_size = 0, i, j, logaddr;
     int num_stripes;
@@ -1019,7 +1019,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
     return TRUE;
 }
 
-static NTSTATUS add_parents(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     
     le = Vcb->tree_cache.Flink;
@@ -1133,7 +1133,7 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     free_traverse_ptr(&tp);
 }
 
-static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, UINT64 address, SINGLE_LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
     EXTENT_ITEM_SKINNY_METADATA* eism;
     traverse_ptr insert_tp;
     
@@ -1163,7 +1163,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, 
     return TRUE;
 }
 
-static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, SINGLE_LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_ENTRY* rollback) {
     UINT64 address;
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
@@ -1212,7 +1212,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, SINGLE_
     return TRUE;
 }
 
-static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
     UINT64 flags = t->flags;
@@ -1267,7 +1267,7 @@ static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, SINGLE_LIST
     return STATUS_DISK_FULL;
 }
 
-static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, SINGLE_LIST_ENTRY* rollback) {
+static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     chunk* c;
@@ -1368,7 +1368,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
 //     }    
 // }
 
-static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, SINGLE_LIST_ENTRY* rollback) {
+static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, tp2, insert_tp;
     EXTENT_REF_V0* erv0;
@@ -1457,7 +1457,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     free_traverse_ptr(&tp);
 }
 
-static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_ITEM* ei;
@@ -1602,7 +1602,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS allocate_tree_extents(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -1648,7 +1648,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, SINGLE_LIST_ENTRY* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_root_root(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     
     TRACE("(%p)\n", Vcb);
@@ -2217,7 +2217,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunk_usage(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
@@ -2582,7 +2582,7 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
@@ -2763,7 +2763,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, SINGLE_LIST_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL do_splits(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
 //     LIST_ENTRY *le, *le2;
 //     write_tree* wt;
 //     tree_data* td;
@@ -2970,7 +2970,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, SINGLE_LIST_ENTRY* roll
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL do_write(device_extension* Vcb, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
@@ -3107,7 +3107,7 @@ static UINT64 get_extent_data_ref_hash(UINT64 root, UINT64 objid, UINT64 offset)
     return ((UINT64)high_crc << 31) ^ (UINT64)low_crc;
 }
 
-NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_ITEM* ei;
@@ -3303,7 +3303,7 @@ static void free_data_refs(LIST_ENTRY* data_refs) {
     }
 }
 
-static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
@@ -3470,7 +3470,7 @@ static void free_extent_refs(LIST_ENTRY* extent_refs) {
     }
 }
 
-static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     LIST_ENTRY extent_refs;
@@ -3683,7 +3683,7 @@ static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len) {
     return FALSE;
 }
 
-NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_ITEM* ei;
@@ -3880,7 +3880,7 @@ static __inline BOOL entry_in_ordered_list(LIST_ENTRY* list, UINT64 value) {
     return FALSE;
 }
 
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -4196,7 +4196,7 @@ end:
     return Status;
 }
 
-static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_ITEM_DATA_REF* eidr;
@@ -4282,7 +4282,7 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
 }
 
 static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                        LIST_ENTRY* changed_sector_list, traverse_ptr* edtp, traverse_ptr* eitp, SINGLE_LIST_ENTRY* rollback) {
+                        LIST_ENTRY* changed_sector_list, traverse_ptr* edtp, traverse_ptr* eitp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     EXTENT_ITEM* ei;
@@ -4356,7 +4356,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 }
 
 static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+                            LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, tp2;
     BOOL success = FALSE;
@@ -4511,7 +4511,7 @@ end:
     return success;
 }
 
-NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     
@@ -4550,7 +4550,7 @@ NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT
 //     }
 // }
 
-static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
@@ -4660,7 +4660,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     return STATUS_DISK_FULL;
 }
 
-void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = changed_sector_list->Flink;
     changed_sector* cs;
     traverse_ptr tp, next_tp;
@@ -4814,7 +4814,7 @@ exit:
     }
 }
 
-NTSTATUS truncate_file(fcb* fcb, UINT64 end, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     LIST_ENTRY changed_sector_list;
     NTSTATUS Status;
     BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
@@ -4870,7 +4870,7 @@ static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
     return rc;
 }
 
-static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, SINGLE_LIST_ENTRY* rollback) {
+static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -5183,7 +5183,7 @@ failure2:
 // }
 #endif
 
-NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, SINGLE_LIST_ENTRY* rollback) {
+NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     KEY searchkey;
@@ -5596,9 +5596,9 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
     BOOL locked = FALSE;
 //     LARGE_INTEGER freq, time1, time2;
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;

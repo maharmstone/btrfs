@@ -20,9 +20,9 @@
 #define INTERVAL 15000 // in milliseconds
 
 static void do_flush(device_extension* Vcb) {
-    SINGLE_LIST_ENTRY rollback;
+    LIST_ENTRY rollback;
     
-    rollback.Next = NULL;
+    InitializeListHead(&rollback);
     
     FsRtlEnterFileSystem();
 
