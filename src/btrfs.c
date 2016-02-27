@@ -304,8 +304,10 @@ BOOL is_top_level(PIRP Irp) {
 
 static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     UNICODE_STRING dosdevice_nameW;
+    LIST_ENTRY* le;
+    uid_map* um;
 
-    TRACE("DriverUnload\n");
+    ERR("DriverUnload\n");
     
     free_cache();
     
@@ -316,6 +318,14 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
 
     IoDeleteSymbolicLink(&dosdevice_nameW);
     IoDeleteDevice(DriverObject->DeviceObject);
+    
+    while ((le = RemoveHeadList(&uid_map_list)) != &uid_map_list) {
+        um = CONTAINING_RECORD(le, uid_map, listentry);
+        
+        ExFreePool(um->sid);
+
+        ExFreePool(um);
+    }
     
     // FIXME - free volumes
     
@@ -3972,11 +3982,9 @@ end:
 
 static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
-    LIST_ENTRY* le;
-    uid_map* um;
     BOOL top_level;
 
-    TRACE("shutdown\n");
+    ERR("shutdown\n");
     
     FsRtlEnterFileSystem();
 
@@ -3985,15 +3993,6 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     Status = STATUS_SUCCESS;
     
     // FIXME - free Vcb->devices
-    
-    // FIXME - only do this when last device is unmounted?
-    while ((le = RemoveHeadList(&uid_map_list)) != &uid_map_list) {
-        um = CONTAINING_RECORD(le, uid_map, listentry);
-        
-        ExFreePool(um->sid);
-
-        ExFreePool(um);
-    }
     
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
