@@ -41,6 +41,10 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     }
     
     oni = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    if (!oni) {
+        ERR("out of memory\n");
+        goto end;
+    }
     
     Status = ObQueryNameString(FileObject->DeviceObject, oni, len, &len);
     
@@ -51,6 +55,10 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     }
        
     data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        goto end;
+    }
     
     Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, 0, fcb->inode_item.st_size, NULL);
     
@@ -71,6 +79,10 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     }
     
     utf16 = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+    if (!utf16) {
+        ERR("out of memory\n");
+        goto end;
+    }
 
     Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, (char*)data, fcb->inode_item.st_size);
 
@@ -86,6 +98,11 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     } else { // relative path
         abspath.MaximumLength = fcb->par->full_filename.Length + sizeof(WCHAR) + stringlen;
         abspath.Buffer = ExAllocatePoolWithTag(PagedPool, abspath.MaximumLength, ALLOC_TAG);
+        if (!abspath.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(utf16);
+            goto end;
+        }
         
         RtlCopyMemory(abspath.Buffer, fcb->par->full_filename.Buffer, fcb->par->full_filename.Length);
         abspath.Length = fcb->par->full_filename.Length;
@@ -118,6 +135,12 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
         ExFreePool(FileObject->FileName.Buffer);
         FileObject->FileName.MaximumLength = oni->Name.Length + abspath.Length;
         FileObject->FileName.Buffer = ExAllocatePoolWithTag(PagedPool, FileObject->FileName.MaximumLength, ALLOC_TAG);
+        
+        if (!FileObject->FileName.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(abspath.Buffer);
+            goto end;
+        }
     }
     
     RtlCopyMemory(FileObject->FileName.Buffer, oni->Name.Buffer, oni->Name.Length);
@@ -155,6 +178,12 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     }
     
     data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
     TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
     Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
     
@@ -245,6 +274,12 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
             BOOL found = FALSE;
             ULONG len = tp.item->size;
             
+            if (!di) {
+                ERR("out of memory\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             RtlCopyMemory(di, tp.item->data, tp.item->size);
             
             di2 = di;
@@ -294,6 +329,12 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
         } else {
             DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
             DIR_ITEM* di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!di2) {
+                ERR("out of memory\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             RtlCopyMemory(di2, di, tp.item->size);
             di2->type = type;
             
@@ -524,6 +565,11 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     target.MaximumLength = target.Length;
     target.Buffer = ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
+    if (!target.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
     
     Status = RtlUnicodeToUTF8N(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
     if (!NT_SUCCESS(Status)) {

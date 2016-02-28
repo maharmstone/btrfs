@@ -62,6 +62,11 @@ static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, PDEV
     
     tnsize = sizeof(MOUNTMGR_TARGET_NAME) - sizeof(WCHAR) + us->Length;
     tn = ExAllocatePoolWithTag(NonPagedPool, tnsize, ALLOC_TAG);
+    if (!tn) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     tn->DeviceNameLength = us->Length;
     RtlCopyMemory(tn->DeviceName, us->Buffer, tn->DeviceNameLength);
     
@@ -88,6 +93,11 @@ static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, PDEV
     mmdltsize = sizeof(MOUNTMGR_DRIVE_LETTER_TARGET) - 1 + us->Length;
     
     mmdlt = ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
+    if (!mmdlt) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     mmdlt->DeviceNameLength = us->Length;
     RtlCopyMemory(&mmdlt->DeviceName, us->Buffer, us->Length);
     TRACE("mmdlt = %.*S\n", mmdlt->DeviceNameLength / sizeof(WCHAR), mmdlt->DeviceName);
@@ -132,6 +142,11 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     us2.Length = ((wcslen(devpath) + 1) * sizeof(WCHAR)) + us->Length;
     us2.MaximumLength = us2.Length;
     us2.Buffer = ExAllocatePoolWithTag(PagedPool, us2.Length, ALLOC_TAG);
+    if (!us2.Buffer) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     RtlCopyMemory(us2.Buffer, devpath, wcslen(devpath) * sizeof(WCHAR));
     us2.Buffer[wcslen(devpath)] = '\\';
     RtlCopyMemory(&us2.Buffer[wcslen(devpath)+1], us->Buffer, us->Length);
@@ -150,6 +165,10 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     
     toread = sector_align(sizeof(superblock), DeviceObject->SectorSize);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        goto deref;
+    }
 
     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, data, toread, &Offset, &Event, &IoStatusBlock);
     
@@ -168,6 +187,10 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
         volume* v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
+        if (!v) {
+            ERR("out of memory\n");
+            goto deref;
+        }
         
         v->devobj = DeviceObject;
         RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
@@ -235,6 +258,10 @@ void STDCALL look_for_vols(LIST_ENTRY* volumes) {
     
     odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
     odi = ExAllocatePoolWithTag(PagedPool, odisize, ALLOC_TAG);
+    if (!odi) {
+        ERR("out of memory\n");
+        return;
+    }
     
     restart = TRUE;
     do {

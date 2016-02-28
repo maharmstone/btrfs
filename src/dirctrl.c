@@ -613,6 +613,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
         
         uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+        if (!uni_fn) {
+            ERR("out of memory\n");
+            if (tp.tree) free_traverse_ptr(&tp);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
         
         Status = RtlUTF8ToUnicodeN(uni_fn, stringlen, &stringlen, de.name, de.namelen);
         
@@ -638,6 +644,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 }
                 
                 uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                if (!uni_fn) {
+                    ERR("out of memory\n");
+                    if (tp.tree) free_traverse_ptr(&tp);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
                 
                 Status = RtlUTF8ToUnicodeN(uni_fn, stringlen, &stringlen, de.name, de.namelen);
                 
@@ -706,6 +718,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         }
                         
                         uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                        if (!uni_fn) {
+                            ERR("out of memory\n");
+                            if (tp.tree) free_traverse_ptr(&tp);
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }
                         
                         Status = RtlUTF8ToUnicodeN(uni_fn, stringlen, &stringlen, de.name, de.namelen);
                         

@@ -141,6 +141,11 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
                     cis = (CHUNK_ITEM_STRIPE*)&chunk_item[1];
                     
                     devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
+                    if (!devices) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
                     for (i = 0; i < ci->num_stripes; i++) {
                         devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
                     }
@@ -182,10 +187,21 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context, sizeof(read_tree_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
     context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_stripe) * ci->num_stripes, ALLOC_TAG);
+    if (!context->stripes) {
+        ERR("out of memory\n");
+        ExFreePool(context);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context->stripes, sizeof(read_tree_stripe) * ci->num_stripes);
     
     context->buflen = Vcb->superblock.node_size;
@@ -205,6 +221,12 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
         } else {
             context->stripes[i].context = (struct read_tree_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+            
+            if (!context->stripes[i].buf) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
 
             context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
             
@@ -337,6 +359,10 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     TRACE("(%p, %llx)\n", Vcb, addr);
     
     buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    if (!buf) {
+        ERR("out of memory\n");
+        return NULL;
+    }
     
     Status = read_tree(Vcb, addr, buf);
     if (!NT_SUCCESS(Status)) {
@@ -348,6 +374,11 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     th = (tree_header*)buf;
     
     t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+    if (!t) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
 //     t->address = addr;
 //     t->level = th->level;
@@ -385,10 +416,20 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
         
         for (i = 0; i < t->header.num_items; i++) {
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            if (!td) {
+                ERR("out of memory\n");
+                return NULL;
+            }
+            
             td->key = ln[i].key;
 //             TRACE("load_tree: leaf item %u (%x,%x,%x)\n", i, (UINT32)ln[i].key.obj_id, ln[i].key.obj_type, (UINT32)ln[i].key.offset);
             
             td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
+            if (!td->data) {
+                ERR("out of memory\n");
+                return NULL;
+            }
+            
             RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
             td->size = ln[i].size;
             td->ignore = FALSE;
@@ -406,6 +447,11 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
         
         for (i = 0; i < t->header.num_items; i++) {
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            if (!td) {
+                ERR("out of memory\n");
+                return NULL;
+            }
+            
             td->key = in[i].key;
 //             TRACE("load_tree: internal item %u (%x,%x,%x)\n", i, (UINT32)in[i].key.obj_id, in[i].key.obj_type, (UINT32)in[i].key.offset);
             
@@ -914,6 +960,10 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
     }
     
     tc2 = ExAllocatePoolWithTag(PagedPool, sizeof(tree_cache), ALLOC_TAG);
+    if (!tc2) {
+        ERR("out of memory\n");
+        return;
+    }
     
     TRACE("adding %p to tree cache\n", t);
     
@@ -929,6 +979,10 @@ static void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* pt
     rollback_item* ri;
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+    if (!ri) {
+        ERR("out of memory\n");
+        return;
+    }
     
     ri->type = type;
     ri->ptr = ptr;
@@ -982,6 +1036,12 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     }
     
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    if (!td) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        return FALSE;
+    }
+    
     td->key = searchkey;
     td->size = size;
     td->data = data;
@@ -1038,6 +1098,11 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     // FIXME - free this correctly
     
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    if (!tp2) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
     tp2->tree = tp.tree;
     tp2->item = td;
     
@@ -1089,6 +1154,11 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 //     }
 
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    if (!tp2) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     tp2->tree = tp->tree;
     tp2->item = tp->item;
 

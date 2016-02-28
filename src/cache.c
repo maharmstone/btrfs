@@ -48,13 +48,19 @@ static void STDCALL release_from_read_ahead(PVOID Context) {
     TRACE("(%p)\n", Context);
 }
 
-void STDCALL init_cache() {
+NTSTATUS STDCALL init_cache() {
     cache_callbacks = ExAllocatePoolWithTag(NonPagedPool, sizeof(CACHE_MANAGER_CALLBACKS), ALLOC_TAG);
+    if (!cache_callbacks) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     cache_callbacks->AcquireForLazyWrite = acquire_for_lazy_write;
     cache_callbacks->ReleaseFromLazyWrite = release_from_lazy_write;
     cache_callbacks->AcquireForReadAhead = acquire_for_read_ahead;
     cache_callbacks->ReleaseFromReadAhead = release_from_read_ahead;
+    
+    return STATUS_SUCCESS;
 }
 
 void STDCALL free_cache() {

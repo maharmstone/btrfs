@@ -69,6 +69,12 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                     WCHAR* utf16 = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                     UNICODE_STRING us;
                     
+                    if (!utf16) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return FALSE;
+                    }
+                    
                     Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, di->name, di->n);
 
                     if (!NT_SUCCESS(Status)) {
@@ -96,6 +102,13 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                 utf8->MaximumLength = di->n;
                                 utf8->Length = utf8->MaximumLength;
                                 utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
+                                if (!utf8->Buffer) {
+                                    ERR("out of memory\n");
+                                    free_traverse_ptr(&tp);
+                                    ExFreePool(utf16);
+                                    return FALSE;
+                                }
+                                
                                 RtlCopyMemory(utf8->Buffer, di->name, di->n);
                             }
                             
@@ -162,6 +175,13 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                 WCHAR* utf16 = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                 UNICODE_STRING us;
                 
+                if (!utf16) {
+                    ERR("out of memory\n");
+                    
+                    free_traverse_ptr(&tp);
+                    return FALSE;
+                }
+                
                 Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, di->name, di->n);
 
                 if (!NT_SUCCESS(Status)) {
@@ -190,6 +210,14 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             utf8->MaximumLength = di->n;
                             utf8->Length = utf8->MaximumLength;
                             utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
+                            if (!utf8->Buffer) {
+                                ERR("out of memory\n");
+                                free_traverse_ptr(&tp);
+                                ExFreePool(utf16);
+                                
+                                return FALSE;
+                            }
+                            
                             RtlCopyMemory(utf8->Buffer, di->name, di->n);
                         }
                         
@@ -223,6 +251,11 @@ fcb* create_fcb() {
     fcb* fcb;
     
     fcb = ExAllocatePoolWithTag(PagedPool, sizeof(struct _fcb), ALLOC_TAG);
+    if (!fcb) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("allocating fcb %p\n", fcb);
 #endif
@@ -232,6 +265,11 @@ fcb* create_fcb() {
     fcb->Header.NodeByteSize = sizeof(struct _fcb);
     
     fcb->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct _fcb_nonpaged), ALLOC_TAG);
+    if (!fcb->nonpaged) {
+        ERR("out of memory\n");
+        ExFreePool(fcb);
+        return NULL;
+    }
     RtlZeroMemory(fcb->nonpaged, sizeof(struct _fcb_nonpaged));
     
     ExInitializeFastMutex(&fcb->nonpaged->HeaderMutex);
@@ -267,6 +305,10 @@ static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING file
     }
     
     fn = ExAllocatePoolWithTag(PagedPool, utf8len, ALLOC_TAG);
+    if (!fn) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
     
     Status = RtlUnicodeToUTF8N(fn, utf8len, &utf8len, filename->Buffer, filename->Length);
     if (!NT_SUCCESS(Status)) {
@@ -308,6 +350,11 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
     TRACE("utf8len = %u\n", utf8len);
     
     utf8 = ExAllocatePoolWithTag(PagedPool, xapreflen + utf8len + 1, ALLOC_TAG);
+    if (!utf8) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
     RtlCopyMemory(utf8, xapref, xapreflen);
     
     Status = RtlUnicodeToUTF8N(&utf8[xapreflen], utf8len, &utf8len, stream->Buffer, stream->Length);
@@ -355,6 +402,12 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                     *hash = tp.item->key.offset;
                     
                     xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
+                    if (!xattr->Buffer) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        goto end;
+                    }
+                    
                     xattr->Length = xattr->MaximumLength = di->n;
                     RtlCopyMemory(xattr->Buffer, di->name, di->n);
                     xattr->Buffer[di->n] = 0;
@@ -410,6 +463,11 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                     } else {
                         WCHAR* utf16 = ExAllocatePoolWithTag(PagedPool, utf16len, ALLOC_TAG);
+                        if (!utf16) {
+                            ERR("out of memory\n");
+                            free_traverse_ptr(&tp);
+                            goto end;
+                        }
                         
                         Status = RtlUTF8ToUnicodeN(utf16, utf16len, &utf16len, &di->name[xapreflen], di->n - xapreflen);
 
@@ -429,6 +487,13 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                                 *hash = tp.item->key.offset;
                                 
                                 xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
+                                if (!xattr->Buffer) {
+                                    ERR("out of memory\n");
+                                    free_traverse_ptr(&tp);
+                                    ExFreePool(utf16);
+                                    goto end;
+                                }
+                                
                                 xattr->Length = xattr->MaximumLength = di->n;
                                 RtlCopyMemory(xattr->Buffer, di->name, di->n);
                                 xattr->Buffer[di->n] = 0;
@@ -472,7 +537,7 @@ end:
     return success;
 }
 
-static void split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* num_parts, BOOL* stream) {
+static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* num_parts, BOOL* stream) {
     ULONG len, i, j, np;
     BOOL has_stream;
     UNICODE_STRING* ps;
@@ -498,6 +563,11 @@ static void split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* num_
         np++;
     
     ps = ExAllocatePoolWithTag(PagedPool, np * sizeof(UNICODE_STRING), ALLOC_TAG);
+    if (!ps) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(ps, np * sizeof(UNICODE_STRING));
     
     buf = path->Buffer;
@@ -563,6 +633,8 @@ static void split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* num_
     *num_parts = np;
     *parts = ps;
     *stream = has_stream;
+    
+    return STATUS_SUCCESS;
 }
 
 static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
@@ -657,7 +729,11 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
     if (fnus->Length == 0) {
         num_parts = 0;
     } else {
-        split_path(&fnus2, &parts, &num_parts, &has_stream);
+        Status = split_path(&fnus2, &parts, &num_parts, &has_stream);
+        if (!NT_SUCCESS(Status)) {
+            ERR("split_path returned %08x\n", Status);
+            return Status;
+        }
     }
     
     // FIXME - handle refcounts(?)
@@ -714,6 +790,12 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     ULONG fnlen;
                     
                     sf2 = create_fcb();
+                    if (!sf2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+        
                     sf2->Vcb = Vcb;
         
                     if (streamname.Buffer) // case has changed
@@ -721,6 +803,13 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     else {
                         sf2->filepart.MaximumLength = sf2->filepart.Length = parts[i].Length;
                         sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
+                        if (!sf2->filepart.Buffer) {
+                            ERR("out of memory\n");
+                            free_fcb(sf2);
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }   
+                        
                         RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
                     }
                     
@@ -755,6 +844,13 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
                     
                     sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
+                    if (!sf2->full_filename.Buffer) {
+                        ERR("out of memory\n");
+                        free_fcb(sf2);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
                     RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
                     
@@ -790,6 +886,12 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     ULONG fnlen, strlen;
                     
                     sf2 = create_fcb();
+                    if (!sf2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     sf2->Vcb = Vcb;
 
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);
@@ -800,6 +902,12 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     } else {
                         sf2->filepart.MaximumLength = sf2->filepart.Length = strlen;
                         sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
+                        if (!sf2->filepart.Buffer) {
+                            ERR("out of memory\n");
+                            free_fcb(sf2);
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }
                         
                         Status = RtlUTF8ToUnicodeN(sf2->filepart.Buffer, strlen, &strlen, utf8.Buffer, utf8.Length);
                         
@@ -835,6 +943,13 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
                     
                     sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
+                    if (!sf2->full_filename.Buffer) {
+                        ERR("out of memory\n");
+                        free_fcb(sf2);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
                     RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
                     
@@ -939,6 +1054,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         return Status;
     
     utf8 = ExAllocatePoolWithTag(PagedPool, utf8len + 1, ALLOC_TAG);
+    if (!utf8) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     Status = RtlUnicodeToUTF8N(utf8, utf8len, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
@@ -983,13 +1102,19 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - could not find INODE_ITEM for parent directory %llx in subvol %llx\n", parfcb->inode, parfcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
         free_traverse_ptr(&tp);
         ExFreePool(utf8);
-        return Status;
+        return STATUS_INTERNAL_ERROR;
     }
     
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!dirii) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(dirii, &parfcb->inode_item, sizeof(INODE_ITEM));
     delete_tree_item(Vcb, &tp, rollback);
     
@@ -1006,6 +1131,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     disize = sizeof(DIR_ITEM) - 1 + utf8len;
     di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di) {
+        ERR("out of memory\n");
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     di->key.obj_id = inode;
     di->key.obj_type = TYPE_INODE_ITEM;
     di->key.offset = 0;
@@ -1018,6 +1149,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_DIR_INDEX, dirpos, di, disize, NULL, rollback);
     
     di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di2) {
+        ERR("out of memory\n");
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(di2, di, disize);
     
     Status = add_dir_item(Vcb, parfcb->subvol, parfcb->inode, crc32, di2, disize, rollback);
@@ -1065,12 +1202,23 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
         sprintf(val, "0x%x", IrpSp->Parameters.Create.FileAttributes);
     
-        set_xattr(Vcb, parfcb->subvol, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+        Status = set_xattr(Vcb, parfcb->subvol, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_xattr returned %08x\n", Status);
+            ExFreePool(utf8);
+            return Status;
+        }
     }
     
     parfcb->subvol->lastinode++;
     
     fcb = create_fcb();
+    if (!fcb) {
+        ERR("out of memory\n");
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+        
     fcb->Vcb = Vcb;
     
     RtlZeroMemory(&fcb->inode_item, sizeof(INODE_ITEM));
@@ -1138,11 +1286,22 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     fcb->filepart = *fpus;
         
-    set_xattr(Vcb, parfcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
+    Status = set_xattr(Vcb, parfcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("set_xattr returned %08x\n", Status);
+        ExFreePool(utf8);
+        return Status;
+    }
     
     fcb->full_filename.Length = parfcb->full_filename.Length + (parfcb->full_filename.Length == sizeof(WCHAR) ? 0 : sizeof(WCHAR)) + fcb->filepart.Length;
     fcb->full_filename.MaximumLength = fcb->full_filename.Length;
     fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.Length, ALLOC_TAG);
+    if (!fcb->full_filename.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(fcb->full_filename.Buffer, parfcb->full_filename.Buffer, parfcb->full_filename.Length);
     
     if (parfcb->full_filename.Length > sizeof(WCHAR))
@@ -1151,6 +1310,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     RtlCopyMemory(&fcb->full_filename.Buffer[(parfcb->full_filename.Length / sizeof(WCHAR)) + (parfcb->full_filename.Length == sizeof(WCHAR) ? 0 : 1)], fcb->filepart.Buffer, fcb->filepart.Length);
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!ii) {
+        ERR("out of memory\n");
+        ExFreePool(utf8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     insert_tree_item(Vcb, parfcb->subvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
     
@@ -1211,6 +1376,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     
     fpus.MaximumLength = (j - i + 2) * sizeof(WCHAR);
     fpus.Buffer = ExAllocatePoolWithTag(PagedPool, fpus.MaximumLength, ALLOC_TAG);
+    if (!fpus.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
     fpus.Length = (j - i + 1) * sizeof(WCHAR);
     
     RtlCopyMemory(fpus.Buffer, &fnus->Buffer[i], (j - i + 1) * sizeof(WCHAR));
@@ -1293,6 +1464,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         }
             
         fcb = create_fcb();
+        if (!fcb) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
         fcb->Vcb = Vcb;
         
 //         fcb->Header.IsFastIoPossible = TRUE;
@@ -1322,6 +1499,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fcb->adsxattr.Length = utf8len + xapreflen;
         fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
         fcb->adsxattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.MaximumLength, ALLOC_TAG);
+        if (!fcb->adsxattr.Buffer) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
         RtlCopyMemory(fcb->adsxattr.Buffer, xapref, xapreflen);
         
         Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream.Buffer, stream.Length);
@@ -1343,11 +1527,25 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
 
         fcb->filepart.MaximumLength = fcb->filepart.Length = stream.Length;
         fcb->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->filepart.MaximumLength, ALLOC_TAG);
+        if (!fcb->filepart.Buffer) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
         RtlCopyMemory(fcb->filepart.Buffer, stream.Buffer, stream.Length);
         
         fnlen = (fcb->name_offset * sizeof(WCHAR)) + fcb->filepart.Length;
 
         fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
+        if (!fcb->full_filename.Buffer) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
         fcb->full_filename.Length = fcb->full_filename.MaximumLength = fnlen;
         RtlCopyMemory(fcb->full_filename.Buffer, parfcb->full_filename.Buffer, parfcb->full_filename.Length);
 
@@ -1358,7 +1556,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         InsertTailList(&fcb->par->children, &fcb->list_entry);
         
-        set_xattr(Vcb, parfcb->subvol, parfcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)"", 0, rollback);
+        Status = set_xattr(Vcb, parfcb->subvol, parfcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)"", 0, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_xattr returned %08x\n", Status);
+            free_fcb(fcb);
+            goto end;
+        }
         
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
@@ -1386,6 +1589,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         free_traverse_ptr(&tp);
         
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!ii) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+    
         RtlCopyMemory(ii, &parfcb->inode_item, sizeof(INODE_ITEM));
         
         insert_tree_item(Vcb, parfcb->subvol, parfcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
@@ -1417,6 +1626,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     Status = attach_fcb_to_fileobject(Vcb, fcb, FileObject);
     
     ccb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ccb), ALLOC_TAG);
+    if (!ccb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
     RtlZeroMemory(ccb, sizeof(*ccb));
     ccb->NodeType = BTRFS_NODE_TYPE_CCB;
     ccb->NodeSize = sizeof(ccb);
@@ -1448,6 +1663,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fnlen = (fcb->name_offset * sizeof(WCHAR)) + fcb->filepart.Length;
         
         fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
+        if (!fcb->full_filename.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }   
+        
         fcb->full_filename.Length = fcb->full_filename.MaximumLength = fnlen;
         RtlCopyMemory(fcb->full_filename.Buffer, fcb->par->full_filename.Buffer, fcb->par->full_filename.Length);
         
@@ -1620,6 +1841,11 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
     free_traverse_ptr(&tp);
     
     newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!newii) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     RtlCopyMemory(newii, ii, sizeof(INODE_ITEM));
     
     insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, 0, newii, sizeof(INODE_ITEM), NULL, rollback);
@@ -1813,7 +2039,12 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             
                 sprintf(val, "0x%x", Stack->Parameters.Create.FileAttributes);
             
-                set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+                Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("set_xattr returned %08x\n", Status);
+                    free_fcb(fcb);
+                    goto exit;
+                }
             } else
                 delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
             
@@ -1858,6 +2089,13 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             fcb->delete_on_close = TRUE;
         
         ccb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ccb), ALLOC_TAG);
+        if (!ccb) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         RtlZeroMemory(ccb, sizeof(*ccb));
         ccb->NodeType = BTRFS_NODE_TYPE_CCB;
         ccb->NodeSize = sizeof(ccb);

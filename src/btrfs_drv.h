@@ -363,7 +363,7 @@ int keycmp(const KEY* key1, const KEY* key2);
 NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen);
-void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback);
+NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback);
 BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r);
@@ -468,7 +468,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void STDCALL look_for_vols(LIST_ENTRY* volumes);
 
 // in cache.c
-void STDCALL init_cache();
+NTSTATUS STDCALL init_cache();
 void STDCALL free_cache();
 extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 

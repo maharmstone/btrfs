@@ -147,6 +147,11 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     offset.u.HighPart = 0;
     
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+    if (!context) {
+        DbgPrint("Couldn't allocate context in debug_message\n");
+        return;
+    }
+    
 //     DbgPrint("context = %p\n", context);
     RtlZeroMemory(context, sizeof(read_context));
     
@@ -422,6 +427,12 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
             
             if (xa->m > 0) {
                 *data = ExAllocatePoolWithTag(PagedPool, xa->m, ALLOC_TAG);
+                if (!*data) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    return FALSE;
+                }
+                
                 RtlCopyMemory(*data, &xa->name[xa->n], xa->m);
             } else
                 *data = NULL;
@@ -446,7 +457,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     return FALSE;
 }
 
-void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     ULONG xasize;
@@ -460,7 +471,7 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     
     if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
@@ -489,6 +500,11 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
                     
                     // replace
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
+                    if (!newdata) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
                     
                     pos = (UINT8*)xa - tp.item->data;
                     if (pos + oldxasize < tp.item->size) { // copy after changed xattr
@@ -520,6 +536,11 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
                 if (xa->m + xa->n >= size) { // FIXME - test this works
                     // not found, add to end of data
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
+                    if (!newdata) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
                     
                     RtlCopyMemory(newdata, tp.item->data, tp.item->size);
                     
@@ -548,6 +569,11 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
         // add new DIR_ITEM struct
         
         xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
+        if (!xa) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         
         xa->key.obj_id = 0;
         xa->key.obj_type = 0;
@@ -563,6 +589,8 @@ void STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     }
     
     free_traverse_ptr(&tp);
+    
+    return STATUS_SUCCESS;
 }
 
 BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback) {
@@ -621,6 +649,11 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
 
                     // FIXME - deleting collisions almost certainly works, but we should test it properly anyway
                     newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
+                    if (!newdata) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return FALSE;
+                    }
 
                     if ((UINT8*)xa > tp.item->data) {
                         RtlCopyMemory(newdata, tp.item->data, (UINT8*)xa - tp.item->data);
@@ -682,6 +715,11 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
         }
         
         di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
+        if (!di2) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         
         if (tp.item->size > 0)
             RtlCopyMemory(di2, tp.item->data, tp.item->size);
@@ -912,10 +950,20 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context, sizeof(read_data_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
     context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
+    if (!context->stripes) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context->stripes, sizeof(read_data_stripe) * ci->num_stripes);
     
     context->buflen = length;
@@ -933,6 +981,12 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
         } else {
             context->stripes[i].context = (struct read_data_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+            
+            if (!context->stripes[i].buf) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
 
             context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
             
@@ -1173,6 +1227,13 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     to_read = sector_align(read, Vcb->superblock.sector_size);
                     
                     buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                    
+                    if (!buf) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
                     
                     // FIXME - load checksums
                     
@@ -1936,6 +1997,12 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
                     } else {
                         UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
                         
+                        if (!newdi) {
+                            ERR("out of memory\n");
+                            free_traverse_ptr(&tp);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
                         TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
                         if ((UINT8*)di > tp.item->data) {
@@ -2011,6 +2078,12 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
                         UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
+                        
+                        if (!newir) {
+                            ERR("out of memory\n");
+                            free_traverse_ptr(&tp);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
                         
                         TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
@@ -2096,6 +2169,12 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                     } else {
                         UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
                         
+                        if (!newier) {
+                            ERR("out of memory\n");
+                            free_traverse_ptr(&tp);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
                         TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
                         if ((UINT8*)ier > tp.item->data) {
@@ -2175,6 +2254,12 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         TRACE("deleting ADS\n");
         
         s = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.Length + 1, ALLOC_TAG);
+        if (!s) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         RtlCopyMemory(s, fcb->adsxattr.Buffer, fcb->adsxattr.Length);
         s[fcb->adsxattr.Length] = 0;
         
@@ -2206,6 +2291,13 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         }
 
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!ii) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         RtlCopyMemory(ii, &fcb->par->inode_item, sizeof(INODE_ITEM));
         delete_tree_item(fcb->Vcb, &tp, rollback);
         
@@ -2226,6 +2318,10 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     }
     
     utf8 = ExAllocatePoolWithTag(PagedPool, bytecount + 1, ALLOC_TAG);
+    if (!utf8) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     RtlUnicodeToUTF8N(utf8, bytecount, &bytecount, fcb->filepart.Buffer, fcb->filepart.Length);
     utf8[bytecount] = 0;
@@ -2308,6 +2404,13 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         INODE_ITEM* newii;
         
         newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!newii) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         RtlCopyMemory(newii, ii, sizeof(INODE_ITEM));
         newii->st_nlink--;
         newii->transid = fcb->Vcb->superblock.generation;
@@ -2391,6 +2494,13 @@ success2:
     fcb->par->inode_item.st_mtime = now;
 
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!dirii) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     RtlCopyMemory(dirii, &fcb->par->inode_item, sizeof(INODE_ITEM));
     delete_tree_item(fcb->Vcb, &tp, rollback);
     
@@ -2749,10 +2859,20 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     num_reads++;
     
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context, sizeof(read_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
     IoStatus = ExAllocatePoolWithTag(NonPagedPool, sizeof(IO_STATUS_BLOCK), ALLOC_TAG);
+    if (!IoStatus) {
+        ERR("out of memory\n");
+        ExFreePool(context);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     Offset.QuadPart = StartingOffset;
 
@@ -2841,6 +2961,10 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     to_read = sector_align(sizeof(superblock), device->SectorSize);
     
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     i = 0;
     
@@ -2941,8 +3065,12 @@ static NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode
 //     Vcb->log_to_phys = ltp;
 // }
 
-static void STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, traverse_ptr* tp) {
+static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, traverse_ptr* tp) {
     root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
+    if (!r) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     r->id = id;
     r->treeholder.address = addr;
@@ -2952,6 +3080,12 @@ static void STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, trav
     r->next = Vcb->roots;
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
+    if (!r->nonpaged) {
+        ERR("out of memory\n");
+        ExFreePool(r);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     ExInitializeResourceLite(&r->nonpaged->load_tree_lock);
     
     r->lastinode = 0;
@@ -2988,12 +3122,15 @@ static void STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, trav
             Vcb->checksum_root = r;
             break;
     }
+    
+    return STATUS_SUCCESS;
 }
 
-static void STDCALL look_for_roots(device_extension* Vcb) {
+static NTSTATUS STDCALL look_for_roots(device_extension* Vcb) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     BOOL b;
+    NTSTATUS Status;
     
     searchkey.obj_id = 0;
     searchkey.obj_type = 0;
@@ -3001,7 +3138,7 @@ static void STDCALL look_for_roots(device_extension* Vcb) {
     
     if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any root tree entries\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     do {
@@ -3015,7 +3152,11 @@ static void STDCALL look_for_roots(device_extension* Vcb) {
             } else {
                 TRACE("root %llx - address %llx\n", tp.item->key.obj_id, ri->block_number);
                 
-                add_root(Vcb, tp.item->key.obj_id, ri->block_number, &tp);
+                Status = add_root(Vcb, tp.item->key.obj_id, ri->block_number, &tp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_root returned %08x\n", Status);
+                    return Status;
+                }
             }
         }
     
@@ -3028,23 +3169,33 @@ static void STDCALL look_for_roots(device_extension* Vcb) {
     } while (b);
     
     free_traverse_ptr(&tp);
+    
+    return STATUS_SUCCESS;
 }
 
-static void add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 size) {
+static NTSTATUS add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 size) {
     disk_hole* dh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
+    
+    if (!dh) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     dh->address = address;
     dh->size = size;
     dh->provisional = FALSE;
     
     InsertTailList(disk_holes, &dh->listentry);
+    
+    return STATUS_SUCCESS;
 }
 
-static void find_disk_holes(device_extension* Vcb, device* dev) {
+static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
     UINT64 lastaddr;
+    NTSTATUS Status;
     
     InitializeListHead(&dev->disk_holes);
     
@@ -3054,7 +3205,7 @@ static void find_disk_holes(device_extension* Vcb, device* dev) {
     
     if (!find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any dev tree entries\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     lastaddr = 0;
@@ -3064,8 +3215,13 @@ static void find_disk_holes(device_extension* Vcb, device* dev) {
             if (tp.item->size >= sizeof(DEV_EXTENT)) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
                 
-                if (tp.item->key.offset > lastaddr)
-                    add_disk_hole(&dev->disk_holes, lastaddr, tp.item->key.offset - lastaddr);
+                if (tp.item->key.offset > lastaddr) {
+                    Status = add_disk_hole(&dev->disk_holes, lastaddr, tp.item->key.offset - lastaddr);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_disk_hole returned %08x\n", Status);
+                        return Status;
+                    }
+                }
 
                 lastaddr = tp.item->key.offset + de->length;
             } else {
@@ -3085,10 +3241,17 @@ static void find_disk_holes(device_extension* Vcb, device* dev) {
     
     free_traverse_ptr(&tp);
     
-    if (lastaddr < dev->devitem.num_bytes)
-        add_disk_hole(&dev->disk_holes, lastaddr, dev->devitem.num_bytes - lastaddr);
+    if (lastaddr < dev->devitem.num_bytes) {
+        Status = add_disk_hole(&dev->disk_holes, lastaddr, dev->devitem.num_bytes - lastaddr);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_disk_hole returned %08x\n", Status);
+            return Status;
+        }
+    }
     
     // FIXME - free disk_holes when unmounting
+    
+    return STATUS_SUCCESS;
 }
 
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
@@ -3112,7 +3275,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
     return NULL;
 }
 
-static void STDCALL load_chunk_root(device_extension* Vcb) {
+static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     BOOL b;
@@ -3125,7 +3288,7 @@ static void STDCALL load_chunk_root(device_extension* Vcb) {
     
     if (!find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any chunk tree entries\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     do {
@@ -3141,18 +3304,34 @@ static void STDCALL load_chunk_root(device_extension* Vcb) {
             } else {            
                 c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
                 
+                if (!c) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
                 c->space_changed = FALSE;
                 
                 c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!c->chunk_item) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+            
                 RtlCopyMemory(c->chunk_item, tp.item->data, tp.item->size);
                 
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     
                     c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
+                    
+                    if (!c->devices) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
                     
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
                         c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
@@ -3178,6 +3357,8 @@ static void STDCALL load_chunk_root(device_extension* Vcb) {
     free_traverse_ptr(&tp);
     
     Vcb->log_to_phys_loaded = TRUE;
+    
+    return STATUS_SUCCESS;
 }
 
 static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
@@ -3271,6 +3452,12 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     data = ExAllocatePoolWithTag(PagedPool, ii->st_size, ALLOC_TAG);
     
+    if (!data) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp2);
+        return FALSE;
+    }
+    
     Status = read_file(Vcb, Vcb->root_root, inode, data, 0, ii->st_size, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
@@ -3291,6 +3478,14 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * num_sectors, ALLOC_TAG); // FIXME - get rid of this
+    
+    if (!checksums) {
+        ERR("out of memory\n");
+        ExFreePool(data);
+        free_traverse_ptr(&tp2);
+        return FALSE;
+    }
+    
     RtlCopyMemory(checksums, data, sizeof(UINT32) * num_sectors);
     
     for (i = 0; i < num_sectors; i++) {
@@ -3328,7 +3523,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     return FALSE;
 }
 
-static void load_free_space_cache(device_extension* Vcb, chunk* c) {
+static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     UINT64 lastaddr;
@@ -3346,7 +3541,7 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
         ERR("error - find_item failed\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
     
     lastaddr = c->offset;
@@ -3358,6 +3553,12 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
         if (tp.item->key.obj_id >= c->offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
             if (tp.item->key.obj_id > lastaddr) {
                 s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+                
+                if (!s) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
                 s->offset = lastaddr;
                 s->size = tp.item->key.obj_id - lastaddr;
                 s->type = SPACE_TYPE_FREE;
@@ -3381,6 +3582,12 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (lastaddr < c->offset + c->chunk_item->size) {
         s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+        
+        if (!s) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         s->offset = lastaddr;
         s->size = c->offset + c->chunk_item->size - lastaddr;
         s->type = SPACE_TYPE_FREE;
@@ -3401,6 +3608,12 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
         
         if (s->offset > lastaddr) {
             s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+            
+            if (!s2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             s2->offset = lastaddr;
             s2->size = s->offset - lastaddr;
             s2->type = SPACE_TYPE_USED;
@@ -3415,6 +3628,12 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (lastaddr < c->offset + c->chunk_item->size) {
         s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+        
+        if (!s) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         s->offset = lastaddr;
         s->size = c->offset + c->chunk_item->size - lastaddr;
         s->type = SPACE_TYPE_USED;
@@ -3429,6 +3648,8 @@ static void load_free_space_cache(device_extension* Vcb, chunk* c) {
         
         le = le->Flink;
     }
+    
+    return STATUS_SUCCESS;
 }
 
 void protect_superblocks(device_extension* Vcb, chunk* c) {
@@ -3456,12 +3677,13 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
     }
 }
 
-static void STDCALL find_chunk_usage(device_extension* Vcb) {
+static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
     traverse_ptr tp;
     BLOCK_GROUP_ITEM* bgi;
+    NTSTATUS Status;
     
 // c00000,c0,800000
 // block_group_item size=7f0000 chunktreeid=100 flags=1
@@ -3476,7 +3698,7 @@ static void STDCALL find_chunk_usage(device_extension* Vcb) {
         
         if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
             ERR("error - find_item failed\n");
-            return;
+            return STATUS_INTERNAL_ERROR;
         }
         
         if (!keycmp(&searchkey, &tp.item->key)) {
@@ -3502,11 +3724,18 @@ static void STDCALL find_chunk_usage(device_extension* Vcb) {
         // FIXME - make sure we free occasionally after doing one of these, or we
         // might use up a lot of memory with a big disk.
         
-        load_free_space_cache(Vcb, c);
+        Status = load_free_space_cache(Vcb, c);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_free_space_cache returned %08x\n", Status);
+            return Status;
+        }        
+        
         protect_superblocks(Vcb, c);
 
         le = le->Flink;
     }
+    
+    return STATUS_SUCCESS;
 }
 
 // static void STDCALL root_test(device_extension* Vcb) {
@@ -3551,7 +3780,7 @@ static void STDCALL find_chunk_usage(device_extension* Vcb) {
 //     free_traverse_ptr(&tp);
 // }
 
-static void load_sys_chunks(device_extension* Vcb) {
+static NTSTATUS load_sys_chunks(device_extension* Vcb) {
     KEY key;
     ULONG n = Vcb->superblock.n;
     
@@ -3560,7 +3789,7 @@ static void load_sys_chunks(device_extension* Vcb) {
             RtlCopyMemory(&key, &Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n], sizeof(KEY));
             n -= sizeof(KEY);
         } else
-            return;
+            return STATUS_SUCCESS;
         
         TRACE("bootstrap: %llx,%x,%llx\n", key.obj_id, key.obj_type, key.offset);
         
@@ -3570,27 +3799,41 @@ static void load_sys_chunks(device_extension* Vcb) {
             sys_chunk* sc;
             
             if (n < sizeof(CHUNK_ITEM))
-                return;
+                return STATUS_SUCCESS;
             
             ci = (CHUNK_ITEM*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n];
             cisize = sizeof(CHUNK_ITEM) + (ci->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
             
             if (n < cisize)
-                return;
+                return STATUS_SUCCESS;
             
             sc = ExAllocatePoolWithTag(PagedPool, sizeof(sys_chunk), ALLOC_TAG);
+            
+            if (!sc) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             sc->key = key;
             sc->size = cisize;
             sc->data = ExAllocatePoolWithTag(PagedPool, sc->size, ALLOC_TAG);
+            
+            if (!sc->data) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             RtlCopyMemory(sc->data, ci, sc->size);
             InsertTailList(&Vcb->sys_chunks, &sc->list_entry);
             
             n -= cisize;
         } else {
             ERR("unexpected item %llx,%x,%llx in bootstrap\n", key.obj_id, key.obj_type, key.offset);
-            return;
+            return STATUS_INTERNAL_ERROR;
         }
     }
+    
+    return STATUS_SUCCESS;
 }
 
 static root* find_default_subvol(device_extension* Vcb) {
@@ -3760,6 +4003,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
     
     Vcb->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device) * Vcb->superblock.num_devices, ALLOC_TAG);
+    if (!Vcb->devices) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     
@@ -3801,7 +4050,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     InitializeListHead(&Vcb->sys_chunks);
-    load_sys_chunks(Vcb);
+    Status = load_sys_chunks(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("load_sys_chunks returned %08x\n", Status);
+        goto exit;
+    }
     
     InitializeListHead(&Vcb->chunks);
     InitializeListHead(&Vcb->trees);
@@ -3810,7 +4063,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     FsRtlNotifyInitializeSync(&Vcb->NotifySync);
     
-    load_chunk_root(Vcb);
+    Status = load_chunk_root(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("load_chunk_root returned %08x\n", Status);
+        goto exit;
+    }
     
     add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, NULL);
     
@@ -3820,20 +4077,47 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    look_for_roots(Vcb);
+    Status = look_for_roots(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("look_for_roots returned %08x\n", Status);
+        goto exit;
+    }
     
-    find_chunk_usage(Vcb);
+    Status = find_chunk_usage(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_chunk_usage returned %08x\n", Status);
+        goto exit;
+    }
     
     Vcb->volume_fcb = create_fcb();
+    if (!Vcb->volume_fcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
     
     Vcb->root_fcb = create_fcb();
+    if (!Vcb->root_fcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     Vcb->root_fcb->Vcb = Vcb;
     Vcb->root_fcb->inode = SUBVOL_ROOT_INODE;
     Vcb->root_fcb->type = BTRFS_TYPE_DIRECTORY;
     
     Vcb->root_fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
+    
+    if (!Vcb->root_fcb->full_filename.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     Vcb->root_fcb->full_filename.Buffer[0] = '\\';
     Vcb->root_fcb->full_filename.Length = Vcb->root_fcb->full_filename.MaximumLength = sizeof(WCHAR);
     
@@ -3880,7 +4164,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                                               FALSE, FALSE);
       
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        find_disk_holes(Vcb, &Vcb->devices[i]);
+        Status = find_disk_holes(Vcb, &Vcb->devices[i]);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_disk_holes returned %08x\n", Status);
+            goto exit;
+        }
     }
     
     ExInitializeResourceLite(&Vcb->fcb_lock);
@@ -4284,6 +4572,11 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     const WCHAR mappings[] = L"\\Mappings";
     
     path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
+    if (!path) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     RtlCopyMemory(path, regpath->Buffer, regpath->Length);
     RtlCopyMemory((UINT8*)path + regpath->Length, mappings, wcslen(mappings) * sizeof(WCHAR));
     
@@ -4305,6 +4598,11 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     if (dispos == REG_OPENED_EXISTING_KEY) {
         kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) + 256;
         kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        
+        if (!kvfi) {
+            ERR("out of memory\n");
+            goto exit;
+        }
         
         i = 0;
         do {
@@ -4404,7 +4702,11 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
         return Status;
     }
     
-    init_cache();
+    Status = init_cache();
+    if (!NT_SUCCESS(Status)) {
+        ERR("init_cache returned %08x\n", Status);
+        return Status;
+    }
 
     InitializeListHead(&volumes);
     look_for_vols(&volumes);

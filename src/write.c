@@ -86,6 +86,11 @@ static NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, v
     TRACE("(%p, %llx, %p, %x)\n", device, address, data, length);
     
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlZeroMemory(context, sizeof(write_context));
     
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
@@ -267,6 +272,11 @@ void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
             ExFreePool(s);
         } else if (s->offset < offset && s->offset + s->size > offset + size) { // split in two
             s3 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+            if (!s3) {
+                ERR("out of memory\n");
+                return;
+            }
+            
             s3->offset = offset + size;
             s3->size = s->size - size - offset + s->offset;
             s3->type = s->type;
@@ -289,6 +299,11 @@ void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
     }
     
     s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    if (!s2) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     s2->offset = offset;
     s2->size = size;
     s2->type = type;
@@ -394,6 +409,10 @@ static void add_provisional_disk_hole(device_extension* Vcb, stripe* s, UINT64 m
         s->dh->provisional = TRUE;
     } else {
         disk_hole* newdh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
+        if (!newdh) {
+            ERR("out of memory\n");
+            return;
+        }
         
         newdh->address = s->dh->address + max_stripe_size;
         newdh->size = s->dh->size - max_stripe_size;
@@ -490,6 +509,11 @@ static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64
     device->devitem.bytes_used += size;
     
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+    if (!di) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
     RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
     
     if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, rollback)) {
@@ -579,12 +603,22 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     }
     
     sc = ExAllocatePoolWithTag(PagedPool, sizeof(sys_chunk), ALLOC_TAG);
+    if (!sc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     sc->key.obj_id = obj_id;
     sc->key.obj_type = obj_type;
     sc->key.offset = offset;
     sc->size = size;
     sc->data = ExAllocatePoolWithTag(PagedPool, sc->size, ALLOC_TAG);
+    if (!sc->data) {
+        ERR("out of memory\n");
+        ExFreePool(sc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(sc->data, data, sc->size);
     
     le = Vcb->sys_chunks.Flink;
@@ -680,6 +714,10 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     }
     
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * num_stripes, ALLOC_TAG);
+    if (!stripes) {
+        ERR("out of memory\n");
+        return NULL;
+    }
     
     for (i = 0; i < num_stripes; i++) {
         stripes[i].dh = NULL;
@@ -725,11 +763,19 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     // FIXME - obey max_chunk_size
     
     c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
+    if (!c) {
+        ERR("out of memory\n");
+        goto end;
+    }
     
     // add CHUNK_ITEM to tree 3
     
     cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     ci = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
+    if (!ci) {
+        ERR("out of memory\n");
+        goto end;
+    }
     
     ci->size = stripe_size; // FIXME for RAID
     ci->root_id = Vcb->extent_root->id;
@@ -742,6 +788,11 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     ci->sub_stripes = 1;
     
     c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * num_stripes, ALLOC_TAG);
+    if (!c->devices) {
+        ERR("out of memory\n");
+        ExFreePool(ci);
+        goto end;
+    }
 
     for (i = 0; i < num_stripes; i++) {
         if (i == 0)
@@ -780,6 +831,11 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     Vcb->superblock.chunk_root_generation = Vcb->superblock.generation;
     
     c->chunk_item = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
+    if (!c->chunk_item) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
     RtlCopyMemory(c->chunk_item, ci, cisize);
     c->size = cisize;
     c->offset = logaddr;
@@ -788,6 +844,11 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     InitializeListHead(&c->space);
     
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    if (!s) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
     s->offset = c->offset;
     s->size = c->chunk_item->size;
     s->type = SPACE_TYPE_FREE;
@@ -798,6 +859,11 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     // add BLOCK_GROUP_ITEM to tree 2
     
     bgi = ExAllocatePoolWithTag(PagedPool, sizeof(BLOCK_GROUP_ITEM), ALLOC_TAG);
+    if (!bgi) {
+        ERR("out of memory\n");
+        goto end;
+    }
+        
     bgi->used = 0;
     bgi->chunk_tree = 0x100;
     bgi->flags = flags;
@@ -814,6 +880,11 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
         DEV_EXTENT* de;
         
         de = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_EXTENT), ALLOC_TAG);
+        if (!de) {
+            ERR("out of memory\n");
+            goto end;
+        }
+        
         de->chunktree = Vcb->chunk_root->id;
         de->objid = 0x100;
         de->address = logaddr;
@@ -1060,6 +1131,10 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, create new entry with new bits zeroed
                     ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+                    if (!ri) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
                     
                     if (tp.item->size > 0)
                         RtlCopyMemory(ri, tp.item->data, tp.item->size);
@@ -1150,6 +1225,10 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, 
     traverse_ptr insert_tp;
     
     eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
+    if (!eism) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
     
     eism->ei.refcount = 1;
     eism->ei.generation = Vcb->superblock.generation;
@@ -1189,6 +1268,10 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_EN
         return insert_tree_extent_skinny(Vcb, t, c, address, rollback);
     
     eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
+    if (!eit2) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
 
     eit2->eit.extent_item.refcount = 1;
     eit2->eit.extent_item.generation = Vcb->superblock.generation;
@@ -1440,6 +1523,13 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
         EXTENT_ITEM_SKINNY_METADATA* eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
         
+        if (!eism) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp2);
+            free_traverse_ptr(&tp);
+            return;
+        }
+        
         eism->ei.refcount = 1;
         eism->ei.generation = erv0->gen;
         eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
@@ -1454,6 +1544,13 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
         }
     } else {
         EXTENT_ITEM_TREE2* eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
+        
+        if (!eit2) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp2);
+            free_traverse_ptr(&tp);
+            return;
+        }
         
         eit2->eit.extent_item.refcount = 1;
         eit2->eit.extent_item.generation = erv0->gen;
@@ -1718,6 +1815,11 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
                 if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, delete and create new entry
                     ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
                     
+                    if (!ri) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
                     RtlCopyMemory(ri, &tc2->tree->root->root_item, sizeof(ROOT_ITEM));
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1842,6 +1944,11 @@ static NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, writ
         // FIXME - handle missing devices
         
         stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_stripe), ALLOC_TAG);
+        if (!stripe) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         stripe->context = (struct write_tree_context*)wtc;
         stripe->buf = data;
         stripe->device = c->devices[i];
@@ -2045,6 +2152,11 @@ static NTSTATUS write_trees(device_extension* Vcb) {
     TRACE("allocated tree extents\n");
     
     wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_context), ALLOC_TAG);
+    if (!wtc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc->stripes);
     
@@ -2119,6 +2231,12 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             tc2->tree->header.flags |= HEADER_FLAG_MIXED_BACKREF;
             
             data = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+            if (!data) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
             body = data + sizeof(tree_header);
             
             RtlCopyMemory(data, &tc2->tree->header, sizeof(tree_header));
@@ -2291,6 +2409,12 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             }
             
             bgi = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!bgi) {
+                ERR("out of memory\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+    
             RtlCopyMemory(bgi, tp.item->data, tp.item->size);
             bgi->used = c->used;
             
@@ -2398,6 +2522,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 // #endif
     
     nt = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+    if (!nt) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(&nt->header, &t->header, sizeof(tree_header));
     nt->header.address = 0;
     nt->header.generation = Vcb->superblock.generation;
@@ -2482,6 +2611,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
         increase_tree_rc(nt->parent);
         
         td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+        if (!td) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    
         td->key = newfirstitem->key;
         
         InsertAfter(&t->itemlist, &td->list_entry, &t->paritem->list_entry);
@@ -2507,6 +2641,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     }
     
     pt = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+    if (!pt) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(&pt->header, &nt->header, sizeof(tree_header));
     pt->header.address = 0;
     pt->header.num_items = 2;
@@ -2533,6 +2672,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     InsertTailList(&Vcb->trees, &pt->list_entry);
     
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    if (!td) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     get_first_item(t, &td->key);
     td->ignore = FALSE;
     td->inserted = FALSE;
@@ -2545,6 +2689,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     t->paritem = td;
     
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    if (!td) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     td->key = newfirstitem->key;
     td->ignore = FALSE;
     td->inserted = FALSE;
@@ -3178,6 +3327,11 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
         free_traverse_ptr(&tp);
         
         ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+        if (!ei) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         ei->refcount = 1;
         ei->generation = Vcb->superblock.generation;
         ei->flags = EXTENT_ITEM_DATA;
@@ -3295,6 +3449,10 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
     
     len = tp.item->size + sizeof(UINT8) + sizeof(EXTENT_DATA_REF); // FIXME - die if too big
     ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     RtlCopyMemory(ei, tp.item->data, siptr - tp.item->data);
     ei->refcount++;
@@ -3331,6 +3489,11 @@ typedef struct {
 
 static void add_data_ref(LIST_ENTRY* data_refs, UINT64 root, UINT64 objid, UINT64 offset) {
     data_ref* dr = ExAllocatePoolWithTag(PagedPool, sizeof(data_ref), ALLOC_TAG);
+    
+    if (!dr) {
+        ERR("out of memory\n");
+        return;
+    }
     
     // FIXME - increase count if entry there already
     // FIXME - put in order?
@@ -3470,6 +3633,10 @@ static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, U
     
     eisize = sizeof(EXTENT_ITEM) + ((sizeof(char) + sizeof(EXTENT_DATA_REF)) * refcount);
     ei = ExAllocatePoolWithTag(PagedPool, eisize, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     ei->refcount = refcount;
     ei->generation = Vcb->superblock.generation;
@@ -3560,6 +3727,11 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
     
     do {
         extent_ref* er = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
+        if (!er) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
         er->type = *siptr;
         er->data = siptr+1;
@@ -3604,7 +3776,7 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
                 return STATUS_INTERNAL_ERROR;
             }
             
-           if (t->header.level == 0) {
+            if (t->header.level == 0) {
                 LIST_ENTRY* le2 = t->itemlist.Flink;
                 while (le2 != &t->itemlist) {
                     tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
@@ -3616,8 +3788,23 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
                             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                             
                             if (ed2->address == address) {
-                                extent_ref* er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-                                EXTENT_DATA_REF* edr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA_REF), ALLOC_TAG);
+                                extent_ref* er2;
+                                EXTENT_DATA_REF* edr;
+                                
+                                er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
+                                if (!er2) {
+                                    ERR("out of memory\n");
+                                    free_traverse_ptr(&tp);
+                                    return STATUS_INSUFFICIENT_RESOURCES;
+                                }
+                                
+                                edr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA_REF), ALLOC_TAG);
+                                if (!edr) {
+                                    ERR("out of memory\n");
+                                    free_traverse_ptr(&tp);
+                                    ExFreePool(er2);
+                                    return STATUS_INSUFFICIENT_RESOURCES;
+                                }
                                 
                                 edr->root = t->header.tree_id;
                                 edr->objid = td->key.obj_id;
@@ -3679,6 +3866,12 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
     }
     
     newei = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM) + len, ALLOC_TAG);
+    if (!newei) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(newei, ei, sizeof(EXTENT_ITEM));
     newei->refcount = count;
     
@@ -3872,6 +4065,12 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
         
         if (changed_sector_list) {
             changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+            if (!sc) {
+                ERR("out of memory\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             sc->ol.key = address;
             sc->checksums = NULL;
             sc->length = size / Vcb->superblock.sector_size;
@@ -3906,6 +4105,12 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
     }
     
     ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+            
     RtlCopyMemory(ei, tp.item->data, siptr - tp.item->data);
     ei->refcount--;
     ei->generation = Vcb->superblock.generation;
@@ -4011,6 +4216,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     size = ed->decoded_size - (end_data - tp.item->key.offset);
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
                     
                     ned->generation = Vcb->superblock.generation;
                     ned->decoded_size = size;
@@ -4038,6 +4248,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     size = start_data - tp.item->key.offset;
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
                     
                     ned->generation = Vcb->superblock.generation;
                     ned->decoded_size = size;
@@ -4065,6 +4280,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     size = start_data - tp.item->key.offset;
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
                     
                     ned->generation = Vcb->superblock.generation;
                     ned->decoded_size = size;
@@ -4085,6 +4305,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     size = tp.item->key.offset + ed->decoded_size - end_data;
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
                     
                     ned->generation = Vcb->superblock.generation;
                     ned->decoded_size = size;
@@ -4142,6 +4367,12 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     delete_tree_item(Vcb, &tp, rollback);
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     ned2 = (EXTENT_DATA2*)&ned->data[0];
                     
                     ned->generation = Vcb->superblock.generation;
@@ -4171,6 +4402,12 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     delete_tree_item(Vcb, &tp, rollback);
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     ned2 = (EXTENT_DATA2*)&ned->data[0];
                     
                     ned->generation = Vcb->superblock.generation;
@@ -4207,6 +4444,12 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     delete_tree_item(Vcb, &tp, rollback);
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     ned2 = (EXTENT_DATA2*)&ned->data[0];
                     
                     ned->generation = Vcb->superblock.generation;
@@ -4228,6 +4471,12 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     }
                     
                     ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
                     ned2 = (EXTENT_DATA2*)&ned->data[0];
                     
                     ned->generation = Vcb->superblock.generation;
@@ -4287,6 +4536,11 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
         return FALSE;
     
     eidr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_DATA_REF), ALLOC_TAG);
+    if (!eidr) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
     eidr->ei.refcount = 1;
     eidr->ei.generation = Vcb->superblock.generation;
     eidr->ei.flags = EXTENT_ITEM_DATA;
@@ -4314,11 +4568,22 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     
     if (changed_sector_list) {
         sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+        if (!sc) {
+            ERR("out of memory\n");
+            return FALSE;
+        }
+        
         sc->ol.key = address;
         sc->length = length / Vcb->superblock.sector_size;
         sc->deleted = FALSE;
         
         sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+        if (!sc->checksums) {
+            ERR("out of memory\n");
+            ExFreePool(sc);
+            return FALSE;
+        }
+        
         for (i = 0; i < sc->length; i++) {
             sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
         }
@@ -4328,6 +4593,11 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     
     // add extent data to inode
     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+    if (!ed) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
     ed->generation = Vcb->superblock.generation;
     ed->decoded_size = length;
     ed->compression = BTRFS_COMPRESSION_NONE;
@@ -4369,6 +4639,11 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                                                   length, data, changed_sector_list, edtp, eitp);
     
     ed = ExAllocatePoolWithTag(PagedPool, edtp->item->size, ALLOC_TAG);
+    if (!ed) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
     RtlCopyMemory(ed, edtp->item->data, edtp->item->size);
     
     ed->decoded_size += length;
@@ -4386,6 +4661,12 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     }
     
     ei = ExAllocatePoolWithTag(PagedPool, eitp->item->size, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        ExFreePool(ed);
+        return FALSE;
+    }
+    
     RtlCopyMemory(ei, eitp->item->data, eitp->item->size);
     
     if (!insert_tree_item(Vcb, Vcb->extent_root, eitp->item->key.obj_id, eitp->item->key.obj_type, eitp->item->key.offset + length, ei, eitp->item->size, NULL, rollback)) {
@@ -4405,11 +4686,22 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     if (changed_sector_list) {
         sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+        if (!sc) {
+            ERR("out of memory\n");
+            return FALSE;
+        }
+        
         sc->ol.key = eitp->item->key.obj_id + eitp->item->key.offset;
         sc->length = length / Vcb->superblock.sector_size;
         sc->deleted = FALSE;
         
         sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+        if (!sc->checksums) {
+            ERR("out of memory\n");
+            ExFreePool(sc);
+            return FALSE;
+        }
+        
         for (i = 0; i < sc->length; i++) {
             sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
         }
@@ -4612,6 +4904,10 @@ NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT
     TRACE("(%p, %llx, %llx, %llx, %llx)\n", Vcb, r->id, inode, start, length);
     
     ed = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+    if (!ed) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     ed->generation = Vcb->superblock.generation;
     ed->decoded_size = length;
@@ -4823,8 +5119,19 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
         TRACE("endaddr = %llx\n", endaddr);
         
         len = (endaddr - startaddr) / Vcb->superblock.sector_size;
+        
         checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * len, ALLOC_TAG);
+        if (!checksums) {
+            ERR("out of memory\n");
+            goto exit;
+        }
+        
         bmparr = ExAllocatePoolWithTag(PagedPool, sizeof(ULONG) * ((len/8)+1), ALLOC_TAG);
+        if (!bmparr) {
+            ERR("out of memory\n");
+            ExFreePool(checksums);
+            goto exit;
+        }
               
         RtlInitializeBitMap(&bmp, bmparr, len);
         RtlSetAllBits(&bmp);
@@ -4881,6 +5188,13 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
                     rl = runlength;
                 
                 data = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * rl, ALLOC_TAG);
+                if (!data) {
+                    ERR("out of memory\n");
+                    ExFreePool(bmparr);
+                    ExFreePool(checksums);
+                    goto exit;
+                }
+                
                 RtlCopyMemory(data, &checksums[index], sizeof(UINT32) * rl);
                 
                 if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, startaddr + (index * Vcb->superblock.sector_size), data, sizeof(UINT32) * rl, NULL, rollback)) {
@@ -5120,11 +5434,24 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
                 changed_sector* sc;
                 
                 sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                if (!sc) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
                 sc->ol.key = writeaddr;
                 sc->length = (new_end - new_start) / Vcb->superblock.sector_size;
                 sc->deleted = FALSE;
                 
                 sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+                if (!sc->checksums) {
+                    ERR("out of memory\n");
+                    ExFreePool(sc);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
                 for (i = 0; i < sc->length; i++) {
                     sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + new_start - start_data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 }
@@ -5444,6 +5771,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             fcb->adssize = newlength;
 
             data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
+            if (!data2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             RtlCopyMemory(data2, data, datalen);
             
             if (offset.QuadPart > datalen)
@@ -5454,7 +5786,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (*length > 0)
             RtlCopyMemory(&data2[offset.QuadPart], buf, *length);
         
-        set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
+        Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_xattr returned %08x\n", Status);
+            return Status;
+        }
         
         if (data) ExFreePool(data);
         if (data2 != data) ExFreePool(data2);
@@ -5557,6 +5893,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         
             // FIXME - make sure freed if necessary
             data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
+            if (!data) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
             RtlZeroMemory(data + bufhead, end_data - start_data);
             
             TRACE("start_data = %llx\n", start_data);
@@ -5689,6 +6030,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         WARN("couldn't find existing INODE_ITEM\n");
 
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!ii) {
+        ERR("out of memory\n");
+        free_traverse_ptr(&tp);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     RtlCopyMemory(ii, origii, sizeof(INODE_ITEM));
     insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
     

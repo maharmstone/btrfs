@@ -146,6 +146,10 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     
     sidsize = 8 + (numdashes * 4);
     sid = ExAllocatePoolWithTag(PagedPool, sidsize, ALLOC_TAG);
+    if (!sid) {
+        ERR("out of memory\n");
+        return;
+    }
     
     sid->revision = 0x01;
     sid->elements = numdashes;
@@ -192,6 +196,11 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     
 //     TRACE("%s\n", s);
     um = ExAllocatePoolWithTag(PagedPool, sizeof(uid_map), ALLOC_TAG);
+    if (!um) {
+        ERR("out of memory\n");
+        return;
+    }
+    
     um->sid = sid;
     um->uid = uid;
     
@@ -210,6 +219,11 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
         
         if (um->uid == uid) {
             *sid = ExAllocatePoolWithTag(PagedPool, RtlLengthSid(um->sid), ALLOC_TAG);
+            if (!*sid) {
+                ERR("out of memory\n");
+                return;
+            }
+            
             RtlCopyMemory(*sid, um->sid, RtlLengthSid(um->sid));
             return;
         }
@@ -224,6 +238,11 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
         els = 1;
         
         sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
+        if (!sh) {
+            ERR("out of memory\n");
+            *sid = NULL;
+            return;
+        }
     
         sh->revision = 1;
         sh->elements = els;
@@ -239,6 +258,11 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
     } else {    
         // fallback to S-1-22-1-X, Samba's SID scheme
         sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header), ALLOC_TAG);
+        if (!sh) {
+            ERR("out of memory\n");
+            *sid = NULL;
+            return;
+        }
         
         sh->revision = 1;
         sh->elements = 2;
@@ -292,6 +316,11 @@ static void gid_to_sid(UINT32 gid, PSID* sid) {
     // fallback to S-1-22-2-X, Samba's SID scheme
     els = 2;
     sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
+    if (!sh) {
+        ERR("out of memory\n");
+        *sid = NULL;
+        return;
+    }
     
     sh->revision = 1;
     sh->elements = els;
@@ -324,6 +353,11 @@ static ACL* load_default_acl() {
     }
     
     acl = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+    if (!acl) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
     acl->AclRevision = ACL_REVISION;
     acl->Sbz1 = 0;
     acl->AclSize = size;
@@ -391,6 +425,11 @@ static ACL* inherit_acl(SECURITY_DESCRIPTOR* parsd, BOOL file) {
     }
     
     acl = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+    if (!acl) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
     acl->AclRevision = ACL_REVISION;
     acl->Sbz1 = 0;
     acl->AclSize = size;
@@ -474,6 +513,11 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
         } else {
             uid_to_sid(fcb->inode_item.st_uid, &usersid);
             
+            if (!usersid) {
+                ERR("out of memory\n");
+                return FALSE;
+            }
+            
             if (!RtlEqualSid(sid, usersid)) {
                 SECURITY_DESCRIPTOR *newsd, *newsd2;
                 ULONG sdsize, daclsize, saclsize, ownersize, groupsize;
@@ -495,6 +539,17 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                 sacl = saclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, saclsize, ALLOC_TAG);
                 owner = ownersize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, ownersize, ALLOC_TAG);
                 group = groupsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, groupsize, ALLOC_TAG);
+                
+                if ((sdsize > 0 && !newsd2) || (daclsize > 0 && !dacl) || (saclsize > 0 && !sacl) || (ownersize > 0 && !owner) || (groupsize > 0 || !group)) {
+                    ERR("out of memory\n");
+                    if (newsd2) ExFreePool(newsd2);
+                    if (dacl) ExFreePool(dacl);
+                    if (sacl) ExFreePool(sacl);
+                    if (owner) ExFreePool(owner);
+                    if (group) ExFreePool(group);
+                    ExFreePool(usersid);
+                    return FALSE;
+                }
                 
                 Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, newsd2, &sdsize, dacl, &daclsize, sacl, &saclsize, owner, &ownersize, group, &groupsize);
                 
@@ -546,6 +601,16 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                 }
                 
                 newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+                if (!newsd) {
+                    ERR("out of memory\n");
+                    if (newsd2) ExFreePool(newsd2);
+                    if (dacl) ExFreePool(dacl);
+                    if (sacl) ExFreePool(sacl);
+                    if (owner) ExFreePool(owner);
+                    if (group) ExFreePool(group);
+                    ExFreePool(usersid);
+                    return FALSE;
+                }
                 
                 Status = RtlAbsoluteToSelfRelativeSD(newsd2, newsd, &buflen);
                 
@@ -600,6 +665,11 @@ void fcb_get_sd(fcb* fcb) {
     
 //     if (fcb->inode_item.st_uid != UID_NOBODY) {
         uid_to_sid(fcb->inode_item.st_uid, &usersid);
+        if (!usersid) {
+            ERR("out of memory\n");
+            goto end;
+        }
+        
         RtlSetOwnerSecurityDescriptor(&sd, usersid, FALSE);
         
         if (!NT_SUCCESS(Status)) {
@@ -610,6 +680,12 @@ void fcb_get_sd(fcb* fcb) {
     
 //     if (fcb->inode_item.st_gid != GID_NOBODY) {
         gid_to_sid(fcb->inode_item.st_gid, &groupsid);
+        if (!groupsid) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
         RtlSetGroupSecurityDescriptor(&sd, groupsid, FALSE);
         
         if (!NT_SUCCESS(Status)) {
@@ -622,6 +698,12 @@ void fcb_get_sd(fcb* fcb) {
         acl = load_default_acl();
     else
         acl = inherit_acl(fcb->par->sd, fcb->type != BTRFS_TYPE_DIRECTORY);
+    
+    if (!acl) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
     Status = RtlSetDaclSecurityDescriptor(&sd, TRUE, acl, FALSE);
     
@@ -649,6 +731,11 @@ void fcb_get_sd(fcb* fcb) {
     }
     
     fcb->sd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+    if (!fcb->sd) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
     
     Status = RtlAbsoluteToSelfRelativeSD(&sd, fcb->sd, &buflen);
     
@@ -832,6 +919,12 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     }
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!ii) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     
     if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
@@ -841,7 +934,12 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
         goto end;
     }
     
-    set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
+    Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("set_xattr returned %08x\n", Status);
+        ExFreePool(ii);
+        goto end;
+    }
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
