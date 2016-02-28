@@ -22,7 +22,7 @@ come up with anything nifty. On top of that, I'm open to relicensing the code if
 you've a burning desire to use it on a GPL or commercial project, or what have
 you - drop me a line and we'll talk.
 
-FEATURES:
+Features
 --------
 
 * Reading and writing of Btrfs filesystems
@@ -32,22 +32,22 @@ FEATURES:
   security.NTACL
 * Alternate Data Streams (e.g. :Zone.Identifier is stored as the xattr
   user.Zone.Identifier)
-* Supported incompat flags: mixed_backref, default_subvol, big_metadata,
-  extended_iref, skinny_metadata.
+* Supported incompat flags: `mixed_backref`, `default_subvol`, `big_metadata`,
+  `extended_iref`, `skinny_metadata`.
 * Mappings from Linux users to Windows ones (see below)
 * Symlinks
 
-TODO:
+Todo
 ----
 
 * Basic RAID: RAID0, RAID1, and RAID10
-* RAID5 and RAID6 (incompat flag raid56)
-* Zlib compression
-* LZO compression (incompat flag compress_lzo)
+* RAID5 and RAID6 (incompat flag `raid56`)
+* zlib compression
+* LZO compression (incompat flag `compress_lzo`)
 * Old free space cache
 * New (Linux 4.5) free space cache (compat_ro flag free_space_cache)
 * Preallocation
-* Misc incompat flags: mixed_groups, no_holes
+* Misc incompat flags: `mixed_groups`, `no_holes`
 * Userspace helper to create new subvolumes, etc.
 * Asynchronous reading and writing
 * Actually obeying security (ACLs and ACCESS_MASK)
@@ -56,7 +56,7 @@ TODO:
 * Arbitrary reparse points
 * Probably a bunch of other bugs
 
-INSTALLATION:
+Installation
 ------------
 
 The driver is self-signed at the moment, meaning that if you're using a 64-bit
@@ -78,7 +78,7 @@ up.
 If you're feeling adventurous and want to install the driver permanently,
 right-click btrfs.inf, click Install, and reboot.
 
-COMPILATION:
+Compilation
 -----------
 
 You will need Microsoft Visual C++ if you want to compile the driver; I used the
@@ -92,7 +92,7 @@ is somewhere else, you'll need to edit the project settings. You'll also need to
 edit the post-build steps for the 64-bit versions, which are set up to
 self-sign using my own certificate.
 
-USER MAPPINGS:
+User mappings
 -------------
 
 The user mappings are stored in the registry key
@@ -101,7 +101,7 @@ name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
 and the value of your Linux uid (e.g. 1000). It will take effect next time the
 driver is loaded.
 
-TROUBLESHOOTING:
+Troubleshooting
 ---------------
 
 * My drive doesn't show up!
@@ -133,18 +133,18 @@ The driver assumes that all filenames are encoded in UTF-8. This should be the
 default on most setups nowadays - if you're not using UTF-8, it's probably worth
 looking into converting your files.
 
-CHANGELOG:
+Changelog
 ---------
 
 v0.1 (2016-02-21):
 
 * Initial alpha release.
 
-KNOWN BUGS:
+Known bugs
 ----------
 
-* Deadlock within CcCopyRead.
-  Only been able to reproduce this with amd64 Windows 10 in Qemu - doesn't appear
+* Deadlock within `CcCopyRead`.
+  Only been able to reproduce this with amd64 Windows 10 in QEMU - doesn't appear
   with same installation on live machine. Something to do with paging to disk?
 
 * Error 1203 / 800704B3 when running EXEs which trigger UAC
@@ -152,7 +152,7 @@ KNOWN BUGS:
   
 * Changing properties of a JPEG within Explorer doesn't work
 
-CONTACT:
+Contact
 -------
 
 I'd appreciate any feedback you might have, positive or negative:
