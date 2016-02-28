@@ -524,7 +524,7 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                 ACL *dacl, *sacl;
                 PSID owner, group;
                 
-                sdsize = daclsize = saclsize = ownersize = groupsize;
+                sdsize = daclsize = saclsize = ownersize = groupsize = 0;
                 
                 Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, NULL, &sdsize, NULL, &daclsize, NULL, &saclsize, NULL, &ownersize, NULL, &groupsize);
                 
