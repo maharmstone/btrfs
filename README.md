@@ -2,7 +2,7 @@ WinBtrfs v0.1
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
-ultimate aim is for it be to feature-complete, but most of the basics are there
+ultimate aim is for it to be feature-complete, but most of the basics are there
 already. It is a reimplementation from scratch, and contains no code from the
 Linux kernel. First, a disclaimer:
 
