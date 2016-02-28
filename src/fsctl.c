@@ -325,6 +325,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             Status = STATUS_NOT_IMPLEMENTED;
             break;
 
+#if WIN32_WINNT >= 0x0600
         case FSCTL_MAKE_MEDIA_COMPATIBLE:
             WARN("STUB: FSCTL_MAKE_MEDIA_COMPATIBLE\n");
             Status = STATUS_NOT_IMPLEMENTED;
@@ -494,6 +495,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             WARN("STUB: FSCTL_CSV_CONTROL\n");
             Status = STATUS_NOT_IMPLEMENTED;
             break;
+#endif
 
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

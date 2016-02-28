@@ -1781,6 +1781,7 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
             options &= ~FILE_NO_COMPRESSION;
         }
 
+#if NTDDI_VERSION >= NTDDI_WIN7
         if (options & FILE_OPEN_REQUIRING_OPLOCK) {
             TRACE("    FILE_OPEN_REQUIRING_OPLOCK\n");
             options &= ~FILE_OPEN_REQUIRING_OPLOCK;
@@ -1790,6 +1791,7 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
             TRACE("    FILE_DISALLOW_EXCLUSIVE\n");
             options &= ~FILE_DISALLOW_EXCLUSIVE;
         }
+#endif
 
         if (options & FILE_RESERVE_OPFILTER) {
             TRACE("    FILE_RESERVE_OPFILTER\n");
