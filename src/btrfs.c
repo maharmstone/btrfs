@@ -1436,7 +1436,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     //         wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
             wait = TRUE;
             
-            ERR("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+            TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
             if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
                 TRACE("CcCopyRead failed\n");
                 
@@ -1444,7 +1444,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 Status = STATUS_PENDING;
                 goto exit;
             }
-            ERR("CcCopyRead finished\n");
+            TRACE("CcCopyRead finished\n");
 //         } except (EXCEPTION_EXECUTE_HANDLER) {
 //             Status = GetExceptionCode();
 //         }
