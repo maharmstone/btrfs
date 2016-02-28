@@ -3507,9 +3507,8 @@ static void add_data_ref(LIST_ENTRY* data_refs, UINT64 root, UINT64 objid, UINT6
 }
 
 static void free_data_refs(LIST_ENTRY* data_refs) {
-    LIST_ENTRY* le;
-    
-    while ((le = RemoveHeadList(data_refs)) != data_refs) {
+    while (!IsListEmpty(data_refs)) {
+        LIST_ENTRY* le = RemoveHeadList(data_refs);
         data_ref* dr = CONTAINING_RECORD(le, data_ref, list_entry);
         
         ExFreePool(dr);
@@ -3675,9 +3674,8 @@ typedef struct {
 } extent_ref;
 
 static void free_extent_refs(LIST_ENTRY* extent_refs) {
-    LIST_ENTRY* le;
-    
-    while ((le = RemoveHeadList(extent_refs)) != extent_refs) {
+    while (!IsListEmpty(extent_refs)) {
+        LIST_ENTRY* le = RemoveHeadList(extent_refs);
         extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
         
         if (er->allocated)
@@ -5219,7 +5217,8 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
     }
     
 exit:
-    while ((le = RemoveHeadList(changed_sector_list)) != changed_sector_list) {
+    while (!IsListEmpty(changed_sector_list)) {
+        le = RemoveHeadList(changed_sector_list);
         cs = (changed_sector*)le;
         
         if (cs->checksums)

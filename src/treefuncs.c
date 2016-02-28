@@ -532,7 +532,8 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
         
 //         ExFreePool(t->nonpaged);
         
-        while ((le = RemoveHeadList(&t->itemlist)) != &t->itemlist) {
+        while (!IsListEmpty(&t->itemlist)) {
+            le = RemoveHeadList(&t->itemlist);
             td = CONTAINING_RECORD(le, tree_data, list_entry);
             
             if (t->header.level == 0 && td->data)
@@ -1166,10 +1167,10 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 }
 
 void clear_rollback(LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
     rollback_item* ri;
     
-    while ((le = RemoveHeadList(rollback)) != rollback) {
+    while (!IsListEmpty(rollback)) {
+        LIST_ENTRY* le = RemoveHeadList(rollback);
         ri = CONTAINING_RECORD(le, rollback_item, list_entry);
         
         switch (ri->type) {
@@ -1184,10 +1185,10 @@ void clear_rollback(LIST_ENTRY* rollback) {
 }
 
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
     rollback_item* ri;
     
-    while ((le = RemoveHeadList(rollback)) != rollback) {
+    while (!IsListEmpty(rollback)) {
+        LIST_ENTRY* le = RemoveHeadList(rollback);
         ri = CONTAINING_RECORD(le, rollback_item, list_entry);
         
         switch (ri->type) {

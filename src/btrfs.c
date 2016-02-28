@@ -311,8 +311,6 @@ BOOL is_top_level(PIRP Irp) {
 
 static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     UNICODE_STRING dosdevice_nameW;
-    LIST_ENTRY* le;
-    uid_map* um;
 
     ERR("DriverUnload\n");
     
@@ -326,8 +324,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     IoDeleteSymbolicLink(&dosdevice_nameW);
     IoDeleteDevice(DriverObject->DeviceObject);
     
-    while ((le = RemoveHeadList(&uid_map_list)) != &uid_map_list) {
-        um = CONTAINING_RECORD(le, uid_map, listentry);
+    while (!IsListEmpty(&uid_map_list)) {
+        LIST_ENTRY* le = RemoveHeadList(&uid_map_list);
+        uid_map* um = CONTAINING_RECORD(le, uid_map, listentry);
         
         ExFreePool(um->sid);
 
@@ -2654,7 +2653,6 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
 }
 
 static void STDCALL uninit(device_extension* Vcb) {
-    LIST_ENTRY *le, *le2;
     chunk* c;
     space* s;
     UINT64 i;
@@ -2683,10 +2681,12 @@ static void STDCALL uninit(device_extension* Vcb) {
         Vcb->roots = r;
     }
     
-    while ((le = RemoveHeadList(&Vcb->chunks)) != &Vcb->chunks) {
+    while (!IsListEmpty(&Vcb->chunks)) {
+        LIST_ENTRY* le = RemoveHeadList(&Vcb->chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        while ((le2 = RemoveHeadList(&c->space)) != &c->space) {
+        while (!IsListEmpty(&c->space)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&c->space);
             s = CONTAINING_RECORD(le2, space, list_entry);
             
             ExFreePool(s);
@@ -2703,7 +2703,8 @@ static void STDCALL uninit(device_extension* Vcb) {
     free_fcb(Vcb->root_fcb);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        while ((le = RemoveHeadList(&Vcb->devices[i].disk_holes)) != &Vcb->devices[i].disk_holes) {
+        while (!IsListEmpty(&Vcb->devices[i].disk_holes)) {
+            LIST_ENTRY* le = RemoveHeadList(&Vcb->devices[i].disk_holes);
             disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
             
             ExFreePool(dh);
@@ -4434,7 +4435,6 @@ end:
 static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
-    LIST_ENTRY* le;
 
     ERR("shutdown\n");
     
@@ -4444,8 +4444,8 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     
     Status = STATUS_SUCCESS;
 
-    le = VcbList.Flink;
-    while ((le = RemoveHeadList(&VcbList)) != &VcbList) {
+    while (!IsListEmpty(&VcbList)) {
+        LIST_ENTRY* le = RemoveHeadList(&VcbList);
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
         
         TRACE("shutting down Vcb %p\n", Vcb);

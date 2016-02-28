@@ -912,8 +912,11 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
             }
         }
         
-        while ((le = RemoveHeadList(&dl)) != &dl) {
-            dir_list* dl2 = CONTAINING_RECORD(le, dir_list, list_entry);
+        while (!IsListEmpty(&dl)) {
+            dir_list* dl2;
+            
+            le = RemoveHeadList(&dl);
+            dl2 = CONTAINING_RECORD(le, dir_list, list_entry);
             
             ExFreePool(dl2->utf8.Buffer);
             free_fcb(dl2->fcb);
