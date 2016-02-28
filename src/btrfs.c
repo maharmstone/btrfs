@@ -73,6 +73,7 @@ LIST_ENTRY uid_map_list;
 LIST_ENTRY volumes;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
+UINT32 debug_log_level = 0;
 
 #ifdef DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -4584,7 +4585,7 @@ static void STDCALL check_cpu() {
 
 static void STDCALL read_registry(PUNICODE_STRING regpath) {
     HANDLE h;
-    UNICODE_STRING us;
+    UNICODE_STRING us, dllus;
     OBJECT_ATTRIBUTES oa;
     ULONG dispos;
     NTSTATUS Status;
@@ -4613,10 +4614,9 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     
     if (!NT_SUCCESS(Status)) {
         ERR("ZwCreateKey returned %08x\n", Status);
-        goto exit;
+        ExFreePool(path);
+        return;
     }
-    
-//     TRACE("dispos = %u\n", dispos);
 
     if (dispos == REG_OPENED_EXISTING_KEY) {
         kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) + 256;
@@ -4624,7 +4624,9 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         
         if (!kvfi) {
             ERR("out of memory\n");
-            goto exit;
+            ExFreePool(path);
+            ZwClose(h);
+            return;
         }
         
         i = 0;
@@ -4645,19 +4647,64 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         } while (Status != STATUS_NO_MORE_ENTRIES);
     }
     
-//     InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-// 
-//     Status = ZwOpenKey(&h, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS, &oa);
-//     
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("ZwOpenKey returned %08x\n", Status);
-//         return;
-//     }
-    
     ZwClose(h);
 
-exit:
     ExFreePool(path);
+    
+    InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwCreateKey returned %08x\n", Status);
+        return;
+    }
+    
+    RtlInitUnicodeString(&dllus, L"DebugLogLevel");
+    
+    kvfi = NULL;
+    kvfilen = 0;
+    Status = ZwQueryValueKey(h, &dllus, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+    
+    if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        
+        if (!kvfi) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+        
+        Status = ZwQueryValueKey(h, &dllus, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+        
+        if (NT_SUCCESS(Status)) {
+            if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
+                RtlCopyMemory(&debug_log_level, ((UINT8*)kvfi) + kvfi->DataOffset, sizeof(UINT32));
+            } else {
+                Status = ZwDeleteValueKey(h, &dllus);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwDeleteValueKey returned %08x\n", Status);
+                }
+
+                Status = ZwSetValueKey(h, &dllus, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwSetValueKey reutrned %08x\n", Status);
+                }
+            }
+        }
+        
+        ExFreePool(kvfi);
+    } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        Status = ZwSetValueKey(h, &dllus, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwSetValueKey reutrned %08x\n", Status);
+        }
+    } else {
+        ERR("ZwQueryValueKey returned %08x\n", Status);
+    }
+    
+    ZwClose(h);
 }
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
@@ -4669,6 +4716,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
 #ifdef DEBUG
     init_serial();
 #endif
+    
+    InitializeListHead(&uid_map_list);
+    read_registry(RegistryPath);
 
     TRACE("DriverEntry\n");
    
@@ -4716,9 +4766,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     
     devobj = DeviceObject;
     
-    InitializeListHead(&uid_map_list);
-    read_registry(RegistryPath);
-
     DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 
     Status = IoCreateSymbolicLink(&dosdevice_nameW, &device_nameW);
