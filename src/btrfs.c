@@ -75,7 +75,7 @@ LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
 BOOL log_started = FALSE;
-BOOL log_to_device = TRUE; // TESTING
+UNICODE_STRING log_device;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -116,7 +116,7 @@ void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
     read_context* context = NULL;
     UINT32 length;
     
-    if (log_started && priority < debug_log_level)
+    if (log_started && priority > debug_log_level)
         return;
     
     buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
@@ -139,7 +139,7 @@ void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
     if (!log_started) {
         DbgPrint(buf2);
     } else {
-        if (log_to_device) {
+        if (log_device.Length > 0) {
             if (!comdo) {
                 DbgPrint("comdo is NULL :-(\n");
                 DbgPrint(buf2);
@@ -308,12 +308,15 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     // FIXME - free volumes
     
-#ifdef DEBUG
+#ifdef _DEBUG
     if (comfo)
         ObDereferenceObject(comfo);
 #endif
     
     ExDeleteResourceLite(&global_loading_lock);
+    
+    if (log_device.Buffer)
+        ExFreePool(log_device.Buffer);
 }
 
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
@@ -4525,14 +4528,9 @@ static NTSTATUS STDCALL drv_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
 #ifdef _DEBUG
 static void STDCALL init_serial() {
-    UNICODE_STRING us;
     NTSTATUS Status;
     
-    static const WCHAR com1[] = {'\\','D','e','v','i','c','e','\\','S','e','r','i','a','l','0',0};
-    
-    RtlInitUnicodeString(&us, com1);
-    
-    Status = IoGetDeviceObjectPointer(&us, FILE_WRITE_DATA, &comfo, &comdo);
+    Status = IoGetDeviceObjectPointer(&log_device, FILE_WRITE_DATA, &comfo, &comdo);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
     }
@@ -4557,7 +4555,7 @@ static void STDCALL check_cpu() {
 
 static void STDCALL read_registry(PUNICODE_STRING regpath) {
     HANDLE h;
-    UNICODE_STRING us, dllus;
+    UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
     ULONG dispos;
     NTSTATUS Status;
@@ -4633,11 +4631,11 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         return;
     }
     
-    RtlInitUnicodeString(&dllus, L"DebugLogLevel");
+    RtlInitUnicodeString(&us, L"DebugLogLevel");
     
     kvfi = NULL;
     kvfilen = 0;
-    Status = ZwQueryValueKey(h, &dllus, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+    Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
     
     if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
         kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
@@ -4648,18 +4646,18 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
             return;
         }
         
-        Status = ZwQueryValueKey(h, &dllus, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+        Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
         
         if (NT_SUCCESS(Status)) {
             if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
                 RtlCopyMemory(&debug_log_level, ((UINT8*)kvfi) + kvfi->DataOffset, sizeof(UINT32));
             } else {
-                Status = ZwDeleteValueKey(h, &dllus);
+                Status = ZwDeleteValueKey(h, &us);
                 if (!NT_SUCCESS(Status)) {
                     ERR("ZwDeleteValueKey returned %08x\n", Status);
                 }
 
-                Status = ZwSetValueKey(h, &dllus, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
+                Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
                 if (!NT_SUCCESS(Status)) {
                     ERR("ZwSetValueKey reutrned %08x\n", Status);
                 }
@@ -4668,12 +4666,60 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         
         ExFreePool(kvfi);
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-        Status = ZwSetValueKey(h, &dllus, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
+        Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
         
         if (!NT_SUCCESS(Status)) {
             ERR("ZwSetValueKey reutrned %08x\n", Status);
         }
     } else {
+        ERR("ZwQueryValueKey returned %08x\n", Status);
+    }
+    
+    RtlInitUnicodeString(&us, L"LogDevice");
+    
+    kvfi = NULL;
+    kvfilen = 0;
+    Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+    
+    if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        
+        if (!kvfi) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+        
+        Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+        
+        if (NT_SUCCESS(Status)) {
+            if ((kvfi->Type == REG_SZ || kvfi->Type == REG_EXPAND_SZ) && kvfi->DataLength >= sizeof(WCHAR)) {
+                log_device.Length = log_device.MaximumLength = kvfi->DataLength;
+                log_device.Buffer = ExAllocatePoolWithTag(PagedPool, kvfi->DataLength, ALLOC_TAG);
+                
+                if (!log_device.Buffer) {
+                    ERR("out of memory\n");
+                    ExFreePool(kvfi);
+                    ZwClose(h);
+                    return;
+                }
+
+                RtlCopyMemory(log_device.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, kvfi->DataLength);
+                
+                if (log_device.Buffer[(log_device.Length / sizeof(WCHAR)) - 1] == 0)
+                    log_device.Length -= sizeof(WCHAR);
+            } else {
+                ERR("LogDevice was type %u, length %u\n", kvfi->Type, kvfi->DataLength);
+                
+                Status = ZwDeleteValueKey(h, &us);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwDeleteValueKey returned %08x\n", Status);
+                }
+            }
+        }
+        
+        ExFreePool(kvfi);
+    } else if (Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("ZwQueryValueKey returned %08x\n", Status);
     }
     
@@ -4683,7 +4729,8 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
 
 #ifdef _DEBUG
 static void init_logging() {
-    init_serial();
+    if (log_device.Length > 0)
+        init_serial();
 }
 #endif
 
@@ -4694,6 +4741,10 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     UNICODE_STRING dosdevice_nameW;
     
     InitializeListHead(&uid_map_list);
+    
+    log_device.Buffer = NULL;
+    log_device.Length = log_device.MaximumLength = 0;
+    
     read_registry(RegistryPath);
     
 #ifdef _DEBUG
