@@ -2072,9 +2072,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
 
 static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
-#if DEBUG_LEVEL >= 3
     fcb* fcb = FileObject->FsContext;
-#endif
     
     TRACE("setting the position on %.*S to %llx\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fpi->CurrentByteOffset.QuadPart);
     
@@ -2335,7 +2333,7 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
 }
 
 static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, LONG* length) {
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
     ULONG retlen = 0;
 #endif
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
@@ -2352,14 +2350,14 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     if (*length >= (LONG)fcb->full_filename.Length) {
         RtlCopyMemory(fni->FileName, fcb->full_filename.Buffer, fcb->full_filename.Length);
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
         retlen = fcb->full_filename.Length;
 #endif
         *length -= fcb->full_filename.Length;
     } else {
         if (*length > 0) {
             RtlCopyMemory(fni->FileName, fcb->full_filename.Buffer, *length);
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
             retlen = *length;
 #endif
         }
@@ -2371,14 +2369,14 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     if (fcb->ads) {
         if (*length >= (LONG)datasuflen) {
             RtlCopyMemory(&fni->FileName[fcb->full_filename.Length / sizeof(WCHAR)], datasuf, datasuflen);
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
             retlen += datasuflen;
 #endif
             *length -= datasuflen;
         } else {
             if (*length > 0) {
                 RtlCopyMemory(&fni->FileName[fcb->full_filename.Length / sizeof(WCHAR)], datasuf, *length);
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
                 retlen += *length;
 #endif
             }

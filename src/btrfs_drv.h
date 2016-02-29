@@ -41,9 +41,6 @@
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
 #define DEBUG_PARANOID
-#define DEBUG_LEVEL 2 // 0 = nothing, 1 = ERR and FIXME, 2 = WARN, 3 = TRACE
-#else
-#define DEBUG_LEVEL 1
 #endif
 
 #define BTRFS_NODE_TYPE_CCB 0x2295
@@ -385,53 +382,34 @@ BOOL is_top_level(PIRP Irp);
 // FIXME - we probably shouldn't be moving funcname etc. around if we're not printing debug messages
 #define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
 
+#ifdef _DEBUG
+
 #ifdef DEBUG_LONG_MESSAGES
 
-#if DEBUG_LEVEL >= 3
-#define TRACE(s, ...) _debug_message(funcname, __FILE__, __LINE__, s, ##__VA_ARGS__)
+#define TRACE(s, ...) _debug_message(funcname, 3, __FILE__, __LINE__, s, ##__VA_ARGS__)
+#define WARN(s, ...) _debug_message(funcname, 2, __FILE__, __LINE__, s, ##__VA_ARGS__)
+#define FIXME(s, ...) _debug_message(funcname, 1, __FILE__, __LINE__, s, ##__VA_ARGS__)
+#define ERR(s, ...) _debug_message(funcname, 1, __FILE__, __LINE__, s, ##__VA_ARGS__)
+
+void STDCALL _debug_message(const char* func, UINT8 priority, const char* file, unsigned int line, char* s, ...);
+
 #else
+
+#define TRACE(s, ...) _debug_message(funcname, 3, s, ##__VA_ARGS__)
+#define WARN(s, ...) _debug_message(funcname, 2, s, ##__VA_ARGS__)
+#define FIXME(s, ...) _debug_message(funcname, 1, s, ##__VA_ARGS__)
+#define ERR(s, ...) _debug_message(funcname, 1, s, ##__VA_ARGS__)
+
+void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...);
+
+#endif
+
+#else
+
 #define TRACE(s, ...)
-#endif
-
-#if DEBUG_LEVEL >= 2
-#define WARN(s, ...) _debug_message(funcname, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#else
 #define WARN(s, ...)
-#endif
-
-#if DEBUG_LEVEL >= 1
-#define FIXME(s, ...) _debug_message(funcname, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#define ERR(s, ...) _debug_message(funcname, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#else
-#define FIXME(s, ...)
-#define ERR(s, ...)
-#endif
-
-void STDCALL _debug_message(const char* func, const char* file, unsigned int line, char* s, ...);
-
-#else
-
-#if DEBUG_LEVEL >= 3
-#define TRACE(s, ...) _debug_message(funcname, s, ##__VA_ARGS__)
-#else
-#define TRACE(s, ...)
-#endif
-
-#if DEBUG_LEVEL >= 2
-#define WARN(s, ...) _debug_message(funcname, s, ##__VA_ARGS__)
-#else
-#define WARN(s, ...)
-#endif
-
-#if DEBUG_LEVEL >= 1
-#define FIXME(s, ...) _debug_message(funcname, s, ##__VA_ARGS__)
-#define ERR(s, ...) _debug_message(funcname, s, ##__VA_ARGS__)
-#else
-#define FIXME(s, ...)
-#define ERR(s, ...)
-#endif
-
-void STDCALL _debug_message(const char* func, char* s, ...);
+#define FIXME(s, ...) DbgPrint("Btrfs FIXME : " funcname " : " s, ##__VA_ARGS__)
+#define ERR(s, ...) DbgPrint("Btrfs ERR : " funcname " : " s, ##__VA_ARGS__)
 
 #endif
 

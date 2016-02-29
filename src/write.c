@@ -2802,7 +2802,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     
     // FIXME - loop, and capture more than one tree if we can
     
-    TRACE("nextparitem: key = %llx,%x,%llx, address = %llx, tree = %p\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset, nextparitem->address, nextparitem->tree);
+    TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
 //     nextparitem = t->paritem;
     
 //     ExAcquireResourceExclusiveLite(&t->parent->nonpaged->load_tree_lock, TRUE);

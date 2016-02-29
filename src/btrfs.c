@@ -74,8 +74,10 @@ LIST_ENTRY volumes;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
+BOOL log_started = FALSE;
+BOOL log_to_device = TRUE; // TESTING
 
-#ifdef DEBUG
+#ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
 PDEVICE_OBJECT comdo = NULL;
 #endif
@@ -87,7 +89,7 @@ typedef struct {
     IO_STATUS_BLOCK iosb;
 } read_context;
 
-#ifdef DEBUG
+#ifdef _DEBUG
 static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_context* context = conptr;
     
@@ -99,16 +101,13 @@ static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PV
 //     return STATUS_SUCCESS;
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
-#endif
 
 #ifdef DEBUG_LONG_MESSAGES
-void STDCALL _debug_message(const char* func, const char* file, unsigned int line, char* s, ...) {
+void STDCALL _debug_message(const char* func, UINT8 priority, const char* file, unsigned int line, char* s, ...) {
 #else
-void STDCALL _debug_message(const char* func, char* s, ...) {
+void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
 #endif
-#ifdef DEBUG
     LARGE_INTEGER offset;
-//     IO_STATUS_BLOCK io;
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     PIRP Irp;
@@ -117,21 +116,16 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     read_context* context = NULL;
     UINT32 length;
     
-    if (!comdo) {
-        DbgPrint("comdo is NULL :-(\n");
+    if (log_started && priority < debug_log_level)
         return;
-    }
     
     buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
-//     DbgPrint("buf2 = %p\n", buf2);
     
     if (!buf2) {
         DbgPrint("Couldn't allocate buffer in debug_message\n");
         return;
     }
     
-//     strcpy(buf2, func);
-//     strcat(buf2, ": ");
 #ifdef DEBUG_LONG_MESSAGES
     sprintf(buf2, "%p:%s:%s:%u:", PsGetCurrentThreadId(), func, file, line);
 #else
@@ -142,86 +136,91 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     va_start(ap, s);
     vsprintf(buf, s, ap);
     
-    length = (UINT32)strlen(buf2);
-    
-    offset.u.LowPart = 0;
-    offset.u.HighPart = 0;
-    
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
-    if (!context) {
-        DbgPrint("Couldn't allocate context in debug_message\n");
-        return;
-    }
-    
-//     DbgPrint("context = %p\n", context);
-    RtlZeroMemory(context, sizeof(read_context));
-    
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
-
-//     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
-    
-//     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE, comdo, buf2, (ULONG)strlen(buf2), &offset, &context->Event, &context->iosb);
-    Irp = IoAllocateIrp(comdo->StackSize, FALSE);
-    
-    if (!Irp) {
-        DbgPrint("IoAllocateIrp failed\n");
-        goto exit2;
-    }
-    
-    IrpSp = IoGetNextIrpStackLocation(Irp);
-    IrpSp->MajorFunction = IRP_MJ_WRITE;
-    
-    if (comdo->Flags & DO_BUFFERED_IO) {
-        Irp->AssociatedIrp.SystemBuffer = buf2;
-
-        Irp->Flags = IRP_BUFFERED_IO;
-    } else if (comdo->Flags & DO_DIRECT_IO) {
-        Irp->MdlAddress = IoAllocateMdl(buf2, length, FALSE, FALSE, NULL);
-        if (!Irp->MdlAddress) {
-            DbgPrint("IoAllocateMdl failed\n");
-            goto exit;
-        }
-        
-        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+    if (!log_started) {
+        DbgPrint(buf2);
     } else {
-        Irp->UserBuffer = buf2;
-    }
+        if (log_to_device) {
+            if (!comdo) {
+                DbgPrint("comdo is NULL :-(\n");
+                DbgPrint(buf2);
+                goto exit2;
+            }
+            
+            length = (UINT32)strlen(buf2);
+            
+            offset.u.LowPart = 0;
+            offset.u.HighPart = 0;
+            
+            context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+            if (!context) {
+                DbgPrint("Couldn't allocate context in debug_message\n");
+                return;
+            }
+            
+            RtlZeroMemory(context, sizeof(read_context));
+            
+            KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
 
-    IrpSp->Parameters.Write.Length = length;
-    IrpSp->Parameters.Write.ByteOffset = offset;
-    
-    Irp->UserIosb = &context->iosb;
+        //     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
+            
+            Irp = IoAllocateIrp(comdo->StackSize, FALSE);
+            
+            if (!Irp) {
+                DbgPrint("IoAllocateIrp failed\n");
+                goto exit2;
+            }
+            
+            IrpSp = IoGetNextIrpStackLocation(Irp);
+            IrpSp->MajorFunction = IRP_MJ_WRITE;
+            
+            if (comdo->Flags & DO_BUFFERED_IO) {
+                Irp->AssociatedIrp.SystemBuffer = buf2;
 
-    Irp->UserEvent = &context->Event;
+                Irp->Flags = IRP_BUFFERED_IO;
+            } else if (comdo->Flags & DO_DIRECT_IO) {
+                Irp->MdlAddress = IoAllocateMdl(buf2, length, FALSE, FALSE, NULL);
+                if (!Irp->MdlAddress) {
+                    DbgPrint("IoAllocateMdl failed\n");
+                    goto exit;
+                }
+                
+                MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+            } else {
+                Irp->UserBuffer = buf2;
+            }
 
-    IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
+            IrpSp->Parameters.Write.Length = length;
+            IrpSp->Parameters.Write.ByteOffset = offset;
+            
+            Irp->UserIosb = &context->iosb;
 
-    Status = IoCallDriver(comdo, Irp);
-    
-//     LARGE_INTEGER timeout;
-//     timeout.QuadPart = -1000000; // 100ms
-    
-    if (Status == STATUS_PENDING) {
-//         KeWaitForSingleObject(&Event, Suspended, KernelMode, FALSE, /*&timeout*/NULL);
-        KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
-        Status = context->iosb.Status;
-    }
-    
-    if (comdo->Flags & DO_DIRECT_IO) {
-        MmUnlockPages(Irp->MdlAddress);
-        IoFreeMdl(Irp->MdlAddress);
-    }
-    
-    if (!NT_SUCCESS(Status)) {
-        DbgPrint("failed to write to COM1 - error %08x\n", Status);
-        goto exit;
-//         return;
-//     } else {
-//         DbgPrint("wrote %u bytes\n", io.Information);
-    }
-    
+            Irp->UserEvent = &context->Event;
+
+            IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
+
+            Status = IoCallDriver(comdo, Irp);
+
+            if (Status == STATUS_PENDING) {
+                KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
+                Status = context->iosb.Status;
+            }
+            
+            if (comdo->Flags & DO_DIRECT_IO) {
+                MmUnlockPages(Irp->MdlAddress);
+                IoFreeMdl(Irp->MdlAddress);
+            }
+            
+            if (!NT_SUCCESS(Status)) {
+                DbgPrint("failed to write to COM1 - error %08x\n", Status);
+                goto exit;
+            }
+            
 exit:
-    IoFreeIrp(Irp);
+            IoFreeIrp(Irp);
+        } else {
+            // FIXME - write to file
+        }
+    }
     
 exit2:
     va_end(ap);
@@ -231,35 +230,8 @@ exit2:
     
     if (buf2)
         ExFreePool(buf2);
-#else
-    va_list ap;
-    char *buf2 = NULL, *buf;
-
-    buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
-    
-    if (!buf2) {
-        DbgPrint("Couldn't allocate buffer in debug_message\n");
-        return;
-    }
-    
-#ifdef DEBUG_LONG_MESSAGES
-    sprintf(buf2, "%p:%s:%s:%u:", PsGetCurrentThreadId(), func, file, line);
-#else
-    sprintf(buf2, "%p:%s:", PsGetCurrentThreadId(), func);
-#endif
-    buf = &buf2[strlen(buf2)];
-    
-    va_start(ap, s);
-    vsprintf(buf, s, ap);
-    
-    DbgPrint("%s", buf2);
-    
-    va_end(ap);
-    
-    if (buf2)
-        ExFreePool(buf2);
-#endif
 }
+#endif
 
 ULONG sector_align( ULONG NumberToBeAligned, ULONG Alignment )
 {
@@ -2224,7 +2196,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY changed_sector_list;
-#if DEBUG_LEVEL >=3
+#ifdef _DEBUG
     LARGE_INTEGER freq, time1, time2;
 #endif
     
@@ -2242,7 +2214,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         return STATUS_INTERNAL_ERROR;
     }
     
-#if DEBUG_LEVEL >=3
+#ifdef _DEBUG
     time1 = KeQueryPerformanceCounter(&freq);
 #endif
     
@@ -2538,7 +2510,7 @@ success:
                                 fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                                 FILE_ACTION_REMOVED, NULL);
     
-#if DEBUG_LEVEL >=3
+#ifdef _DEBUG
     time2 = KeQueryPerformanceCounter(NULL);
 #endif
     
@@ -3372,7 +3344,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     UINT8* data;
     NTSTATUS Status;
     UINT32 *checksums, crc32;
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
     FREE_SPACE_ENTRY* fse;
     UINT64 num_entries;
 #endif
@@ -3426,7 +3398,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     inode = fsi->key.obj_id;
     
     searchkey = fsi->key;
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
     num_entries = fsi->num_entries;
 #endif
     
@@ -3509,7 +3481,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     ExFreePool(checksums);
     
-#if DEBUG_LEVEL > 2
+#ifdef _DEBUG
     fse = (FREE_SPACE_ENTRY*)&data[(sizeof(UINT32) * num_sectors) + sizeof(UINT64)];
 
     for (i = 0; i < num_entries; i++) {
@@ -4551,7 +4523,7 @@ static NTSTATUS STDCALL drv_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return Status;
 }
 
-#ifdef DEBUG
+#ifdef _DEBUG
 static void STDCALL init_serial() {
     UNICODE_STRING us;
     NTSTATUS Status;
@@ -4651,6 +4623,7 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
 
     ExFreePool(path);
     
+#ifdef _DEBUG
     InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
     Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
@@ -4705,20 +4678,30 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     }
     
     ZwClose(h);
+#endif
 }
+
+#ifdef _DEBUG
+static void init_logging() {
+    init_serial();
+}
+#endif
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
     UNICODE_STRING device_nameW;
     UNICODE_STRING dosdevice_nameW;
-
-#ifdef DEBUG
-    init_serial();
-#endif
     
     InitializeListHead(&uid_map_list);
     read_registry(RegistryPath);
+    
+#ifdef _DEBUG
+    if (debug_log_level > 0)
+        init_logging();
+    
+    log_started = TRUE;
+#endif
 
     TRACE("DriverEntry\n");
    

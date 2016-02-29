@@ -289,7 +289,7 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadTreeStatus_CRCError) {
-#if DEBUG_LEVEL >= 2
+#ifdef _DEBUG
             tree_header* th = (tree_header*)context->stripes[i].buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
 //             UINT64 j;
@@ -650,7 +650,7 @@ static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_p
     int cmp;
     tree_data *td, *lasttd;
     
-    TRACE("(%p, %p, %p, %p, %p, %u)\n", Vcb, t, tp, searchkey, tc, ignore);
+    TRACE("(%p, %p, %p, %p, %u)\n", Vcb, t, tp, searchkey, ignore);
     
     cmp = 1;
     td = first_item(t);
@@ -996,13 +996,13 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     int cmp;
     tree_data *td, *paritem;
     tree* t;
-#if DEBUG_LEVEL >= 3
+#ifdef _DEBUG
     LIST_ENTRY* le;
     KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
     traverse_ptr* tp2;
     
-    TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, tc, ptp);
+    TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
     
     searchkey.obj_id = obj_id;
     searchkey.obj_type = obj_type;
@@ -1049,7 +1049,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     td->ignore = FALSE;
     td->inserted = TRUE;
     
-#if DEBUG_LEVEL >= 3
+#ifdef _DEBUG
     le = tp.tree->itemlist.Flink;
     while (le != &tp.tree->itemlist) {
         tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
