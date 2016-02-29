@@ -75,7 +75,7 @@ LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
 BOOL log_started = FALSE;
-UNICODE_STRING log_device;
+UNICODE_STRING log_device, log_file;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -317,6 +317,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (log_device.Buffer)
         ExFreePool(log_device.Buffer);
+    
+    if (log_file.Buffer)
+        ExFreePool(log_file.Buffer);
 }
 
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
@@ -4564,6 +4567,7 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     KEY_VALUE_FULL_INFORMATION* kvfi;
     
     const WCHAR mappings[] = L"\\Mappings";
+    static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
     
     path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
     if (!path) {
@@ -4723,6 +4727,73 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         ERR("ZwQueryValueKey returned %08x\n", Status);
     }
     
+    RtlInitUnicodeString(&us, L"LogFile");
+    
+    kvfi = NULL;
+    kvfilen = 0;
+    Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+    
+    if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        
+        if (!kvfi) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+        
+        Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+        
+        if (NT_SUCCESS(Status)) {
+            if ((kvfi->Type == REG_SZ || kvfi->Type == REG_EXPAND_SZ) && kvfi->DataLength >= sizeof(WCHAR)) {
+                log_file.Length = log_file.MaximumLength = kvfi->DataLength;
+                log_file.Buffer = ExAllocatePoolWithTag(PagedPool, kvfi->DataLength, ALLOC_TAG);
+                
+                if (!log_file.Buffer) {
+                    ERR("out of memory\n");
+                    ExFreePool(kvfi);
+                    ZwClose(h);
+                    return;
+                }
+
+                RtlCopyMemory(log_file.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, kvfi->DataLength);
+                
+                if (log_file.Buffer[(log_file.Length / sizeof(WCHAR)) - 1] == 0)
+                    log_file.Length -= sizeof(WCHAR);
+            } else {
+                ERR("LogFile was type %u, length %u\n", kvfi->Type, kvfi->DataLength);
+                
+                Status = ZwDeleteValueKey(h, &us);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwDeleteValueKey returned %08x\n", Status);
+                }
+            }
+        }
+        
+        ExFreePool(kvfi);
+    } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, (wcslen(def_log_file) + 1) * sizeof(WCHAR));
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwSetValueKey reutrned %08x\n", Status);
+        }
+    } else {
+        ERR("ZwQueryValueKey returned %08x\n", Status);
+    }
+    
+    if (log_file.Length == 0) {
+        log_file.Length = log_file.MaximumLength = wcslen(def_log_file) * sizeof(WCHAR);
+        log_file.Buffer = ExAllocatePoolWithTag(PagedPool, log_file.MaximumLength, ALLOC_TAG);
+        
+        if (!log_file.Buffer) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+        
+        RtlCopyMemory(log_file.Buffer, def_log_file, log_file.Length);
+    }
+    
     ZwClose(h);
 #endif
 }
@@ -4744,6 +4815,8 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     
     log_device.Buffer = NULL;
     log_device.Length = log_device.MaximumLength = 0;
+    log_file.Buffer = NULL;
+    log_file.Length = log_file.MaximumLength = 0;
     
     read_registry(RegistryPath);
     
