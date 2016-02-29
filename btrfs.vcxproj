@@ -40,6 +40,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
+      <CompileAs>CompileAsCpp</CompileAs>
       <AdditionalIncludeDirectories>$(SDK_INC_PATH);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <PrecompiledHeader />
@@ -84,9 +85,9 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
-    <ClCompile>
-      <!--<PreprocessorDefinitions>_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
-    </ClCompile>
+    <!--<ClCompile>
+      <PreprocessorDefinitions>_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>-->
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
@@ -95,9 +96,9 @@
     <Midl>
       <TargetEnvironment>X64</TargetEnvironment>
     </Midl>
-    <ClCompile>
-      <!--<PreprocessorDefinitions>_AMD64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>-->
-    </ClCompile>
+    <!--<ClCompile>
+      <PreprocessorDefinitions>_AMD64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>-->
     <Link>
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
