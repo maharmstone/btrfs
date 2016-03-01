@@ -1856,7 +1856,6 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
 }
 
 static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
-    PIO_STACK_LOCATION Stack;
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
     ULONG options;
@@ -1864,8 +1863,8 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     fcb* fcb;
     ccb* ccb;
     device_extension* Vcb = DeviceObject->DeviceExtension;
-    
-    Stack = IoGetCurrentIrpStackLocation(Irp);
+    PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
+    ULONG access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
     
     Irp->IoStatus.Information = 0;
     
@@ -1992,7 +1991,13 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             goto exit;
         }
         
-        // FIXME - supersede on FILE_SUPERSEDE
+        if (access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
+            if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForWrite)) {
+                Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
+                free_fcb(fcb);
+                goto exit;
+            }
+        }
         
         if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
             ULONG defda;
