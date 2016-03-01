@@ -80,6 +80,7 @@ UNICODE_STRING log_device, log_file;
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
 PDEVICE_OBJECT comdo = NULL;
+HANDLE log_handle = NULL;
 #endif
 
 static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject);
@@ -136,89 +137,95 @@ void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
     va_start(ap, s);
     vsprintf(buf, s, ap);
     
-    if (!log_started) {
+    if (!log_started || (log_device.Length == 0 && log_file.Length == 0)) {
         DbgPrint(buf2);
-    } else {
-        if (log_device.Length > 0) {
-            if (!comdo) {
-                DbgPrint("comdo is NULL :-(\n");
-                DbgPrint(buf2);
-                goto exit2;
-            }
-            
-            length = (UINT32)strlen(buf2);
-            
-            offset.u.LowPart = 0;
-            offset.u.HighPart = 0;
-            
-            context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
-            if (!context) {
-                DbgPrint("Couldn't allocate context in debug_message\n");
-                return;
-            }
-            
-            RtlZeroMemory(context, sizeof(read_context));
-            
-            KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    } else if (log_device.Length > 0) {
+        if (!comdo) {
+            DbgPrint("comdo is NULL :-(\n");
+            DbgPrint(buf2);
+            goto exit2;
+        }
+        
+        length = (UINT32)strlen(buf2);
+        
+        offset.u.LowPart = 0;
+        offset.u.HighPart = 0;
+        
+        context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+        if (!context) {
+            DbgPrint("Couldn't allocate context in debug_message\n");
+            return;
+        }
+        
+        RtlZeroMemory(context, sizeof(read_context));
+        
+        KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
 
-        //     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
-            
-            Irp = IoAllocateIrp(comdo->StackSize, FALSE);
-            
-            if (!Irp) {
-                DbgPrint("IoAllocateIrp failed\n");
-                goto exit2;
-            }
-            
-            IrpSp = IoGetNextIrpStackLocation(Irp);
-            IrpSp->MajorFunction = IRP_MJ_WRITE;
-            
-            if (comdo->Flags & DO_BUFFERED_IO) {
-                Irp->AssociatedIrp.SystemBuffer = buf2;
+    //     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
+        
+        Irp = IoAllocateIrp(comdo->StackSize, FALSE);
+        
+        if (!Irp) {
+            DbgPrint("IoAllocateIrp failed\n");
+            goto exit2;
+        }
+        
+        IrpSp = IoGetNextIrpStackLocation(Irp);
+        IrpSp->MajorFunction = IRP_MJ_WRITE;
+        
+        if (comdo->Flags & DO_BUFFERED_IO) {
+            Irp->AssociatedIrp.SystemBuffer = buf2;
 
-                Irp->Flags = IRP_BUFFERED_IO;
-            } else if (comdo->Flags & DO_DIRECT_IO) {
-                Irp->MdlAddress = IoAllocateMdl(buf2, length, FALSE, FALSE, NULL);
-                if (!Irp->MdlAddress) {
-                    DbgPrint("IoAllocateMdl failed\n");
-                    goto exit;
-                }
-                
-                MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
-            } else {
-                Irp->UserBuffer = buf2;
-            }
-
-            IrpSp->Parameters.Write.Length = length;
-            IrpSp->Parameters.Write.ByteOffset = offset;
-            
-            Irp->UserIosb = &context->iosb;
-
-            Irp->UserEvent = &context->Event;
-
-            IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
-
-            Status = IoCallDriver(comdo, Irp);
-
-            if (Status == STATUS_PENDING) {
-                KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
-                Status = context->iosb.Status;
-            }
-            
-            if (comdo->Flags & DO_DIRECT_IO) {
-                MmUnlockPages(Irp->MdlAddress);
-                IoFreeMdl(Irp->MdlAddress);
-            }
-            
-            if (!NT_SUCCESS(Status)) {
-                DbgPrint("failed to write to COM1 - error %08x\n", Status);
+            Irp->Flags = IRP_BUFFERED_IO;
+        } else if (comdo->Flags & DO_DIRECT_IO) {
+            Irp->MdlAddress = IoAllocateMdl(buf2, length, FALSE, FALSE, NULL);
+            if (!Irp->MdlAddress) {
+                DbgPrint("IoAllocateMdl failed\n");
                 goto exit;
             }
             
-exit:
-            IoFreeIrp(Irp);
+            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
         } else {
-            // FIXME - write to file
+            Irp->UserBuffer = buf2;
+        }
+
+        IrpSp->Parameters.Write.Length = length;
+        IrpSp->Parameters.Write.ByteOffset = offset;
+        
+        Irp->UserIosb = &context->iosb;
+
+        Irp->UserEvent = &context->Event;
+
+        IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
+
+        Status = IoCallDriver(comdo, Irp);
+
+        if (Status == STATUS_PENDING) {
+            KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
+            Status = context->iosb.Status;
+        }
+        
+        if (comdo->Flags & DO_DIRECT_IO) {
+            MmUnlockPages(Irp->MdlAddress);
+            IoFreeMdl(Irp->MdlAddress);
+        }
+        
+        if (!NT_SUCCESS(Status)) {
+            DbgPrint("failed to write to COM1 - error %08x\n", Status);
+            goto exit;
+        }
+        
+exit:
+        IoFreeIrp(Irp);
+    } else if (log_handle != NULL) {
+        IO_STATUS_BLOCK iosb;
+        
+        length = (UINT32)strlen(buf2);
+        
+        Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, buf2, length, NULL, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            DbgPrint("failed to write to file - error %08x\n", Status);
         }
     }
     
@@ -311,6 +318,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
 #ifdef _DEBUG
     if (comfo)
         ObDereferenceObject(comfo);
+    
+    if (log_handle)
+        ZwClose(log_handle);
 #endif
     
     ExDeleteResourceLite(&global_loading_lock);
@@ -4775,7 +4785,7 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
         Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, (wcslen(def_log_file) + 1) * sizeof(WCHAR));
         
         if (!NT_SUCCESS(Status)) {
-            ERR("ZwSetValueKey reutrned %08x\n", Status);
+            ERR("ZwSetValueKey returned %08x\n", Status);
         }
     } else {
         ERR("ZwQueryValueKey returned %08x\n", Status);
@@ -4802,6 +4812,78 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
 static void init_logging() {
     if (log_device.Length > 0)
         init_serial();
+    else if (log_file.Length > 0) {
+        NTSTATUS Status;
+        OBJECT_ATTRIBUTES oa;
+        IO_STATUS_BLOCK iosb;
+        char* dateline;
+        LARGE_INTEGER time;
+        TIME_FIELDS tf;
+        
+        InitializeObjectAttributes(&oa, &log_file, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        
+        Status = ZwCreateFile(&log_handle, FILE_WRITE_DATA, &oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
+                              FILE_OPEN_IF, FILE_NON_DIRECTORY_FILE | FILE_WRITE_THROUGH | FILE_SYNCHRONOUS_IO_ALERT, NULL, 0);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwCreateFile returned %08x\n", Status);
+            return;
+        }
+        
+        if (iosb.Information == FILE_OPENED) { // already exists
+            FILE_STANDARD_INFORMATION fsi;
+            FILE_POSITION_INFORMATION fpi;
+            
+            static char delim[] = "\n---\n";
+            
+            // move to end of file
+            
+            Status = ZwQueryInformationFile(log_handle, &iosb, &fsi, sizeof(FILE_STANDARD_INFORMATION), FileStandardInformation);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("ZwQueryInformationFile returned %08x\n", Status);
+                return;
+            }
+            
+            fpi.CurrentByteOffset = fsi.EndOfFile;
+            
+            Status = ZwSetInformationFile(log_handle, &iosb, &fpi, sizeof(FILE_POSITION_INFORMATION), FilePositionInformation);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("ZwSetInformationFile returned %08x\n", Status);
+                return;
+            }
+
+            Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, delim, strlen(delim), NULL, NULL);
+        
+            if (!NT_SUCCESS(Status)) {
+                ERR("ZwWriteFile returned %08x\n", Status);
+                return;
+            }
+        }
+        
+        dateline = ExAllocatePoolWithTag(PagedPool, 256, ALLOC_TAG);
+        
+        if (!dateline) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        KeQuerySystemTime(&time);
+        
+        RtlTimeToTimeFields(&time, &tf);
+        
+        sprintf(dateline, "Starting logging at %04u-%02u-%02u %02u:%02u:%02u\n", tf.Year, tf.Month, tf.Day, tf.Hour, tf.Minute, tf.Second);
+
+        Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, dateline, strlen(dateline), NULL, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwWriteFile returned %08x\n", Status);
+            return;
+        }
+        
+        ExFreePool(dateline);
+    }
 }
 #endif
 
