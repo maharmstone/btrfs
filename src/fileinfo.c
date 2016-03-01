@@ -142,6 +142,11 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
         return STATUS_DIRECTORY_NOT_EMPTY;
     
+    if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForDelete)) {
+        WARN("trying to delete file which is being mapped as an image\n");
+        return STATUS_CANNOT_DELETE;
+    }
+    
     if (fcb->inode == SUBVOL_ROOT_INODE) {
         FIXME("FIXME - subvol deletion not yet supported\n");
         return STATUS_INTERNAL_ERROR;
