@@ -597,6 +597,14 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     }
     
     buf = map_user_buffer(Irp);
+    
+    if (Irp->MdlAddress && !buf) {
+        ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        if (tp.tree) free_traverse_ptr(&tp);
+        goto end;
+    }
+    
     length = IrpSp->Parameters.QueryDirectory.Length;
     
 //     if (specific_file) {

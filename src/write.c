@@ -6157,9 +6157,15 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("offset = %llx\n", offset.QuadPart);
     TRACE("length = %x\n", IrpSp->Parameters.Write.Length);
     
-    if (!Irp->AssociatedIrp.SystemBuffer)
+    if (!Irp->AssociatedIrp.SystemBuffer) {
         buf = map_user_buffer(Irp);
-    else
+        
+        if (Irp->MdlAddress && !buf) {
+            ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }   
+    } else
         buf = Irp->AssociatedIrp.SystemBuffer;
     
     TRACE("buf = %p\n", buf);

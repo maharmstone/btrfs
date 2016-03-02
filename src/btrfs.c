@@ -1358,6 +1358,12 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     data = map_user_buffer(Irp);
     
+    if (Irp->MdlAddress && !data) {
+        ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     Irp->IoStatus.Information = 0;
     
     start = IrpSp->Parameters.Read.ByteOffset.QuadPart;

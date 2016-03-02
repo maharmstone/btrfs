@@ -810,6 +810,11 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 //     sd = Irp->AssociatedIrp.SystemBuffer;
     TRACE("sd = %p\n", sd);
     
+    if (Irp->MdlAddress && !sd) {
+        ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     buflen = IrpSp->Parameters.QuerySecurity.Length;
     
     Status = get_file_security(DeviceObject->DeviceExtension, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
