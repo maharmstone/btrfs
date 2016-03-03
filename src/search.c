@@ -61,7 +61,7 @@ static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, PDEV
     TRACE("found BTRFS volume\n");
     
     tnsize = sizeof(MOUNTMGR_TARGET_NAME) - sizeof(WCHAR) + us->Length;
-    tn = ExAllocatePoolWithTag(NonPagedPool, tnsize, ALLOC_TAG);
+    tn = (MOUNTMGR_TARGET_NAME*)ExAllocatePoolWithTag(NonPagedPool, tnsize, ALLOC_TAG);
     if (!tn) {
         ERR("out of memory\n");
         return;
@@ -92,7 +92,7 @@ static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, PDEV
     
     mmdltsize = sizeof(MOUNTMGR_DRIVE_LETTER_TARGET) - 1 + us->Length;
     
-    mmdlt = ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
+    mmdlt = (MOUNTMGR_DRIVE_LETTER_TARGET*)ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
     if (!mmdlt) {
         ERR("out of memory\n");
         return;
@@ -141,7 +141,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     
     us2.Length = ((wcslen(devpath) + 1) * sizeof(WCHAR)) + us->Length;
     us2.MaximumLength = us2.Length;
-    us2.Buffer = ExAllocatePoolWithTag(PagedPool, us2.Length, ALLOC_TAG);
+    us2.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, us2.Length, ALLOC_TAG);
     if (!us2.Buffer) {
         ERR("out of memory\n");
         return;
@@ -164,7 +164,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     Offset.QuadPart = superblock_addrs[0];
     
     toread = sector_align(sizeof(superblock), DeviceObject->SectorSize);
-    data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
+    data = (UINT8*)ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         goto deref;
@@ -186,7 +186,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
 
     if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
-        volume* v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
+        volume* v = (volume*)ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
         if (!v) {
             ERR("out of memory\n");
             goto deref;
@@ -257,7 +257,7 @@ void STDCALL look_for_vols(LIST_ENTRY* volumes) {
     }
     
     odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
-    odi = ExAllocatePoolWithTag(PagedPool, odisize, ALLOC_TAG);
+    odi = (OBJECT_DIRECTORY_INFORMATION*)ExAllocatePoolWithTag(PagedPool, odisize, ALLOC_TAG);
     if (!odi) {
         ERR("out of memory\n");
         return;

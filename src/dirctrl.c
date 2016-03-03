@@ -140,7 +140,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
     switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
         case FileBothDirectoryInformation:
         {
-            FILE_BOTH_DIR_INFORMATION* fbdi = buf;
+            FILE_BOTH_DIR_INFORMATION* fbdi = (FILE_BOTH_DIR_INFORMATION*)buf;
             
             TRACE("FileBothDirectoryInformation\n");
             
@@ -179,7 +179,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
 
         case FileDirectoryInformation:
         {
-            FILE_DIRECTORY_INFORMATION* fdi = buf;
+            FILE_DIRECTORY_INFORMATION* fdi = (FILE_DIRECTORY_INFORMATION*)buf;
             
             TRACE("FileDirectoryInformation\n");
             
@@ -215,7 +215,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
             
         case FileFullDirectoryInformation:
         {
-            FILE_FULL_DIR_INFORMATION* ffdi = buf;
+            FILE_FULL_DIR_INFORMATION* ffdi = (FILE_FULL_DIR_INFORMATION*)buf;
             
             TRACE("FileFullDirectoryInformation\n");
             
@@ -252,7 +252,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
 
         case FileIdBothDirectoryInformation:
         {
-            FILE_ID_BOTH_DIR_INFORMATION* fibdi = buf;
+            FILE_ID_BOTH_DIR_INFORMATION* fibdi = (FILE_ID_BOTH_DIR_INFORMATION*)buf;
             
             TRACE("FileIdBothDirectoryInformation\n");
             
@@ -299,7 +299,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
 
         case FileNamesInformation:
         {
-            FILE_NAMES_INFORMATION* fni = buf;
+            FILE_NAMES_INFORMATION* fni = (FILE_NAMES_INFORMATION*)buf;
             
             TRACE("FileNamesInformation\n");
             
@@ -481,8 +481,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     num_reads_orig = num_reads;
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    fcb = IrpSp->FileObject->FsContext;
-    ccb = IrpSp->FileObject->FsContext2;
+    fcb = (_fcb*)IrpSp->FileObject->FsContext;
+    ccb = (_ccb*)IrpSp->FileObject->FsContext2;
     
     acquire_tree_lock(fcb->Vcb, FALSE);
     
@@ -612,7 +612,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto end;
         }
         
-        uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+        uni_fn = (WCHAR*)ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
         if (!uni_fn) {
             ERR("out of memory\n");
             if (tp.tree) free_traverse_ptr(&tp);
@@ -643,7 +643,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                     goto end;
                 }
                 
-                uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                uni_fn = (WCHAR*)ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                 if (!uni_fn) {
                     ERR("out of memory\n");
                     if (tp.tree) free_traverse_ptr(&tp);
@@ -717,7 +717,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                             goto end;
                         }
                         
-                        uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                        uni_fn = (WCHAR*)ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                         if (!uni_fn) {
                             ERR("out of memory\n");
                             if (tp.tree) free_traverse_ptr(&tp);
@@ -791,7 +791,7 @@ end:
 static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     NTSTATUS Status;
 //     WCHAR fn[MAX_PATH];
     
@@ -839,7 +839,7 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     switch (func) {
         case IRP_MN_NOTIFY_CHANGE_DIRECTORY:
-            Status = notify_change_directory(DeviceObject->DeviceExtension, Irp);
+            Status = notify_change_directory((device_extension*)DeviceObject->DeviceExtension, Irp);
             break;
             
         case IRP_MN_QUERY_DIRECTORY:

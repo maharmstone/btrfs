@@ -28,17 +28,17 @@ enum read_tree_status {
     ReadTreeStatus_MissingDevice
 };
 
-struct read_tree_context;
+struct _read_tree_context;
 
 typedef struct {
-    struct read_tree_context* context;
+    struct _read_tree_context* context;
     UINT8* buf;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_tree_status status;
 } read_tree_stripe;
 
-typedef struct {
+typedef struct _read_tree_context  {
     KEVENT Event;
     NTSTATUS Status;
     chunk* c;
@@ -61,7 +61,7 @@ typedef struct {
 } rollback_item;
 
 static NTSTATUS STDCALL read_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    read_tree_stripe* stripe = conptr;
+    read_tree_stripe* stripe = (read_tree_stripe*)conptr;
     read_tree_context* context = (read_tree_context*)stripe->context;
     UINT64 i;
     
@@ -109,7 +109,7 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
     read_tree_context* context;
     UINT64 i/*, type*/, offset;
     NTSTATUS Status;
-    device** devices;
+    device** devices = NULL;
     
     // FIXME - make this work with RAID
     
@@ -133,14 +133,14 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
             sys_chunk* sc = CONTAINING_RECORD(le, sys_chunk, list_entry);
             
             if (sc->key.obj_id == 0x100 && sc->key.obj_type == TYPE_CHUNK_ITEM && sc->key.offset <= addr) {
-                CHUNK_ITEM* chunk_item = sc->data;
+                CHUNK_ITEM* chunk_item = (CHUNK_ITEM*)sc->data;
                 
                 if ((addr - sc->key.offset) < chunk_item->size && chunk_item->num_stripes > 0) {
                     ci = chunk_item;
                     offset = sc->key.offset;
                     cis = (CHUNK_ITEM_STRIPE*)&chunk_item[1];
                     
-                    devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
+                    devices = (device**)ExAllocatePoolWithTag(PagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
                     if (!devices) {
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
@@ -186,7 +186,7 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_context), ALLOC_TAG);
+    context = (read_tree_context*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_context), ALLOC_TAG);
     if (!context) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -195,7 +195,7 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
     RtlZeroMemory(context, sizeof(read_tree_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_stripe) * ci->num_stripes, ALLOC_TAG);
+    context->stripes = (read_tree_stripe*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_tree_stripe) * ci->num_stripes, ALLOC_TAG);
     if (!context->stripes) {
         ERR("out of memory\n");
         ExFreePool(context);
@@ -219,8 +219,8 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
             context->stripes[i].buf = NULL;
             context->stripes_left--;
         } else {
-            context->stripes[i].context = (struct read_tree_context*)context;
-            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+            context->stripes[i].context = (read_tree_context*)context;
+            context->stripes[i].buf = (UINT8*)ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
             
             if (!context->stripes[i].buf) {
                 ERR("out of memory\n");
@@ -259,7 +259,7 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             
-            IoSetCompletionRoutine(context->stripes[i].Irp, read_tree_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context->stripes[i].Irp, (PIO_COMPLETION_ROUTINE)read_tree_completion, &context->stripes[i], TRUE, TRUE, TRUE);
 
             context->stripes[i].status = ReadTreeStatus_Pending;
         }
@@ -358,7 +358,7 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     
     TRACE("(%p, %llx)\n", Vcb, addr);
     
-    buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    buf = (UINT8*)ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
     if (!buf) {
         ERR("out of memory\n");
         return NULL;
@@ -373,7 +373,7 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     
     th = (tree_header*)buf;
     
-    t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+    t = (tree*)ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!t) {
         ERR("out of memory\n");
         return NULL;
@@ -415,7 +415,7 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
         unsigned int i;
         
         for (i = 0; i < t->header.num_items; i++) {
-            td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            td = (tree_data*)ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
             if (!td) {
                 ERR("out of memory\n");
                 return NULL;
@@ -424,7 +424,7 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
             td->key = ln[i].key;
 //             TRACE("load_tree: leaf item %u (%x,%x,%x)\n", i, (UINT32)ln[i].key.obj_id, ln[i].key.obj_type, (UINT32)ln[i].key.offset);
             
-            td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
+            td->data = (UINT8*)ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
             if (!td->data) {
                 ERR("out of memory\n");
                 return NULL;
@@ -446,7 +446,7 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
         unsigned int i;
         
         for (i = 0; i < t->header.num_items; i++) {
-            td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            td = (tree_data*)ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
             if (!td) {
                 ERR("out of memory\n");
                 return NULL;
@@ -741,7 +741,8 @@ void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* 
 
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line) {
     tree* t;
-    tree_data *td, *next;
+	tree_data *td = NULL;
+	tree_data *next;
     
     next = next_item(tp->tree, tp->item);
     
@@ -960,7 +961,7 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
         le = le->Flink;
     }
     
-    tc2 = ExAllocatePoolWithTag(PagedPool, sizeof(tree_cache), ALLOC_TAG);
+    tc2 = (tree_cache*)ExAllocatePoolWithTag(PagedPool, sizeof(tree_cache), ALLOC_TAG);
     if (!tc2) {
         ERR("out of memory\n");
         return;
@@ -979,7 +980,7 @@ void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
 static void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     rollback_item* ri;
     
-    ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+    ri = (rollback_item*)ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
         return;
@@ -1036,7 +1037,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         return FALSE;
     }
     
-    td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    td = (tree_data*)ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
     if (!td) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
@@ -1045,7 +1046,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     td->key = searchkey;
     td->size = size;
-    td->data = data;
+    td->data = (UINT8*)data;
     td->ignore = FALSE;
     td->inserted = TRUE;
     
@@ -1098,7 +1099,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     // FIXME - free this correctly
     
-    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2 = (traverse_ptr*)ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
         ERR("out of memory\n");
         return FALSE;
@@ -1154,7 +1155,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 //         delete_tree_item(&tp2, tc);
 //     }
 
-    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2 = (traverse_ptr*)ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
         ERR("out of memory\n");
         return;
@@ -1194,7 +1195,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
         switch (ri->type) {
             case ROLLBACK_INSERT_ITEM:
             {
-                traverse_ptr* tp = ri->ptr;
+                traverse_ptr* tp = (traverse_ptr*)ri->ptr;
                 
                 if (!tp->item->ignore) {
                     tp->item->ignore = TRUE;
@@ -1212,7 +1213,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
             case ROLLBACK_DELETE_ITEM:
             {
-                traverse_ptr* tp = ri->ptr;
+                traverse_ptr* tp = (traverse_ptr*)ri->ptr;
                 
                 if (tp->item->ignore) {
                     tp->item->ignore = FALSE;
