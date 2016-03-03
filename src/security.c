@@ -145,7 +145,7 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     }
     
     sidsize = 8 + (numdashes * 4);
-    sid = ExAllocatePoolWithTag(PagedPool, sidsize, ALLOC_TAG);
+    sid = (sid_header*)ExAllocatePoolWithTag(PagedPool, sidsize, ALLOC_TAG);
     if (!sid) {
         ERR("out of memory\n");
         return;
@@ -195,7 +195,7 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
 //     sid_to_string(sid, s);
     
 //     TRACE("%s\n", s);
-    um = ExAllocatePoolWithTag(PagedPool, sizeof(uid_map), ALLOC_TAG);
+    um = (uid_map*)ExAllocatePoolWithTag(PagedPool, sizeof(uid_map), ALLOC_TAG);
     if (!um) {
         ERR("out of memory\n");
         return;
@@ -237,7 +237,7 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
         
         els = 1;
         
-        sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
+        sh = (sid_header*)ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
         if (!sh) {
             ERR("out of memory\n");
             *sid = NULL;
@@ -257,7 +257,7 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
         sh->nums[0] = 18;
     } else {    
         // fallback to S-1-22-1-X, Samba's SID scheme
-        sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header), ALLOC_TAG);
+        sh = (sid_header*)ExAllocatePoolWithTag(PagedPool, sizeof(sid_header), ALLOC_TAG);
         if (!sh) {
             ERR("out of memory\n");
             *sid = NULL;
@@ -284,7 +284,7 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
 static UINT32 sid_to_uid(PSID sid) {
     LIST_ENTRY* le;
     uid_map* um;
-    sid_header* sh = sid;
+    sid_header* sh = (sid_header*)sid;
 
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
@@ -315,7 +315,7 @@ static void gid_to_sid(UINT32 gid, PSID* sid) {
     
     // fallback to S-1-22-2-X, Samba's SID scheme
     els = 2;
-    sh = ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
+    sh = (sid_header*)ExAllocatePoolWithTag(PagedPool, sizeof(sid_header) + ((els - 1) * sizeof(UINT32)), ALLOC_TAG);
     if (!sh) {
         ERR("out of memory\n");
         *sid = NULL;
@@ -352,7 +352,7 @@ static ACL* load_default_acl() {
         i++;
     }
     
-    acl = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+    acl = (ACL*)ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
     if (!acl) {
         ERR("out of memory\n");
         return NULL;
@@ -424,7 +424,7 @@ static ACL* inherit_acl(SECURITY_DESCRIPTOR* parsd, BOOL file) {
         ah = (ACE_HEADER*)((UINT8*)ah + ah->AceSize);
     }
     
-    acl = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+    acl = (ACL*)ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
     if (!acl) {
         ERR("out of memory\n");
         return NULL;
@@ -534,9 +534,9 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                 
                 ERR("sdsize = %u, daclsize = %u, saclsize = %u, ownersize = %u, groupsize = %u\n", sdsize, daclsize, saclsize, ownersize, groupsize);
                 
-                newsd2 = sdsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, sdsize, ALLOC_TAG);
-                dacl = daclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, daclsize, ALLOC_TAG);
-                sacl = saclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, saclsize, ALLOC_TAG);
+                newsd2 = (SECURITY_DESCRIPTOR*)(sdsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, sdsize, ALLOC_TAG));
+                dacl = (ACL*)(daclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, daclsize, ALLOC_TAG));
+                sacl = (ACL*)(saclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, saclsize, ALLOC_TAG));
                 owner = ownersize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, ownersize, ALLOC_TAG);
                 group = groupsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, groupsize, ALLOC_TAG);
                 
@@ -600,7 +600,7 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                     return FALSE;
                 }
                 
-                newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+                newsd = (SECURITY_DESCRIPTOR*)ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
                 if (!newsd) {
                     ERR("out of memory\n");
                     if (newsd2) ExFreePool(newsd2);
@@ -730,7 +730,7 @@ void fcb_get_sd(fcb* fcb) {
         goto end;
     }
     
-    fcb->sd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+    fcb->sd = (SECURITY_DESCRIPTOR*)ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
     if (!fcb->sd) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -757,7 +757,7 @@ end:
 
 static NTSTATUS STDCALL get_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
     NTSTATUS Status;
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     
     if (fcb->ads)
         fcb = fcb->par;
@@ -806,13 +806,13 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     TRACE("length = %u\n", IrpSp->Parameters.QuerySecurity.Length);
     
-    sd = map_user_buffer(Irp);
+    sd = (SECURITY_DESCRIPTOR*)map_user_buffer(Irp);
 //     sd = Irp->AssociatedIrp.SystemBuffer;
     TRACE("sd = %p\n", sd);
     
     buflen = IrpSp->Parameters.QuerySecurity.Length;
     
-    Status = get_file_security(DeviceObject->DeviceExtension, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
+    Status = get_file_security((device_extension*)DeviceObject->DeviceExtension, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
     
     if (NT_SUCCESS(Status))
         Irp->IoStatus.Information = IrpSp->Parameters.QuerySecurity.Length;
@@ -840,7 +840,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
 static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* sd, SECURITY_INFORMATION flags) {
     NTSTATUS Status;
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     SECURITY_DESCRIPTOR* oldsd;
     INODE_ITEM* ii;
     KEY searchkey;
@@ -918,7 +918,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -984,7 +984,7 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (IrpSp->Parameters.QuerySecurity.SecurityInformation & SACL_SECURITY_INFORMATION)
         TRACE("SACL_SECURITY_INFORMATION\n");
     
-    Status = set_file_security(DeviceObject->DeviceExtension, IrpSp->FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
+    Status = set_file_security((device_extension*)DeviceObject->DeviceExtension, IrpSp->FileObject, (SECURITY_DESCRIPTOR*)IrpSp->Parameters.SetSecurity.SecurityDescriptor,
                                IrpSp->Parameters.SetSecurity.SecurityInformation);
     
     Irp->IoStatus.Status = Status;

@@ -22,7 +22,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     ULONG len, stringlen;
     USHORT newlen;
     OBJECT_NAME_INFORMATION* oni;
-    UINT8* data;
+    UINT8* data = NULL;
     UINT32 i;
     BOOL success = FALSE;
     WCHAR* utf16;
@@ -40,7 +40,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
         return FALSE;
     }
     
-    oni = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    oni = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
     if (!oni) {
         ERR("out of memory\n");
         goto end;
@@ -54,7 +54,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
         return FALSE;
     }
        
-    data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+    data = (UINT8*)ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         goto end;
@@ -78,7 +78,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
         goto end;
     }
     
-    utf16 = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+    utf16 = (WCHAR*)ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
     if (!utf16) {
         ERR("out of memory\n");
         goto end;
@@ -97,7 +97,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
         abspath.Buffer = utf16;
     } else { // relative path
         abspath.MaximumLength = fcb->par->full_filename.Length + sizeof(WCHAR) + stringlen;
-        abspath.Buffer = ExAllocatePoolWithTag(PagedPool, abspath.MaximumLength, ALLOC_TAG);
+        abspath.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, abspath.MaximumLength, ALLOC_TAG);
         if (!abspath.Buffer) {
             ERR("out of memory\n");
             ExFreePool(utf16);
@@ -134,7 +134,7 @@ BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject) {
     if (FileObject->FileName.MaximumLength < oni->Name.Length + abspath.Length) {
         ExFreePool(FileObject->FileName.Buffer);
         FileObject->FileName.MaximumLength = oni->Name.Length + abspath.Length;
-        FileObject->FileName.Buffer = ExAllocatePoolWithTag(PagedPool, FileObject->FileName.MaximumLength, ALLOC_TAG);
+        FileObject->FileName.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, FileObject->FileName.MaximumLength, ALLOC_TAG);
         
         if (!FileObject->FileName.Buffer) {
             ERR("out of memory\n");
@@ -163,8 +163,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     USHORT subnamelen, printnamelen, i;
     ULONG stringlen;
     DWORD reqlen;
-    REPARSE_DATA_BUFFER* rdb = buffer;
-    fcb* fcb = FileObject->FsContext;
+    REPARSE_DATA_BUFFER* rdb = (REPARSE_DATA_BUFFER*)buffer;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     char* data;
     NTSTATUS Status;
     
@@ -177,7 +177,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         goto end;
     }
     
-    data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+    data = (char*)ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -185,7 +185,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     }
     
     TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
-    Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
+    Status = read_file((device_extension*)DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
     
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
@@ -270,7 +270,7 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
         if (tp.item->size < sizeof(DIR_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         } else {
-            DIR_ITEM *di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG), *di2;
+            DIR_ITEM *di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG), *di2;
             BOOL found = FALSE;
             ULONG len = tp.item->size;
             
@@ -328,7 +328,7 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         } else {
             DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-            DIR_ITEM* di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            DIR_ITEM* di2 = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!di2) {
                 ERR("out of memory\n");
                 free_traverse_ptr(&tp);
@@ -358,7 +358,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ULONG tag, minlen;
     UNICODE_STRING subname;
     ANSI_STRING target;
-    REPARSE_DATA_BUFFER* rdb = buffer;
+    REPARSE_DATA_BUFFER* rdb = (REPARSE_DATA_BUFFER*)buffer;
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
@@ -377,7 +377,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
     
-    fcb = FileObject->FsContext;
+    fcb = (_fcb*)FileObject->FsContext;
     
     ERR("filename: %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
     
@@ -564,7 +564,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     target.MaximumLength = target.Length;
-    target.Buffer = ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
+    target.Buffer = (PCHAR)ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
     if (!target.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;

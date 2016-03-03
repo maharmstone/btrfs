@@ -21,7 +21,7 @@
 CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
-    fcb* fcb = Context;
+    fcb* fcb = (_fcb*)Context;
     
     TRACE("(%p, %u)\n", Context, Wait);
     
@@ -31,7 +31,7 @@ static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
 }
 
 static void STDCALL release_from_lazy_write(PVOID Context) {
-    fcb* fcb = Context;
+    fcb* fcb = (_fcb*)Context;
     
     TRACE("(%p)\n", Context);
     
@@ -49,16 +49,16 @@ static void STDCALL release_from_read_ahead(PVOID Context) {
 }
 
 NTSTATUS STDCALL init_cache() {
-    cache_callbacks = ExAllocatePoolWithTag(NonPagedPool, sizeof(CACHE_MANAGER_CALLBACKS), ALLOC_TAG);
+    cache_callbacks = (CACHE_MANAGER_CALLBACKS*)ExAllocatePoolWithTag(NonPagedPool, sizeof(CACHE_MANAGER_CALLBACKS), ALLOC_TAG);
     if (!cache_callbacks) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    cache_callbacks->AcquireForLazyWrite = acquire_for_lazy_write;
-    cache_callbacks->ReleaseFromLazyWrite = release_from_lazy_write;
-    cache_callbacks->AcquireForReadAhead = acquire_for_read_ahead;
-    cache_callbacks->ReleaseFromReadAhead = release_from_read_ahead;
+    cache_callbacks->AcquireForLazyWrite = (PACQUIRE_FOR_LAZY_WRITE)acquire_for_lazy_write;
+    cache_callbacks->ReleaseFromLazyWrite = (PRELEASE_FROM_LAZY_WRITE)release_from_lazy_write;
+    cache_callbacks->AcquireForReadAhead = (PACQUIRE_FOR_READ_AHEAD)acquire_for_read_ahead;
+    cache_callbacks->ReleaseFromReadAhead = (PRELEASE_FROM_READ_AHEAD)release_from_read_ahead;
     
     return STATUS_SUCCESS;
 }

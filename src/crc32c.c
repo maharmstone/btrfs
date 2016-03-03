@@ -16,7 +16,11 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <windef.h>
+#if (_MSC_VER < 1600) // Visual Studio 2008 and older.
 #include <smmintrin.h>
+#else
+#include <nmmintrin.h>
+#endif
 
 extern BOOL have_sse42;
 

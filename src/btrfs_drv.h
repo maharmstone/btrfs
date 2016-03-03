@@ -76,8 +76,6 @@
 
 // #pragma pack(push, 1)
 
-struct device_extension;
-
 typedef struct {
     PDEVICE_OBJECT devobj;
     BTRFS_UUID fsuuid;

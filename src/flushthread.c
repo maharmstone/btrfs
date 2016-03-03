@@ -41,7 +41,7 @@ static void do_flush(device_extension* Vcb) {
 }
 
 void STDCALL flush_thread(void* context) {
-    device_extension* Vcb = context;
+    device_extension* Vcb = (device_extension*)context;
     LARGE_INTEGER due_time;
     
     KeInitializeTimer(&Vcb->flush_thread_timer);

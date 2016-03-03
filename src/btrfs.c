@@ -42,17 +42,17 @@ enum read_data_status {
     ReadDataStatus_MissingDevice
 };
 
-struct read_data_context;
+struct _read_data_context;
 
 typedef struct {
-    struct read_data_context* context;
+    struct _read_data_context* context;
     UINT8* buf;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_data_status status;
 } read_data_stripe;
 
-typedef struct {
+typedef struct _read_data_context {
     KEVENT Event;
     NTSTATUS Status;
     chunk* c;
@@ -88,7 +88,7 @@ typedef struct {
 
 #ifdef DEBUG
 static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    read_context* context = conptr;
+    read_context* context = (read_context*)conptr;
     
 //     DbgPrint("dbg_completion\n");
     
@@ -121,7 +121,7 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
         return;
     }
     
-    buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
+    buf2 = (char*)ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
 //     DbgPrint("buf2 = %p\n", buf2);
     
     if (!buf2) {
@@ -146,7 +146,7 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     offset.u.LowPart = 0;
     offset.u.HighPart = 0;
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+    context = (read_context*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
     if (!context) {
         DbgPrint("Couldn't allocate context in debug_message\n");
         return;
@@ -193,7 +193,7 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
 
     Irp->UserEvent = &context->Event;
 
-    IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, (PIO_COMPLETION_ROUTINE)dbg_completion, context, TRUE, TRUE, TRUE);
 
     Status = IoCallDriver(comdo, Irp);
     
@@ -234,7 +234,7 @@ exit2:
     va_list ap;
     char *buf2 = NULL, *buf;
 
-    buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
+    buf2 = (char *)ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
     
     if (!buf2) {
         DbgPrint("Couldn't allocate buffer in debug_message\n");
@@ -425,7 +425,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
             *datalen = xa->m;
             
             if (xa->m > 0) {
-                *data = ExAllocatePoolWithTag(PagedPool, xa->m, ALLOC_TAG);
+                *data = (UINT8*)ExAllocatePoolWithTag(PagedPool, xa->m, ALLOC_TAG);
                 if (!*data) {
                     ERR("out of memory\n");
                     free_traverse_ptr(&tp);
@@ -498,7 +498,7 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
                     UINT64 pos;
                     
                     // replace
-                    newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
+                    newdata = (UINT8*)ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
                         free_traverse_ptr(&tp);
@@ -534,7 +534,7 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
                 
                 if (xa->m + xa->n >= size) { // FIXME - test this works
                     // not found, add to end of data
-                    newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
+                    newdata = (UINT8*)ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
                         free_traverse_ptr(&tp);
@@ -567,7 +567,7 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
     } else {
         // add new DIR_ITEM struct
         
-        xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
+        xa = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
         if (!xa) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -647,7 +647,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                     }
 
                     // FIXME - deleting collisions almost certainly works, but we should test it properly anyway
-                    newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
+                    newdata = (UINT8*)ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
                         free_traverse_ptr(&tp);
@@ -713,7 +713,7 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
             return STATUS_INTERNAL_ERROR;
         }
         
-        di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
+        di2 = (UINT8*)ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
         if (!di2) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -794,7 +794,7 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     // FIXME - unmount if called for volume
     // FIXME - call FsRtlNotifyUninitializeSync(&Vcb->NotifySync) if unmounting
     
-    Status = close_file(DeviceObject->DeviceExtension, IrpSp->FileObject);
+    Status = close_file((device_extension*)DeviceObject->DeviceExtension, IrpSp->FileObject);
 
 exit:
     Irp->IoStatus.Status = Status;
@@ -857,7 +857,7 @@ end:
 }
 
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    read_data_stripe* stripe = conptr;
+    read_data_stripe* stripe = (read_data_stripe*)conptr;
     read_data_context* context = (read_data_context*)stripe->context;
     UINT64 i;
     BOOL complete;
@@ -903,12 +903,12 @@ end:
 }
 
 static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT8* buf) {
-    CHUNK_ITEM* ci;
+    CHUNK_ITEM* ci = NULL;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
     UINT64 i/*, type*/, offset;
     NTSTATUS Status;
-    device** devices;
+    device** devices = NULL;
     
     // FIXME - make this work with RAID
     
@@ -948,7 +948,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_context), ALLOC_TAG);
+    context = (read_data_context*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_context), ALLOC_TAG);
     if (!context) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -957,7 +957,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     RtlZeroMemory(context, sizeof(read_data_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
+    context->stripes = (read_data_stripe*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
     if (!context->stripes) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -978,8 +978,8 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
         } else {
-            context->stripes[i].context = (struct read_data_context*)context;
-            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+            context->stripes[i].context = (read_data_context*)context;
+            context->stripes[i].buf = (UINT8*)ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
             
             if (!context->stripes[i].buf) {
                 ERR("out of memory\n");
@@ -1018,7 +1018,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             
-            IoSetCompletionRoutine(context->stripes[i].Irp, read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context->stripes[i].Irp, (PIO_COMPLETION_ROUTINE)read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
 
             context->stripes[i].status = ReadDataStatus_Pending;
         }
@@ -1225,7 +1225,7 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                 } else {
                     to_read = sector_align(read, Vcb->superblock.sector_size);
                     
-                    buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                    buf = (UINT8*)ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
                     
                     if (!buf) {
                         ERR("out of memory\n");
@@ -1314,7 +1314,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     UINT8* data;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)(FileObject->FsContext);
     UINT64 start;
     ULONG length, bytes_read;
     NTSTATUS Status;
@@ -1367,7 +1367,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             WARN("unknown minor %u\n", IrpSp->MinorFunction);
     }
     
-    data = map_user_buffer(Irp);
+    data = (UINT8*)map_user_buffer(Irp);
     
     Irp->IoStatus.Information = 0;
     
@@ -1543,7 +1543,7 @@ static NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
 static NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
@@ -1575,7 +1575,7 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation( Irp );
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     BOOL top_level;
 
     TRACE("flush buffers\n");
@@ -1613,7 +1613,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     ULONG BytesCopied = 0;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     BOOL top_level;
     
     WCHAR* fs_name = L"Btrfs";
@@ -1631,7 +1631,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     switch (IrpSp->Parameters.QueryVolume.FsInformationClass) {
         case FileFsAttributeInformation:
         {
-            FILE_FS_ATTRIBUTE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
+            FILE_FS_ATTRIBUTE_INFORMATION* data = (FILE_FS_ATTRIBUTE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             BOOL overflow = FALSE;
             ULONG orig_fs_name_len = fs_name_len;
             
@@ -1676,7 +1676,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 
         case FileFsFullSizeInformation:
         {
-            FILE_FS_FULL_SIZE_INFORMATION* ffsi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_FS_FULL_SIZE_INFORMATION* ffsi = (FILE_FS_FULL_SIZE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             UINT64 totalsize, freespace;
             
             TRACE("FileFsFullSizeInformation\n");
@@ -1703,7 +1703,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 
         case FileFsSizeInformation:
         {
-            FILE_FS_SIZE_INFORMATION* ffsi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_FS_SIZE_INFORMATION* ffsi = (FILE_FS_SIZE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             UINT64 totalsize, freespace;
             
             TRACE("FileFsSizeInformation\n");
@@ -1726,7 +1726,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 
         case FileFsVolumeInformation:
         {
-            FILE_FS_VOLUME_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
+            FILE_FS_VOLUME_INFORMATION* data = (FILE_FS_VOLUME_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             FILE_FS_VOLUME_INFORMATION ffvi;
             BOOL overflow = FALSE;
             ULONG label_len, orig_label_len;
@@ -1805,7 +1805,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 }
 
 static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    read_context* context = conptr;
+    read_context* context = (read_context*)conptr;
     
 //     DbgPrint("read_completion\n");
     
@@ -1911,7 +1911,7 @@ end:
 
 static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     NTSTATUS Status;
     BOOL top_level;
 
@@ -1936,7 +1936,7 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
         case FileFsLabelInformation:
             TRACE("FileFsLabelInformation\n");
     
-            Status = set_label(Vcb, Irp->AssociatedIrp.SystemBuffer);
+            Status = set_label(Vcb, (FILE_FS_LABEL_INFORMATION*)Irp->AssociatedIrp.SystemBuffer);
             break;
 
         case FileFsObjectIdInformation:
@@ -1994,7 +1994,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
                     if (newlen == 0) {
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
-                        UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
+                        UINT8 *newdi = (UINT8*)ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
                         
                         if (!newdi) {
                             ERR("out of memory\n");
@@ -2076,7 +2076,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                     if (newlen == 0) {
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
-                        UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
+                        UINT8 *newir = (UINT8*)ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
                         
                         if (!newir) {
                             ERR("out of memory\n");
@@ -2166,7 +2166,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                     if (newlen == 0) {
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
-                        UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
+                        UINT8 *newier = (UINT8*)ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
                         
                         if (!newier) {
                             ERR("out of memory\n");
@@ -2252,7 +2252,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         char* s;
         TRACE("deleting ADS\n");
         
-        s = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.Length + 1, ALLOC_TAG);
+        s = (char*)ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.Length + 1, ALLOC_TAG);
         if (!s) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2289,7 +2289,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
             goto exit;
         }
 
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -2316,7 +2316,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         return Status;
     }
     
-    utf8 = ExAllocatePoolWithTag(PagedPool, bytecount + 1, ALLOC_TAG);
+    utf8 = (char*)ExAllocatePoolWithTag(PagedPool, bytecount + 1, ALLOC_TAG);
     if (!utf8) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2402,7 +2402,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     if (ii->st_nlink > 1) {
         INODE_ITEM* newii;
         
-        newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        newii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!newii) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -2492,7 +2492,7 @@ success2:
     fcb->par->inode_item.st_ctime = now;
     fcb->par->inode_item.st_mtime = now;
 
-    dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    dirii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!dirii) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
@@ -2623,13 +2623,13 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     TRACE("FileObject = %p\n", FileObject);
     
-    fcb = FileObject->FsContext;
+    fcb = (_fcb*)FileObject->FsContext;
     if (!fcb) {
         TRACE("FCB was NULL, returning success\n");
         return STATUS_SUCCESS;
     }
     
-    ccb = FileObject->FsContext2;
+    ccb = (_ccb*)FileObject->FsContext2;
     
     TRACE("close called for %.*S (fcb == %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb);
     
@@ -2740,7 +2740,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     }
     
     if (FileObject) {
-        fcb = FileObject->FsContext;
+        fcb = (_fcb*)FileObject->FsContext;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
@@ -2859,7 +2859,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     
     num_reads++;
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
+    context = (read_context*)ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
     if (!context) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2868,7 +2868,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     RtlZeroMemory(context, sizeof(read_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
-    IoStatus = ExAllocatePoolWithTag(NonPagedPool, sizeof(IO_STATUS_BLOCK), ALLOC_TAG);
+    IoStatus = (IO_STATUS_BLOCK*)ExAllocatePoolWithTag(NonPagedPool, sizeof(IO_STATUS_BLOCK), ALLOC_TAG);
     if (!IoStatus) {
         ERR("out of memory\n");
         ExFreePool(context);
@@ -2920,7 +2920,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 
 //     IoQueueThreadIrp(Irp);
     
-    IoSetCompletionRoutine(Irp, read_completion, context, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, (PIO_COMPLETION_ROUTINE)read_completion, context, TRUE, TRUE, TRUE);
 
 //     if (Override)
 //     {
@@ -2961,7 +2961,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     
     to_read = sector_align(sizeof(superblock), device->SectorSize);
     
-    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    sb = (superblock*)ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -3067,7 +3067,7 @@ static NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode
 // }
 
 static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, traverse_ptr* tp) {
-    root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
+    root* r = (root*)ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
     if (!r) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -3080,7 +3080,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->prev = NULL;
     r->next = Vcb->roots;
 
-    r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
+    r->nonpaged = (root_nonpaged*)ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
     if (!r->nonpaged) {
         ERR("out of memory\n");
         ExFreePool(r);
@@ -3175,7 +3175,7 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb) {
 }
 
 static NTSTATUS add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 size) {
-    disk_hole* dh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
+    disk_hole* dh = (disk_hole*)ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
     
     if (!dh) {
         ERR("out of memory\n");
@@ -3303,7 +3303,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
             } else {            
-                c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
+                c = (chunk*)ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
                 
                 if (!c) {
                     ERR("out of memory\n");
@@ -3315,7 +3315,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 c->used = c->oldused = 0;
                 c->space_changed = FALSE;
                 
-                c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                c->chunk_item = (CHUNK_ITEM*)ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                 
                 if (!c->chunk_item) {
                     ERR("out of memory\n");
@@ -3327,7 +3327,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     
-                    c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
+                    c->devices = (device**)ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
                     
                     if (!c->devices) {
                         ERR("out of memory\n");
@@ -3451,7 +3451,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     ii = (INODE_ITEM*)tp2.item->data;
     
-    data = ExAllocatePoolWithTag(PagedPool, ii->st_size, ALLOC_TAG);
+    data = (UINT8*)ExAllocatePoolWithTag(PagedPool, ii->st_size, ALLOC_TAG);
     
     if (!data) {
         ERR("out of memory\n");
@@ -3478,7 +3478,7 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         return FALSE;
     }
     
-    checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * num_sectors, ALLOC_TAG); // FIXME - get rid of this
+    checksums = (UINT32*)ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * num_sectors, ALLOC_TAG); // FIXME - get rid of this
     
     if (!checksums) {
         ERR("out of memory\n");
@@ -3553,7 +3553,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         
         if (tp.item->key.obj_id >= c->offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
             if (tp.item->key.obj_id > lastaddr) {
-                s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+                s = (space*)ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
                 
                 if (!s) {
                     ERR("out of memory\n");
@@ -3582,7 +3582,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     } while (b);
     
     if (lastaddr < c->offset + c->chunk_item->size) {
-        s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+        s = (space*)ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
         
         if (!s) {
             ERR("out of memory\n");
@@ -3608,7 +3608,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         s = CONTAINING_RECORD(le, space, list_entry);
         
         if (s->offset > lastaddr) {
-            s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+            s2 = (space*)ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
             
             if (!s2) {
                 ERR("out of memory\n");
@@ -3628,7 +3628,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     if (lastaddr < c->offset + c->chunk_item->size) {
-        s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+        s = (space*)ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
         
         if (!s) {
             ERR("out of memory\n");
@@ -3808,7 +3808,7 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
             if (n < cisize)
                 return STATUS_SUCCESS;
             
-            sc = ExAllocatePoolWithTag(PagedPool, sizeof(sys_chunk), ALLOC_TAG);
+            sc = (sys_chunk*)ExAllocatePoolWithTag(PagedPool, sizeof(sys_chunk), ALLOC_TAG);
             
             if (!sc) {
                 ERR("out of memory\n");
@@ -3905,7 +3905,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     TRACE("DEV_ITEM = %x, superblock = %x\n", sizeof(DEV_ITEM), sizeof(superblock));
 
     NewDeviceObject->Flags |= DO_DIRECT_IO;
-    Vcb = (PVOID)NewDeviceObject->DeviceExtension;
+    Vcb = (device_extension*)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
     
     InitializeListHead(&Vcb->tree_cache);
@@ -4003,7 +4003,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
     
-    Vcb->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device) * Vcb->superblock.num_devices, ALLOC_TAG);
+    Vcb->devices = (device*)ExAllocatePoolWithTag(PagedPool, sizeof(device) * Vcb->superblock.num_devices, ALLOC_TAG);
     if (!Vcb->devices) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -4111,7 +4111,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->root_fcb->inode = SUBVOL_ROOT_INODE;
     Vcb->root_fcb->type = BTRFS_TYPE_DIRECTORY;
     
-    Vcb->root_fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
+    Vcb->root_fcb->full_filename.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
     
     if (!Vcb->root_fcb->full_filename.Buffer) {
         ERR("out of memory\n");
@@ -4240,7 +4240,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     
-    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, Vcb);
+    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, (PKSTART_ROUTINE)flush_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         goto exit;
@@ -4345,7 +4345,7 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
 static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    fcb* fcb = IrpSp->FileObject->FsContext;
+    fcb* fcb = (_fcb*)IrpSp->FileObject->FsContext;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
@@ -4368,7 +4368,7 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     fcb* fcb;
     BOOL top_level;
 
@@ -4389,7 +4389,7 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         
     }
     
-    fcb = FileObject->FsContext;
+    fcb = (_fcb*)FileObject->FsContext;
     
     if (!fcb) {
         ERR("FCB was NULL\n");
@@ -4468,7 +4468,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
 static NTSTATUS STDCALL drv_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     NTSTATUS Status;
     BOOL top_level;
 
@@ -4549,7 +4549,7 @@ static void STDCALL check_cpu() {
     __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
 #else
-   __cpuid(cpuInfo, 1);
+   __cpuid((int*)cpuInfo, 1);
    have_sse42 = cpuInfo[2] & (1 << 20);
 #endif
 
@@ -4571,7 +4571,7 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
     
     const WCHAR mappings[] = L"\\Mappings";
     
-    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
+    path = (WCHAR*)ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
     if (!path) {
         ERR("out of memory\n");
         return;
@@ -4597,7 +4597,7 @@ static void STDCALL read_registry(PUNICODE_STRING regpath) {
 
     if (dispos == REG_OPENED_EXISTING_KEY) {
         kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) + 256;
-        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        kvfi = (KEY_VALUE_FULL_INFORMATION*)ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
         
         if (!kvfi) {
             ERR("out of memory\n");
@@ -4655,7 +4655,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
    
     drvobj = DriverObject;
 
-    DriverObject->DriverUnload = DriverUnload;
+    DriverObject->DriverUnload = (PDRIVER_UNLOAD)DriverUnload;
 
     DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)drv_create;
     DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)drv_close;

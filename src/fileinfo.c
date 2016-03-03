@@ -18,8 +18,8 @@
 #include "btrfs_drv.h"
 
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
-    FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
+    FILE_BASIC_INFORMATION* fbi = (FILE_BASIC_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     ULONG defda;
     BOOL inode_item_changed = FALSE;
     NTSTATUS Status;
@@ -108,7 +108,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         
         free_traverse_ptr(&tp);
         
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -127,8 +127,8 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
 }
 
 static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
-    FILE_DISPOSITION_INFORMATION* fdi = Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
+    FILE_DISPOSITION_INFORMATION* fdi = (FILE_DISPOSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     ULONG atts;
     
     TRACE("changing delete_on_close to %s for %.*S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb);
@@ -179,7 +179,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
             return STATUS_INTERNAL_ERROR;
         }
         
-        ier2 = ExAllocatePoolWithTag(PagedPool, iersize, ALLOC_TAG);
+        ier2 = (UINT8*)ExAllocatePoolWithTag(PagedPool, iersize, ALLOC_TAG);
         if (!ier2) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -203,7 +203,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + utf8->Length, ALLOC_TAG);
+        ier = (INODE_EXTREF*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + utf8->Length, ALLOC_TAG);
         if (!ier) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -258,7 +258,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
             }
         }
         
-        ir2 = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
+        ir2 = (UINT8*)ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
         if (!ir2) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -281,7 +281,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + utf8->Length, ALLOC_TAG);
+        ir = (INODE_REF*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + utf8->Length, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -337,7 +337,7 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
     sf2->Vcb = Vcb;
 
     sf2->utf8.Length = sf2->utf8.MaximumLength = di->n;
-    sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, di->n, ALLOC_TAG);
+    sf2->utf8.Buffer = (PCHAR)ExAllocatePoolWithTag(PagedPool, di->n, ALLOC_TAG);
     if (!sf2->utf8.Buffer) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -462,7 +462,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
         if (fcb->inode_item.st_nlink > 1) {
             fcb->inode_item.st_nlink--;
             
-            ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+            ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
             if (!ii) {
                 ERR("out of memory\n");
                 free_traverse_ptr(&tp);
@@ -487,7 +487,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     fcb->inode_item.st_nlink = 1;
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -512,7 +512,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     // create new DIR_ITEM
     
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
+    di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -598,7 +598,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     // create DIR_INDEX
     
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
+    di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -631,7 +631,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
     
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM && tp.item->size > 0) {
-            di = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             
             if (!di) {
                 ERR("out of memory\n");
@@ -679,7 +679,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
             if (tp.item->size < sizeof(EXTENT_DATA)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
             } else {
-                EXTENT_DATA* ed = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                EXTENT_DATA* ed = (EXTENT_DATA*)ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                 
                 if (!ed) {
                     ERR("out of memory\n");
@@ -794,7 +794,7 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
                         }
                         
                         
-                        dl2 = ExAllocatePoolWithTag(PagedPool, sizeof(dir_list), ALLOC_TAG);
+                        dl2 = (dir_list*)ExAllocatePoolWithTag(PagedPool, sizeof(dir_list), ALLOC_TAG);
                         if (!dl2) {
                             ERR("out of memory\n");
                             free_traverse_ptr(&tp);
@@ -806,7 +806,7 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
                         dl2->newparinode = newparinode;
                         
                         dl2->utf8.Length = dl2->utf8.MaximumLength = di->n;
-                        dl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dl2->utf8.MaximumLength, ALLOC_TAG);
+                        dl2->utf8.Buffer = (PCHAR)ExAllocatePoolWithTag(PagedPool, dl2->utf8.MaximumLength, ALLOC_TAG);
                         if (!dl2->utf8.Buffer) {
                             ERR("out of memory\n");
                             free_traverse_ptr(&tp);
@@ -975,7 +975,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                     if (newlen == 0) {
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
-                        UINT8 *newrr = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
+                        UINT8 *newrr = (UINT8*)ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
                         
                         if (!newrr) {
                             ERR("out of memory\n");
@@ -1037,7 +1037,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         ULONG rrsize = tp.item->size + sizeof(ROOT_REF) - 1 + rr->n;
         UINT8* rr2;
         
-        rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
+        rr2 = (UINT8*)ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
         if (!rr2) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1074,7 +1074,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
 static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
-    UINT8* data;
+    UINT8* data = NULL;
     ULONG datalen;
     
     searchkey.obj_id = parsubvolid;
@@ -1089,7 +1089,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     if (!keycmp(&tp.item->key, &searchkey) && tp.item->size > 0) {
         datalen = tp.item->size;
         
-        data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        data = (UINT8*)ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
         if (!data) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1145,7 +1145,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     
     // create new DIR_ITEM
     
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
+    di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1209,7 +1209,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
         index = find_next_dir_index(Vcb, destfcb->subvol, destfcb->inode);
     }
     
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
+    di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1231,7 +1231,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     
     // create new ROOT_REF
     
-    rr = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_REF) - 1 + utf8->Length, ALLOC_TAG);
+    rr = (ROOT_REF*)ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_REF) - 1 + utf8->Length, ALLOC_TAG);
     if (!rr) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1293,8 +1293,9 @@ static BOOL has_open_children(fcb* fcb) {
 }
 
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
-    FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
-    fcb *fcb = FileObject->FsContext, *tfofcb, *oldparfcb, *oldfcb;
+    FILE_RENAME_INFORMATION* fri = (FILE_RENAME_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+	fcb *fcb = (_fcb*)FileObject->FsContext, *tfofcb, *oldparfcb;
+	_fcb *oldfcb = NULL;
     root* parsubvol;
     UINT64 parinode, dirpos;
     WCHAR* fn;
@@ -1341,7 +1342,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     } else {
         LONG i;
         
-        tfofcb = tfo->FsContext;
+        tfofcb = (_fcb*)tfo->FsContext;
         parsubvol = tfofcb->subvol;
         parinode = tfofcb->inode;
         
@@ -1366,7 +1367,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     
     utf8.MaximumLength = utf8.Length = utf8len;
-    utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
+    utf8.Buffer = (PCHAR)ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
     if (!utf8.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1386,7 +1387,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 
     oldfcb = NULL;
 
-    Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE);
+    Status = get_fcb(Vcb, &oldfcb, &fnus, (_fcb*)(tfo ? tfo->FsContext : NULL), FALSE);
 
     if (NT_SUCCESS(Status)) {
         WARN("destination file %.*S already exists\n", oldfcb->full_filename.Length / sizeof(WCHAR), oldfcb->full_filename.Buffer);
@@ -1463,7 +1464,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         // create new DIR_ITEM entry
         
-        di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8.Length, ALLOC_TAG);
+        di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8.Length, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1551,7 +1552,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             dirpos = oldindex;
         
         disize = (ULONG)(sizeof(DIR_ITEM) - 1 + utf8.Length);
-        di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+        di = (DIR_ITEM*)ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1596,7 +1597,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         free_traverse_ptr(&tp);
         
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1649,7 +1650,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
         delete_tree_item(Vcb, &tp, rollback);
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
@@ -1676,7 +1677,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
             delete_tree_item(Vcb, &tp, rollback);
         
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             free_traverse_ptr(&tp);
@@ -1704,7 +1705,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (fnlen != fcb->filepart.Length / sizeof(WCHAR) || RtlCompareMemory(fn, fcb->filepart.Buffer, fcb->filepart.Length) != fcb->filepart.Length) {
         RtlFreeUnicodeString(&fcb->filepart);
         fcb->filepart.Length = fcb->filepart.MaximumLength = (USHORT)(fnlen * sizeof(WCHAR));
-        fcb->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->filepart.Length, ALLOC_TAG);
+        fcb->filepart.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, fcb->filepart.Length, ALLOC_TAG);
         
         if (!fcb->filepart.Buffer) {
             ERR("out of memory\n");
@@ -1741,7 +1742,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (fcb->par->par) fcb->full_filename.MaximumLength += sizeof(WCHAR);
     ExFreePool(fcb->full_filename.Buffer);
     
-    fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.MaximumLength, ALLOC_TAG);
+    fcb->full_filename.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, fcb->full_filename.MaximumLength, ALLOC_TAG);
     if (!fcb->full_filename.Buffer) {
         ERR("out of memory\n");
         
@@ -1777,8 +1778,8 @@ end:
 }
 
 static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
-    FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
+    FILE_END_OF_FILE_INFORMATION* feofi = (FILE_END_OF_FILE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     KEY searchkey;
@@ -1858,7 +1859,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             return STATUS_INTERNAL_ERROR;
         }
 
-        data2 = ExAllocatePoolWithTag(PagedPool, feofi->EndOfFile.QuadPart, ALLOC_TAG);
+        data2 = (UINT8*)ExAllocatePoolWithTag(PagedPool, feofi->EndOfFile.QuadPart, ALLOC_TAG);
         if (!data2) {
             ERR("out of memory\n");
             ExFreePool(data);
@@ -1908,7 +1909,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     else
         WARN("couldn't find existing INODE_ITEM\n");
 
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
@@ -1927,8 +1928,8 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
 }
 
 static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
-    FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
+    FILE_END_OF_FILE_INFORMATION* feofi = (FILE_END_OF_FILE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     NTSTATUS Status;
     LARGE_INTEGER time;
     KEY searchkey;
@@ -2045,7 +2046,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     else
         WARN("couldn't find existing INODE_ITEM\n");
 
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    ii = (INODE_ITEM*)ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2088,8 +2089,8 @@ static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp
 NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    device_extension* Vcb = DeviceObject->DeviceExtension;
-    fcb* fcb = IrpSp->FileObject->FsContext;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
+    fcb* fcb = (_fcb*)IrpSp->FileObject->FsContext;
     BOOL top_level;
     LIST_ENTRY rollback;
     
@@ -2473,7 +2474,7 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
         return STATUS_INTERNAL_ERROR;
     }
     
-    streams = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info) * num_streams, ALLOC_TAG);
+    streams = (stream_info*)ExAllocatePoolWithTag(PagedPool, sizeof(stream_info) * num_streams, ALLOC_TAG);
     if (!streams) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2515,7 +2516,7 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
                             goto end;
                         }
                         
-                        streams[i].name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                        streams[i].name.Buffer = (PWCH)ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                         if (!streams[i].name.Buffer) {
                             UINT64 j;
                             
@@ -2637,8 +2638,8 @@ static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LIN
 static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
-    fcb* fcb = FileObject->FsContext;
-    ccb* ccb = FileObject->FsContext2;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
+    ccb* ccb = (_ccb*)FileObject->FsContext2;
     NTSTATUS Status;
     
     TRACE("(%p, %p, %p)\n", Vcb, FileObject, Irp);
@@ -2650,7 +2651,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
     switch (IrpSp->Parameters.QueryFile.FileInformationClass) {
         case FileAllInformation:
         {
-            FILE_ALL_INFORMATION* fai = Irp->AssociatedIrp.SystemBuffer;
+            FILE_ALL_INFORMATION* fai = (FILE_ALL_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             INODE_ITEM* ii;
             
             TRACE("FileAllInformation\n");
@@ -2694,7 +2695,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileAttributeTagInformation:
         {
-            FILE_ATTRIBUTE_TAG_INFORMATION* ati = Irp->AssociatedIrp.SystemBuffer;
+            FILE_ATTRIBUTE_TAG_INFORMATION* ati = (FILE_ATTRIBUTE_TAG_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileAttributeTagInformation\n");
             
@@ -2705,7 +2706,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileBasicInformation:
         {
-            FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_BASIC_INFORMATION* fbi = (FILE_BASIC_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             INODE_ITEM* ii;
             
             TRACE("FileBasicInformation\n");
@@ -2732,7 +2733,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileEaInformation:
         {
-            FILE_EA_INFORMATION* eai = Irp->AssociatedIrp.SystemBuffer;
+            FILE_EA_INFORMATION* eai = (FILE_EA_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileEaInformation\n");
             
@@ -2743,7 +2744,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileInternalInformation:
         {
-            FILE_INTERNAL_INFORMATION* fii = Irp->AssociatedIrp.SystemBuffer;
+            FILE_INTERNAL_INFORMATION* fii = (FILE_INTERNAL_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileInternalInformation\n");
             
@@ -2754,7 +2755,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileNameInformation:
         {
-            FILE_NAME_INFORMATION* fni = Irp->AssociatedIrp.SystemBuffer;
+            FILE_NAME_INFORMATION* fni = (FILE_NAME_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileNameInformation\n");
             
@@ -2765,7 +2766,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileNetworkOpenInformation:
         {
-            FILE_NETWORK_OPEN_INFORMATION* fnoi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_NETWORK_OPEN_INFORMATION* fnoi = (FILE_NETWORK_OPEN_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileNetworkOpenInformation\n");
             
@@ -2776,7 +2777,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FilePositionInformation:
         {
-            FILE_POSITION_INFORMATION* fpi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FilePositionInformation\n");
             
@@ -2787,7 +2788,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileStandardInformation:
         {
-            FILE_STANDARD_INFORMATION* fsi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileStandardInformation\n");
             
@@ -2804,7 +2805,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 
         case FileStreamInformation:
         {
-            FILE_STREAM_INFORMATION* fsi = Irp->AssociatedIrp.SystemBuffer;
+            FILE_STREAM_INFORMATION* fsi = (FILE_STREAM_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileStreamInformation\n");
             
@@ -2820,7 +2821,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
         case FileNormalizedNameInformation:
         {
-            FILE_NAME_INFORMATION* fni = Irp->AssociatedIrp.SystemBuffer;
+            FILE_NAME_INFORMATION* fni = (FILE_NAME_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileNormalizedNameInformation\n");
             
@@ -2831,7 +2832,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
         case FileStandardLinkInformation:
         {
-            FILE_STANDARD_LINK_INFORMATION* fsli = Irp->AssociatedIrp.SystemBuffer;
+            FILE_STANDARD_LINK_INFORMATION* fsli = (FILE_STANDARD_LINK_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FileStandardLinkInformation\n");
             
@@ -2863,7 +2864,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     fcb* fcb;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = (device_extension*)DeviceObject->DeviceExtension;
     BOOL top_level;
     
     FsRtlEnterFileSystem();
@@ -2878,7 +2879,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     acquire_tree_lock(Vcb, FALSE);
     
-    fcb = IrpSp->FileObject->FsContext;
+    fcb = (_fcb*)IrpSp->FileObject->FsContext;
     TRACE("fcb = %p\n", fcb);
     TRACE("fcb->subvol = %p\n", fcb->subvol);
     

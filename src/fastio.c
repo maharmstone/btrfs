@@ -53,7 +53,7 @@ static BOOLEAN STDCALL fast_io_query_open(PIRP Irp, PFILE_NETWORK_OPEN_INFORMATI
 static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
                                          ULONG LockKey, BOOLEAN CheckForReadOperation, PIO_STATUS_BLOCK IoStatus,
                                          PDEVICE_OBJECT DeviceObject) {
-    fcb* fcb = FileObject->FsContext;
+    fcb* fcb = (_fcb*)FileObject->FsContext;
     LARGE_INTEGER len2;
     
     TRACE("(%p, %llx, %x, %x, %x, %x, %p, %p)\n", FileObject, FileOffset->QuadPart, Length, Wait, LockKey, CheckForReadOperation, IoStatus, DeviceObject);
@@ -150,33 +150,33 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
 
     FastIoDispatch.SizeOfFastIoDispatch = sizeof(FAST_IO_DISPATCH);
 
-    FastIoDispatch.FastIoCheckIfPossible = fast_io_check_if_possible;
+    FastIoDispatch.FastIoCheckIfPossible = (PFAST_IO_CHECK_IF_POSSIBLE)fast_io_check_if_possible;
     FastIoDispatch.FastIoRead = FsRtlCopyRead;
     FastIoDispatch.FastIoWrite = FsRtlCopyWrite;
-    FastIoDispatch.FastIoQueryBasicInfo = fast_query_basic_info;
-    FastIoDispatch.FastIoQueryStandardInfo = fast_query_standard_info;
-    FastIoDispatch.FastIoLock = fast_io_lock;
-    FastIoDispatch.FastIoUnlockSingle = fast_io_unlock_single;
-    FastIoDispatch.FastIoUnlockAll = fast_io_unlock_all;
-    FastIoDispatch.FastIoUnlockAllByKey = fast_io_unlock_all_by_key;
-    FastIoDispatch.FastIoDeviceControl = fast_io_device_control;
-    FastIoDispatch.AcquireFileForNtCreateSection = acquire_file_for_create_section;
-    FastIoDispatch.ReleaseFileForNtCreateSection = release_file_for_create_section;
-    FastIoDispatch.FastIoDetachDevice = fast_io_detach_device;
-    FastIoDispatch.FastIoQueryNetworkOpenInfo = fast_io_query_network_open_info;
-    FastIoDispatch.AcquireForModWrite = fast_io_acquire_for_mod_write;
-    FastIoDispatch.MdlRead = FsRtlMdlReadDev;
-    FastIoDispatch.MdlReadComplete = FsRtlMdlReadCompleteDev;
+    FastIoDispatch.FastIoQueryBasicInfo = (PFAST_IO_QUERY_BASIC_INFO)fast_query_basic_info;
+    FastIoDispatch.FastIoQueryStandardInfo = (PFAST_IO_QUERY_STANDARD_INFO)fast_query_standard_info;
+    FastIoDispatch.FastIoLock = (PFAST_IO_LOCK)fast_io_lock;
+    FastIoDispatch.FastIoUnlockSingle = (PFAST_IO_UNLOCK_SINGLE)fast_io_unlock_single;
+    FastIoDispatch.FastIoUnlockAll = (PFAST_IO_UNLOCK_ALL)fast_io_unlock_all;
+    FastIoDispatch.FastIoUnlockAllByKey = (PFAST_IO_UNLOCK_ALL_BY_KEY)fast_io_unlock_all_by_key;
+    FastIoDispatch.FastIoDeviceControl = (PFAST_IO_DEVICE_CONTROL)fast_io_device_control;
+    FastIoDispatch.AcquireFileForNtCreateSection = (PFAST_IO_ACQUIRE_FILE)acquire_file_for_create_section;
+    FastIoDispatch.ReleaseFileForNtCreateSection = (PFAST_IO_RELEASE_FILE)release_file_for_create_section;
+    FastIoDispatch.FastIoDetachDevice = (PFAST_IO_DETACH_DEVICE)fast_io_detach_device;
+    FastIoDispatch.FastIoQueryNetworkOpenInfo = (PFAST_IO_QUERY_NETWORK_OPEN_INFO)fast_io_query_network_open_info;
+    FastIoDispatch.AcquireForModWrite = (PFAST_IO_ACQUIRE_FOR_MOD_WRITE)fast_io_acquire_for_mod_write;
+    FastIoDispatch.MdlRead = (PFAST_IO_MDL_READ)FsRtlMdlReadDev;
+    FastIoDispatch.MdlReadComplete = (PFAST_IO_MDL_READ_COMPLETE)FsRtlMdlReadCompleteDev;
     FastIoDispatch.PrepareMdlWrite = FsRtlPrepareMdlWriteDev;
     FastIoDispatch.MdlWriteComplete = FsRtlMdlWriteCompleteDev;
-    FastIoDispatch.FastIoReadCompressed = fast_io_read_compressed;
-    FastIoDispatch.FastIoWriteCompressed = fast_io_write_compressed;
-    FastIoDispatch.MdlReadCompleteCompressed = fast_io_mdl_read_complete_compressed;
-    FastIoDispatch.MdlWriteCompleteCompressed = fast_io_mdl_write_complete_compressed;
-    FastIoDispatch.FastIoQueryOpen = fast_io_query_open;
-    FastIoDispatch.ReleaseForModWrite = fast_io_release_for_mod_write;
-    FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
-    FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
+    FastIoDispatch.FastIoReadCompressed = (PFAST_IO_READ_COMPRESSED)fast_io_read_compressed;
+    FastIoDispatch.FastIoWriteCompressed = (PFAST_IO_WRITE_COMPRESSED)fast_io_write_compressed;
+    FastIoDispatch.MdlReadCompleteCompressed = (PFAST_IO_MDL_READ_COMPLETE_COMPRESSED)fast_io_mdl_read_complete_compressed;
+    FastIoDispatch.MdlWriteCompleteCompressed = (PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED)fast_io_mdl_write_complete_compressed;
+    FastIoDispatch.FastIoQueryOpen = (PFAST_IO_QUERY_OPEN)fast_io_query_open;
+    FastIoDispatch.ReleaseForModWrite = (PFAST_IO_RELEASE_FOR_MOD_WRITE)fast_io_release_for_mod_write;
+    FastIoDispatch.AcquireForCcFlush = (PFAST_IO_ACQUIRE_FOR_CCFLUSH)fast_io_acquire_for_ccflush;
+    FastIoDispatch.ReleaseForCcFlush = (PFAST_IO_RELEASE_FOR_CCFLUSH)fast_io_release_for_ccflush;
     
     *fiod = &FastIoDispatch;
 }
