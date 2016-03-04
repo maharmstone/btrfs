@@ -5657,7 +5657,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     UINT8* data;
     LIST_ENTRY changed_sector_list;
     INODE_ITEM *ii, *origii;
-    BOOL changed_length = FALSE, nocsum, nocow/*, lazy_writer = FALSE*/, write_eof = FALSE;
+    BOOL changed_length = FALSE, nocsum, nocow/*, lazy_writer = FALSE, write_eof = FALSE*/;
     NTSTATUS Status;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -5684,7 +5684,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (offset.LowPart == FILE_WRITE_TO_END_OF_FILE && offset.HighPart == -1) {
         offset = fcb->Header.FileSize;
-        write_eof = TRUE;
+//         write_eof = TRUE;
     }
     
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
@@ -5705,11 +5705,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 //     }
     
     if (offset.QuadPart + *length > newlength) {
-        if (paging_io && !write_eof) {
+        if (paging_io) {
             if (offset.QuadPart >= newlength) {
                 WARN("paging IO tried to write beyond end of file (file size = %llx, offset = %llx, length = %x)\n", newlength, offset.QuadPart, *length);
-                ERR("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
-                ERR("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
+                TRACE("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+                TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 return STATUS_SUCCESS;
             }
@@ -5721,6 +5721,62 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             TRACE("extending length to %llx\n", newlength);
         }
+    }
+    
+    make_inline = fcb->ads ? FALSE : newlength <= fcb->Vcb->max_inline;
+    
+    if (changed_length) {
+        UINT64 alloclen;
+        
+        if (fcb->ads) {
+            alloclen = newlength;
+        } else if (make_inline) {
+            alloclen = sector_align(newlength, fcb->Vcb->superblock.sector_size);
+        } else {
+            alloclen = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
+        }
+        
+        if (alloclen > fcb->Header.AllocationSize.QuadPart)
+            fcb->Header.AllocationSize.QuadPart = alloclen;
+        
+        fcb->Header.FileSize.QuadPart = newlength;
+//         fcb->Header.ValidDataLength.QuadPart = newlength;
+        
+        TRACE("AllocationSize = %llx\n", fcb->Header.AllocationSize.QuadPart);
+        TRACE("FileSize = %llx\n", fcb->Header.FileSize.QuadPart);
+        TRACE("ValidDataLength = %llx\n", fcb->Header.ValidDataLength.QuadPart);
+    }
+    
+    if (!no_cache) {
+        BOOL wait;
+        
+        if (!FileObject->PrivateCacheMap) {
+            CC_FILE_SIZES ccfs;
+            
+            ccfs.AllocationSize = fcb->Header.AllocationSize;
+            ccfs.FileSize = fcb->Header.FileSize;
+            ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+            
+            TRACE("calling CcInitializeCacheMap...\n");
+            CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
+            
+            CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+        }
+        
+        // FIXME - uncomment this when async is working
+//             wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
+        wait = TRUE;
+        
+        TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
+        if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
+            TRACE("CcCopyWrite failed.\n");
+            
+            IoMarkIrpPending(Irp);
+            return STATUS_PENDING;
+        }
+        TRACE("CcCopyWrite finished\n");
+        
+        return STATUS_SUCCESS;
     }
     
     if (fcb->ads) {
@@ -5794,187 +5850,90 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (data) ExFreePool(data);
         if (data2 != data) ExFreePool(data2);
         
-        if (newlength > fcb->Header.AllocationSize.QuadPart)
-            fcb->Header.AllocationSize.QuadPart = newlength;
-        
-        fcb->Header.FileSize.QuadPart = newlength;
         fcb->Header.ValidDataLength.QuadPart = newlength;
     } else {
-        if (!no_cache && FileObject->PrivateCacheMap) {
-            BOOL wait;
-            
-//             ERR("FileObject->Flags: %x, changed_length = %u, write_eof = %u\n", FileObject->Flags, changed_length, write_eof);
-//             if (changed_length) {
-//                 CC_FILE_SIZES ccfs;
-//                 UINT64 oldalloc;
-//                 
-//                 fcb->inode_item.st_size = newlength;
-//                     
-//                 ccfs.AllocationSize = fcb->Header.AllocationSize;
-//                 ccfs.FileSize = fcb->Header.FileSize;
-//                 ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-//                 
-//                 TRACE("new FileSize = %llx\n", fcb->Header.FileSize);
-// 
-//                 CcSetFileSizes(FileObject, &ccfs);
-//         
-//                 searchkey.obj_id = fcb->inode;
-//                 searchkey.obj_type = TYPE_EXTENT_DATA;
-//                 searchkey.offset = 0xffffffffffffffff;
-//                 
-//                 if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-//                     ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-//                     return STATUS_INTERNAL_ERROR;
-//                 }
-//                 
-//                 oldalloc = 0;
-//                 if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-//                     oldalloc = tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size;
-//                 }
-//                 TRACE("oldalloc = %llx, newalloc = %llx\n", oldalloc, fcb->Header.AllocationSize.QuadPart);
-//                 
-//                 // FIXME - handle inline extents
-//                 if (fcb->Header.AllocationSize.QuadPart > oldalloc) {
-//                     Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, oldalloc, fcb->Header.AllocationSize.QuadPart - oldalloc);
-//                     
-//                     if (!NT_SUCCESS(Status)) {
-//                         ERR("insert_sparse_extent returned %08x\n", Status);
-//                         free_traverse_ptr(&tp);
-//                         return Status;
-//                     }
-//                 }
-//                 
-//                 fcb->inode_item.st_size = newlength;
-//                 
-//                 free_traverse_ptr(&tp);
-//             }
-//              
-//             if (write_eof || FileObject->Flags & FO_SYNCHRONOUS_IO) {
-//                 TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
-//                 FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + *length;
-//                 TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
-//             }
-            
-            // FIXME - uncomment this when async is working
-//             wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
-            wait = TRUE;
-            
-            TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
-            if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
-                TRACE("CcCopyWrite failed.\n");
-                
-                IoMarkIrpPending(Irp);
-                return STATUS_PENDING;
-            }
-            TRACE("CcCopyWrite finished\n");
-            
-            return STATUS_SUCCESS;
+        if (make_inline) {
+            start_data = 0;
+            end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
+            bufhead = sizeof(EXTENT_DATA) - 1;
         } else {
-            make_inline = newlength <= fcb->Vcb->max_inline;
+            start_data = offset.QuadPart & ~(fcb->Vcb->superblock.sector_size - 1);
+            end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
+            bufhead = 0;
+        }
             
-            if (make_inline) {
-                start_data = 0;
-                end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
-                bufhead = sizeof(EXTENT_DATA) - 1;
-            } else {
-                start_data = offset.QuadPart & ~(fcb->Vcb->superblock.sector_size - 1);
-                end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
-                bufhead = 0;
-            }
-                
-            if (end_data > fcb->Header.AllocationSize.QuadPart)
-                fcb->Header.AllocationSize.QuadPart = end_data;
-            
-            fcb->Header.AllocationSize.QuadPart = sector_align(newlength, fcb->Vcb->superblock.sector_size);
-            fcb->Header.FileSize.QuadPart = newlength;
-            fcb->Header.ValidDataLength.QuadPart = newlength;
-            TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
+        fcb->Header.ValidDataLength.QuadPart = newlength;
+        TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
+    
+        // FIXME - make sure freed if necessary
+        data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
+        if (!data) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         
-            // FIXME - make sure freed if necessary
-            data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
-            if (!data) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+        RtlZeroMemory(data + bufhead, end_data - start_data);
+        
+        TRACE("start_data = %llx\n", start_data);
+        TRACE("end_data = %llx\n", end_data);
+        
+        if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
+            if (changed_length) {
+                if (fcb->inode_item.st_size > start_data) 
+                    Status = read_file(Vcb, fcb->subvol, fcb->inode, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL);
+                else
+                    Status = STATUS_SUCCESS;
+            } else
+                Status = read_file(Vcb, fcb->subvol, fcb->inode, data + bufhead, start_data, end_data - start_data, NULL);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_file returned %08x\n", Status);
+                ExFreePool(data);
+                return Status;
             }
-            
-            RtlZeroMemory(data + bufhead, end_data - start_data);
-            
-            TRACE("start_data = %llx\n", start_data);
-            TRACE("end_data = %llx\n", end_data);
-            
-            if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
-                if (changed_length) {
-                    if (fcb->inode_item.st_size > start_data) 
-                        Status = read_file(Vcb, fcb->subvol, fcb->inode, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL);
-                    else
-                        Status = STATUS_SUCCESS;
-                } else
-                    Status = read_file(Vcb, fcb->subvol, fcb->inode, data + bufhead, start_data, end_data - start_data, NULL);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("read_file returned %08x\n", Status);
-                    ExFreePool(data);
-                    return Status;
-                }
-            }
-            
-            RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
-            
-            if (!nocsum)
-                InitializeListHead(&changed_sector_list);
+        }
+        
+        RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
+        
+        if (!nocsum)
+            InitializeListHead(&changed_sector_list);
 
-            if (make_inline || !nocow) {
-                Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, nocsum ? NULL : &changed_sector_list, rollback);
+        if (make_inline || !nocow) {
+            Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, nocsum ? NULL : &changed_sector_list, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - excise_extents returned %08x\n", Status);
+                ExFreePool(data);
+                return Status;
+            }
+            
+            if (!make_inline) {
+                Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+                
                 if (!NT_SUCCESS(Status)) {
-                    ERR("error - excise_extents returned %08x\n", Status);
+                    ERR("error - insert_extent returned %08x\n", Status);
                     ExFreePool(data);
                     return Status;
-                }
-                
-                if (!make_inline) {
-                    Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, nocsum ? NULL : &changed_sector_list, rollback);
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("error - insert_extent returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                } else {
-                    ed2 = (EXTENT_DATA*)data;
-                    ed2->generation = fcb->Vcb->superblock.generation;
-                    ed2->decoded_size = newlength;
-                    ed2->compression = BTRFS_COMPRESSION_NONE;
-                    ed2->encryption = BTRFS_ENCRYPTION_NONE;
-                    ed2->encoding = BTRFS_ENCODING_NONE;
-                    ed2->type = EXTENT_TYPE_INLINE;
-                    
-                    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, NULL, rollback);
-                    
-                    fcb->inode_item.st_blocks += newlength;
                 }
             } else {
-                Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data - start_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+                ed2 = (EXTENT_DATA*)data;
+                ed2->generation = fcb->Vcb->superblock.generation;
+                ed2->decoded_size = newlength;
+                ed2->compression = BTRFS_COMPRESSION_NONE;
+                ed2->encryption = BTRFS_ENCRYPTION_NONE;
+                ed2->encoding = BTRFS_ENCODING_NONE;
+                ed2->type = EXTENT_TYPE_INLINE;
                 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - do_nocow_write returned %08x\n", Status);
-                    ExFreePool(data);
-                    return Status;
-                }
+                insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, NULL, rollback);
+                
+                fcb->inode_item.st_blocks += newlength;
             }
+        } else {
+            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data - start_data, data, nocsum ? NULL : &changed_sector_list, rollback);
             
-            if (!no_cache && !FileObject->PrivateCacheMap) {
-                CC_FILE_SIZES ccfs;
-                
-                ccfs.AllocationSize = fcb->Header.AllocationSize;
-                ccfs.FileSize = fcb->Header.FileSize;
-                ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-                
-                TRACE("calling CcInitializeCacheMap...\n");
-                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
-                
-                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
-
-                changed_length = FALSE;
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - do_nocow_write returned %08x\n", Status);
+                ExFreePool(data);
+                return Status;
             }
         }
     }
@@ -6055,7 +6014,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         CcSetFileSizes(FileObject, &ccfs);
     }
     
-    if (write_eof || FileObject->Flags & FO_SYNCHRONOUS_IO) {
+    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
         TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
         FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + *length;
         TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);

@@ -1393,19 +1393,19 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (start >= fcb->Header.ValidDataLength.QuadPart) {
-        WARN("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.ValidDataLength.QuadPart);
+    if (start >= fcb->Header.FileSize.QuadPart) {
+        WARN("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
         Status = STATUS_END_OF_FILE;
         goto exit;
     }
     
-    fcb->Header.FileSize.QuadPart = fcb->ads ? fcb->adssize : fcb->inode_item.st_size;
-    
     TRACE("FileObject %p fcb %p FileSize = %llx st_size = %llx (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
 //     int3;
     
-    if (length + start > fcb->Header.ValidDataLength.QuadPart)
+    if (length + start > fcb->Header.ValidDataLength.QuadPart) {
+        RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
         length = fcb->Header.ValidDataLength.QuadPart - start;
+    }
         
     if (!(Irp->Flags & IRP_NOCACHE)) {
         BOOL wait;
@@ -1420,7 +1420,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 ccfs.FileSize = fcb->Header.FileSize;
                 ccfs.ValidDataLength = fcb->Header.ValidDataLength;
                 
-                ERR("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
+                TRACE("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
                             ccfs.AllocationSize.QuadPart, ccfs.FileSize.QuadPart, ccfs.ValidDataLength.QuadPart);
                 CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
 
