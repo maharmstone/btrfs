@@ -1394,7 +1394,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (start >= fcb->Header.FileSize.QuadPart) {
-        WARN("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
+        TRACE("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
         Status = STATUS_END_OF_FILE;
         goto exit;
     }

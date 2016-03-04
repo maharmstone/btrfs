@@ -1973,7 +1973,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         UINT64 oldalloc, newalloc;
         
         if (Irp->Flags & IRP_PAGING_IO) {
-            WARN("paging IO tried to extend file size\n");
+            TRACE("paging IO tried to extend file size\n");
             return STATUS_SUCCESS;
         }
         
