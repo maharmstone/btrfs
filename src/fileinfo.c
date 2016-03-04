@@ -1931,6 +1931,160 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     return STATUS_SUCCESS;
 }
 
+NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
+    UINT64 oldalloc, newalloc;
+    KEY searchkey;
+    traverse_ptr tp;
+    BOOL cur_inline;
+    NTSTATUS Status;
+
+    if (fcb->ads) {
+        FIXME("FIXME - support streams here\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    } else {
+        searchkey.obj_id = fcb->inode;
+        searchkey.obj_type = TYPE_EXTENT_DATA;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
+            ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        oldalloc = 0;
+        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            oldalloc = tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size;
+            cur_inline = ((EXTENT_DATA*)tp.item->data)->type == EXTENT_TYPE_INLINE;
+        
+            if (cur_inline && end > fcb->Vcb->max_inline) {
+                // FIXME - make proper extents out of inline stuff
+                cur_inline = FALSE;
+                ERR("FIXME - give inline file proper extents\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (cur_inline) {
+                EXTENT_DATA* ed;
+                ULONG edsize;
+                
+                if (end > oldalloc) {
+                    edsize = sizeof(EXTENT_DATA) - 1 + end - tp.item->key.offset;
+                    ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+                    
+                    if (!ed) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlZeroMemory(ed, edsize);
+                    RtlCopyMemory(ed, tp.item->data, tp.item->size);
+                    
+                    ed->decoded_size = end - tp.item->key.offset;
+                    
+                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                    
+                    if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ed, edsize, NULL, rollback)) {
+                        ERR("error - failed to insert item\n");
+                        ExFreePool(ed);
+                        free_traverse_ptr(&tp);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                }
+                
+                fcb->inode_item.st_size = end;
+                TRACE("setting st_size to %llx\n", end);
+                
+                fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+            } else {
+                newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
+            
+                if (newalloc > oldalloc) {
+                    Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_sparse_extent returned %08x\n", Status);
+                        free_traverse_ptr(&tp);
+                        return Status;
+                    }
+                }
+                
+                fcb->inode_item.st_size = end;
+                TRACE("setting st_size to %llx\n", end);
+                
+                TRACE("newalloc = %llx\n", newalloc);
+                
+                fcb->Header.AllocationSize.QuadPart = newalloc;
+                fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+            }
+        } else {
+            if (end > fcb->Vcb->max_inline) {
+                newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
+            
+                Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, 0, newalloc, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_sparse_extent returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    return Status;
+                }
+                
+                fcb->inode_item.st_size = end;
+                TRACE("setting st_size to %llx\n", end);
+                
+                TRACE("newalloc = %llx\n", newalloc);
+                
+                fcb->Header.AllocationSize.QuadPart = newalloc;
+                fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+            } else {
+                EXTENT_DATA* ed;
+                ULONG edsize;
+                
+                edsize = sizeof(EXTENT_DATA) - 1 + end;
+                ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+                
+                if (!ed) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                ed->generation = fcb->Vcb->superblock.generation;
+                ed->decoded_size = end;
+                ed->compression = BTRFS_COMPRESSION_NONE;
+                ed->encryption = BTRFS_ENCRYPTION_NONE;
+                ed->encoding = BTRFS_ENCODING_NONE;
+                ed->type = EXTENT_TYPE_INLINE;
+                
+                RtlZeroMemory(ed->data, end);
+
+                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, ed, edsize, NULL, rollback)) {
+                    ERR("error - failed to insert item\n");
+                    ExFreePool(ed);
+                    free_traverse_ptr(&tp);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                fcb->inode_item.st_size = end;
+                TRACE("setting st_size to %llx\n", end);
+                
+                fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+            }
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
@@ -1970,8 +2124,6 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
             return Status;
         }
     } else if (feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
-        UINT64 oldalloc, newalloc;
-        
         if (Irp->Flags & IRP_PAGING_IO) {
             TRACE("paging IO tried to extend file size\n");
             return STATUS_SUCCESS;
@@ -1979,50 +2131,12 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
-        newalloc = sector_align(feofi->EndOfFile.QuadPart, Vcb->superblock.sector_size);
-        
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-            return STATUS_INTERNAL_ERROR;
+        // FIXME - pass flag to say that new extents should be prealloc rather than sparse
+        Status = extend_file(fcb, feofi->EndOfFile.QuadPart, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - extend_file failed\n");
+            return Status;
         }
-        
-        oldalloc = 0;
-        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-            if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-                free_traverse_ptr(&tp);
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            oldalloc = tp.item->key.offset + ((EXTENT_DATA*)tp.item->data)->decoded_size;
-        }
-        
-        // FIXME - handle inline extents here
-        if (newalloc > oldalloc) {
-            // FIXME - we should be doing prealloc rather than inserting a sparse extent here
-            
-            Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_sparse_extent returned %08x\n", Status);
-                free_traverse_ptr(&tp);
-                return Status;
-            }
-        }
-        
-        fcb->inode_item.st_size = feofi->EndOfFile.QuadPart;
-        TRACE("setting st_size to %llx\n", feofi->EndOfFile.QuadPart);
-        
-        TRACE("newalloc = %llx\n", newalloc);
-        
-        fcb->Header.AllocationSize.QuadPart = newalloc;
-        fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
-        
-        free_traverse_ptr(&tp);
     }
     
     ccfs.AllocationSize = fcb->Header.AllocationSize;
