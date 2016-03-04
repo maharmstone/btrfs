@@ -1315,8 +1315,6 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     top_level = is_top_level(Irp);
     
-    acquire_tree_lock(fcb->Vcb, FALSE);
-    
     TRACE("read\n");
     
     switch (IrpSp->MinorFunction) {
@@ -1432,6 +1430,7 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             wait = TRUE;
             
             TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+            TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
             if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
                 TRACE("CcCopyRead failed\n");
                 
@@ -1450,10 +1449,14 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         } else
             ERR("EXCEPTION - %08x\n", Status);
     } else {
+        acquire_tree_lock(fcb->Vcb, FALSE);
+    
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, &bytes_read);
         else
             Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, &bytes_read);
+        
+        release_tree_lock(fcb->Vcb, FALSE);
         
         TRACE("read %u bytes\n", bytes_read);
         
@@ -1464,8 +1467,6 @@ static NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         FileObject->CurrentByteOffset.QuadPart = start + bytes_read;
     
 exit:
-    release_tree_lock(fcb->Vcb, FALSE);
-    
     Irp->IoStatus.Status = Status;
     
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
