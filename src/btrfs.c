@@ -2741,26 +2741,40 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
         
-        FileObject->Flags |= FO_CLEANUP_COMPLETE;
-        
-        if (fcb->open_count == 1 && fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
-            LIST_ENTRY rollback;
-            InitializeListHead(&rollback);
-            
-            acquire_tree_lock(fcb->Vcb, TRUE);
-            
-            Status = delete_fcb(fcb, FileObject, &rollback);
-            // FIXME - change allocation size etc. to zero
-            
-            if (NT_SUCCESS(Status))
-                clear_rollback(&rollback);
-            else
-                do_rollback(fcb->Vcb, &rollback);
-            
-            release_tree_lock(fcb->Vcb, TRUE);
+        if (fcb->open_count == 1) {
+            if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
+                LIST_ENTRY rollback;
+                InitializeListHead(&rollback);
+                
+                acquire_tree_lock(fcb->Vcb, TRUE);
+                
+                Status = delete_fcb(fcb, FileObject, &rollback);
+                // FIXME - change allocation size etc. to zero
+                
+                if (NT_SUCCESS(Status))
+                    clear_rollback(&rollback);
+                else
+                    do_rollback(fcb->Vcb, &rollback);
+                
+                release_tree_lock(fcb->Vcb, TRUE);
+            } else if (fcb->nonpaged->segment_object.DataSectionObject) {
+                IO_STATUS_BLOCK iosb;
+                CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+                
+                if (!NT_SUCCESS(iosb.Status)) {
+                    ERR("CcFlushCache returned %08x\n", iosb.Status);
+                }
+
+                ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+                ExReleaseResourceLite(fcb->Header.PagingIoResource);
+
+                CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+            }
         }
         
         fcb->open_count--;
+        
+        FileObject->Flags |= FO_CLEANUP_COMPLETE;
     }
     
     Status = STATUS_SUCCESS;

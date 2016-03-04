@@ -2147,6 +2147,9 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
 //             free_fcb(fcb);
     }
     
+    if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
+        FileObject->Flags |= FO_CACHE_SUPPORTED;
+    
 exit:
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
         TRACE("returning %08x\n", Status);

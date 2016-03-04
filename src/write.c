@@ -5709,7 +5709,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (paging_io) {
-        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+        ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, TRUE);
         paging_lock = TRUE;
     }
     
