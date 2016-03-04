@@ -5662,6 +5662,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     LARGE_INTEGER time;
     BTRFS_TIME now;
     fcb* fcb;
+    BOOL paging_lock = FALSE;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
     
@@ -5689,6 +5690,29 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
     
+    if (no_cache && !paging_io && FileObject->SectionObjectPointer->DataSectionObject) {
+        IO_STATUS_BLOCK iosb;
+        
+        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+
+        CcFlushCache(FileObject->SectionObjectPointer, &offset, *length, &iosb);
+
+        if (!NT_SUCCESS(iosb.Status)) {
+            ExReleaseResourceLite(fcb->Header.PagingIoResource);
+            ERR("CcFlushCache returned %08x\n", iosb.Status);
+            return iosb.Status;
+        }
+        
+        paging_lock = TRUE;
+
+        CcPurgeCacheSection(FileObject->SectionObjectPointer, &offset, *length, FALSE);
+    }
+    
+    if (paging_io) {
+        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+        paging_lock = TRUE;
+    }
+    
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
     nocow = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATACOW;
     
@@ -5711,7 +5735,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 TRACE("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
                 TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
-                return STATUS_SUCCESS;
+                Status = STATUS_SUCCESS;
+                goto end;
             }
             
             *length = newlength - offset.QuadPart;
@@ -5772,11 +5797,13 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             TRACE("CcCopyWrite failed.\n");
             
             IoMarkIrpPending(Irp);
-            return STATUS_PENDING;
+            Status = STATUS_PENDING;
+            goto end;
         }
         TRACE("CcCopyWrite finished\n");
         
-        return STATUS_SUCCESS;
+        Status = STATUS_SUCCESS;
+        goto end;
     }
     
     if (fcb->ads) {
@@ -5786,7 +5813,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         
         if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
             ERR("get_xattr failed\n");
-            return STATUS_INTERNAL_ERROR;
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
         }
         
         if (changed_length) {
@@ -5799,19 +5827,22 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
                 ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
             }
             
             if (keycmp(&tp.item->key, &searchkey)) {
                 ERR("error - could not find key for xattr\n");
                 free_traverse_ptr(&tp);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
             }
             
             if (tp.item->size < datalen) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
                 free_traverse_ptr(&tp);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
             }
             
             maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
@@ -5820,7 +5851,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             if (newlength > maxlen) {
                 ERR("error - xattr too long (%llu > %u)\n", newlength, maxlen);
-                return STATUS_DISK_FULL;
+                Status = STATUS_DISK_FULL;
+                goto end;
             }
             
             fcb->adssize = newlength;
@@ -5828,7 +5860,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
             if (!data2) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
             }
             
             RtlCopyMemory(data2, data, datalen);
@@ -5844,7 +5877,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
-            return Status;
+            goto end;
         }
         
         if (data) ExFreePool(data);
@@ -5869,7 +5902,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
         if (!data) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
         
         RtlZeroMemory(data + bufhead, end_data - start_data);
@@ -5889,7 +5923,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);
                 ExFreePool(data);
-                return Status;
+                goto end;
             }
         }
         
@@ -5903,7 +5937,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             if (!NT_SUCCESS(Status)) {
                 ERR("error - excise_extents returned %08x\n", Status);
                 ExFreePool(data);
-                return Status;
+                goto end;
             }
             
             if (!make_inline) {
@@ -5912,7 +5946,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - insert_extent returned %08x\n", Status);
                     ExFreePool(data);
-                    return Status;
+                    goto end;
                 }
             } else {
                 ed2 = (EXTENT_DATA*)data;
@@ -5933,7 +5967,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             if (!NT_SUCCESS(Status)) {
                 ERR("error - do_nocow_write returned %08x\n", Status);
                 ExFreePool(data);
-                return Status;
+                goto end;
             }
         }
     }
@@ -5979,7 +6013,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
         ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        return STATUS_INTERNAL_ERROR;
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
     }
     
     if (!keycmp(&tp.item->key, &searchkey))
@@ -5991,7 +6026,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     if (!ii) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
     
     RtlCopyMemory(ii, origii, sizeof(INODE_ITEM));
@@ -6030,7 +6066,13 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
     
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (paging_lock)
+        ExReleaseResourceLite(fcb->Header.PagingIoResource);
+
+    return Status;
 }
 
 NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -6052,22 +6094,6 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (fcb && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
         return STATUS_ACCESS_DENIED;
-    
-    if (!(Irp->Flags & IRP_NOCACHE) && !(Irp->Flags & IRP_PAGING_IO) && FileObject->SectionObjectPointer->DataSectionObject) {
-        IO_STATUS_BLOCK iosb;
-        
-        TRACE("CcFlushCache(%p, %llx, %x, %p)\n", FileObject->SectionObjectPointer, offset, IrpSp->Parameters.Write.Length, &iosb);
-        CcFlushCache(FileObject->SectionObjectPointer, &offset, IrpSp->Parameters.Write.Length, &iosb);
-        if (!NT_SUCCESS(iosb.Status)) {
-            ERR("CcFlushCache returned %08x\n", iosb.Status);
-            return iosb.Status;
-        }
-        TRACE("CcFlushCache finished\n");
-        
-        TRACE("CcPurgeCacheSection(%p, %llx, %x, %u)\n", FileObject->SectionObjectPointer, offset, IrpSp->Parameters.Write.Length, FALSE);
-        CcPurgeCacheSection(FileObject->SectionObjectPointer, &offset, IrpSp->Parameters.Write.Length, FALSE);
-        TRACE("CcPurgeCacheSection finished\n");
-    }
     
 //     time1 = KeQueryPerformanceCounter(&freq);
     

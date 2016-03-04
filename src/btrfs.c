@@ -2570,6 +2570,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         RtlFreeUnicodeString(&fcb->filepart);
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
+    ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExFreePool(fcb->nonpaged);
     
     if (fcb->par/* && fcb->par != fcb->par->Vcb->root_fcb*/) {

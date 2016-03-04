@@ -272,6 +272,9 @@ fcb* create_fcb() {
     }
     RtlZeroMemory(fcb->nonpaged, sizeof(struct _fcb_nonpaged));
     
+    ExInitializeResourceLite(&fcb->nonpaged->paging_resource);
+    fcb->Header.PagingIoResource = &fcb->nonpaged->paging_resource;
+    
     ExInitializeFastMutex(&fcb->nonpaged->HeaderMutex);
     FsRtlSetupAdvancedHeader(&fcb->Header, &fcb->nonpaged->HeaderMutex);
     

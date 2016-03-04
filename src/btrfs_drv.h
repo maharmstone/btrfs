@@ -87,6 +87,7 @@ typedef struct _fcb_nonpaged {
     FAST_MUTEX HeaderMutex;
     SECTION_OBJECT_POINTERS segment_object;
     ERESOURCE resource;
+    ERESOURCE paging_resource;
 } fcb_nonpaged;
 
 struct _root;
