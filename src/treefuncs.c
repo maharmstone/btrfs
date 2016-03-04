@@ -1145,14 +1145,14 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
         t = t->parent;
     }
     
-//     if (tp->tree->header.num_items == 0 && tp->tree->parent) {
-//         traverse_ptr tp2;
-//         
-//         tp2.tree = tp->tree->parent;
-//         tp2.item = tp->tree->paritem;
-// 
-//         delete_tree_item(&tp2, tc);
-//     }
+    if (tp->tree->header.num_items == 0 && tp->tree->parent) {
+        traverse_ptr tp3;
+        
+        tp3.tree = tp->tree->parent;
+        tp3.item = tp->tree->paritem;
+
+        delete_tree_item(Vcb, &tp3, rollback);
+    }
 
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
