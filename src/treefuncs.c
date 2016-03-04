@@ -723,12 +723,12 @@ BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const 
 //     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
 //     FsRtlExitFileSystem();
     
-#ifdef DEBUG_PARANOID
-    if (b && !ignore && tp->item->ignore) {
-        ERR("error - returning ignored item\n");
-        int3;
-    }
-#endif
+// #ifdef DEBUG_PARANOID
+//     if (b && !ignore && tp->item->ignore) {
+//         ERR("error - returning ignored item\n");
+//         int3;
+//     }
+// #endif
     
     return b;
 }
