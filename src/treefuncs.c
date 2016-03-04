@@ -22,6 +22,7 @@
 enum read_tree_status {
     ReadTreeStatus_Pending,
     ReadTreeStatus_Success,
+    ReadTreeStatus_Cancelling,
     ReadTreeStatus_Cancelled,
     ReadTreeStatus_Error,
     ReadTreeStatus_CRCError,
@@ -65,8 +66,10 @@ static NTSTATUS STDCALL read_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     read_tree_context* context = (read_tree_context*)stripe->context;
     UINT64 i;
     
-    if (stripe->status == ReadTreeStatus_Cancelled)
+    if (stripe->status == ReadTreeStatus_Cancelling) {
+        stripe->status = ReadTreeStatus_Cancelled;
         goto end;
+    }
     
     stripe->iosb = Irp->IoStatus;
     
@@ -81,7 +84,7 @@ static NTSTATUS STDCALL read_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP I
             
             for (i = 0; i < context->num_stripes; i++) {
                 if (context->stripes[i].status == ReadTreeStatus_Pending) {
-                    context->stripes[i].status = ReadTreeStatus_Cancelled;
+                    context->stripes[i].status = ReadTreeStatus_Cancelling;
                     IoCancelIrp(context->stripes[i].Irp);
                 }
             }
