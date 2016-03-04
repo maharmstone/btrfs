@@ -1645,7 +1645,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
     
-    fcb->open_count++;
+    InterlockedIncrement(&fcb->open_count);
     
     FileObject->FsContext2 = ccb;
 
@@ -2138,7 +2138,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             }
         }
         
-        fcb->open_count++;
+        InterlockedIncrement(&fcb->open_count);
     } else {
         Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;

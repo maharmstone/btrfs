@@ -2024,12 +2024,16 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     }
     
     if (FileObject) {
+        LONG oc;
+        
         fcb = FileObject->FsContext;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
         
-        if (fcb->open_count == 1) {
+        oc = InterlockedDecrement(&fcb->open_count);
+        
+        if (oc == 0) {
             if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
                 LIST_ENTRY rollback;
                 InitializeListHead(&rollback);
@@ -2045,7 +2049,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     do_rollback(fcb->Vcb, &rollback);
                 
                 release_tree_lock(fcb->Vcb, TRUE);
-            } else if (fcb->nonpaged->segment_object.DataSectionObject) {
+            } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                 IO_STATUS_BLOCK iosb;
                 CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
                 
@@ -2057,10 +2061,14 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 ExReleaseResourceLite(fcb->Header.PagingIoResource);
 
                 CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                
+                TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
+                      FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
             }
         }
         
-        fcb->open_count--;
+        if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
+            CcUninitializeCacheMap(FileObject, NULL, NULL);
         
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
     }

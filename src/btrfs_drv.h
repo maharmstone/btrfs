@@ -96,7 +96,7 @@ typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
     LONG refcount;
-    ULONG open_count;
+    LONG open_count;
     UNICODE_STRING filepart;
     ANSI_STRING utf8;
     struct _device_extension* Vcb;
