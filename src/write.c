@@ -6085,6 +6085,7 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL locked = FALSE;
 //     LARGE_INTEGER freq, time1, time2;
     LIST_ENTRY rollback;
+    BOOL shared;
     
     InitializeListHead(&rollback);
     
@@ -6154,7 +6155,9 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("buf = %p\n", buf);
     
-    acquire_tree_lock(Vcb, TRUE);
+    shared = Irp->Flags & IRP_NOCACHE && (Irp->Flags & IRP_PAGING_IO || (offset.QuadPart + IrpSp->Parameters.Write.Length <= fcb->Header.ValidDataLength.QuadPart));
+    
+    acquire_tree_lock(Vcb, !shared);
     locked = TRUE;
     
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
@@ -6185,12 +6188,16 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 exit:
     if (locked) {
-        if (NT_SUCCESS(Status))
+        if (shared) {
             clear_rollback(&rollback);
-        else
-            do_rollback(Vcb, &rollback);
+        } else {
+            if (NT_SUCCESS(Status))
+                clear_rollback(&rollback);
+            else
+                do_rollback(Vcb, &rollback);
+        }
         
-        release_tree_lock(Vcb, TRUE);
+        release_tree_lock(Vcb, !shared);
     }
     
 //     time2 = KeQueryPerformanceCounter(NULL);
