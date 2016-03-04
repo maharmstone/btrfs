@@ -45,7 +45,8 @@ typedef struct {
     chunk* c;
 //     UINT8* buf;
     UINT32 buflen;
-    UINT64 num_stripes, stripes_left;
+    UINT64 num_stripes;
+    LONG stripes_left;
     UINT64 type;
     read_tree_stripe* stripes;
 } read_tree_context;
@@ -97,10 +98,8 @@ static NTSTATUS STDCALL read_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     }
     
 end:
-    if (context->stripes_left == 1)
+    if (InterlockedDecrement(&context->stripes_left) == 0)
         KeSetEvent(&context->Event, 0, FALSE);
-    else
-        context->stripes_left--;
     
 //     return STATUS_SUCCESS;
     return STATUS_MORE_PROCESSING_REQUIRED;
