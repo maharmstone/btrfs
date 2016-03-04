@@ -5751,21 +5751,16 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     make_inline = fcb->ads ? FALSE : newlength <= fcb->Vcb->max_inline;
     
     if (changed_length) {
-        UINT64 alloclen;
-        
-        if (fcb->ads) {
-            alloclen = newlength;
-        } else if (make_inline) {
-            alloclen = sector_align(newlength, fcb->Vcb->superblock.sector_size);
-        } else {
-            alloclen = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
+        if (newlength > fcb->Header.AllocationSize.QuadPart) {
+            Status = extend_file(fcb, newlength, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("extend_file returned %08x\n", Status);
+                goto end;
+            }
         }
         
-        if (alloclen > fcb->Header.AllocationSize.QuadPart)
-            fcb->Header.AllocationSize.QuadPart = alloclen;
-        
         fcb->Header.FileSize.QuadPart = newlength;
-//         fcb->Header.ValidDataLength.QuadPart = newlength;
+        fcb->Header.ValidDataLength.QuadPart = newlength;
         
         TRACE("AllocationSize = %llx\n", fcb->Header.AllocationSize.QuadPart);
         TRACE("FileSize = %llx\n", fcb->Header.FileSize.QuadPart);
@@ -5775,17 +5770,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     if (!no_cache) {
         BOOL wait;
         
-        if (!FileObject->PrivateCacheMap) {
+        if (!FileObject->PrivateCacheMap || changed_length) {
             CC_FILE_SIZES ccfs;
             
             ccfs.AllocationSize = fcb->Header.AllocationSize;
             ccfs.FileSize = fcb->Header.FileSize;
             ccfs.ValidDataLength = fcb->Header.ValidDataLength;
             
-            TRACE("calling CcInitializeCacheMap...\n");
-            CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
-            
-            CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+            if (!FileObject->PrivateCacheMap) {
+                TRACE("calling CcInitializeCacheMap...\n");
+                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
+                
+                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+            } else {
+                CcSetFileSizes(FileObject, &ccfs);
+            }
         }
         
         // FIXME - uncomment this when async is working
