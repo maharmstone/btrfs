@@ -701,11 +701,11 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Irp->IoStatus.Information = bytes_read;
     }
     
-    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
-        FileObject->CurrentByteOffset.QuadPart = start + bytes_read;
-    
 exit:
     Irp->IoStatus.Status = Status;
+    
+    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
+        FileObject->CurrentByteOffset.QuadPart = start + (NT_SUCCESS(Status) ? bytes_read : 0);
     
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);

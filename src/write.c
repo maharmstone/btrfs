@@ -6049,12 +6049,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         CcSetFileSizes(FileObject, &ccfs);
     }
     
-    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
-        TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
-        FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + *length;
-        TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
-    }
-    
     // FIXME - make sure this still called if STATUS_PENDING and async
 //     if (!no_cache) {
 //         if (!CcCopyWrite(FileObject, &offset, *length, TRUE, buf)) {
@@ -6068,6 +6062,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     Status = STATUS_SUCCESS;
     
 end:
+    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
+        TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
+        FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + (NT_SUCCESS(Status) ? *length : 0);
+        TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
+    }
+    
     if (paging_lock)
         ExReleaseResourceLite(fcb->Header.PagingIoResource);
 
