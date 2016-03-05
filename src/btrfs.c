@@ -283,7 +283,7 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
         ExFreePool(um);
     }
     
-    // FIXME - free volumes
+    // FIXME - free volumes and their devpaths
     
 #ifdef _DEBUG
     if (comfo)

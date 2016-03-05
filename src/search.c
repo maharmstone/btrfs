@@ -47,7 +47,7 @@ VOID WINAPI IopNotifyPlugPlayNotification(
 
 static const WCHAR devpath[] = {'\\','D','e','v','i','c','e',0};
 
-static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, PDEVICE_OBJECT DeviceObject) {
+static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ULONG tnsize;
     MOUNTMGR_TARGET_NAME* tn;
     KEVENT Event;
@@ -136,6 +136,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     ULONG toread;
     UINT8* data;
     UNICODE_STRING us2;
+    BOOL added_entry = FALSE;
     
     TRACE("%.*S\n", us->Length / sizeof(WCHAR), us->Buffer);
     
@@ -196,6 +197,8 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
         RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
         RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
         v->devnum = sb->dev_item.dev_id;
+        v->devpath = us2;
+        v->processed = FALSE;
         InsertTailList(volumes, &v->list_entry);
         
         TRACE("volume found\n");
@@ -207,7 +210,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
               v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
         TRACE("device number %llx\n", v->devnum);
 
-        add_volume(mountmgr, &us2, DeviceObject);
+        added_entry = TRUE;
     }
     
 deref:
@@ -215,7 +218,8 @@ deref:
     ObDereferenceObject(FileObject);
     
 exit:
-    ExFreePool(us2.Buffer);
+    if (!added_entry)
+        ExFreePool(us2.Buffer);
 }
 
 void STDCALL look_for_vols(LIST_ENTRY* volumes) {
@@ -229,6 +233,7 @@ void STDCALL look_for_vols(LIST_ENTRY* volumes) {
     ULONG context;
     BOOL restart;
     NTSTATUS Status;
+    LIST_ENTRY* le;
     
     static const WCHAR hdv[] = {'H','a','r','d','d','i','s','k','V','o','l','u','m','e',0};
     static const WCHAR device[] = {'D','e','v','i','c','e',0};
@@ -287,6 +292,35 @@ void STDCALL look_for_vols(LIST_ENTRY* volumes) {
     } while (NT_SUCCESS(Status));
     
     ZwClose(h);
+    
+    // FIXME - if Windows has already added the second device of a filesystem itself, delete it
+    
+    le = volumes->Flink;
+    while (le != volumes) {
+        volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        
+        if (!v->processed) {
+            LIST_ENTRY* le2 = le;
+            volume* mountvol = v;
+            
+            while (le2 != volumes) {
+                volume* v2 = CONTAINING_RECORD(le2, volume, list_entry);
+                
+                if (RtlCompareMemory(&v2->fsuuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    v2->processed = TRUE;
+                    
+                    if (v2->devnum < mountvol->devnum)
+                        mountvol = v2;
+                }
+                
+                le2 = le2->Flink;
+            }
+            
+            add_volume(mountmgr, &mountvol->devpath);
+        }
+        
+        le = le->Flink;
+    }
     
     ObDereferenceObject(FileObject);
 }

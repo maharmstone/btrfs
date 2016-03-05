@@ -80,6 +80,8 @@ typedef struct {
     BTRFS_UUID fsuuid;
     BTRFS_UUID devuuid;
     UINT64 devnum;
+    UNICODE_STRING devpath;
+    BOOL processed;
     LIST_ENTRY list_entry;
 } volume;
 
