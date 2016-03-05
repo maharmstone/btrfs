@@ -2128,6 +2128,10 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
             FIXME("STUB: FileStandardLinkInformation\n");
             break;
             
+        case FileRemoteProtocolInformation:
+            FIXME("STUB: FileRemoteProtocolInformation\n");
+            break;
+            
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.SetFile.FileInformationClass);
     }
@@ -2802,6 +2806,11 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             break;
         }
+        
+        case FileRemoteProtocolInformation:
+            FIXME("STUB: FileRemoteProtocolInformation\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto exit;
         
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.QueryFile.FileInformationClass);
