@@ -5293,11 +5293,50 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
             cur_inline = ((EXTENT_DATA*)tp.item->data)->type == EXTENT_TYPE_INLINE;
         
             if (cur_inline && end > fcb->Vcb->max_inline) {
-                // FIXME - make proper extents out of inline stuff
+                LIST_ENTRY changed_sector_list;
+                BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
+                UINT64 origlength, length;
+                UINT8* data;
+                
+                origlength = ((EXTENT_DATA*)tp.item->data)->decoded_size;
+                
                 cur_inline = FALSE;
                 ERR("FIXME - give inline file proper extents\n");
-                free_traverse_ptr(&tp);
-                return STATUS_INTERNAL_ERROR;
+                
+                if (!nocsum)
+                    InitializeListHead(&changed_sector_list);
+                
+                delete_tree_item(fcb->Vcb, &tp, rollback);
+                
+                length = sector_align(origlength, fcb->Vcb->superblock.sector_size);
+                
+                data = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
+                if (!data) {
+                    ERR("could not allocated %llx bytes for data\n", length);
+                    free_traverse_ptr(&tp);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                if (length > origlength)
+                    RtlZeroMemory(data + origlength, length - origlength);
+                
+                RtlCopyMemory(data, ((EXTENT_DATA*)tp.item->data)->data, origlength);
+                
+                Status = insert_extent(fcb->Vcb, fcb, tp.item->key.offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_extent returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    ExFreePool(data);
+                    return Status;
+                }
+                
+                fcb->inode_item.st_blocks += length - origlength;
+                oldalloc = tp.item->key.offset + length;
+                
+                ExFreePool(data);
+                
+                if (!nocsum)
+                    update_checksum_tree(fcb->Vcb, &changed_sector_list, rollback);
             }
             
             if (cur_inline) {
