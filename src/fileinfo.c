@@ -17,6 +17,8 @@
 
 #include "btrfs_drv.h"
 
+static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, LIST_ENTRY* rollback);
+
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
@@ -357,8 +359,18 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
     WARN("fcb %p: refcount now %i (%.*S)\n", parent, parent->refcount, parent->full_filename.Length / sizeof(WCHAR), parent->full_filename.Buffer);
 #endif
     
-    sf2->subvol = subvol;
-    sf2->inode = di->key.obj_id;
+    if (di->key.obj_type == TYPE_ROOT_ITEM) {
+        root* fcbroot = Vcb->roots;
+        while (fcbroot && fcbroot->id != di->key.obj_id)
+            fcbroot = fcbroot->next;
+        
+        sf2->subvol = fcbroot;
+        sf2->inode = SUBVOL_ROOT_INODE;
+    } else {
+        sf2->subvol = subvol;
+        sf2->inode = di->key.obj_id;
+    }
+    
     sf2->type = di->type;
     
     if (Vcb->fcbs)
@@ -752,6 +764,7 @@ typedef struct {
     UINT32 crc32;
     UINT64 newinode;
     UINT64 newparinode;
+    BOOL subvol;
     ANSI_STRING utf8;
     LIST_ENTRY list_entry;
 } dir_list;
@@ -785,9 +798,11 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
                 if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n + di->m) {
                     ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                 } else {
-                    // FIXME - what about subvols?
-                    if (di->key.obj_type == TYPE_INODE_ITEM) {
-                        TRACE("moving inode %llx\n", di->key.obj_id);
+                    if (di->key.obj_type == TYPE_INODE_ITEM || di->key.obj_type == TYPE_ROOT_ITEM) {
+                        if (di->key.obj_type == TYPE_ROOT_ITEM)
+                            TRACE("moving subvol %llx\n", di->key.obj_id);
+                        else
+                            TRACE("moving inode %llx\n", di->key.obj_id);
                         
                         *empty = FALSE;
                         
@@ -797,7 +812,6 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
                             free_traverse_ptr(&tp);
                             return Status;
                         }
-                        
                         
                         dl2 = ExAllocatePoolWithTag(PagedPool, sizeof(dir_list), ALLOC_TAG);
                         if (!dl2) {
@@ -809,6 +823,7 @@ static NTSTATUS add_to_dir_list(fcb* fcb, UINT8 level, LIST_ENTRY* dl, UINT64 ne
                         dl2->fcb = child;
                         dl2->level = level;
                         dl2->newparinode = newparinode;
+                        dl2->subvol = di->key.obj_type == TYPE_ROOT_ITEM;
                         
                         dl2->utf8.Length = dl2->utf8.MaximumLength = di->n;
                         dl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dl2->utf8.MaximumLength, ALLOC_TAG);
@@ -878,14 +893,16 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
             while (le != &dl) {
                 dir_list* dl2 = CONTAINING_RECORD(le, dir_list, list_entry);
                 
-                if (dl2->level == level) {
+                if (dl2->level == level && !dl2->subvol) {
                     inode++;
                     destsubvol->lastinode++;
                     
                     dl2->newinode = inode;
                     
-                    add_to_dir_list(dl2->fcb, level+1, &dl, dl2->newinode, &b);
-                    if (!b) empty = FALSE;
+                    if (dl2->fcb->type == BTRFS_TYPE_DIRECTORY) {
+                        add_to_dir_list(dl2->fcb, level+1, &dl, dl2->newinode, &b);
+                        if (!b) empty = FALSE;
+                    }
                 }
                 
                 le = le->Flink;
@@ -904,12 +921,22 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
                 dir_list* dl2 = CONTAINING_RECORD(le, dir_list, list_entry);
                 
                 if (dl2->level == level) {
-                    TRACE("inode %llx\n", dl2->fcb->inode);
+                    if (dl2->subvol) {
+                        TRACE("subvol %llx\n", dl2->fcb->subvol->id);
+                        
+                        Status = move_subvol(Vcb, dl2->fcb, destsubvol, dl2->newparinode, &dl2->utf8, dl2->crc32, dl2->crc32, now, FALSE, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("move_subvol returned %08x\n", Status);
+                            return Status;
+                        }
+                    } else {
+                        TRACE("inode %llx\n", dl2->fcb->inode);
 
-                    Status = move_inode_across_subvols(Vcb, dl2->fcb, destsubvol, dl2->newparinode, dl2->newinode, dl2->fcb->par->inode, &dl2->utf8, dl2->crc32, now, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("move_inode_across_subvols returned %08x\n", Status);
-                        return Status;
+                        Status = move_inode_across_subvols(Vcb, dl2->fcb, destsubvol, dl2->newparinode, dl2->newinode, dl2->fcb->par->inode, &dl2->utf8, dl2->crc32, now, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("move_inode_across_subvols returned %08x\n", Status);
+                            return Status;
+                        }
                     }
                 }
                 
@@ -1132,7 +1159,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb* destfcb, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, root* destsubvol, UINT64 destinode, PANSI_STRING utf8, UINT32 crc32, UINT32 oldcrc32, BTRFS_TIME* now, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
     DIR_ITEM* di;
     NTSTATUS Status;
     KEY searchkey;
@@ -1165,7 +1192,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    Status = add_dir_item(Vcb, destfcb->subvol, destfcb->inode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length, rollback);
+    Status = add_dir_item(Vcb, destsubvol, destinode, crc32, di, sizeof(DIR_ITEM) - 1 + utf8->Length, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_item returned %08x\n", Status);
         return Status;
@@ -1208,10 +1235,10 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     
     // create new DIR_INDEX
     
-    if (fcb->par->subvol == destfcb->subvol && fcb->par->inode == destfcb->inode) {
+    if (fcb->par->subvol == destsubvol && fcb->par->inode == destinode) {
         index = oldindex;
     } else {
-        index = find_next_dir_index(Vcb, destfcb->subvol, destfcb->inode);
+        index = find_next_dir_index(Vcb, destsubvol, destinode);
     }
     
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + utf8->Length, ALLOC_TAG);
@@ -1229,7 +1256,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
     di->type = fcb->type;
     RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
     
-    if (!insert_tree_item(Vcb, destfcb->subvol, destfcb->inode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL, rollback)) {
+    if (!insert_tree_item(Vcb, destsubvol, destinode, TYPE_DIR_INDEX, index, di, sizeof(DIR_ITEM) - 1 + utf8->Length, NULL, rollback)) {
         ERR("error - failed to insert item\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -1242,12 +1269,12 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    rr->dir = destfcb->inode;
+    rr->dir = destinode;
     rr->index = index;
     rr->n = utf8->Length;
     RtlCopyMemory(rr->name, utf8->Buffer, utf8->Length);
     
-    Status = add_root_ref(Vcb, fcb->subvol->id, destfcb->subvol->id, rr, rollback);
+    Status = add_root_ref(Vcb, fcb->subvol->id, destsubvol->id, rr, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_ref returned %08x\n", Status);
         return Status;
@@ -1259,8 +1286,8 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
         return Status;
     }
     
-    if (fcb->par->subvol != destfcb->subvol) {
-        Status = update_root_backref(Vcb, fcb->subvol->id, destfcb->subvol->id, rollback);
+    if (fcb->par->subvol != destsubvol) {
+        Status = update_root_backref(Vcb, fcb->subvol->id, destsubvol->id, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("update_root_backref 1 returned %08x\n", Status);
             return Status;
@@ -1270,8 +1297,8 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, struct _fcb
         fcb->par->subvol->root_item.ctime = *now;
     }
     
-    destfcb->subvol->root_item.ctransid = Vcb->superblock.generation;
-    destfcb->subvol->root_item.ctime = *now;
+    destsubvol->root_item.ctransid = Vcb->superblock.generation;
+    destsubvol->root_item.ctime = *now;
     
     return STATUS_SUCCESS;
 }
@@ -1434,7 +1461,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         filename.Buffer = fn;
         filename.MaximumLength = filename.Length = fnlen * sizeof(WCHAR);
         
-        Status = move_subvol(Vcb, fcb, tfofcb, &utf8, crc32, oldcrc32, &now, ReplaceIfExists, rollback);
+        Status = move_subvol(Vcb, fcb, tfofcb->subvol, tfofcb->inode, &utf8, crc32, oldcrc32, &now, ReplaceIfExists, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("move_subvol returned %08x\n", Status);
