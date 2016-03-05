@@ -675,6 +675,18 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         } else
             ERR("EXCEPTION - %08x\n", Status);
     } else {
+        if (!(Irp->Flags & IRP_PAGING_IO) && FileObject->SectionObjectPointer->DataSectionObject) {
+            IO_STATUS_BLOCK iosb;
+            
+            CcFlushCache(FileObject->SectionObjectPointer, &IrpSp->Parameters.Read.ByteOffset, length, &iosb);
+            
+            if (!NT_SUCCESS(iosb.Status)) {
+                ERR("CcFlushCache returned %08x\n", iosb.Status);
+                Status = iosb.Status;
+                goto exit;
+            }
+        }
+        
         acquire_tree_lock(fcb->Vcb, FALSE);
     
         if (fcb->ads)
