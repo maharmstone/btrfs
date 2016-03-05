@@ -695,6 +695,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         while (length > 0) {
             switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
                 case FileBothDirectoryInformation:
+                case FileDirectoryInformation:
                 case FileIdBothDirectoryInformation:
                 case FileFullDirectoryInformation:
                     length -= length % 8;
