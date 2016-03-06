@@ -5371,6 +5371,8 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 fcb->inode_item.st_size = end;
                 TRACE("setting st_size to %llx\n", end);
                 
+                fcb->inode_item.st_blocks = end;
+
                 fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
                 newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
