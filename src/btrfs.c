@@ -3892,6 +3892,13 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //         goto ByeBye;
 //     }
 
+    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
+                       &piex, sizeof(piex), TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error reading partition information: %08x\n", Status);
+        goto exit;
+    }
+
     Status = IoCreateDevice(drvobj,
                             sizeof(device_extension),
                             NULL,
@@ -3914,15 +3921,17 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->tree_lock_counter = 0;
     Vcb->open_trees = 0;
     Vcb->write_trees = 0;
-    
+
+    ExInitializeResourceLite(&Vcb->fcb_lock);
+    ExInitializeResourceLite(&Vcb->DirResource);
+
     ExAcquireResourceExclusiveLite(&global_loading_lock, TRUE);
     InsertTailList(&VcbList, &Vcb->list_entry);
     ExReleaseResourceLite(&global_loading_lock);
 
     ExInitializeResourceLite(&Vcb->load_lock);
-    FsRtlEnterFileSystem();
     ExAcquireResourceExclusiveLite(&Vcb->load_lock, TRUE);
-    
+
 //     Vcb->Identifier.Type = NTFS_TYPE_VCB;
 //     Vcb->Identifier.Size = sizeof(NTFS_TYPE_VCB);
 // 
@@ -3945,20 +3954,15 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //                       Vcb->geometry.SectorsPerTrack, Vcb->geometry.BytesPerSector);
 //     }
     
-    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
-                       &piex, sizeof(piex), TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error reading partition information: %08x\n", Status);
-        goto exit;
-    }
-    
     Vcb->length = piex.PartitionLength.QuadPart;
     TRACE("partition length = %u\n", piex.PartitionLength);
-    
+
     Status = read_superblock(Vcb, DeviceToMount);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
-    
+    }
+
     if (Vcb->superblock.magic != BTRFS_MAGIC) {
         ERR("not a BTRFS volume\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
@@ -3966,7 +3970,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else {
         TRACE("btrfs magic found\n");
     }
-    
+
     if (Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED) {
         WARN("cannot mount because of unsupported incompat flags (%llx)\n", Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED);
         Status = STATUS_UNRECOGNIZED_VOLUME;
@@ -4020,15 +4024,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("DeviceToMount = %p\n", DeviceToMount);
     TRACE("Stack->Parameters.MountVolume.Vpb = %p\n", Stack->Parameters.MountVolume.Vpb);
-    
-    NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
-    Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
-    Stack->Parameters.MountVolume.Vpb->RealDevice = DeviceToMount;
-    Stack->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
+
     NewDeviceObject->StackSize = DeviceToMount->StackSize + 1;
     NewDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-    
-    NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
     
 //     find_chunk_root(Vcb);
 //     Vcb->chunk_root_phys_addr = Vcb->superblock.chunk_tree_addr; // FIXME - map from logical to physical (bootstrapped)
@@ -4041,7 +4039,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->max_inline = Vcb->superblock.node_size / 2;
     
 //     Vcb->write_trees = NULL;
-    
+
     add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, NULL);
     
     if (!Vcb->chunk_root) {
@@ -4172,8 +4170,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    ExInitializeResourceLite(&Vcb->fcb_lock);
-    
 //     root_test(Vcb);
     
 //     Vcb->StreamFileObject = IoCreateStreamFileObject(NULL,
@@ -4223,7 +4219,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //                          &(NtfsGlobalData->CacheMgrCallbacks),
 //                          Fcb);
 // 
-    ExInitializeResourceLite(&Vcb->DirResource);
 //     ExInitializeResourceLite(&Vcb->LogToPhysLock);
 
     KeInitializeSpinLock(&Vcb->FcbListLock);
@@ -4236,15 +4231,21 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     RtlCopyMemory(NewDeviceObject->Vpb->VolumeLabel,
 //                   Vcb->NtfsInfo.VolumeLabel,
 //                   Vcb->NtfsInfo.VolumeLabelLength);
-    NewDeviceObject->Vpb->VolumeLabelLength = 4; // FIXME
-    NewDeviceObject->Vpb->VolumeLabel[0] = '?';
-    NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         goto exit;
     }
+
+    NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
+    Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
+    Stack->Parameters.MountVolume.Vpb->RealDevice = DeviceToMount;
+    Stack->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
+    NewDeviceObject->Vpb->VolumeLabelLength = 4; // FIXME
+    NewDeviceObject->Vpb->VolumeLabel[0] = '?';
+    NewDeviceObject->Vpb->VolumeLabel[1] = 0;
+    NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
     
     Status = STATUS_SUCCESS;
 
@@ -4267,7 +4268,29 @@ exit:
 
     if (Vcb) {
         ExReleaseResourceLite(&Vcb->load_lock);
-        FsRtlExitFileSystem();
+    }
+
+    if (!NT_SUCCESS(Status)) {
+        if (Vcb) {
+            if (Vcb->root_fcb)
+                free_fcb(Vcb->root_fcb);
+
+            if (Vcb->volume_fcb)
+                free_fcb(Vcb->volume_fcb);
+
+            ExDeleteResourceLite(&Vcb->tree_lock);
+            ExDeleteResourceLite(&Vcb->load_lock);
+            ExDeleteResourceLite(&Vcb->fcb_lock);
+            ExDeleteResourceLite(&Vcb->DirResource);
+
+            if (Vcb->devices)
+                ExFreePoolWithTag(Vcb->devices, ALLOC_TAG);
+
+            RemoveEntryList(&Vcb->list_entry);
+        }
+
+        if (NewDeviceObject)
+            IoDeleteDevice(NewDeviceObject);
     }
 
     TRACE("mount_vol done (status: %lx)\n", Status);
