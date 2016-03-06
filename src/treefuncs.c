@@ -426,13 +426,17 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
             td->key = ln[i].key;
 //             TRACE("load_tree: leaf item %u (%x,%x,%x)\n", i, (UINT32)ln[i].key.obj_id, ln[i].key.obj_type, (UINT32)ln[i].key.offset);
             
-            td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
-            if (!td->data) {
-                ERR("out of memory\n");
-                return NULL;
-            }
+            if (ln[i].size > 0) {
+                td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
+                if (!td->data) {
+                    ERR("out of memory\n");
+                    return NULL;
+                }
+                
+                RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
+            } else
+                td->data = NULL;
             
-            RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
             td->size = ln[i].size;
             td->ignore = FALSE;
             td->inserted = FALSE;
