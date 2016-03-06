@@ -1009,6 +1009,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
     traverse_ptr* tp2;
+    BOOL success = FALSE;
     
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
     
@@ -1017,8 +1018,21 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     searchkey.offset = offset;
     
     if (!find_item(Vcb, r, &tp, &searchkey, TRUE)) {
-        ERR("error: find_item failed\n");
-        return FALSE;
+        if (r) {
+            if (!r->treeholder.tree)
+                do_load_tree(Vcb, &r->treeholder, r, NULL, NULL);
+            
+            if (r->treeholder.tree && r->treeholder.tree->header.num_items == 0) {
+                tp.tree = r->treeholder.tree;
+                tp.item = NULL;
+            } else {
+                ERR("error: unable to load tree for root %llx\n", r->id);
+                goto end;
+            }
+        } else {
+            ERR("error: find_item failed\n");
+            goto end;
+        }
     }
     
 //     // don't insert into tree about to be deleted
@@ -1035,20 +1049,24 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
 //     }
     
     TRACE("tp.item = %p\n", tp.item);
-    TRACE("tp.item->key = %p\n", &tp.item->key);
-    cmp = keycmp(&searchkey, &tp.item->key);
     
-    if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
-        ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
-        free_traverse_ptr(&tp);
-        return FALSE;
-    }
+    if (tp.item) {
+        TRACE("tp.item->key = %p\n", &tp.item->key);
+        cmp = keycmp(&searchkey, &tp.item->key);
+        
+        if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
+            ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
+            free_traverse_ptr(&tp);
+            goto end;
+        }
+    } else
+        cmp = -1;
     
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
     if (!td) {
         ERR("out of memory\n");
         free_traverse_ptr(&tp);
-        return FALSE;
+        goto end;
     }
     
     td->key = searchkey;
@@ -1109,7 +1127,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
         ERR("out of memory\n");
-        return FALSE;
+        goto end;
     }
     
     tp2->tree = tp.tree;
@@ -1117,7 +1135,10 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
-    return TRUE;
+    success = TRUE;
+
+end:
+    return success;
 }
 
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
