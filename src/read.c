@@ -204,7 +204,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
         }
     }
 
-    KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
     
     // FIXME - if checksum error, write good data over bad
     

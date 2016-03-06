@@ -181,7 +181,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us, LIST_E
     Status = IoCallDriver(DeviceObject, Irp);
 
     if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&Event, Suspended, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock.Status;
     }
 

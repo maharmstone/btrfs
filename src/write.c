@@ -139,7 +139,7 @@ static NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, v
     Status = IoCallDriver(device, Irp);
     
     if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&context->Event, Suspended, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
         Status = context->iosb.Status;
     }
     

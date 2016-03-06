@@ -171,7 +171,7 @@ void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
         Status = IoCallDriver(comdo, Irp);
 
         if (Status == STATUS_PENDING) {
-            KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
+            KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
             Status = context->iosb.Status;
         }
         
@@ -2240,7 +2240,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 //     TRACE("Waiting for IO Operation for %p\n", Irp);
     if (Status == STATUS_PENDING) {
 //         TRACE("Operation pending\n");
-        KeWaitForSingleObject(&context->Event, /*Executive*/Suspended, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
 //         TRACE("Getting IO Status... for %p\n", Irp);
         Status = context->iosb.Status;
     }
