@@ -662,6 +662,8 @@ static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_p
     td = first_item(t);
     lasttd = NULL;
     
+    if (!td) return FALSE;
+    
     do {
         cmp = keycmp(searchkey, &td->key);
 //         TRACE("(%u) comparing (%x,%x,%x) to (%x,%x,%x) - %i (ignore = %s)\n", t->header.level, (UINT32)searchkey->obj_id, searchkey->obj_type, (UINT32)searchkey->offset, (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset, cmp, td->ignore ? "TRUE" : "FALSE");
