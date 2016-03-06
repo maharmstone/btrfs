@@ -1141,10 +1141,44 @@ end:
     return success;
 }
 
+static __inline tree_data* first_valid_item(tree* t) {
+    LIST_ENTRY* le = t->itemlist.Flink;
+    
+    while (le != &t->itemlist) {
+        tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+        
+        if (!td->ignore)
+            return td;
+        
+        le = le->Flink;
+    }
+        
+    return NULL;
+}
+
+static void fix_first_item(tree* t) {
+    tree_data* first_item = first_valid_item(t);
+    
+    do {
+        if (first_item)
+            t->paritem->key = first_item->key;
+        else
+            break;
+        
+        first_item = first_valid_item(t->parent);
+        
+        if (first_item != t->paritem)
+            break;
+        
+        t = t->parent;
+    } while (t && t->parent);
+}
+
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
     traverse_ptr* tp2;
+    BOOL first_item;
 
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
     
@@ -1154,6 +1188,8 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
         int3;
     }
 #endif
+
+    first_item = tp->tree->paritem && (first_valid_item(tp->tree) == tp->item);
     
     tp->item->ignore = TRUE;
     
@@ -1181,7 +1217,8 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
         tp3.item = tp->tree->paritem;
 
         delete_tree_item(Vcb, &tp3, rollback);
-    }
+    } else if (first_item)
+        fix_first_item(tp->tree);
 
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
