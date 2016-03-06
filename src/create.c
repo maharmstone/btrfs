@@ -1258,9 +1258,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
 //     fcb->Header.IsFastIoPossible = TRUE;
-    fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
-    fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
-    fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
+    fcb->Header.AllocationSize.QuadPart = 0;
+    fcb->Header.FileSize.QuadPart = 0;
+    fcb->Header.ValidDataLength.QuadPart = 0;
     
     fcb->atts = IrpSp->Parameters.Create.FileAttributes;
     
