@@ -3262,8 +3262,26 @@ end:
 
 NTSTATUS consider_write(device_extension* Vcb) {
     // FIXME - call do_write if Vcb->write_trees high
+#if 0
+    LIST_ENTRY rollback;
+    NTSTATUS Status = STATUS_SUCCESS;
     
+    InitializeListHead(&rollback);
+    
+    if (Vcb->write_trees > 0)
+        Status = do_write(Vcb, &rollback);
+    
+    free_tree_cache(&Vcb->tree_cache);
+    
+    if (!NT_SUCCESS(Status))
+        do_rollback(Vcb, &rollback);
+    else
+        clear_rollback(&rollback);
+    
+    return Status;
+#else
     return STATUS_SUCCESS;
+#endif
 }
 
 static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* ins) {
