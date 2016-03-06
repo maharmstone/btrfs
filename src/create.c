@@ -2076,10 +2076,54 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             fcb->Header.AllocationSize.QuadPart = fcb->adssize;
             fcb->Header.FileSize.QuadPart = fcb->adssize;
             fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
+        } else if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
+            fcb->Header.AllocationSize.QuadPart = 0;
+            fcb->Header.FileSize.QuadPart = 0;
+            fcb->Header.ValidDataLength.QuadPart = 0;
         } else {
-            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+            KEY searchkey;
+            traverse_ptr tp;
+            EXTENT_DATA* ed;
+            
+            searchkey.obj_id = fcb->inode;
+            searchkey.obj_type = TYPE_EXTENT_DATA;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
+                ERR("error - could not find any entries in subvol %llx\n", fcb->subvol->id);
+                free_fcb(fcb);
+                Status = STATUS_INTERNAL_ERROR;
+                goto exit;
+            }
+            
+            if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                ERR("error - could not find EXTENT_DATA items for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+                free_traverse_ptr(&tp);
+                free_fcb(fcb);
+                Status = STATUS_INTERNAL_ERROR;
+                goto exit;
+            }
+            
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    tp.item->size, sizeof(EXTENT_DATA));
+                free_traverse_ptr(&tp);
+                free_fcb(fcb);
+                Status = STATUS_INTERNAL_ERROR;
+                goto exit;
+            }
+            
+            ed = (EXTENT_DATA*)tp.item->data;
+            
+            if (ed->type == EXTENT_TYPE_INLINE)
+                fcb->Header.AllocationSize.QuadPart = fcb->inode_item.st_size;
+            else
+                fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+            
             fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
             fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
+            
+            free_traverse_ptr(&tp);
         }
     
         if (options & FILE_NON_DIRECTORY_FILE && fcb->type == BTRFS_TYPE_DIRECTORY) {
