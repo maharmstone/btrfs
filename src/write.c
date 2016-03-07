@@ -5728,6 +5728,35 @@ end:
 }
 
 #ifdef DEBUG_PARANOID
+static void print_loaded_trees(tree* t, int spaces) {
+    char pref[10];
+    int i;
+    LIST_ENTRY* le;
+    
+    for (i = 0; i < spaces; i++) {
+        pref[i] = ' ';
+    }
+    pref[spaces] = 0;
+    
+    if (!t) {
+        ERR("%s(not loaded)\n", pref);
+        return;
+    }
+    
+    le = t->itemlist.Flink;
+    while (le != &t->itemlist) {
+        tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+        
+        ERR("%s%llx,%x,%llx ignore=%s\n", pref, td->key.obj_id, td->key.obj_type, td->key.offset, td->ignore ? "TRUE" : "FALSE");
+        
+        if (t->header.level > 0) {
+            print_loaded_trees(td->treeholder.tree, spaces+1);
+        }
+        
+        le = le->Flink;
+    }
+}
+
 static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -5802,6 +5831,9 @@ failure:
     free_traverse_ptr(&tp);
     
 failure2:
+    if (fcb->subvol->treeholder.tree)
+        print_loaded_trees(fcb->subvol->treeholder.tree, 0);
+
     int3;
 }
 
