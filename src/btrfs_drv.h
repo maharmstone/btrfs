@@ -46,7 +46,7 @@
 #define BTRFS_NODE_TYPE_CCB 0x2295
 #define BTRFS_NODE_TYPE_FCB 0x2296
 
-#define ALLOC_TAG 0x4D484274 //'MHBt'
+#define ALLOC_TAG 0x7442484D //'MHBt'
 
 #define STDCALL __stdcall
 
