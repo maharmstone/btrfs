@@ -6131,7 +6131,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
     
-        // FIXME - make sure freed if necessary
         data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
         if (!data) {
             ERR("out of memory\n");
@@ -6181,6 +6180,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     ExFreePool(data);
                     goto end;
                 }
+                
+                ExFreePool(data);
             } else {
                 ed2 = (EXTENT_DATA*)data;
                 ed2->generation = fcb->Vcb->superblock.generation;
@@ -6202,6 +6203,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 ExFreePool(data);
                 goto end;
             }
+            
+            ExFreePool(data);
         }
     }
     
