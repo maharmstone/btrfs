@@ -5119,6 +5119,8 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
                 }
             }
         } else {
+            UINT32 tplen;
+            
             // FIXME - check entry is TYPE_EXTENT_CSUM?
             
             if (tp.item->key.offset < cs->ol.key && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= cs->ol.key)
@@ -5137,8 +5139,10 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
                 goto exit;
             }
             
-            if (tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= cs->ol.key + (cs->length * Vcb->superblock.sector_size))
-                endaddr = tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32));
+            tplen = tp.item->size / sizeof(UINT32);
+            
+            if (tp.item->key.offset + (tplen * Vcb->superblock.sector_size) >= cs->ol.key + (cs->length * Vcb->superblock.sector_size))
+                endaddr = tp.item->key.offset + (tplen * Vcb->superblock.sector_size);
             else
                 endaddr = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
             
