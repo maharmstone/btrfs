@@ -5392,7 +5392,6 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 origlength = ((EXTENT_DATA*)tp.item->data)->decoded_size;
                 
                 cur_inline = FALSE;
-                ERR("FIXME - give inline file proper extents\n");
                 
                 if (!nocsum)
                     InitializeListHead(&changed_sector_list);
