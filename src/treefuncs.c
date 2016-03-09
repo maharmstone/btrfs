@@ -1118,6 +1118,14 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     t = tp.tree;
     while (t) {
+        if (t->paritem && t->paritem->ignore) {
+            t->paritem->ignore = FALSE;
+            t->parent->header.num_items++;
+            t->parent->size += sizeof(internal_node);
+            
+            // FIXME - do we need to add a rollback entry here?
+        }
+
         t->header.generation = Vcb->superblock.generation;
         t = t->parent;
     }
