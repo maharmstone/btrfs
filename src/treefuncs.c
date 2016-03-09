@@ -1037,19 +1037,6 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         }
     }
     
-//     // don't insert into tree about to be deleted
-//     while (tp.tree->header.num_items == 0) {
-//         traverse_ptr prev_tp;
-//         
-//         ERR("tree about to be deleted, moving back\n");
-//         
-//         if (find_prev_item(Vcb, &tp, &prev_tp, NULL, TRUE)) {
-//             free_traverse_ptr(&tp);
-//             tp = prev_tp;
-//         } else
-//             break;
-//     }
-    
     TRACE("tp.item = %p\n", tp.item);
     
     if (tp.item) {
@@ -1166,29 +1153,10 @@ static __inline tree_data* first_valid_item(tree* t) {
     return NULL;
 }
 
-static void fix_first_item(tree* t) {
-    tree_data* first_item = first_valid_item(t);
-    
-    do {
-        if (first_item)
-            t->paritem->key = first_item->key;
-        else
-            break;
-        
-        first_item = first_valid_item(t->parent);
-        
-        if (first_item != t->paritem)
-            break;
-        
-        t = t->parent;
-    } while (t && t->parent);
-}
-
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
     traverse_ptr* tp2;
-    BOOL first_item;
 
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
     
@@ -1199,8 +1167,6 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     }
 #endif
 
-    first_item = tp->tree->paritem && (first_valid_item(tp->tree) == tp->item);
-    
     tp->item->ignore = TRUE;
     
     add_to_tree_cache(Vcb, tp->tree, TRUE);
@@ -1220,16 +1186,6 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
         t = t->parent;
     }
     
-    if (tp->tree->header.num_items == 0 && tp->tree->parent) {
-        traverse_ptr tp3;
-        
-        tp3.tree = tp->tree->parent;
-        tp3.item = tp->tree->paritem;
-
-        delete_tree_item(Vcb, &tp3, rollback);
-    } else if (first_item)
-        fix_first_item(tp->tree);
-
     tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
     if (!tp2) {
         ERR("out of memory\n");
