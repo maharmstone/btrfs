@@ -85,9 +85,10 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
                     searchkey.obj_type = TYPE_INODE_ITEM;
                     searchkey.offset = 0xffffffffffffffff;
                     
-                    if (!find_item(fcb->Vcb, r, &tp, &searchkey, FALSE)) {
-                        ERR("error - could not find any entries in subvolume %llx\n", r->id);
-                        return STATUS_INTERNAL_ERROR;
+                    Status = find_item(fcb->Vcb, r, &tp, &searchkey, FALSE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("error - find_item returned %08x\n", Status);
+                        return Status;
                     }
                     
                     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -350,6 +351,7 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
     KEY searchkey;
     traverse_ptr next_tp;
     DIR_ITEM* di;
+    NTSTATUS Status;
     
     if (fcb->par) { // don't return . and .. if root directory
         if (*offset == 0) {
@@ -384,11 +386,12 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         searchkey.obj_type = TYPE_DIR_INDEX;
         searchkey.offset = *offset;
         
-        if (!find_item(fcb->Vcb, fcb->subvol, tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
+        Status = find_item(fcb->Vcb, fcb->subvol, tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
             free_traverse_ptr(tp);
             tp->tree = NULL;
-            return STATUS_NO_MORE_FILES;
+            return Status;
         }
         
         TRACE("found item %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);

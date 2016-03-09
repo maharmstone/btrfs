@@ -439,13 +439,15 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     traverse_ptr tp, next_tp;
     BOOL b;
     UINT64 lastaddr;
+    NTSTATUS Status;
     
     searchkey.obj_id = 0x100;
     searchkey.obj_type = TYPE_CHUNK_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in chunk_root\n");
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return 0xffffffffffffffff;
     }
     
@@ -486,13 +488,15 @@ static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
+    NTSTATUS Status;
     
     searchkey.obj_id = 1;
     searchkey.obj_type = TYPE_DEV_ITEM;
     searchkey.offset = device->devitem.dev_id;
     
-    if (!find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in chunk_root\n");
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -966,9 +970,10 @@ static NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* 
     searchkey.obj_type = TYPE_CHUNK_ITEM;
     searchkey.offset = address;
     
-    if (!find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in chunk_root\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -1102,6 +1107,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
 
 static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
+    NTSTATUS Status;
     
     le = Vcb->tree_cache.Flink;
     while (le != &Vcb->tree_cache) {
@@ -1118,9 +1124,10 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                 searchkey.obj_type = TYPE_ROOT_ITEM;
                 searchkey.offset = 0xffffffffffffffff;
                 
-                if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-                    ERR("error - could not find any entries in root_root\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("error - find_item returned %08x\n", Status);
+                    return Status;
                 }
                 
                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -1190,6 +1197,7 @@ void print_trees(LIST_ENTRY* tc) {
 static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     KEY searchkey;
     traverse_ptr tp;
+    NTSTATUS Status;
     
     while (t->parent) {
         t = t->parent;
@@ -1204,8 +1212,9 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     searchkey.obj_type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in root_root\n");
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return;
     }
     
@@ -1367,13 +1376,15 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     traverse_ptr tp;
     chunk* c;
     EXTENT_ITEM_SKINNY_METADATA* eism;
+    NTSTATUS Status;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_METADATA_ITEM;
     searchkey.offset = t->header.level;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent_root\n");
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -1473,6 +1484,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     KEY searchkey;
     traverse_ptr tp, tp2, insert_tp;
     EXTENT_REF_V0* erv0;
+    NTSTATUS Status;
     
     TRACE("(%p, %p, %p)\n", Vcb, td, t);
     
@@ -1480,8 +1492,9 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     searchkey.obj_type = TYPE_EXTENT_REF_V0;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent_root\n");
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return;
     }
     
@@ -1495,8 +1508,9 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = Vcb->superblock.node_size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent_root\n");
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         free_traverse_ptr(&tp);
         return;
     }
@@ -1585,6 +1599,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     EXTENT_ITEM* ei;
     EXTENT_ITEM_V0* eiv0;
     chunk* c;
+    NTSTATUS Status;
     
     // FIXME - deal with refcounts > 1
     
@@ -1600,9 +1615,10 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = Vcb->superblock.node_size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent_root\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
@@ -1676,12 +1692,17 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         searchkey.obj_type = TYPE_EXTENT_REF_V0;
         searchkey.offset = 0xffffffffffffffff;
         
-        if (find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE)) {
-            if (tp2.item->key.obj_id == searchkey.obj_id && tp2.item->key.obj_type == searchkey.obj_type) {
-                delete_tree_item(Vcb, &tp2, rollback);
-            }
-            free_traverse_ptr(&tp2);
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            free_traverse_ptr(&tp);
+            return Status;
         }
+        
+        if (tp2.item->key.obj_id == searchkey.obj_id && tp2.item->key.obj_type == searchkey.obj_type) {
+            delete_tree_item(Vcb, &tp2, rollback);
+        }
+        free_traverse_ptr(&tp2);
     }
      
     if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
@@ -1778,6 +1799,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
 
 static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
+    NTSTATUS Status;
     
     TRACE("(%p)\n", Vcb);
     
@@ -1794,9 +1816,10 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
                 searchkey.obj_type = TYPE_ROOT_ITEM;
                 searchkey.offset = 0xffffffffffffffff;
                 
-                if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-                    ERR("error - could not find any entries in root_root\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("error - find_item returned %08x\n", Status);
+                    return Status;
                 }
                 
                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -2087,9 +2110,10 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                     searchkey.obj_type = TYPE_EXTENT_ITEM;
                     searchkey.offset = Vcb->superblock.node_size;
                     
-                    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-                        ERR("error - could not find any entries in extent_root\n");
-                        return STATUS_INTERNAL_ERROR;
+                    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("error - find_item returned %08x\n", Status);
+                        return Status;
                     }
                     
                     if (keycmp(&searchkey, &tp.item->key)) {
@@ -2379,6 +2403,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
     KEY searchkey;
     traverse_ptr tp;
     BLOCK_GROUP_ITEM* bgi;
+    NTSTATUS Status;
     
     TRACE("(%p)\n", Vcb);
     
@@ -2390,9 +2415,10 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
             searchkey.offset = c->chunk_item->size;
             
-            if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-                ERR("error - could not find any entries in extent_root\n");
-                return STATUS_INTERNAL_ERROR;
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
             }
             
             if (keycmp(&searchkey, &tp.item->key)) {
@@ -3130,9 +3156,10 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             KEY searchkey = {0,0,0};
                             traverse_ptr tp;
                             
-                            if (!find_item(Vcb, tc2->tree->root, &tp, &searchkey, FALSE)) {
-                                ERR("error - could not find any entries in subvol %llx\n", tc2->tree->root->id);
-                                return STATUS_INTERNAL_ERROR;
+                            Status = find_item(Vcb, tc2->tree->root, &tp, &searchkey, FALSE);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("error - find_item returned %08x\n", Status);
+                                return Status;
                             }
                             
                             free_traverse_ptr(&tp);
@@ -3179,9 +3206,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         searchkey.obj_type = 0;
         searchkey.offset = 0;
         
-        if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in root_root\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         add_to_tree_cache(Vcb, Vcb->root_root->treeholder.tree, TRUE);
@@ -3326,6 +3354,7 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
     ULONG len;
     UINT64 hash;
     EXTENT_DATA_REF* edr;
+    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %llx, %llx, %llx)\n", Vcb, address, size, subvol->id, inode, offset);
     
@@ -3333,9 +3362,10 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent tree\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
@@ -3383,9 +3413,10 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
         
         free_traverse_ptr(&tp);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         if (keycmp(&tp.item->key, &searchkey)) {
@@ -3413,9 +3444,10 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
         
         free_traverse_ptr(&tp);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         if (keycmp(&tp.item->key, &searchkey)) {
@@ -3543,14 +3575,16 @@ static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, U
     EXTENT_ITEM* ei;
     ULONG eisize;
     UINT8* type;
+    NTSTATUS Status;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent tree\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
@@ -3573,9 +3607,10 @@ static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, U
     searchkey.obj_type = TYPE_EXTENT_REF_V0;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent tree\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     InitializeListHead(&data_refs);
@@ -3712,14 +3747,16 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
     UINT8* siptr;
     ULONG len;
     UINT64 count;
+    NTSTATUS Status;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent tree\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
@@ -3956,6 +3993,7 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
     ULONG len;
     EXTENT_DATA_REF* edr;
     BOOL found;
+    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %llx, %llx, %llx)\n", Vcb, address, size, subvol->id, inode, offset);
     
@@ -3963,9 +4001,10 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent tree\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
@@ -3984,9 +4023,10 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
         
         free_traverse_ptr(&tp);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         if (keycmp(&tp.item->key, &searchkey)) {
@@ -4022,9 +4062,10 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
         
         free_traverse_ptr(&tp);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         if (keycmp(&tp.item->key, &searchkey)) {
@@ -4175,9 +4216,10 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = start_data;
     
-    if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
 
     do {
@@ -4748,13 +4790,15 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     chunk* c;
     LIST_ENTRY* le;
     space* s;
+    NTSTATUS Status;
     
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = start_data;
     
-    if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find last EXTENT_DATA item\n");
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -4811,8 +4855,9 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = ed2->size;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE)) {
-        ERR("error - could not find extent in tree\n");
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     
@@ -4831,8 +4876,9 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         
         free_traverse_ptr(&tp2);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
             goto end;
         }
         
@@ -4859,8 +4905,9 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         
         free_traverse_ptr(&tp2);
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in extent tree\n");
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
             goto end;
         }
         
@@ -4979,9 +5026,10 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         searchkey.obj_type = TYPE_EXTENT_DATA;
         searchkey.offset = start_data;
         
-        if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvol\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
 //         if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset >= start_data) {
@@ -5080,6 +5128,7 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
     traverse_ptr tp, next_tp;
     KEY searchkey;
     UINT32* data;
+    NTSTATUS Status;
     
     if (!Vcb->checksum_root) {
         ERR("no checksum root\n");
@@ -5102,7 +5151,9 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
         
         // FIXME - create checksum_root if it doesn't exist at all
         
-        if (!find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE)) { // tree is completely empty
+        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) { // tree is completely empty
+            // FIXME - do proper check here that tree is empty
             if (!cs->deleted) {
                 checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * cs->length, ALLOC_TAG);
                 if (!checksums) {
@@ -5134,8 +5185,9 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
             searchkey.obj_type = TYPE_EXTENT_CSUM;
             searchkey.offset = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
             
-            if (!find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE)) {
-                ERR("error - could not find any entries in extent_root\n");
+            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
                 goto exit;
             }
             
@@ -5174,8 +5226,9 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
             searchkey.obj_type = TYPE_EXTENT_CSUM;
             searchkey.offset = cs->ol.key;
             
-            if (!find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE)) {
-                ERR("error - could not find any entries in extent_root\n");
+            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
                 goto exit;
             }
             
@@ -5313,9 +5366,10 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_EXTENT_DATA;
         searchkey.offset = 0xffffffffffffffff;
         
-        if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         oldalloc = 0;
@@ -5500,13 +5554,15 @@ static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
     traverse_ptr tp;
     EXTENT_ITEM* ei;
     UINT64 rc;
+    NTSTATUS Status;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in extent root\n");
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return 0;
     }
     
@@ -5545,9 +5601,10 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = start_data;
     
-    if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find last EXTENT_DATA item\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset > start_data) {
@@ -5761,6 +5818,7 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     UINT64 length, oldlength, lastoff;
+    NTSTATUS Status;
     
     if (fcb->ads || fcb->inode_item.st_size == 0 || fcb->deleted)
         return;
@@ -5771,8 +5829,9 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvol\n");
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto failure2;
     }
     
@@ -6090,9 +6149,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             searchkey.obj_type = TYPE_XATTR_ITEM;
             searchkey.offset = fcb->adshash;
 
-            if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-                ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-                Status = STATUS_INTERNAL_ERROR;
+            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
                 goto end;
             }
             
@@ -6279,9 +6338,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     

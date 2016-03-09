@@ -254,6 +254,7 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
     KEY searchkey;
     UINT32 crc32;
     traverse_ptr tp;
+    NTSTATUS Status;
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8->Buffer, (ULONG)utf8->Length);
 
@@ -261,9 +262,10 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = crc32;
 
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
 
     if (!keycmp(&tp.item->key, &searchkey)) {
@@ -318,9 +320,10 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = index;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!keycmp(&tp.item->key, &searchkey)) {
@@ -435,9 +438,9 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     searchkey.obj_type = TYPE_INODE_REF;
     searchkey.offset = 0;
     
-    if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     
@@ -494,9 +497,9 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         searchkey.obj_type = TYPE_INODE_EXTREF;
         searchkey.offset = 0;
         
-        if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-            Status = STATUS_INTERNAL_ERROR;
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
             goto end;
         }
         

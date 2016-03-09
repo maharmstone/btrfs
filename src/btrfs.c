@@ -305,14 +305,16 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
     KEY searchkey;
     traverse_ptr tp, prev_tp;
+    NTSTATUS Status;
     
     // get last entry
     searchkey.obj_id = 0xffffffffffffffff;
     searchkey.obj_type = 0xff;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (!find_item(Vcb, r, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", r->id);
+    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -344,6 +346,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     traverse_ptr tp;
     DIR_ITEM* xa;
     ULONG size, xasize;
+    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
     
@@ -351,8 +354,9 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -420,6 +424,7 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
     traverse_ptr tp;
     ULONG xasize;
     DIR_ITEM* xa;
+    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %s, %08x, %p, %u)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
     
@@ -427,9 +432,10 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
@@ -555,6 +561,7 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* xa;
+    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %s, %08x)\n", Vcb, subvol->id, inode, name, crc32);
     
@@ -562,8 +569,9 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -653,14 +661,16 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
     KEY searchkey;
     traverse_ptr tp;
     UINT8* di2;
+    NTSTATUS Status;
     
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = crc32;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!keycmp(&tp.item->key, &searchkey)) {
@@ -702,13 +712,15 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
     KEY searchkey;
     traverse_ptr tp, prev_tp;
     UINT64 dirpos;
+    NTSTATUS Status;
     
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_DIR_INDEX + 1;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return 0;
     }
     
@@ -1248,14 +1260,16 @@ end:
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
+    NTSTATUS Status;
     
     searchkey.obj_id = parinode;
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = crc32;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
@@ -1320,14 +1334,16 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     KEY searchkey;
     traverse_ptr tp;
     BOOL changed = FALSE;
+    NTSTATUS Status;
     
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_INODE_REF;
     searchkey.offset = parinode;
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
@@ -1415,9 +1431,10 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     searchkey.obj_type = TYPE_INODE_EXTREF;
     searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
     
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", subvol->id);
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!keycmp(&searchkey, &tp.item->key)) {
@@ -1559,9 +1576,9 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0xffffffffffffffff;
         
-        if (!find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE)) {
-            ERR("error - could not find any entries in subvolume %llx\n", fcb->par->subvol->id);
-            Status = STATUS_INTERNAL_ERROR;
+        Status = find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
             goto exit;
         }
         
@@ -1637,8 +1654,9 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = index;
     
-    if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
@@ -1655,10 +1673,10 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(fcb->Vcb, fcb->subvol, &tp2, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp2, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         free_traverse_ptr(&tp);
-        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
@@ -1754,9 +1772,9 @@ success2:
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_tree returned %08x\n", Status);
         goto exit;
     }
     
@@ -2443,9 +2461,10 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb) {
     searchkey.obj_type = 0;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any root tree entries\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_tree returned %08x\n", Status);
+        return Status;
     }
     
     do {
@@ -2510,9 +2529,10 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     searchkey.obj_type = TYPE_DEV_EXTENT;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any dev tree entries\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_tree returned %08x\n", Status);
+        return Status;
     }
     
     lastaddr = 0;
@@ -2588,14 +2608,16 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     BOOL b;
     chunk* c;
     UINT64 i;
+    NTSTATUS Status;
 
     searchkey.obj_id = 0;
     searchkey.obj_type = 0;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any chunk tree entries\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     do {
@@ -2691,8 +2713,9 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     searchkey.obj_type = 0;
     searchkey.offset = c->offset;
     
-    if (!find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         return FALSE;
     }
     
@@ -2735,8 +2758,9 @@ static BOOL load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     num_entries = fsi->num_entries;
 #endif
     
-    if (!find_item(Vcb, Vcb->root_root, &tp2, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
+    Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         free_traverse_ptr(&tp);
         return FALSE;
     }
@@ -2837,6 +2861,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     BOOL b;
     space *s, *s2;
     LIST_ENTRY* le;
+    NTSTATUS Status;
     
     load_stored_free_space_cache(Vcb, c);
     
@@ -2846,9 +2871,10 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-        ERR("error - find_item failed\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
     }
     
     lastaddr = c->offset;
@@ -3003,9 +3029,10 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb) {
         searchkey.obj_id = c->offset;
         searchkey.offset = c->chunk_item->size;
         
-        if (!find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE)) {
-            ERR("error - find_item failed\n");
-            return STATUS_INTERNAL_ERROR;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
         }
         
         if (!keycmp(&searchkey, &tp.item->key)) {
@@ -3445,9 +3472,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (!find_item(Vcb, Vcb->root_fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", Vcb->root_fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, Vcb->root_fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto exit;
     }
     

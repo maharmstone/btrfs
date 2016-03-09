@@ -652,7 +652,7 @@ static __inline tree_data* next_item(tree* t, tree_data* td) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line) {
+static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line) {
     int cmp;
     tree_data *td, *lasttd;
     
@@ -662,7 +662,7 @@ static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_p
     td = first_item(t);
     lasttd = NULL;
     
-    if (!td) return FALSE;
+    if (!td) return STATUS_INTERNAL_ERROR;
     
     do {
         cmp = keycmp(searchkey, &td->key);
@@ -692,9 +692,9 @@ static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_p
         
         add_to_tree_cache(Vcb, t, FALSE);
         
-        return TRUE;
+        return STATUS_SUCCESS;
     } else {
-        BOOL b;
+        NTSTATUS Status;
         
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
@@ -702,17 +702,17 @@ static BOOL STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_p
         if (_do_load_tree(Vcb, &td->treeholder, t->root, t, td, func, file, line))
             _increase_tree_rc(t, func, file, line);
         
-        b = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, func, file, line);
+        Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, func, file, line);
         
         td->treeholder.tree = _free_tree(td->treeholder.tree, func, file, line);
         TRACE("tree now %p\n", td->treeholder.tree);
         
-        return b;
+        return Status;
     }
 }
 
-BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line) {
-    BOOL b;
+NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line) {
+    NTSTATUS Status;
 //     KIRQL irql;
     
     TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
@@ -723,7 +723,7 @@ BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const 
 
 //     KeReleaseSpinLock(&r->load_tree_lock, irql);
     
-    b = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, func, file, line);
+    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, func, file, line);
     
 //     FsRtlEnterFileSystem();
 //     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
@@ -738,7 +738,7 @@ BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const 
 //     }
 // #endif
     
-    return b;
+    return Status;
 }
 
 void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* file, unsigned int line) {
@@ -1010,6 +1010,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
 #endif
     traverse_ptr* tp2;
     BOOL success = FALSE;
+    NTSTATUS Status;
     
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
     
@@ -1017,7 +1018,8 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     searchkey.obj_type = obj_type;
     searchkey.offset = offset;
     
-    if (!find_item(Vcb, r, &tp, &searchkey, TRUE)) {
+    Status = find_item(Vcb, r, &tp, &searchkey, TRUE);
+    if (!NT_SUCCESS(Status)) {
         if (r) {
             if (!r->treeholder.tree)
                 do_load_tree(Vcb, &r->treeholder, r, NULL, NULL);
@@ -1030,7 +1032,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
                 goto end;
             }
         } else {
-            ERR("error: find_item failed\n");
+            ERR("error: find_item returned %08x\n", Status);
             goto end;
         }
     }

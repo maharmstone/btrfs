@@ -886,9 +886,9 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0;
     
-    if (!find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE)) {
-        ERR("error - could not find any entries in subvolume %llx\n", fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     

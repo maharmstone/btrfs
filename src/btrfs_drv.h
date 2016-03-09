@@ -422,7 +422,7 @@ void STDCALL init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 UINT32 STDCALL calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen);
 
 // in treefuncs.c
-BOOL STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line);
+NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
 void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* file, unsigned int line);

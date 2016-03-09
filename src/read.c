@@ -323,9 +323,9 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = start;
 
-    if (!find_item(Vcb, subvol, &tp, &searchkey, FALSE)) {
-        ERR("couldn't find any entries in subvol %llx\n", subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
         goto exit;
     }
 
