@@ -668,12 +668,11 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         cmp = keycmp(searchkey, &td->key);
 //         TRACE("(%u) comparing (%x,%x,%x) to (%x,%x,%x) - %i (ignore = %s)\n", t->header.level, (UINT32)searchkey->obj_id, searchkey->obj_type, (UINT32)searchkey->offset, (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset, cmp, td->ignore ? "TRUE" : "FALSE");
         if (cmp == 1) {
-            if (!td->ignore || ignore)
-                lasttd = td;
+            lasttd = td;
             td = next_item(t, td);
         }
-        
-        if (t->header.level == 0 && !ignore && td && td->ignore) {
+
+        if (t->header.level == 0 && cmp == 0 && !ignore && td && td->ignore) {
             while (td && td->ignore)
                 td = next_item(t, td);
             
@@ -686,11 +685,29 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         td = lasttd;
     
     if (t->header.level == 0) {
-        tp->tree = t;
-        _increase_tree_rc(t, func, file, line);
-        tp->item = td;
-        
-        add_to_tree_cache(Vcb, t, FALSE);
+        if (td->ignore && !ignore) {
+            traverse_ptr oldtp;
+            
+            oldtp.tree = t;
+            oldtp.item = td;
+            _increase_tree_rc(t, func, file, line);
+            
+            while (_find_prev_item(Vcb, &oldtp, tp, TRUE, func, file, line)) {
+                if (!tp->item->ignore)
+                    return STATUS_SUCCESS;
+                
+                free_traverse_ptr(&oldtp);
+                oldtp = *tp;
+            }
+            
+            return STATUS_INTERNAL_ERROR;
+        } else {
+            tp->tree = t;
+            _increase_tree_rc(t, func, file, line);
+            tp->item = td;
+            
+            add_to_tree_cache(Vcb, t, FALSE);
+        }
         
         return STATUS_SUCCESS;
     } else {
