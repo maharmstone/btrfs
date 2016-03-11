@@ -646,7 +646,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 
                 TRACE("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
                             ccfs.AllocationSize.QuadPart, ccfs.FileSize.QuadPart, ccfs.ValidDataLength.QuadPart);
-                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
+                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, FileObject);
 
                 CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
             }

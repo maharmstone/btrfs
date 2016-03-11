@@ -21,9 +21,13 @@
 CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
-    fcb* fcb = Context;
+    PFILE_OBJECT FileObject = Context;
+    fcb* fcb = FileObject->FsContext;
     
     TRACE("(%p, %u)\n", Context, Wait);
+    
+    if (!fcb || FileObject->Flags & FO_CLEANUP_COMPLETE)
+        return FALSE;
     
     fcb->lazy_writer_thread = KeGetCurrentThread();
     
@@ -31,9 +35,13 @@ static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
 }
 
 static void STDCALL release_from_lazy_write(PVOID Context) {
-    fcb* fcb = Context;
+    PFILE_OBJECT FileObject = Context;
+    fcb* fcb = FileObject->FsContext;
     
     TRACE("(%p)\n", Context);
+    
+    if (!fcb || FileObject->Flags & FO_CLEANUP_COMPLETE)
+        return;
     
     fcb->lazy_writer_thread = NULL;
 }

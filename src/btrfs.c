@@ -1951,6 +1951,8 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     free_fcb(fcb);
     
+    FileObject->FsContext = NULL;
+    
     return STATUS_SUCCESS;
 }
 
@@ -2059,11 +2061,21 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 acquire_tree_lock(fcb->Vcb, TRUE);
                 
                 Status = delete_fcb(fcb, FileObject, &rollback);
-                // FIXME - change allocation size etc. to zero
                 
-                if (NT_SUCCESS(Status))
+                if (NT_SUCCESS(Status)) {
+                    LARGE_INTEGER newlength;
+
+                    if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject)
+                        CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                    
+                    newlength.QuadPart = 0;
+                    
+                    if (!CcUninitializeCacheMap(FileObject, &newlength, NULL)) {
+                        WARN("CcUninitializeCacheMap failed\n");
+                    }
+                    
                     clear_rollback(&rollback);
-                else
+                } else
                     do_rollback(fcb->Vcb, &rollback);
                 
                 release_tree_lock(fcb->Vcb, TRUE);
