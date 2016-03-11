@@ -1844,7 +1844,7 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     UINT16 datalen;
     NTSTATUS Status;
     
-    TRACE("setting new end to %llx bytes (currently %llx)\n", feofi->EndOfFile.QuadPart, fcb->adssize);
+    TRACE("setting new end to %llx bytes (currently %x)\n", feofi->EndOfFile.QuadPart, fcb->adssize);
     
     if (feofi->EndOfFile.QuadPart < fcb->adssize) {
         if (advance_only)
