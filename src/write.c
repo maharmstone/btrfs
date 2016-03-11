@@ -5357,6 +5357,8 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     BOOL cur_inline;
     NTSTATUS Status;
+    
+    TRACE("(%p, %x, %p)\n", fcb, end, rollback);
 
     if (fcb->ads) {
         FIXME("FIXME - support streams here\n"); // FIXME
@@ -5389,6 +5391,8 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 UINT64 origlength, length;
                 UINT8* data;
                 
+                TRACE("giving inline file proper extents\n");
+                
                 origlength = ((EXTENT_DATA*)tp.item->data)->decoded_size;
                 
                 cur_inline = FALSE;
@@ -5402,7 +5406,7 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 
                 data = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
                 if (!data) {
-                    ERR("could not allocated %llx bytes for data\n", length);
+                    ERR("could not allocate %llx bytes for data\n", length);
                     free_traverse_ptr(&tp);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
@@ -5412,6 +5416,8 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 
                 RtlCopyMemory(data, ((EXTENT_DATA*)tp.item->data)->data, origlength);
                 
+                fcb->inode_item.st_blocks -= origlength;
+                
                 Status = insert_extent(fcb->Vcb, fcb, tp.item->key.offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_extent returned %08x\n", Status);
@@ -5420,7 +5426,6 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                     return Status;
                 }
                 
-                fcb->inode_item.st_blocks += length - origlength;
                 oldalloc = tp.item->key.offset + length;
                 
                 ExFreePool(data);
@@ -5457,6 +5462,8 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                         return STATUS_INTERNAL_ERROR;
                     }
                 }
+                
+                TRACE("extending inline file (oldalloc = %llx, end = %llx)\n", oldalloc, end);
                 
                 fcb->inode_item.st_size = end;
                 TRACE("setting st_size to %llx\n", end);
