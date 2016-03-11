@@ -5816,8 +5816,10 @@ static void print_loaded_trees(tree* t, int spaces) {
 static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
-    UINT64 length, oldlength, lastoff;
+    UINT64 length, oldlength, lastoff, alloc;
     NTSTATUS Status;
+    EXTENT_DATA* ed;
+    EXTENT_DATA2* ed2;
     
     if (fcb->ads || fcb->inode_item.st_size == 0 || fcb->deleted)
         return;
@@ -5844,10 +5846,18 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
         goto failure;
     }
     
-    length = oldlength = ((EXTENT_DATA*)tp.item->data)->decoded_size;
+    ed = (EXTENT_DATA*)tp.item->data;
+    ed2 = (EXTENT_DATA2*)&ed->data[0];
+    
+    length = oldlength = ed->decoded_size;
     lastoff = tp.item->key.offset;
     
     TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
+    
+    alloc = 0;
+    if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
+        alloc += length;
+    }
     
     while (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
         if (next_tp.item->key.obj_id != searchkey.obj_id || next_tp.item->key.obj_type != searchkey.obj_type) {
@@ -5863,7 +5873,10 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
             goto failure;
         }
         
-        length = ((EXTENT_DATA*)tp.item->data)->decoded_size;
+        ed = (EXTENT_DATA*)tp.item->data;
+        ed2 = (EXTENT_DATA2*)&ed->data[0];
+    
+        length = ed->decoded_size;
     
         TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
         
@@ -5872,8 +5885,17 @@ static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
             goto failure;
         }
         
+        if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
+            alloc += length;
+        }
+        
         oldlength = length;
         lastoff = tp.item->key.offset;
+    }
+    
+    if (alloc != fcb->inode_item.st_blocks) {
+        ERR("allocation size was %llx, expected %llx\n", alloc, fcb->inode_item.st_blocks);
+        goto failure;
     }
     
 //     if (fcb->inode_item.st_blocks != lastoff + oldlength) {
