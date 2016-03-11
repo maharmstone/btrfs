@@ -797,6 +797,14 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                 } else {
                     ULONG fnlen;
                     
+                    if (streamhash == EA_DOSATTRIB_HASH && xattr.Length == strlen(EA_DOSATTRIB) &&
+                        RtlCompareMemory(xattr.Buffer, EA_DOSATTRIB, xattr.Length) == xattr.Length) {
+                        WARN("not allowing user.DOSATTRIB to be opened as stream\n");
+                    
+                        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                        goto end;
+                    }
+                    
                     sf2 = create_fcb();
                     if (!sf2) {
                         ERR("out of memory\n");
