@@ -659,6 +659,15 @@ static __inline tree_data* first_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
+static __inline tree_data* prev_item(tree* t, tree_data* td) {
+    LIST_ENTRY* le = td->list_entry.Blink;
+    
+    if (le == &t->itemlist)
+        return NULL;
+    
+    return CONTAINING_RECORD(le, tree_data, list_entry);
+}
+
 static __inline tree_data* next_item(tree* t, tree_data* td) {
     LIST_ENTRY* le = td->list_entry.Flink;
     
@@ -716,6 +725,20 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                 oldtp = *tp;
             }
             
+            // if no valid entries before where item should be, look afterwards instead
+            
+            oldtp.tree = t;
+            oldtp.item = td;
+            _increase_tree_rc(t, func, file, line);
+            
+            while (_find_next_item(Vcb, &oldtp, tp, TRUE, func, file, line)) {
+                if (!tp->item->ignore)
+                    return STATUS_SUCCESS;
+                
+                free_traverse_ptr(&oldtp);
+                oldtp = *tp;
+            }
+            
             return STATUS_INTERNAL_ERROR;
         } else {
             tp->tree = t;
@@ -729,6 +752,13 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
     } else {
         NTSTATUS Status;
         BOOL loaded;
+        
+        while (td && td->treeholder.tree && IsListEmpty(&td->treeholder.tree->itemlist)) {
+            td = prev_item(t, td);
+        }
+        
+        if (!td)
+            return STATUS_INTERNAL_ERROR;
         
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
@@ -888,15 +918,6 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
 #endif
     
     return TRUE;
-}
-
-static __inline tree_data* prev_item(tree* t, tree_data* td) {
-    LIST_ENTRY* le = td->list_entry.Blink;
-    
-    if (le == &t->itemlist)
-        return NULL;
-    
-    return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
 static __inline tree_data* last_item(tree* t) {
