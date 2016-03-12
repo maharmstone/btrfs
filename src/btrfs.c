@@ -2051,6 +2051,8 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
         
+        IoRemoveShareAccess(FileObject, &fcb->share_access);
+        
         oc = InterlockedDecrement(&fcb->open_count);
         
         if (oc == 0) {

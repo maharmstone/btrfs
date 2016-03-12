@@ -2016,6 +2016,18 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             free_fcb(fcb);
             goto exit;
         }
+        
+        if (fcb->open_count > 0) {
+            Status = IoCheckShareAccess(access, Stack->Parameters.Create.ShareAccess, FileObject, &fcb->share_access, TRUE);
+            
+            if (!NT_SUCCESS(Status)) {
+                WARN("IoCheckShareAccess failed, returning %08x\n", Status);
+                free_fcb(fcb);
+                goto exit;
+            }
+        } else {
+            IoSetShareAccess(access, Stack->Parameters.Create.ShareAccess, FileObject, &fcb->share_access);
+        }
 
         if (access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForWrite)) {

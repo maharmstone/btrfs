@@ -118,6 +118,7 @@ typedef struct _fcb {
     BOOL deleted;
     PKTHREAD lazy_writer_thread;
     ULONG atts;
+    SHARE_ACCESS share_access;
     
     BOOL ads;
     UINT32 adssize;
