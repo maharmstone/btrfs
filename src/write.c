@@ -6118,7 +6118,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 ERR("extend_file returned %08x\n", Status);
                 goto end;
             }
-        }
+        } else if (fcb->ads)
+            fcb->adssize = newlength;
+        else
+            fcb->inode_item.st_size = newlength;
         
         fcb->Header.FileSize.QuadPart = newlength;
         fcb->Header.ValidDataLength.QuadPart = newlength;
