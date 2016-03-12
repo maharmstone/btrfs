@@ -1388,7 +1388,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     
     j = i;
     
-    while (fnus->Buffer[i-1] != '\\' && fnus->Buffer[i-1] != '/' && i > 0) { i--; }
+    while (i > 0 && fnus->Buffer[i-1] != '\\' && fnus->Buffer[i-1] != '/') { i--; }
     
     fpus.MaximumLength = (j - i + 2) * sizeof(WCHAR);
     fpus.Buffer = ExAllocatePoolWithTag(PagedPool, fpus.MaximumLength, ALLOC_TAG);
