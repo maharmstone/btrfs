@@ -790,7 +790,7 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                 xattr.Length = xattr.MaximumLength = 0;
                 
                 if (!find_stream(Vcb, sf, &parts[i], &streamname, &streamsize, &streamhash, &xattr)) {
-                    WARN("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
+                    TRACE("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
                     
                     Status = STATUS_OBJECT_NAME_NOT_FOUND;
                     goto end;
@@ -889,7 +889,7 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                 traverse_ptr tp;
                 
                 if (!find_file_in_dir(Vcb, &parts[i], sf->subvol, sf->inode, &subvol, &inode, &type, &utf8)) {
-                    WARN("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
+                    TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
                     Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
                     goto end;
@@ -1951,14 +1951,14 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     
     if (NT_SUCCESS(Status)) {
         if (RequestedDisposition == FILE_CREATE) {
-            WARN("file %.*S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+            TRACE("file %.*S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
             Status = STATUS_OBJECT_NAME_COLLISION;
             free_fcb(fcb);
             goto exit;
         }
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         if (RequestedDisposition == FILE_OPEN || RequestedDisposition == FILE_OVERWRITE) {
-            WARN("file doesn't exist, returning STATUS_OBJECT_NAME_NOT_FOUND\n");
+            TRACE("file doesn't exist, returning STATUS_OBJECT_NAME_NOT_FOUND\n");
             goto exit;
         }
     } else {

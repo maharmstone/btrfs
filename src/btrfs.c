@@ -1627,7 +1627,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, bytecount);
 
-    ERR("deleting %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("deleting %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
     
     if (fcb->par->subvol == fcb->subvol)
         parinode = fcb->par->inode;
@@ -2071,7 +2071,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     newlength.QuadPart = 0;
                     
                     if (!CcUninitializeCacheMap(FileObject, &newlength, NULL)) {
-                        WARN("CcUninitializeCacheMap failed\n");
+                        TRACE("CcUninitializeCacheMap failed\n");
                     }
                     
                     clear_rollback(&rollback);
