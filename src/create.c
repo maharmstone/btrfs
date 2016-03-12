@@ -1882,7 +1882,8 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     ccb* ccb;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
-    ULONG access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
+    ULONG access;
+    PACCESS_STATE access_state = Stack->Parameters.Create.SecurityContext->AccessState;
     
     Irp->IoStatus.Information = 0;
     
@@ -2009,6 +2010,13 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             goto exit;
         }
         
+        if (!SeAccessCheck(fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+            IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            free_fcb(fcb);
+            goto exit;
+        }
+
         if (access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForWrite)) {
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
