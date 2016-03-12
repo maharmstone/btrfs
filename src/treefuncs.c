@@ -350,7 +350,7 @@ exit:
     return Status;
 }
 
-tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, const char* func, const char* file, unsigned int line) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -363,14 +363,14 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
     if (!buf) {
         ERR("out of memory\n");
-        return NULL;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     Status = read_tree(Vcb, addr, buf);
     if (!NT_SUCCESS(Status)) {
         ERR("read_tree returned 0x%08x\n", Status);
         ExFreePool(buf);
-        return NULL;
+        return Status;
     }
     
     th = (tree_header*)buf;
@@ -378,7 +378,8 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!t) {
         ERR("out of memory\n");
-        return NULL;
+        ExFreePool(buf);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
@@ -420,7 +421,8 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
             if (!td) {
                 ERR("out of memory\n");
-                return NULL;
+                ExFreePool(buf);
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             td->key = ln[i].key;
@@ -430,7 +432,8 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
                 td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
                 if (!td->data) {
                     ERR("out of memory\n");
-                    return NULL;
+                    ExFreePool(buf);
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
@@ -455,7 +458,8 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
             if (!td) {
                 ERR("out of memory\n");
-                return NULL;
+                ExFreePool(buf);
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             td->key = in[i].key;
@@ -482,7 +486,9 @@ tree* STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, const char
     
     TRACE("returning %p\n", t);
     
-    return t;
+    *pt = t;
+    
+    return STATUS_SUCCESS;
 }
 
 static tree* free_tree2(tree* t, const char* func, const char* file, unsigned int line) {
@@ -567,7 +573,7 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
     return t;
 }
 
-BOOL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, const char* func, const char* file, unsigned int line) {
 //     KIRQL irql;
 //     tree_holder_nonpaged* thnp = th->nonpaged;
     BOOL ret;
@@ -602,7 +608,15 @@ BOOL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tre
 //     }
 
     if (!th->tree) {
-        th->tree = _load_tree(Vcb, th->address, r, func, file, line);
+        NTSTATUS Status;
+        
+        Status = _load_tree(Vcb, th->address, r, &th->tree, func, file, line);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_tree returned %08x\n", Status);
+            ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+            return Status;
+        }
+        
         th->tree->parent = t;
         th->tree->paritem = td;
         
@@ -618,7 +632,9 @@ BOOL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tre
 //     ExReleaseResourceLite(&thnp->lock);
     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
     
-    return ret;
+    *loaded = ret;
+    
+    return STATUS_SUCCESS;
 }
 
 tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line) {
@@ -712,11 +728,18 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         return STATUS_SUCCESS;
     } else {
         NTSTATUS Status;
+        BOOL loaded;
         
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
         
-        if (_do_load_tree(Vcb, &td->treeholder, t->root, t, td, func, file, line))
+        Status = _do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, func, file, line);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (loaded)
             _increase_tree_rc(t, func, file, line);
         
         Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, func, file, line);
@@ -730,23 +753,23 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
 
 NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line) {
     NTSTATUS Status;
+    BOOL loaded;
 //     KIRQL irql;
     
     TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
     
-//     KeAcquireSpinLock(&r->load_tree_lock, &irql);
+    Status = _do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, func, file, line);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_load_tree returned %08x\n", Status);
+        return Status;
+    }
 
-    _do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, func, file, line);
-
-//     KeReleaseSpinLock(&r->load_tree_lock, irql);
-    
     Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, func, file, line);
-    
-//     FsRtlEnterFileSystem();
-//     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-    /*r->treeholder.tree = */_free_tree(r->treeholder.tree, func, file, line);
-//     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-//     FsRtlExitFileSystem();
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item_in_tree returned %08x\n", Status);
+    }
+
+    _free_tree(r->treeholder.tree, func, file, line);
     
 // #ifdef DEBUG_PARANOID
 //     if (b && !ignore && tp->item->ignore) {
@@ -767,6 +790,8 @@ void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* 
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line) {
     tree* t;
     tree_data *td, *next;
+    NTSTATUS Status;
+    BOOL loaded;
     
     next = next_item(tp->tree, tp->item);
     
@@ -807,7 +832,13 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
     if (!t)
         return FALSE;
     
-    if (_do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, func, file, line))
+    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, func, file, line);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_load_tree returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (loaded)
         _increase_tree_rc(t->parent, func, file, line);
     
     t = td->treeholder.tree;
@@ -816,7 +847,12 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
         tree_data* fi;
        
         fi = first_item(t);
-        _do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, func, file, line);
+        
+        Status = _do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, &loaded, func, file, line);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return FALSE;
+        }
         
         t = fi->treeholder.tree;
     }
@@ -875,6 +911,8 @@ static __inline tree_data* last_item(tree* t) {
 BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, const char* func, const char* file, unsigned int line) {
     tree* t;
     tree_data* td;
+    NTSTATUS Status;
+    BOOL loaded;
     
     // FIXME - support ignore flag
     if (prev_item(tp->tree, tp->item)) {
@@ -897,7 +935,14 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
         return FALSE;
     
     td = prev_item(t->parent, t->paritem);
-    if (_do_load_tree(Vcb, &td->treeholder, t->parent->root, t, td, func, file, line))
+    
+    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t, td, &loaded, func, file, line);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_load_tree returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (loaded)
         _increase_tree_rc(t->parent, func, file, line);
     
     t = td->treeholder.tree;
@@ -906,7 +951,12 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
         tree_data* li;
         
         li = last_item(t);
-        _do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, func, file, line);
+        
+        Status = _do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, &loaded, func, file, line);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return FALSE;
+        }
         
         t = li->treeholder.tree;
     }
@@ -1038,8 +1088,16 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     Status = find_item(Vcb, r, &tp, &searchkey, TRUE);
     if (!NT_SUCCESS(Status)) {
         if (r) {
-            if (!r->treeholder.tree)
-                do_load_tree(Vcb, &r->treeholder, r, NULL, NULL);
+            if (!r->treeholder.tree) {
+                BOOL loaded;
+                
+                Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_load_tree returned %08x\n", Status);
+                    goto end;
+                }
+            }
             
             if (r->treeholder.tree && r->treeholder.tree->header.num_items == 0) {
                 tp.tree = r->treeholder.tree;

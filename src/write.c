@@ -2806,6 +2806,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
     tree *next_tree, *par;
+    BOOL loaded;
     
     TRACE("trying to amalgamate tree in root %llx, level %x (size %u)\n", t->root->id, t->header.level, t->size);
     
@@ -2833,7 +2834,13 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     
 //     ExAcquireResourceExclusiveLite(&t->parent->nonpaged->load_tree_lock, TRUE);
     
-    if (do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem))
+    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, &loaded);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_load_tree returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (loaded)
         increase_tree_rc(t->parent);
         
 //     ExReleaseResourceLite(&t->parent->nonpaged->load_tree_lock);
@@ -3623,13 +3630,13 @@ static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, U
             
             // normally we'd need to acquire load_tree_lock here, but we're protected by the write tree lock
     
-            t = load_tree(Vcb, tp.item->key.offset, NULL);
+            Status = load_tree(Vcb, tp.item->key.offset, NULL, &t);
             
-            if (!t) {
-                ERR("couldn't load tree at %llx\n", tp.item->key.offset);
+            if (!NT_SUCCESS(Status)) {
+                ERR("load tree for address %llx returned %08x\n", tp.item->key.offset, Status);
                 free_traverse_ptr(&tp);
                 free_data_refs(&data_refs);
-                return STATUS_INTERNAL_ERROR;
+                return Status;
             }
             
             if (t->header.level == 0) {
@@ -3820,13 +3827,14 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
         if (er->type == TYPE_SHARED_DATA_REF) {
             // normally we'd need to acquire load_tree_lock here, but we're protected by the write tree lock
             SHARED_DATA_REF* sdr = er->data;
-            tree* t = load_tree(Vcb, sdr->offset, NULL);
+            tree* t;
             
-            if (!t) {
-                ERR("couldn't load tree at %llx\n", sdr->offset);
+            Status = load_tree(Vcb, sdr->offset, NULL, &t);
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_tree for address %llx returned %08x\n", sdr->offset, Status);
                 free_traverse_ptr(&tp);
                 free_data_refs(&extent_refs);
-                return STATUS_INTERNAL_ERROR;
+                return Status;
             }
             
             if (t->header.level == 0) {
