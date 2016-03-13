@@ -202,15 +202,6 @@ int main(void)
 
 err_out3:
 
-   printf("Going to delete the service... ");
-   if (DeleteService(hService) == 0) /* error */
-   {
-      printf("Uh oh:\n");
-      process_error();
-      retval = -5;
-   }
-   else printf("okay.\n");
-
    printf("Going to close the service handle... ");
    if (CloseServiceHandle(hService) == 0) /* error */
    {
