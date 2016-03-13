@@ -21,7 +21,7 @@
 	<Configurations>
 		<Configuration
 			Name="Debug|Win32"
-			OutputDirectory=".\x86"
+			OutputDirectory=".\Debug\x86"
 			IntermediateDirectory="Debug"
 			ConfigurationType="1"
 			>
@@ -104,7 +104,7 @@
 		</Configuration>
 		<Configuration
 			Name="Debug|x64"
-			OutputDirectory=".\x64"
+			OutputDirectory=".\Debug\x64"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="1"
 			>
