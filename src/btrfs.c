@@ -911,8 +911,13 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
     
-    WCHAR* fs_name = L"Btrfs";
-    ULONG fs_name_len = 5 * sizeof(WCHAR);
+    // An unfortunate necessity - we have to lie about our FS type. MPR!MprGetConnection polls for this,
+    // and compares it to a whitelist. If it doesn't match, it will return ERROR_NO_NET_OR_BAD_PATH,
+    // which prevents UAC from working.
+    // FIXME - only lie if we detect that we're being called by mpr.dll
+    
+    WCHAR* fs_name = L"NTFS";
+    ULONG fs_name_len = 4 * sizeof(WCHAR);
 
     TRACE("query volume information\n");
     
