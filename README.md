@@ -1,4 +1,4 @@
-WinBtrfs v0.1
+WinBtrfs v0.2
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -133,8 +133,28 @@ The driver assumes that all filenames are encoded in UTF-8. This should be the
 default on most setups nowadays - if you're not using UTF-8, it's probably worth
 looking into converting your files.
 
+* Windows thinks it's an NTFS volume
+
+Unfortunately we have to lie about this - the function MPR!MprGetConnection checks
+the filesystem type against an internal whitelist, and fails if it's not found, which
+prevents UAC from working. Thanks Microsoft!
+
 Changelog
 ---------
+
+v0.2 (2016-03-13):
+
+* Bug fix release:
+ * Check memory allocations succeed
+ * Check tree items are the size we're expecting
+ * Added rollbacks, so failed operations are completely undone
+ * Fixed driver claiming all unrecognized partitions (thanks Pierre Schweitzer)
+ * Fixed deadlock within `CcCopyRead`
+ * Fixed changing properties of a JPEG within Explorer
+ * Lie about FS type, so UAC works
+ * Many, many miscellaneous bug fixes
+* Rudimentary security support
+* Debug log support (see below)
 
 v0.1 (2016-02-21):
 
@@ -143,14 +163,32 @@ v0.1 (2016-02-21):
 Known bugs
 ----------
 
-* Deadlock within `CcCopyRead`.
-  Only been able to reproduce this with amd64 Windows 10 in QEMU - doesn't appear
-  with same installation on live machine. Something to do with paging to disk?
+* `btrfs check` claims "Incorrect local backref count" in extent tree
+Not sure if this is spurious or not - I can't see what's wrong, and everything
+appears to work fine, both on Windows and Linux. `btrfs check` has been known to
+return false results, so I wouldn't rule it out.
 
-* Error 1203 / 800704B3 when running EXEs which trigger UAC
-  Error 1203 is a network error, not sure what this is about.
-  
-* Changing properties of a JPEG within Explorer doesn't work
+Debug log
+---------
+
+WinBtrfs has three levels of debug messages: errors and FIXMEs, warnings, and traces.
+The release version of the driver only displays the errors and FIXMEs, which it logs
+via `DbgPrint`. You can view these messages via the Microsoft program DebugView, available
+at https://technet.microsoft.com/en-gb/sysinternals/debugview.
+
+If you want to report a problem, it'd be of great help if you could also attach a full
+debug log. To do this, you will need to use the debug versions of the drivers; copy the files
+in Debug\x64 or Debug\x86 into x64 or x86. You will also need to set the registry entries in
+HKLM\SYSTEM\CurrentControlSet\Services\btrfs:
+
+* `DebugLogLevel` (DWORD): 0 for no messages, 1 for errors and FIXMEs, 2 for warnings also,
+and 3 for absolutely everything, including traces.
+* `LogDevice` (string, optional): the serial device you want to output to, such as
+`\Device\Serial0`. This is probably only useful on virtual machines.
+* `LogFile` (string, optional): the file you wish to output to, if `LogDevice` isn't set.
+Bear in mind this is a kernel filename, so you'll have to prefix it with "\??\" (e.g.,
+"\??\C:\btrfs.log"). It probably goes without saying, but don't store this on a volume the
+driver itself is using, or you'll cause an infinite loop.
 
 Contact
 -------
