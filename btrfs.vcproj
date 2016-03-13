@@ -429,6 +429,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\read.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\reparse.c"
 				>
 			</File>
