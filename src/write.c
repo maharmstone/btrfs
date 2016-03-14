@@ -1268,7 +1268,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_EN
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
     
-    TRACE("(%p, %p, %p, %p)\n", Vcb, t, c);
+    TRACE("(%p, %p, %p, %p)\n", Vcb, t, c, rollback);
     
     if (!find_address_in_chunk(Vcb, c, Vcb->superblock.node_size, &address))
         return FALSE;
