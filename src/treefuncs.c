@@ -386,6 +386,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
 //     t->address = addr;
 //     t->level = th->level;
     t->refcount = 1;
+    t->has_address = TRUE;
     t->Vcb = Vcb;
     t->parent = NULL;
     t->root = r;

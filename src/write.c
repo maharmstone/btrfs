@@ -1337,7 +1337,7 @@ static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY*
 //         }
 //     }
     
-    if (t->header.address != 0) {
+    if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
         if (insert_tree_extent(Vcb, t, origchunk, rollback))
@@ -1772,7 +1772,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
             
             TRACE("allocated extent %llx\n", tc2->tree->new_address);
             
-            if (tc2->tree->header.address != 0) {
+            if (tc2->tree->has_address) {
                 Status = reduce_tree_extent(Vcb, tc2->tree->header.address, tc2->tree, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
@@ -2253,6 +2253,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             tc2->tree->header.address = tc2->tree->new_address;
             tc2->tree->header.generation = Vcb->superblock.generation;
             tc2->tree->header.flags |= HEADER_FLAG_MIXED_BACKREF;
+            tc2->tree->has_address = TRUE;
             
             data = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
             if (!data) {
@@ -2560,6 +2561,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->header.flags = HEADER_FLAG_MIXED_BACKREF;
     
     nt->refcount = 0;
+    nt->has_address = FALSE;
     nt->Vcb = Vcb;
     nt->parent = t->parent;
     nt->root = t->root;
@@ -2679,6 +2681,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->header.flags = HEADER_FLAG_MIXED_BACKREF;
     
     pt->refcount = 2;
+    pt->has_address = FALSE;
     pt->Vcb = Vcb;
     pt->parent = NULL;
     pt->paritem = NULL;
@@ -2881,7 +2884,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
                 free_tree(next_tree);
                 return Status;
             }
-        } else if (next_tree->header.address != 0) {
+        } else if (next_tree->has_address) {
             Status = reduce_tree_extent(Vcb, next_tree->header.address, next_tree, rollback);
             
             if (!NT_SUCCESS(Status)) {
@@ -3043,7 +3046,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             ERR("reduce_tree_extent returned %08x\n", Status);
                             return Status;
                         }
-                    } else if (tc2->tree->header.address != 0) {
+                    } else if (tc2->tree->has_address) {
                         Status = reduce_tree_extent(Vcb,tc2->tree->header.address, tc2->tree, rollback);
                         
                         if (!NT_SUCCESS(Status)) {
@@ -3150,7 +3153,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
                                 return Status;
                             }
-                        } else if (tc2->tree->header.address != 0) {
+                        } else if (tc2->tree->has_address) {
                             Status = reduce_tree_extent(Vcb,tc2->tree->header.address, tc2->tree, rollback);
                             
                             if (!NT_SUCCESS(Status)) {

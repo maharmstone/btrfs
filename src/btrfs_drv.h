@@ -195,6 +195,7 @@ typedef struct _tree {
 //     UINT8 level;
     tree_header header;
     LONG refcount;
+    BOOL has_address;
     UINT32 size;
     struct _device_extension* Vcb;
     struct _tree* parent;
