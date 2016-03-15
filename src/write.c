@@ -2644,7 +2644,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     
         td->key = newfirstitem->key;
         
-        InsertAfter(&t->itemlist, &td->list_entry, &t->paritem->list_entry);
+        InsertAfter(&nt->itemlist, &td->list_entry, &t->paritem->list_entry);
         
         td->ignore = FALSE;
         td->inserted = TRUE;
