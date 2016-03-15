@@ -1095,7 +1095,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
             if (tc2->tree->size > maxsize)
                 return FALSE;
             
-            if (tc2->tree->new_address == 0)
+            if (!tc2->tree->has_new_address)
                 return FALSE;
         }
         
@@ -1259,6 +1259,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, 
     free_traverse_ptr(&insert_tp);
     
     t->new_address = address;
+    t->has_new_address = TRUE;
     
     return TRUE;
 }
@@ -1312,6 +1313,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_EN
     free_traverse_ptr(&insert_tp);
     
     t->new_address = address;
+    t->has_new_address = TRUE;
     
     return TRUE;
 }
@@ -1761,7 +1763,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
     while (le != &Vcb->tree_cache) {
         tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
         
-        if (tc2->write && tc2->tree->new_address == 0) {
+        if (tc2->write && !tc2->tree->has_new_address) {
             chunk* c;
             
             Status = get_tree_new_address(Vcb, tc2->tree, rollback);
@@ -2084,7 +2086,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                 traverse_ptr tp;
                 EXTENT_ITEM_TREE* eit;
                 
-                if (tc2->tree->new_address == 0) {
+                if (!tc2->tree->has_new_address) {
                     ERR("error - tried to write tree with no new address\n");
                     int3;
                 }
@@ -2219,11 +2221,6 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             
             if (size != tc2->tree->size) {
                 ERR("tree %llx, level %x: size was %x, expected %x\n", tc2->tree->root->id, tc2->tree->header.level, size, tc2->tree->size);
-                crash = TRUE;
-            }
-            
-            if (tc2->tree->new_address == 0) {
-                ERR("tree %llx, level %x: tried to write tree to address 0\n", tc2->tree->root->id, tc2->tree->header.level);
                 crash = TRUE;
             }
             
@@ -2567,6 +2564,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->root = t->root;
 //     nt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     nt->new_address = 0;
+    nt->has_new_address = FALSE;
     nt->flags = t->flags;
     InitializeListHead(&nt->itemlist);
     
@@ -2687,6 +2685,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->paritem = NULL;
     pt->root = t->root;
     pt->new_address = 0;
+    pt->has_new_address = FALSE;
 //     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
     pt->flags = t->flags;
@@ -2876,7 +2875,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         next_tree->header.num_items = 0;
         next_tree->size = 0;
         
-        if (next_tree->new_address != 0) { // delete associated EXTENT_ITEM
+        if (next_tree->has_new_address) { // delete associated EXTENT_ITEM
             Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, rollback);
             
             if (!NT_SUCCESS(Status)) {
@@ -3039,7 +3038,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                     ERR("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
                         tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
                     
-                    if (tc2->tree->new_address != 0) { // delete associated EXTENT_ITEM
+                    if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
                         Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
                         
                         if (!NT_SUCCESS(Status)) {
@@ -3146,7 +3145,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         
                         ERR("deleting top-level tree in root %llx with one item\n", tc2->tree->root->id);
                         
-                        if (tc2->tree->new_address != 0) { // delete associated EXTENT_ITEM
+                        if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
                             Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
                             
                             if (!NT_SUCCESS(Status)) {

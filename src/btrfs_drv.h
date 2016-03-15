@@ -205,6 +205,7 @@ typedef struct _tree {
     LIST_ENTRY itemlist;
     LIST_ENTRY list_entry;
     UINT64 new_address;
+    BOOL has_new_address;
     UINT64 flags;
 } tree;
 

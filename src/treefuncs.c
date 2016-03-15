@@ -394,6 +394,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->paritem = NULL;
     t->size = 0;
     t->new_address = 0;
+    t->has_new_address = FALSE;
 #ifdef DEBUG_TREE_REFCOUNTS   
 #ifdef DEBUG_LONG_MESSAGES
     _debug_message(func, file, line, "loaded tree %p (%llx)\n", t, addr);
