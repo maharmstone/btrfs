@@ -2633,6 +2633,22 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     
 // //     TRACE("last item is now (%x,%x,%x)\n", (UINT32)oldlastitem->key.obj_id, oldlastitem->key.obj_type, (UINT32)oldlastitem->key.offset);
     
+    if (nt->header.level > 0) {
+        LIST_ENTRY* le = nt->itemlist.Flink;
+        
+        while (le != &nt->itemlist) {
+            tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
+            
+            if (td2->treeholder.tree) {
+                td2->treeholder.tree->parent = nt;
+                increase_tree_rc(nt);
+                free_tree(t);
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
     if (nt->parent) {
         increase_tree_rc(nt->parent);
         
@@ -2644,7 +2660,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     
         td->key = newfirstitem->key;
         
-        InsertAfter(&nt->itemlist, &td->list_entry, &t->paritem->list_entry);
+        InsertHeadList(&t->paritem->list_entry, &td->list_entry);
         
         td->ignore = FALSE;
         td->inserted = TRUE;
@@ -2855,6 +2871,22 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         t->header.num_items += next_tree->header.num_items;
         t->size += next_tree->size;
         
+        if (next_tree->header.level > 0) {
+            le = next_tree->itemlist.Flink;
+            
+            while (le != &next_tree->itemlist) {
+                tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (td2->treeholder.tree) {
+                    td2->treeholder.tree->parent = t;
+                    increase_tree_rc(t);
+                    free_tree(next_tree);
+                }
+                
+                le = le->Flink;
+            }
+        }
+        
         t->itemlist.Blink->Flink = next_tree->itemlist.Flink;
         t->itemlist.Blink->Flink->Blink = t->itemlist.Blink;
         t->itemlist.Blink = next_tree->itemlist.Blink;
@@ -2948,6 +2980,12 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             if (t->size + size < Vcb->superblock.node_size - sizeof(tree_header)) {
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
+                
+                if (next_tree->header.level > 0 && td->treeholder.tree) {
+                    td->treeholder.tree->parent = t;
+                    increase_tree_rc(t);
+                    free_tree(next_tree);
+                }
                 
                 if (!td->ignore) {
                     next_tree->size -= size;
