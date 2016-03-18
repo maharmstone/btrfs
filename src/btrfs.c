@@ -1759,7 +1759,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     
     InitializeListHead(&changed_sector_list);
     
-    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
         Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &changed_sector_list, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08x\n", Status);
