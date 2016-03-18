@@ -2102,10 +2102,10 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
                       FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
             }
+            
+            if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
+                CcUninitializeCacheMap(FileObject, NULL, NULL);
         }
-        
-        if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
-            CcUninitializeCacheMap(FileObject, NULL, NULL);
         
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
     }
