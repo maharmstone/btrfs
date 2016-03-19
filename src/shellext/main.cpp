@@ -1,6 +1,7 @@
 #define _WIN32_WINNT 0x0600
 
 #include <windows.h>
+#include "factory.h"
 
 static const GUID CLSID_ShellBtrfs = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf9 } };
 
@@ -14,13 +15,22 @@ extern "C" {
 #endif
 
 STDAPI __declspec(dllexport) DllCanUnloadNow(void) {
+    MessageBoxW(0, L"DllCanUnloadNow", NULL, 0);
+
     // FIXME
     return E_FAIL;
 }
 
 STDAPI __declspec(dllexport) DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
-    // FIXME
-    return E_FAIL;
+    if (rclsid == CLSID_ShellBtrfs) {
+        Factory* fact = new Factory;
+        if (!fact)
+            return E_OUTOFMEMORY;
+        else
+            return fact->QueryInterface(riid, ppv);
+    }
+
+    return CLASS_E_CLASSNOTAVAILABLE;
 }
 
 static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWORD type, const BYTE* data, DWORD datasize) {
@@ -175,6 +185,7 @@ STDAPI __declspec(dllexport) DllUnregisterServer(void) {
 }
 
 STDAPI __declspec(dllexport) DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
+    MessageBoxW(0, L"DllInstall", NULL, 0);
     // FIXME
     
     return E_FAIL;
