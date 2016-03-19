@@ -5,6 +5,7 @@
 static const GUID CLSID_ShellBtrfs = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf9 } };
 
 #define COM_DESCRIPTION L"WinBtrfs shell extension"
+#define ICON_OVERLAY_NAME L"WinBtrfs"
 
 HMODULE module;
 
@@ -112,14 +113,61 @@ static BOOL unregister_clsid(const GUID clsid) {
     return ret;
 }
 
+static BOOL reg_icon_overlay(const GUID clsid, const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    WCHAR* clsidstring;
+    BOOL ret = FALSE;
+    
+    StringFromCLSID(clsid, &clsidstring);
+    
+    wcscpy(path, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\");
+    wcscat(path, name);
+    
+    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+        goto end;
+
+    ret = TRUE;
+    
+end:
+    CoTaskMemFree(clsidstring);
+
+    return ret;
+}
+
+static BOOL unreg_icon_overlay(const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    LONG l;
+    
+    wcscpy(path, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\");
+    wcscat(path, name);
+    
+    l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path);
+    
+    if (l != ERROR_SUCCESS) {
+        WCHAR s[255];
+        wsprintfW(s, L"RegDeleteTree returned %08x", l);
+        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        
+        return FALSE;
+    } else    
+        return TRUE;
+}
+
 STDAPI __declspec(dllexport) DllRegisterServer(void) {
     if (!register_clsid(CLSID_ShellBtrfs, COM_DESCRIPTION))
         return E_FAIL;
+    
+    if (!reg_icon_overlay(CLSID_ShellBtrfs, ICON_OVERLAY_NAME)) {
+        MessageBoxW(0, L"Failed to register icon overlay.", NULL, MB_ICONERROR);
+        return E_FAIL;
+    }
     
     return S_OK;
 }
 
 STDAPI __declspec(dllexport) DllUnregisterServer(void) {
+    unreg_icon_overlay(ICON_OVERLAY_NAME);
+    
     if (!unregister_clsid(CLSID_ShellBtrfs))
         return E_FAIL;
 
