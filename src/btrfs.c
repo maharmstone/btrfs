@@ -2053,6 +2053,12 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         
         fcb = FileObject->FsContext;
         
+        if (!fcb) {
+            FileObject->Flags |= FO_CLEANUP_COMPLETE;
+            Status = STATUS_SUCCESS;
+            goto exit;
+        }
+        
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
         
