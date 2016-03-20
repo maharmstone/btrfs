@@ -1866,9 +1866,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 #ifdef DEBUG_FCB_REFCOUNTS
 //     WARN("fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
 #ifdef DEBUG_LONG_MESSAGES
-    _debug_message(func, file, line, "fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    _debug_message(func, 1, file, line, "fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
 #else
-    _debug_message(func, "fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    _debug_message(func, 1, "fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
 #endif
 #endif
     
@@ -1917,9 +1917,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     ExFreePool(fcb);
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
-    _debug_message(func, file, line, "freeing fcb %p\n", fcb);
+    _debug_message(func, 1, file, line, "freeing fcb %p\n", fcb);
 #else
-    _debug_message(func, "freeing fcb %p\n", fcb);
+    _debug_message(func, 1, "freeing fcb %p\n", fcb);
 #endif
 #endif
 }
