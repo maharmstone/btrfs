@@ -9,16 +9,14 @@ static const GUID CLSID_ShellBtrfs = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12,
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
 HMODULE module;
+LONG objs_loaded = 0;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 STDAPI DllCanUnloadNow(void) {
-    MessageBoxW(0, L"DllCanUnloadNow", NULL, 0);
-
-    // FIXME
-    return E_FAIL;
+    return objs_loaded == 0 ? S_OK : S_FALSE;
 }
 
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {

@@ -1,10 +1,14 @@
+extern LONG objs_loaded;
+
 class Factory : public IClassFactory {
 public:
     Factory() {
         refcount = 0;
+        InterlockedIncrement(&objs_loaded);
     }
 
     virtual ~Factory() {
+        InterlockedDecrement(&objs_loaded);
     }
 
     // IUnknown

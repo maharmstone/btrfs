@@ -1,12 +1,16 @@
 #include <shlobj.h>
 
+extern LONG objs_loaded;
+
 class BtrfsIconOverlay : public IShellIconOverlayIdentifier {
 public:
     BtrfsIconOverlay() {
         refcount = 0;
+        InterlockedIncrement(&objs_loaded);
     }
 
     virtual ~BtrfsIconOverlay() {
+        InterlockedDecrement(&objs_loaded);
     }
 
     // IUnknown
