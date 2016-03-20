@@ -41,6 +41,7 @@ static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) 
     
     bgfi->subvol = fcb->subvol->id;
     bgfi->inode = fcb->inode;
+    bgfi->top = fcb->Vcb->root_fcb == fcb ? TRUE : FALSE;
     
     return STATUS_SUCCESS;
 }

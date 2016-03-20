@@ -6,6 +6,7 @@
 typedef struct {
     UINT64 subvol;
     UINT64 inode;
+    BOOL top;
 } btrfs_get_file_ids;
 
 #endif
