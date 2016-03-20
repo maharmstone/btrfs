@@ -3022,12 +3022,23 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
         
         for (j = 0; j < ci->num_stripes; j++) {
             if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                UINT32 size;
+                
                 TRACE("cut out superblock in chunk %llx\n", c->offset);
                 
                 addr = (superblock_addrs[i] - cis[j].offset) + c->offset;
                 TRACE("addr %llx\n", addr);
                 
-                add_to_space_list(c, addr, sizeof(superblock), SPACE_TYPE_USED);
+                // This prevents trees from spanning a stripe boundary, which btrfs check complains
+                // about. It also prevents the chunk tree being placed at 0x11000, which for some
+                // reason makes the FS unmountable on Linux (it tries to read 0x10000, i.e. the 
+                // superblock, instead).
+                if (ci->type & BLOCK_FLAG_SYSTEM || ci->type & BLOCK_FLAG_METADATA)
+                    size = max(sizeof(superblock), Vcb->superblock.node_size);
+                else
+                    size = sizeof(superblock);
+                
+                add_to_space_list(c, addr, size, SPACE_TYPE_USED);
             }
         }
         
