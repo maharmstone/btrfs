@@ -183,10 +183,10 @@ STDAPI DllUnregisterServer(void) {
 }
 
 STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
-    MessageBoxW(0, L"DllInstall", NULL, 0);
-    // FIXME
-    
-    return E_FAIL;
+    if (bInstall)
+        return DllRegisterServer();
+    else
+        return DllUnregisterServer();
 }
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
