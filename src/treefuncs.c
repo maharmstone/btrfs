@@ -700,11 +700,20 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         }
 
         if (t->header.level == 0 && cmp == 0 && !ignore && td && td->ignore) {
+            tree_data* origtd = td;
+            
             while (td && td->ignore)
                 td = next_item(t, td);
             
-            if (td)
+            if (td) {
                 cmp = keycmp(searchkey, &td->key);
+                
+                if (cmp != 0) {
+                    td = origtd;
+                    cmp = 0;
+                }
+            } else
+                td = origtd;
         }
     } while (td && cmp == 1);
     
