@@ -90,5 +90,5 @@ HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) 
 
     CloseHandle(h);
     
-    return bgfi.inode == 0x100 ? S_OK : S_FALSE;
+    return (bgfi.inode == 0x100 && !bgfi.top) ? S_OK : S_FALSE;
 }
