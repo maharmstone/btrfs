@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual Studio 2008
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "btrfs", "btrfs.vcproj", "{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shellbtrfs", "shellbtrfs.vcproj", "{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -19,6 +21,12 @@ Global
 		{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}.Release|Win32.Build.0 = Release|Win32
 		{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}.Release|x64.ActiveCfg = Release|x64
 		{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}.Release|x64.Build.0 = Release|x64
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Debug|Win32.Build.0 = Debug|Win32
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Debug|x64.ActiveCfg = Debug|Win32
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|Win32.ActiveCfg = Release|Win32
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|Win32.Build.0 = Release|Win32
+		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|x64.ActiveCfg = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

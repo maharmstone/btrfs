@@ -14,14 +14,14 @@ HMODULE module;
 extern "C" {
 #endif
 
-STDAPI __declspec(dllexport) DllCanUnloadNow(void) {
+STDAPI DllCanUnloadNow(void) {
     MessageBoxW(0, L"DllCanUnloadNow", NULL, 0);
 
     // FIXME
     return E_FAIL;
 }
 
-STDAPI __declspec(dllexport) DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
+STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     if (rclsid == CLSID_ShellBtrfs) {
         Factory* fact = new Factory;
         if (!fact)
@@ -163,7 +163,7 @@ static BOOL unreg_icon_overlay(const WCHAR* name) {
         return TRUE;
 }
 
-STDAPI __declspec(dllexport) DllRegisterServer(void) {
+STDAPI DllRegisterServer(void) {
     if (!register_clsid(CLSID_ShellBtrfs, COM_DESCRIPTION))
         return E_FAIL;
     
@@ -175,7 +175,7 @@ STDAPI __declspec(dllexport) DllRegisterServer(void) {
     return S_OK;
 }
 
-STDAPI __declspec(dllexport) DllUnregisterServer(void) {
+STDAPI DllUnregisterServer(void) {
     unreg_icon_overlay(ICON_OVERLAY_NAME);
     
     if (!unregister_clsid(CLSID_ShellBtrfs))
@@ -184,14 +184,14 @@ STDAPI __declspec(dllexport) DllUnregisterServer(void) {
     return S_OK;
 }
 
-STDAPI __declspec(dllexport) DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
+STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
     MessageBoxW(0, L"DllInstall", NULL, 0);
     // FIXME
     
     return E_FAIL;
 }
 
-BOOL APIENTRY __declspec(dllexport) DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
+BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH)
         module = (HMODULE)hModule;
         
