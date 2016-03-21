@@ -16,6 +16,7 @@ CatalogFile = btrfs.cat
 [DestinationDirs]
 DefaultDestDir          = 12
 Btrfs.DriverFiles       = 12            ;%windir%\system32\drivers
+Btrfs.DllFiles          = 11            ;%windir%\system32
 
 ;;
 ;; Default install sections
@@ -23,7 +24,8 @@ Btrfs.DriverFiles       = 12            ;%windir%\system32\drivers
 
 [DefaultInstall]
 OptionDesc  = %ServiceDescription%
-CopyFiles   = Btrfs.DriverFiles
+CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
+RegisterDlls = shellbtrfs
 
 [DefaultInstall.Services]
 AddService  = %ServiceName%,,Btrfs.Service
@@ -33,7 +35,8 @@ AddService  = %ServiceName%,,Btrfs.Service
 ;;
 
 [DefaultUninstall]
-DelFiles   = Btrfs.DriverFiles
+UnregisterDlls = shellbtrfs
+DelFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
 
 [DefaultUninstall.Services]
 DelService = %ServiceName%,0x200      ;Ensure service is stopped before deleting
@@ -51,6 +54,9 @@ StartType        = 1                        ;SERVICE_SYSTEM_START
 ErrorControl     = 1
 LoadOrderGroup   = "File System"
 
+[shellbtrfs]
+11,,shellbtrfs.dll,1
+
 ;
 ; Copy Files
 ;
@@ -58,8 +64,12 @@ LoadOrderGroup   = "File System"
 [Btrfs.DriverFiles]
 %DriverName%.sys
 
+[Btrfs.DllFiles]
+shellbtrfs.dll
+
 [SourceDisksFiles]
 btrfs.sys = 1,,
+shellbtrfs.dll = 1,,
 
 [SourceDisksNames.x86]
 1 = %DiskId1%,,,\x86
