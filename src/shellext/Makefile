@@ -1,6 +1,6 @@
 OBJS = main.o factory.o iconoverlay.o
 
-INCLUDES = 
+INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
 CFLAGS = -Wall $(INCLUDES)
 
