@@ -210,6 +210,10 @@
 				RelativePath=".\src\shellext\iconoverlay.h"
 				>
 			</File>
+			<File
+				RelativePath=".\src\shellext\resource.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Source Files"
@@ -227,6 +231,14 @@
 				>
 			</File>
 		</Filter>
+		<File
+			RelativePath=".\src\shellext\shellbtrfs.rc"
+			>
+		</File>
+		<File
+			RelativePath=".\src\shellext\subvol.ico"
+			>
+		</File>
 	</Files>
 	<Globals>
 	</Globals>
