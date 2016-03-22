@@ -2757,6 +2757,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->parent = pt;
     
 end:
+    t->root->root_item.bytes_used += Vcb->superblock.node_size;
 
 // #ifdef DEBUG_PARANOID
 //     lastkey2.obj_id = 0xffffffffffffffff;
@@ -2940,6 +2941,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         RemoveEntryList(&nextparitem->list_entry);
         ExFreePool(next_tree->paritem);
         next_tree->paritem = NULL;
+        
+        next_tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
         
         free_tree(next_tree);
         
@@ -3177,6 +3180,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         ERR("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
                             tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
                         
+                        tc2->tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
+                        
                         if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
                             Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
                             
@@ -3325,6 +3330,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             child_tree->paritem = NULL;
                             free_tree(tc2->tree);
                         }
+                        
+                        tc2->tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
 
                         free_tree(tc2->tree);
                         
