@@ -1089,7 +1089,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
         tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
         
         if (tc2->write) {
-            if (tc2->tree->header.num_items == 0)
+            if (tc2->tree->header.num_items == 0 && tc2->tree->parent)
                 return FALSE;
             
             if (tc2->tree->size > maxsize)
@@ -1382,7 +1382,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_METADATA_ITEM;
-    searchkey.offset = t->header.level;
+    searchkey.offset = 0xffffffffffffffff;
     
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
@@ -1390,7 +1390,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
         return FALSE;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         TRACE("could not find %llx,%x,%llx in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         free_traverse_ptr(&tp);
         return FALSE;
@@ -2224,8 +2224,8 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                 crash = TRUE;
             }
             
-            if (tc2->tree->header.num_items == 0) {
-                ERR("tree %llx, level %x: tried to write empty tree\n", tc2->tree->root->id, tc2->tree->header.level);
+            if (tc2->tree->header.num_items == 0 && tc2->tree->parent) {
+                ERR("tree %llx, level %x: tried to write empty tree with parent\n", tc2->tree->root->id, tc2->tree->header.level);
                 crash = TRUE;
             }
             
@@ -3029,6 +3029,106 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree* t, UINT8 level, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        searchkey.obj_id = address;
+        searchkey.obj_type = TYPE_METADATA_ITEM;
+        searchkey.offset = t->header.level;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&tp.item->key, &searchkey)) {
+            EXTENT_ITEM_SKINNY_METADATA* eism;
+            
+            if (tp.item->size > 0) {
+                eism = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!eism) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(eism, tp.item->data, tp.item->size);
+            } else
+                eism = NULL;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                ExFreePool(eism);
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            free_traverse_ptr(&tp);
+            return STATUS_SUCCESS;
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        EXTENT_ITEM_TREE* eit;
+        
+        if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        eit = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+        if (!eit) {
+            ERR("out of memory\n");
+            free_traverse_ptr(&tp);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(eit, tp.item->data, tp.item->size);
+        
+        delete_tree_item(Vcb, &tp, rollback);
+        
+        eit->level = level;
+        
+        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            ExFreePool(eit);
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        free_traverse_ptr(&tp);
+    
+        return STATUS_SUCCESS;
+    }
+    
+    ERR("could not find EXTENT_ITEM for address %llx\n", address);
+    
+    free_traverse_ptr(&tp);
+    
+    return STATUS_INTERNAL_ERROR;
+}
+
 static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
 //     LIST_ENTRY *le, *le2;
 //     write_tree* wt;
@@ -3061,38 +3161,38 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                 empty = FALSE;
                 
                 if (tc2->tree->header.num_items == 0) {
-                    LIST_ENTRY* le2;
-                    KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
-                    
-                    done_deletions = TRUE;
-        
-                    le2 = tc2->tree->itemlist.Flink;
-                    while (le2 != &tc2->tree->itemlist) {
-                        tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
-                        firstitem = td->key;
-                        break;
-                    }
-                    
-                    ERR("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
-                        tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
-                    
-                    if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
-                        Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("reduce_tree_extent returned %08x\n", Status);
-                            return Status;
-                        }
-                    } else if (tc2->tree->has_address) {
-                        Status = reduce_tree_extent(Vcb,tc2->tree->header.address, tc2->tree, rollback);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("reduce_tree_extent returned %08x\n", Status);
-                            return Status;
-                        }
-                    }
-                    
                     if (tc2->tree->parent) {
+                        LIST_ENTRY* le2;
+                        KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
+                        
+                        done_deletions = TRUE;
+            
+                        le2 = tc2->tree->itemlist.Flink;
+                        while (le2 != &tc2->tree->itemlist) {
+                            tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
+                            firstitem = td->key;
+                            break;
+                        }
+                        
+                        ERR("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
+                            tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
+                        
+                        if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
+                            Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("reduce_tree_extent returned %08x\n", Status);
+                                return Status;
+                            }
+                        } else if (tc2->tree->has_address) {
+                            Status = reduce_tree_extent(Vcb,tc2->tree->header.address, tc2->tree, rollback);
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("reduce_tree_extent returned %08x\n", Status);
+                                return Status;
+                            }
+                        }
+                        
                         if (!tc2->tree->paritem->ignore) {
                             tc2->tree->paritem->ignore = TRUE;
                             tc2->tree->parent->header.num_items--;
@@ -3107,19 +3207,25 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         
                         RemoveEntryList(le);
                         ExFreePool(tc2);
-                    } else {
-                        FIXME("trying to delete top root, not sure what to do here\n"); // FIXME
-                        return STATUS_INTERNAL_ERROR;
-                    }
-                } else {
-                    if (tc2->tree->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                        TRACE("splitting overlarge tree (%x > %x)\n", tc2->tree->size, Vcb->superblock.node_size - sizeof(tree_header));
-                        Status = split_tree(Vcb, tc2->tree);
-
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("split_tree returned %08x\n", Status);
-                            return Status;
+                    } else if (tc2->tree->header.level != 0) {
+                        if (tc2->tree->has_new_address) {
+                            Status = update_extent_level(Vcb, tc2->tree->new_address, tc2->tree, 0, rollback);
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("update_extent_level returned %08x\n", Status);
+                                return Status;
+                            }
                         }
+                        
+                        tc2->tree->header.level = 0;
+                    }
+                } else if (tc2->tree->size > Vcb->superblock.node_size - sizeof(tree_header)) {
+                    TRACE("splitting overlarge tree (%x > %x)\n", tc2->tree->size, Vcb->superblock.node_size - sizeof(tree_header));
+                    Status = split_tree(Vcb, tc2->tree);
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("split_tree returned %08x\n", Status);
+                        return Status;
                     }
                 }
             }
@@ -3216,6 +3322,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         
                         if (child_tree) {
                             child_tree->parent = NULL;
+                            child_tree->paritem = NULL;
                             free_tree(tc2->tree);
                         }
 
@@ -3244,7 +3351,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     TRACE("(%p)\n", Vcb);
     
     // If only changing superblock, e.g. changing label, we still need to rewrite
-    // the root tree so the generations mach. Otherwise you won't be able to mount on Linux.
+    // the root tree so the generations match, otherwise you won't be able to mount on Linux.
     if (Vcb->write_trees > 0) {
         KEY searchkey;
         traverse_ptr tp;
