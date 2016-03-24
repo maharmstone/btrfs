@@ -4554,7 +4554,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                 if (start_data <= tp.item->key.offset && end_data >= tp.item->key.offset + len) { // remove all
                     if (ed2->address != 0) {
-                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, changed_sector_list, rollback);
+                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, changed_sector_list, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("remove_extent_ref returned %08x\n", Status);
                             goto end;
@@ -4568,21 +4568,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     EXTENT_DATA* ned;
                     EXTENT_DATA2* ned2;
                     
-                    if (ed2->address != 0) {
-                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, end_data, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("add_extent_ref returned %08x\n", Status);
-                            goto end;
-                        }
-                        
-                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, changed_sector_list, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("remove_extent_ref returned %08x\n", Status);
-                            goto end;
-                        }
-                        
+                    if (ed2->address != 0)
                         fcb->inode_item.st_blocks -= end_data - tp.item->key.offset;
-                    }
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
@@ -4651,15 +4638,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     EXTENT_DATA* ned;
                     EXTENT_DATA2* ned2;
                     
-                    if (ed2->address != 0) {
-                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, end_data, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("add_extent_ref returned %08x\n", Status);
-                            goto end;
-                        }
-                        
+                    if (ed2->address != 0)
                         fcb->inode_item.st_blocks -= end_data - start_data;
-                    }
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
