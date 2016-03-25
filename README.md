@@ -36,6 +36,7 @@ Features
   `extended_iref`, `skinny_metadata`.
 * Mappings from Linux users to Windows ones (see below)
 * Symlinks
+* Shell extension to identify subvolumes
 
 Todo
 ----
@@ -48,9 +49,9 @@ Todo
 * New (Linux 4.5) free space cache (compat_ro flag free_space_cache)
 * Preallocation
 * Misc incompat flags: `mixed_groups`, `no_holes`
-* Userspace helper to create new subvolumes, etc.
+* Add creation of new subvolumes, etc. to userspace helper
 * Asynchronous reading and writing
-* Actually obeying security (ACLs and ACCESS_MASK)
+* Actually obeying security (add ACCESS_MASK checks)
 * Get all of Wine's ntdll tests to pass
 * Allow creation of hard links
 * Arbitrary reparse points
@@ -142,6 +143,16 @@ prevents UAC from working. Thanks Microsoft!
 Changelog
 ---------
 
+v0.3 (2016-03-25):
+* Bug fixes:
+ * Fixed crashes when metadata blocks were SINGLE, such as on SSDs
+ * Fixed crash when splitting an internal tree
+ * Fixed tree traversal failing when first item in tree had been deleted
+ * Fixed emptying out of whole tree (probably only relevant to checksum tree)
+ * Fixed "incorrect local backref count" message appearing in `btrfs check`
+ * Miscellaneous other fixes
+* Added beginnings of shell extension, which currently only changes the icon of subvolumes
+
 v0.2 (2016-03-13):
 
 * Bug fix release:
@@ -159,14 +170,6 @@ v0.2 (2016-03-13):
 v0.1 (2016-02-21):
 
 * Initial alpha release.
-
-Known bugs
-----------
-
-* `btrfs check` claims "Incorrect local backref count" in extent tree
-Not sure if this is spurious or not - I can't see what's wrong, and everything
-appears to work fine, both on Windows and Linux. `btrfs check` has been known to
-return false results, so I wouldn't rule it out.
 
 Debug log
 ---------
