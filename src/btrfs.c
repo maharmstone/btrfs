@@ -1537,8 +1537,8 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     // FIXME - delete all children if deleting directory
     
     if (fcb->deleted) {
-        ERR("trying to delete already-deleted file\n");
-        return STATUS_INTERNAL_ERROR;
+        WARN("trying to delete already-deleted file\n");
+        return STATUS_SUCCESS;
     }
     
     if (!fcb->par) {
@@ -1951,12 +1951,9 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
         ExFreePool(ccb);
     }
     
-    if (fcb->refcount == 1)
-        CcUninitializeCacheMap(FileObject, NULL, NULL);
+    CcUninitializeCacheMap(FileObject, NULL, NULL);
     
     free_fcb(fcb);
-    
-    FileObject->FsContext = NULL;
     
     return STATUS_SUCCESS;
 }
@@ -2053,18 +2050,15 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         
         fcb = FileObject->FsContext;
         
-        if (!fcb) {
-            FileObject->Flags |= FO_CLEANUP_COMPLETE;
-            Status = STATUS_SUCCESS;
-            goto exit;
-        }
-        
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
         
         IoRemoveShareAccess(FileObject, &fcb->share_access);
         
         oc = InterlockedDecrement(&fcb->open_count);
+#ifdef DEBUG_FCB_REFCOUNTS
+        ERR("fcb %p: open_count now %i\n", fcb, oc);
+#endif
         
         if (oc == 0) {
             if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
