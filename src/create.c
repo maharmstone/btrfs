@@ -1358,6 +1358,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb* ccb;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
+    LONG oc;
             
     TRACE("(%p, %p, %p, %.*S, %x, %x)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
     
@@ -1662,7 +1663,10 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
     
-    InterlockedIncrement(&fcb->open_count);
+    oc = InterlockedIncrement(&fcb->open_count);
+#ifdef DEBUG_FCB_REFCOUNTS
+    ERR("fcb %p: open_count now %i\n", fcb, oc);
+#endif
     
     FileObject->FsContext2 = ccb;
 
@@ -1888,6 +1892,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     ULONG access;
     PACCESS_STATE access_state = Stack->Parameters.Create.SecurityContext->AccessState;
+    LONG oc;
     
     Irp->IoStatus.Information = 0;
     
@@ -2221,7 +2226,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             }
         }
         
-        InterlockedIncrement(&fcb->open_count);
+        oc = InterlockedIncrement(&fcb->open_count);
+#ifdef DEBUG_FCB_REFCOUNTS
+        ERR("fcb %p: open_count now %i\n", fcb, oc);
+#endif
     } else {
         Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
@@ -2320,7 +2328,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (IrpSp->FileObject->FileName.Length == 0 && !IrpSp->FileObject->RelatedFileObject) {
         ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
         ULONG RequestedOptions = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
-        LONG rc;
+        LONG rc, oc;
         
         TRACE("open operation for volume\n");
 
@@ -2338,8 +2346,10 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         }
 
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
+        oc = InterlockedIncrement(&Vcb->volume_fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
         WARN("fcb %p: refcount now %i (volume)\n", Vcb->volume_fcb, rc);
+        WARN("fcb %p: open_count now %i (volume)\n", Vcb->volume_fcb, oc);
 #endif
         attach_fcb_to_fileobject(Vcb, Vcb->volume_fcb, IrpSp->FileObject);
 // //         NtfsAttachFCBToFileObject(DeviceExt, DeviceExt->VolumeFcb, FileObject);
