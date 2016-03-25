@@ -648,6 +648,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
 static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
     LIST_ENTRY* le;
     fcb *c, *deleted = NULL;
+    ULONG rc;
     
     le = dir->children.Flink;
     while (le != &dir->children) {
@@ -657,15 +658,22 @@ static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
             if (c->deleted) {
                 deleted = c;
             } else {
-                c->refcount++;
+                rc = InterlockedIncrement(&c->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
-                WARN("fcb %p: refcount now %i (%.*S)\n", c, c->refcount, c->full_filename.Length / sizeof(WCHAR), c->full_filename.Buffer);
+                WARN("fcb %p: refcount now %i (%.*S)\n", c, rc, c->full_filename.Length / sizeof(WCHAR), c->full_filename.Buffer);
 #endif
                 return c;
             }
         }
         
         le = le->Flink;
+    }
+    
+    if (deleted) {
+        rc = InterlockedIncrement(&deleted->refcount);
+#ifdef DEBUG_FCB_REFCOUNTS
+        WARN("fcb %p: refcount now %i (%.*S)\n", deleted, rc, deleted->full_filename.Length / sizeof(WCHAR), deleted->full_filename.Buffer);
+#endif
     }
     
     return deleted;
