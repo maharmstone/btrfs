@@ -3177,8 +3177,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             break;
                         }
                         
-                        ERR("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
-                            tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
+                        TRACE("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
+                              tc2->tree->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
                         
                         tc2->tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
                         
@@ -3292,7 +3292,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             le2 = le2->Flink;
                         }
                         
-                        ERR("deleting top-level tree in root %llx with one item\n", tc2->tree->root->id);
+                        TRACE("deleting top-level tree in root %llx with one item\n", tc2->tree->root->id);
                         
                         if (tc2->tree->has_new_address) { // delete associated EXTENT_ITEM
                             Status = reduce_tree_extent(Vcb, tc2->tree->new_address, tc2->tree, rollback);
