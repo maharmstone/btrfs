@@ -1,4 +1,4 @@
-WinBtrfs v0.2
+WinBtrfs v0.3
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -144,6 +144,7 @@ Changelog
 ---------
 
 v0.3 (2016-03-25):
+
 * Bug fixes:
  * Fixed crashes when metadata blocks were SINGLE, such as on SSDs
  * Fixed crash when splitting an internal tree
