@@ -2354,7 +2354,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         attach_fcb_to_fileobject(Vcb, Vcb->volume_fcb, IrpSp->FileObject);
 // //         NtfsAttachFCBToFileObject(DeviceExt, DeviceExt->VolumeFcb, FileObject);
 // //         DeviceExt->VolumeFcb->RefCount++;
-// 
+        
+        IrpSp->FileObject->SectionObjectPointer = &Vcb->volume_fcb->nonpaged->segment_object;
+
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;
     } else {
