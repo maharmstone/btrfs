@@ -1957,6 +1957,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     if (NT_SUCCESS(Status) && fcb->deleted) {
         free_fcb(fcb);
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto exit;
     }
     
     if (NT_SUCCESS(Status)) {
