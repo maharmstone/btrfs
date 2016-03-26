@@ -2082,14 +2082,13 @@ static void STDCALL uninit(device_extension* Vcb) {
 
     release_tree_lock(Vcb, TRUE);
 
-    while (Vcb->roots) {
-        root* r = Vcb->roots->next;
+    while (!IsListEmpty(&Vcb->roots)) {
+        LIST_ENTRY* le = RemoveHeadList(&Vcb->roots);
+        root* r = CONTAINING_RECORD(le, root, list_entry);
 
-        ExDeleteResourceLite(&Vcb->roots->nonpaged->load_tree_lock);
-        ExFreePool(Vcb->roots->nonpaged);
-        ExFreePool(Vcb->roots);
-        
-        Vcb->roots = r;
+        ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
+        ExFreePool(r->nonpaged);
+        ExFreePool(r);
     }
     
     while (!IsListEmpty(&Vcb->chunks)) {
@@ -2525,8 +2524,6 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
     init_tree_holder(&r->treeholder);
-    r->prev = NULL;
-    r->next = Vcb->roots;
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
     if (!r->nonpaged) {
@@ -2545,10 +2542,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
             RtlZeroMemory(((UINT8*)&r->root_item) + tp->item->size, sizeof(ROOT_ITEM) - tp->item->size);
     }
     
-    if (Vcb->roots)
-        Vcb->roots->prev = r;
-    
-    Vcb->roots = r;
+    InsertTailList(&Vcb->roots, &r->list_entry);
     
     switch (r->id) {
         case BTRFS_ROOT_ROOT:
@@ -3310,6 +3304,7 @@ static root* find_default_subvol(device_extension* Vcb) {
     UINT64 inode;
     UINT8 type;
     UNICODE_STRING filename;
+    LIST_ENTRY* le;
     
     static WCHAR fn[] = L"default";
     static UINT32 crc32 = 0x8dbfc2d2;
@@ -3324,11 +3319,17 @@ static root* find_default_subvol(device_extension* Vcb) {
             return subvol;
     }
     
-    subvol = Vcb->roots;
-    while (subvol && subvol->id != BTRFS_ROOT_FSTREE)
-        subvol = subvol->next;
+    le = Vcb->roots.Flink;
+    while (le != &Vcb->roots) {
+        root* r = CONTAINING_RECORD(le, root, list_entry);
+        
+        if (r->id == BTRFS_ROOT_FSTREE)
+            return r;
+        
+        le = le->Flink;
+    }
     
-    return subvol;
+    return NULL;
 }
 
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -3501,7 +3502,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 //     Vcb->root_tree_phys_addr = logical_to_physical(Vcb, Vcb->superblock.root_tree_addr);
     
-    Vcb->roots = NULL;
+    InitializeListHead(&Vcb->roots);
     Vcb->log_to_phys_loaded = FALSE;
     
     Vcb->max_inline = Vcb->superblock.node_size / 2;

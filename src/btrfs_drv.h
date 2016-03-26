@@ -220,9 +220,7 @@ typedef struct _root {
     root_nonpaged* nonpaged;
     UINT64 lastinode;
     ROOT_ITEM root_item;
-    
-    struct _root* prev;
-    struct _root* next;
+    LIST_ENTRY list_entry;
 } root;
 
 typedef struct {
@@ -309,7 +307,7 @@ typedef struct _device_extension {
 //     UINT64 chunk_root_phys_addr;
     UINT64 root_tree_phys_addr;
 //     log_to_phys* log_to_phys;
-    root* roots;
+    LIST_ENTRY roots;
     root* chunk_root;
     root* root_root;
     root* extent_root;

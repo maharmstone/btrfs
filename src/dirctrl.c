@@ -43,9 +43,21 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
     if (de->key.obj_type == TYPE_ROOT_ITEM) { // subvol
-        r = fcb->Vcb->roots;
-        while (r && r->id != de->key.obj_id)
-            r = r->next;
+        LIST_ENTRY* le;
+        
+        r = NULL;
+        
+        le = fcb->Vcb->roots.Flink;
+        while (le != &fcb->Vcb->roots) {
+            root* subvol = CONTAINING_RECORD(le, root, list_entry);
+            
+            if (subvol->id == de->key.obj_id) {
+                r = subvol;
+                break;
+            }
+            
+            le = le->Flink;
+        }
         
         if (!r) {
             ERR("could not find root %llx\n", de->key.obj_id);

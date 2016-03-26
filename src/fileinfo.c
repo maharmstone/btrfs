@@ -362,9 +362,19 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
 #endif
     
     if (di->key.obj_type == TYPE_ROOT_ITEM) {
-        root* fcbroot = Vcb->roots;
-        while (fcbroot && fcbroot->id != di->key.obj_id)
-            fcbroot = fcbroot->next;
+        root* fcbroot = NULL;
+        
+        le = Vcb->roots.Flink;
+        while (le != &Vcb->roots) {
+            root* r = CONTAINING_RECORD(le, root, list_entry);
+            
+            if (r->id == di->key.obj_id) {
+                fcbroot = r;
+                break;
+            }
+            
+            le = le->Flink;
+        }
         
         sf2->subvol = fcbroot;
         sf2->inode = SUBVOL_ROOT_INODE;

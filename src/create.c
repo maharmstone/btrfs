@@ -86,11 +86,21 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                         
                         if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
                             if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                root* fcbroot = Vcb->roots;
-                                while (fcbroot && fcbroot->id != di->key.obj_id)
-                                    fcbroot = fcbroot->next;
+                                LIST_ENTRY* le = Vcb->roots.Flink;
                                 
-                                *subvol = fcbroot;
+                                *subvol = NULL;
+                                
+                                while (le != &Vcb->roots) {
+                                    root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                                    
+                                    if (r2->id == di->key.obj_id) {
+                                        *subvol = r2;
+                                        break;
+                                    }
+                                    
+                                    le = le->Flink;
+                                }
+                                                                
                                 *inode = SUBVOL_ROOT_INODE;
                                 *type = BTRFS_TYPE_DIRECTORY;
                             } else {
@@ -194,11 +204,21 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                     
                     if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
                         if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                            root* fcbroot = Vcb->roots;
-                            while (fcbroot && fcbroot->id != di->key.obj_id)
-                                fcbroot = fcbroot->next;
+                            LIST_ENTRY* le = Vcb->roots.Flink;
+                                
+                            *subvol = NULL;
                             
-                            *subvol = fcbroot;
+                            while (le != &Vcb->roots) {
+                                root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                                
+                                if (r2->id == di->key.obj_id) {
+                                    *subvol = r2;
+                                    break;
+                                }
+                                
+                                le = le->Flink;
+                            }
+                            
                             *inode = SUBVOL_ROOT_INODE;
                             *type = BTRFS_TYPE_DIRECTORY;
                         } else {
