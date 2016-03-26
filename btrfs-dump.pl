@@ -30,6 +30,12 @@ print "ROOT: \n";
 dump_tree($f, $roottree, "", 0);
 print "\n";
 
+if ($logtree != 0) {
+    print "LOG: \n";
+    dump_tree($f, $logtree, "", 0);
+    print "\n";
+}
+
 @rs=sort { $a <=> $b } (keys(%roots));
 
 foreach my $r (@rs) {
@@ -107,7 +113,7 @@ sub read_superblock {
 	
 	seek($f,0x10000,0);
 	read($f,$sb,0x1000);
-	($roottree, $chunktree)=unpack("x80QQ",$sb);
+	($roottree, $chunktree, $logtree)=unpack("x80QQQ",$sb);
 	@b = unpack("Vx28A16QQA8QQQQQQQQQVVVVVQQQQvCCCA98A256QQx240a2048a672",$sb);
     @di = unpack("QQQVVVQQQVCCA16A16",$b[27]);
     
