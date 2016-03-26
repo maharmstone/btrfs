@@ -1568,43 +1568,47 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     
     free_traverse_ptr(&tp);
     
-    // change ROOT_ITEM num_references
-    
-    fcb->subvol->root_item.num_references--;
-    
-    searchkey.obj_id = fcb->subvol->id;
-    searchkey.obj_type = TYPE_ROOT_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_item 2 returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(&tp.item->key, &searchkey)) {
-        delete_tree_item(fcb->Vcb, &tp, rollback);
-        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+    if (fcb->subvol->root_item.num_references > 1) {
+        // change ROOT_ITEM num_references
+        
+        fcb->subvol->root_item.num_references--;
+        
+        searchkey.obj_id = fcb->subvol->id;
+        searchkey.obj_type = TYPE_ROOT_ITEM;
+        searchkey.offset = 0;
+        
+        Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item 2 returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&tp.item->key, &searchkey)) {
+            delete_tree_item(fcb->Vcb, &tp, rollback);
+            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        } else {
+            ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
+        }
+        
+        free_traverse_ptr(&tp);
+        
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+        if (!ri) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
+        
+        if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
     } else {
-        ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
+        RemoveEntryList(&fcb->subvol->list_entry);
+        
+        InsertTailList(&fcb->Vcb->drop_roots, &fcb->subvol->list_entry);
     }
-    
-    free_traverse_ptr(&tp);
-    
-    ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
-    if (!ri) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
-    
-    if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
-        ERR("insert_tree_item failed\n");
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    // FIXME - remove actual subvol if num_references == 0
     
     return STATUS_SUCCESS;
 }
@@ -3503,6 +3507,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     Vcb->root_tree_phys_addr = logical_to_physical(Vcb, Vcb->superblock.root_tree_addr);
     
     InitializeListHead(&Vcb->roots);
+    InitializeListHead(&Vcb->drop_roots);
+    
     Vcb->log_to_phys_loaded = FALSE;
     
     Vcb->max_inline = Vcb->superblock.node_size / 2;

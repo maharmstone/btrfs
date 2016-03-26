@@ -1405,7 +1405,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     delete_tree_item(Vcb, &tp, rollback);
     
     eism = (EXTENT_ITEM_SKINNY_METADATA*)tp.item->data;
-    if (t->header.level == 0 && eism->ei.flags & EXTENT_ITEM_SHARED_BACKREFS && eism->type == TYPE_TREE_BLOCK_REF) {
+    if (t && t->header.level == 0 && eism->ei.flags & EXTENT_ITEM_SHARED_BACKREFS && eism->type == TYPE_TREE_BLOCK_REF) {
         // convert shared data extents
         
         LIST_ENTRY* le = t->itemlist.Flink;
@@ -1653,7 +1653,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             return STATUS_INTERNAL_ERROR;
         }
         
-        if (t->header.level == 0 && ei->flags & EXTENT_ITEM_SHARED_BACKREFS) {
+        if (t && t->header.level == 0 && ei->flags & EXTENT_ITEM_SHARED_BACKREFS) {
             // convert shared data extents
             
             LIST_ENTRY* le = t->itemlist.Flink;
@@ -1707,7 +1707,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         free_traverse_ptr(&tp2);
     }
      
-    if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+    if (t && !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         LIST_ENTRY* le;
         
         // when writing old internal trees, convert related extents
@@ -3351,11 +3351,120 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS remove_root_extents(device_extension* Vcb, tree_holder* th, UINT8 level, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    
+    if (!th->tree || th->tree->has_address) {
+        Status = reduce_tree_extent(Vcb, th->address, NULL, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("reduce_tree_extent returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    // FIXME - work with internal trees
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) {
+    LIST_ENTRY *le, *le2;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    
+    Status = remove_root_extents(Vcb, &r->treeholder, r->root_item.root_level, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("remove_root_extents returned %08x\n", Status);
+        return Status;
+    }
+    
+    // FIXME - remove entry in tree 9
+    
+    // delete ROOT_ITEM
+    
+    searchkey.obj_id = r->id;
+    searchkey.obj_type = TYPE_ROOT_ITEM;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey))
+        delete_tree_item(Vcb, &tp, rollback);
+    else
+        WARN("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+    
+    free_traverse_ptr(&tp);
+    
+    // delete items in tree cache
+    
+    le = Vcb->tree_cache.Flink;
+    while (le != &Vcb->tree_cache) {
+        tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
+        
+        le2 = le->Flink;
+        
+        if (tc2->tree->root == r) {
+            tree* nt;
+            BOOL top = !tc2->tree->paritem;
+            
+            nt = free_tree(tc2->tree);
+            if (top && !nt && r->treeholder.tree == tc2->tree)
+                r->treeholder.tree = NULL;
+            
+            if (tc2->write)
+                Vcb->write_trees--;
+            
+            RemoveEntryList(&tc2->list_entry);
+            ExFreePool(tc2);
+        }
+        
+        le = le2;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY *le = Vcb->drop_roots.Flink, *le2;
+    NTSTATUS Status;
+    
+    while (le != &Vcb->drop_roots) {
+        root* r = CONTAINING_RECORD(le, root, list_entry);
+        
+        le2 = le->Flink;
+        
+        Status = drop_root(Vcb, r, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("drop_root(%llx) returned %08x\n", r->id, Status);
+            return Status;
+        }
+        
+        le = le2;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
     TRACE("(%p)\n", Vcb);
+    
+    if (!IsListEmpty(&Vcb->drop_roots)) {
+        Status = drop_roots(Vcb, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("drop_roots returned %08x\n", Status);
+            return Status;
+        }
+    }
     
     // If only changing superblock, e.g. changing label, we still need to rewrite
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.
@@ -3442,6 +3551,15 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     }
     
     Vcb->write_trees = 0;
+    
+    while (!IsListEmpty(&Vcb->drop_roots)) {
+        LIST_ENTRY* le = RemoveHeadList(&Vcb->drop_roots);
+        root* r = CONTAINING_RECORD(le, root, list_entry);
+
+        ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
+        ExFreePool(r->nonpaged);
+        ExFreePool(r);
+    }
     
 end:
     TRACE("do_write returning %08x\n", Status);
