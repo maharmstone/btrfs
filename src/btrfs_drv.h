@@ -314,6 +314,7 @@ typedef struct _device_extension {
     root* extent_root;
     root* checksum_root;
     root* dev_root;
+    root* uuid_root;
     BOOL log_to_phys_loaded;
     UINT32 max_inline;
     LIST_ENTRY sys_chunks;

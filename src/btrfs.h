@@ -37,6 +37,7 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define TYPE_DEV_EXTENT        0xCC
 #define TYPE_DEV_ITEM          0xD8
 #define TYPE_CHUNK_ITEM        0xE4
+#define TYPE_SUBVOL_UUID       0xFB
 
 #define BTRFS_ROOT_ROOT         1
 #define BTRFS_ROOT_EXTENT       2
@@ -44,6 +45,7 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define BTRFS_ROOT_DEVTREE      4
 #define BTRFS_ROOT_FSTREE       5
 #define BTRFS_ROOT_CHECKSUM     7
+#define BTRFS_ROOT_UUID         9
 
 #define BTRFS_COMPRESSION_NONE  0
 #define BTRFS_COMPRESSION_ZLIB  1

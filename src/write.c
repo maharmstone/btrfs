@@ -3411,7 +3411,26 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
         return Status;
     }
     
-    // FIXME - remove entry in tree 9
+    // remove entry in uuid root (tree 9)
+    if (Vcb->uuid_root) {
+        RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid.uuid[0], sizeof(UINT64));
+        searchkey.obj_type = TYPE_SUBVOL_UUID;
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+        
+        if (searchkey.obj_id != 0 || searchkey.offset != 0) {
+            Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                WARN("find_item returned %08x\n", Status);
+            } else {
+                if (!keycmp(&tp.item->key, &searchkey))
+                    delete_tree_item(Vcb, &tp, rollback);
+                else
+                    WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                
+                free_traverse_ptr(&tp);
+            }
+        }
+    }
     
     // delete ROOT_ITEM
     

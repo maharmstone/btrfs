@@ -2585,6 +2585,10 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
         case BTRFS_ROOT_CHECKSUM:
             Vcb->checksum_root = r;
             break;
+            
+        case BTRFS_ROOT_UUID:
+            Vcb->uuid_root = r;
+            break;
     }
     
     return STATUS_SUCCESS;
