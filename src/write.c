@@ -3351,19 +3351,50 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS remove_root_extents(device_extension* Vcb, tree_holder* th, UINT8 level, LIST_ENTRY* rollback) {
+static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, UINT8 level, LIST_ENTRY* rollback) {
     NTSTATUS Status;
+    
+    if (level > 0) {
+        if (!th->tree) {
+            Status = load_tree(Vcb, th->address, r, &th->tree);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_tree(%llx) returned %08x\n", th->address, Status);
+                return Status;
+            }
+        } else
+            increase_tree_rc(th->tree);
+        
+        if (th->tree->header.level > 0) {
+            LIST_ENTRY* le = th->tree->itemlist.Flink;
+            
+            while (le != &th->tree->itemlist) {
+                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td->ignore) {
+                    Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("remove_root_extents returned %08x\n", Status);
+                        return Status;
+                    }
+                }
+                
+                le = le->Flink;
+            }
+        }
+        
+        th->tree = free_tree(th->tree);
+    }
     
     if (!th->tree || th->tree->has_address) {
         Status = reduce_tree_extent(Vcb, th->address, NULL, rollback);
         
         if (!NT_SUCCESS(Status)) {
-            ERR("reduce_tree_extent returned %08x\n", Status);
+            ERR("reduce_tree_extent(%llx) returned %08x\n", th->address, Status);
             return Status;
         }
     }
-    
-    // FIXME - work with internal trees
     
     return STATUS_SUCCESS;
 }
@@ -3374,7 +3405,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
     KEY searchkey;
     traverse_ptr tp;
     
-    Status = remove_root_extents(Vcb, &r->treeholder, r->root_item.root_level, rollback);
+    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.root_level, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("remove_root_extents returned %08x\n", Status);
         return Status;

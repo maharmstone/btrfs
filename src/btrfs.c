@@ -1167,6 +1167,22 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
+// static void test_dropping_tree(device_extension* Vcb) {
+//     LIST_ENTRY* le = Vcb->roots.Flink;
+//     
+//     while (le != &Vcb->roots) {
+//         root* r = CONTAINING_RECORD(le, root, list_entry);
+//         
+//         if (r->id == 0x101) {
+//             RemoveEntryList(&r->list_entry);
+//             InsertTailList(&Vcb->drop_roots, &r->list_entry);
+//             return;
+//         }
+//         
+//         le = le->Flink;
+//     }
+// }
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
@@ -1197,6 +1213,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     
 //     test_tree_deletion(Vcb); // TESTING
 //     test_tree_splitting(Vcb);
+//     test_dropping_tree(Vcb);
     
     Status = consider_write(Vcb);
     
