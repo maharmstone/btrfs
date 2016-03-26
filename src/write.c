@@ -3499,7 +3499,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     
     // If only changing superblock, e.g. changing label, we still need to rewrite
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.
-    if (Vcb->write_trees > 0) {
+    if (Vcb->write_trees == 0) {
         KEY searchkey;
         traverse_ptr tp;
         
