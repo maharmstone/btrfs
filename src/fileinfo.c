@@ -142,17 +142,13 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     if (atts & FILE_ATTRIBUTE_READONLY)
         return STATUS_CANNOT_DELETE;
     
+    // FIXME - can we skip this bit for subvols?
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
         return STATUS_DIRECTORY_NOT_EMPTY;
     
     if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForDelete)) {
         WARN("trying to delete file which is being mapped as an image\n");
         return STATUS_CANNOT_DELETE;
-    }
-    
-    if (fcb->inode == SUBVOL_ROOT_INODE) {
-        FIXME("FIXME - subvol deletion not yet supported\n");
-        return STATUS_INTERNAL_ERROR;
     }
     
     fcb->delete_on_close = fdi->DeleteFile;
@@ -979,7 +975,7 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, fcb* fcb, roo
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback) {
+NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1120,7 +1116,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
