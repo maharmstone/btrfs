@@ -161,6 +161,48 @@ static BOOL unreg_icon_overlay(const WCHAR* name) {
         return TRUE;
 }
 
+static BOOL reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    WCHAR* clsidstring;
+    BOOL ret = FALSE;
+    
+    StringFromCLSID(clsid, &clsidstring);
+    
+    wcscpy(path, filetype);
+    wcscat(path, L"\\ShellEx\\ContextMenuHandlers\\");
+    wcscat(path, name);
+    
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+        goto end;
+
+    ret = TRUE;
+    
+end:
+    CoTaskMemFree(clsidstring);
+
+    return ret;
+}
+
+static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    LONG l;
+    
+    wcscpy(path, filetype);
+    wcscat(path, L"\\ShellEx\\ContextMenuHandlers\\");
+    wcscat(path, name);
+    
+    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path);
+    
+    if (l != ERROR_SUCCESS) {
+        WCHAR s[255];
+        wsprintfW(s, L"RegDeleteTree returned %08x", l);
+        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        
+        return FALSE;
+    } else    
+        return TRUE;
+}
+
 STDAPI DllRegisterServer(void) {
     if (!register_clsid(CLSID_ShellBtrfs, COM_DESCRIPTION))
         return E_FAIL;
@@ -170,10 +212,16 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
     }
     
+    if (!reg_context_menu_handler(CLSID_ShellBtrfs, L"Folder", ICON_OVERLAY_NAME)) {
+        MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
+        return E_FAIL;
+    }
+    
     return S_OK;
 }
 
 STDAPI DllUnregisterServer(void) {
+    unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_icon_overlay(ICON_OVERLAY_NAME);
     
     if (!unregister_clsid(CLSID_ShellBtrfs))
