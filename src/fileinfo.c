@@ -2110,7 +2110,7 @@ static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp
 
 static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, LIST_ENTRY* rollback) {
     FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
-    fcb *fcb = FileObject->FsContext, *tfofcb, *oldfcb;
+    fcb *fcb = FileObject->FsContext, *tfofcb, *oldfcb = NULL;
     root* parsubvol;
     UINT64 parinode, dirpos;
     WCHAR* fn;
@@ -2157,8 +2157,19 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
-    // FIXME - fail for directories
-    // FIXME - fail for ADS
+    utf8.Buffer = NULL;
+    
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        WARN("tried to create hard link on directory\n");
+        Status = STATUS_FILE_IS_A_DIRECTORY;
+        goto end;
+    }
+    
+    if (fcb->ads) {
+        WARN("tried to create hard link on stream\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
     
     fnus.Buffer = fn;
     fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
@@ -2182,8 +2193,6 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         goto end;
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, (ULONG)utf8.Length);
-    
-    oldfcb = NULL;
 
     Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE);
 
