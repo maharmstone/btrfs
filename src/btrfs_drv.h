@@ -103,8 +103,6 @@ typedef struct _fcb {
     ANSI_STRING utf8;
     struct _device_extension* Vcb;
     struct _fcb* par;
-    struct _fcb* prev;
-    struct _fcb* next;
     struct _root* subvol;
     LIST_ENTRY children;
     UINT64 inode;
@@ -290,7 +288,6 @@ typedef struct _device_extension {
     superblock superblock;
 //     WCHAR label[MAX_LABEL_SIZE];
     BOOL readonly;
-    fcb* fcbs;
     fcb* volume_fcb;
     fcb* root_fcb;
     ERESOURCE DirResource;

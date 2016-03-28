@@ -385,12 +385,6 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, fcb** pfcb, fcb* pa
     
     sf2->type = di->type;
     
-    if (Vcb->fcbs)
-        Vcb->fcbs->prev = sf2;
-    
-    sf2->next = Vcb->fcbs;
-    Vcb->fcbs = sf2;
-    
     sf2->name_offset = parent->full_filename.Length / sizeof(WCHAR);
    
     if (parent != Vcb->root_fcb)

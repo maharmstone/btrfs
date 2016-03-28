@@ -2015,15 +2015,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         _free_fcb(fcb->par, func, file, line);
     }
     
-    if (fcb->prev)
-        fcb->prev->next = fcb->next;
-    
-    if (fcb->next)
-        fcb->next->prev = fcb->prev;
-    
-    if (fcb->Vcb->fcbs == fcb)
-        fcb->Vcb->fcbs = fcb->next;
-    
     if (fcb->full_filename.Buffer)
         ExFreePool(fcb->full_filename.Buffer);
     
@@ -3628,8 +3619,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
-    
-    Vcb->fcbs = Vcb->root_fcb;
     
     searchkey.obj_id = Vcb->root_fcb->inode;
     searchkey.obj_type = TYPE_INODE_ITEM;

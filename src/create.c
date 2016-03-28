@@ -876,12 +876,6 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     
                     TRACE("stream found: size = %x, hash = %08x\n", sf2->adssize, sf2->adshash);
                     
-                    if (Vcb->fcbs)
-                        Vcb->fcbs->prev = sf2;
-                    
-                    sf2->next = Vcb->fcbs;
-                    Vcb->fcbs = sf2;
-                    
                     sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
                     
                     if (sf != Vcb->root_fcb)
@@ -974,12 +968,6 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                     sf2->subvol = subvol;
                     sf2->inode = inode;
                     sf2->type = type;
-                    
-                    if (Vcb->fcbs)
-                        Vcb->fcbs->prev = sf2;
-                    
-                    sf2->next = Vcb->fcbs;
-                    Vcb->fcbs = sf2;
                     
                     sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
                     
@@ -1663,12 +1651,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     }
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    
-    if (Vcb->fcbs)
-        Vcb->fcbs->prev = fcb;
-    
-    fcb->next = Vcb->fcbs;
-    Vcb->fcbs = fcb;
     
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
