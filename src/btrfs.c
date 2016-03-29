@@ -1183,6 +1183,120 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
+static NTSTATUS create_root(device_extension* Vcb, UINT64 id, LIST_ENTRY* rollback) {
+    root* r;
+    tree* t;
+    ROOT_ITEM* ri;
+    traverse_ptr tp;
+    
+    r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
+    if (!r) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
+    if (!r->nonpaged) {
+        ERR("out of memory\n");
+        ExFreePool(r);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+    if (!t) {
+        ERR("out of memory\n");
+        ExFreePool(r->nonpaged);
+        ExFreePool(r);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+    if (!ri) {
+        ERR("out of memory\n");
+        ExFreePool(t);
+        ExFreePool(r->nonpaged);
+        ExFreePool(r);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    r->id = id;
+    r->treeholder.address = 0;
+    r->treeholder.generation = Vcb->superblock.generation;
+    r->treeholder.tree = t;
+    r->lastinode = 0;
+    RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
+    // FIXME - generate r->root_item.uuid
+    r->root_item.num_references = 1;
+    
+    RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
+    
+    // We ask here for a traverse_ptr to the item we're inserting, so we can
+    // copy some of the tree's variables
+    
+    if (!insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), &tp, rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(ri);
+        ExFreePool(t);
+        ExFreePool(r->nonpaged);
+        ExFreePool(r);
+        return STATUS_INTERNAL_ERROR;
+    }
+        
+    ExInitializeResourceLite(&r->nonpaged->load_tree_lock);
+    
+    InsertTailList(&Vcb->roots, &r->list_entry);
+    
+    t->header.fs_uuid = tp.tree->header.fs_uuid;
+    t->header.address = 0;
+    t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
+    t->header.chunk_tree_uuid = tp.tree->header.chunk_tree_uuid;
+    t->header.generation = Vcb->superblock.generation;
+    t->header.tree_id = id;
+    t->header.num_items = 0;
+    t->header.level = 0;
+
+    t->refcount = 0;
+    t->has_address = FALSE;
+    t->size = 0;
+    t->Vcb = Vcb;
+    t->parent = NULL;
+    t->paritem = NULL;
+    t->root = r;
+    
+    InitializeListHead(&t->itemlist);
+   
+    t->new_address = 0;
+    t->has_new_address = FALSE;
+    t->flags = tp.tree->flags;
+    
+    free_traverse_ptr(&tp);
+    
+    InsertTailList(&Vcb->trees, &t->list_entry);
+    
+    add_to_tree_cache(Vcb, t, TRUE);
+
+    return STATUS_SUCCESS;
+}
+
+static void test_creating_root(device_extension* Vcb) {
+    NTSTATUS Status;
+    LIST_ENTRY rollback;
+    UINT64 id;
+    
+    InitializeListHead(&rollback);
+    
+    id = Vcb->last_root > 0x100 ? (Vcb->last_root + 1) : 0x101;
+    Status = create_root(Vcb, id, &rollback);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("create_root returned %08x\n", Status);
+        do_rollback(Vcb, &rollback);
+    } else {
+        Vcb->last_root = id;
+        clear_rollback(&rollback);
+    }
+}
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
@@ -1214,6 +1328,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_tree_deletion(Vcb); // TESTING
 //     test_tree_splitting(Vcb);
 //     test_dropping_tree(Vcb);
+    test_creating_root(Vcb);
     
     Status = consider_write(Vcb);
     
@@ -2532,6 +2647,9 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
+    if (id > Vcb->last_root && !(id & 0x8000000000000000))
+        Vcb->last_root = id;
+    
     r->id = id;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
@@ -3521,6 +3639,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->roots);
     InitializeListHead(&Vcb->drop_roots);
     
+    Vcb->last_root = 0;
     Vcb->log_to_phys_loaded = FALSE;
     
     Vcb->max_inline = Vcb->superblock.node_size / 2;

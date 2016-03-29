@@ -306,6 +306,7 @@ typedef struct _device_extension {
 //     log_to_phys* log_to_phys;
     LIST_ENTRY roots;
     LIST_ENTRY drop_roots;
+    UINT64 last_root;
     root* chunk_root;
     root* root_root;
     root* extent_root;
