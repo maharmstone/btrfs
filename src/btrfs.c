@@ -1279,28 +1279,28 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     return STATUS_SUCCESS;
 }
 
-static void test_creating_root(device_extension* Vcb) {
-    NTSTATUS Status;
-    LIST_ENTRY rollback;
-    UINT64 id;
-    root* r;
-    
-    InitializeListHead(&rollback);
-    
-    if (Vcb->root_root->lastinode == 0)
-        get_last_inode(Vcb, Vcb->root_root);
-    
-    id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-    Status = create_root(Vcb, id, &r, &rollback);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("create_root returned %08x\n", Status);
-        do_rollback(Vcb, &rollback);
-    } else {
-        Vcb->root_root->lastinode = id;
-        clear_rollback(&rollback);
-    }
-}
+// static void test_creating_root(device_extension* Vcb) {
+//     NTSTATUS Status;
+//     LIST_ENTRY rollback;
+//     UINT64 id;
+//     root* r;
+//     
+//     InitializeListHead(&rollback);
+//     
+//     if (Vcb->root_root->lastinode == 0)
+//         get_last_inode(Vcb, Vcb->root_root);
+//     
+//     id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+//     Status = create_root(Vcb, id, &r, &rollback);
+//     
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("create_root returned %08x\n", Status);
+//         do_rollback(Vcb, &rollback);
+//     } else {
+//         Vcb->root_root->lastinode = id;
+//         clear_rollback(&rollback);
+//     }
+// }
 
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
@@ -1333,7 +1333,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_tree_deletion(Vcb); // TESTING
 //     test_tree_splitting(Vcb);
 //     test_dropping_tree(Vcb);
-    test_creating_root(Vcb);
+//     test_creating_root(Vcb);
     
     Status = consider_write(Vcb);
     
