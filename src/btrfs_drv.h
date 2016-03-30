@@ -478,6 +478,7 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void fcb_get_sd(fcb* fcb);
 // UINT32 STDCALL get_uid();
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
+UINT32 sid_to_uid(PSID sid);
 NTSTATUS fcb_get_new_sd(fcb* fcb, ACCESS_STATE* as);
 
 // in fileinfo.c

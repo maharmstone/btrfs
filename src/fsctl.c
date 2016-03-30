@@ -66,6 +66,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     INODE_REF* ir;
     KEY searchkey;
     traverse_ptr tp;
+    SECURITY_DESCRIPTOR* sd = NULL;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    PSID owner;
+    BOOLEAN defaulted;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
@@ -157,12 +161,46 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     ii->st_nlink = 1;
     ii->st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
     ii->st_atime = ii->st_ctime = ii->st_mtime = ii->otime = now;
+    ii->st_gid = GID_NOBODY; // FIXME?
+       
+    SeCaptureSubjectContext(&subjcont);
+    
+    Status = SeAssignSecurity(fcb->sd, NULL, (void**)&sd, TRUE, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("SeAssignSecurity returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!sd) {
+        ERR("SeAssignSecurity returned NULL security descriptor\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    Status = RtlGetOwnerSecurityDescriptor(sd, &owner, &defaulted);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
+        ii->st_uid = UID_NOBODY;
+    } else {
+        ii->st_uid = sid_to_uid(&owner);
+    }
 
     if (!insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
         ERR("insert_tree_item failed\n");
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
+    
+    // add security.NTACL xattr
+    
+    Status = set_xattr(Vcb, r, r->root_item.objid, EA_NTACL, EA_NTACL_HASH, (UINT8*)sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("set_xattr returned %08x\n", Status);
+        goto end;
+    }
+    
+    ExFreePool(sd);
     
     // add INODE_REF
     
@@ -316,9 +354,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback);
     
     free_traverse_ptr(&tp);
-    
-    // FIXME - send notification
-    
+
     Vcb->root_root->lastinode = id;
 
     Status = STATUS_SUCCESS;    

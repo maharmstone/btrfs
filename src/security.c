@@ -281,7 +281,7 @@ static void uid_to_sid(UINT32 uid, PSID* sid) {
     *sid = sh;
 }
 
-static UINT32 sid_to_uid(PSID sid) {
+UINT32 sid_to_uid(PSID sid) {
     LIST_ENTRY* le;
     uid_map* um;
     sid_header* sh = sid;
