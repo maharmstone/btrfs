@@ -324,7 +324,7 @@ BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
         
         TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         
-        if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+        if (tp.item->key.obj_type == TYPE_INODE_ITEM || (tp.item->key.obj_type == TYPE_ROOT_ITEM && !(tp.item->key.obj_id & 0x8000000000000000))) {
             r->lastinode = tp.item->key.obj_id;
             free_traverse_ptr(&tp);
             TRACE("last inode for tree %llx is %llx\n", r->id, r->lastinode);
@@ -1183,7 +1183,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
-static NTSTATUS create_root(device_extension* Vcb, UINT64 id, LIST_ENTRY* rollback) {
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTRY* rollback) {
     root* r;
     tree* t;
     ROOT_ITEM* ri;
@@ -1225,7 +1225,6 @@ static NTSTATUS create_root(device_extension* Vcb, UINT64 id, LIST_ENTRY* rollba
     r->treeholder.tree = t;
     r->lastinode = 0;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
-    // FIXME - generate r->root_item.uuid
     r->root_item.num_references = 1;
     
     RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
@@ -1274,6 +1273,8 @@ static NTSTATUS create_root(device_extension* Vcb, UINT64 id, LIST_ENTRY* rollba
     InsertTailList(&Vcb->trees, &t->list_entry);
     
     add_to_tree_cache(Vcb, t, TRUE);
+    
+    *rootptr = r;
 
     return STATUS_SUCCESS;
 }
@@ -1282,17 +1283,21 @@ static void test_creating_root(device_extension* Vcb) {
     NTSTATUS Status;
     LIST_ENTRY rollback;
     UINT64 id;
+    root* r;
     
     InitializeListHead(&rollback);
     
-    id = Vcb->last_root > 0x100 ? (Vcb->last_root + 1) : 0x101;
-    Status = create_root(Vcb, id, &rollback);
+    if (Vcb->root_root->lastinode == 0)
+        get_last_inode(Vcb, Vcb->root_root);
+    
+    id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+    Status = create_root(Vcb, id, &r, &rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
         do_rollback(Vcb, &rollback);
     } else {
-        Vcb->last_root = id;
+        Vcb->root_root->lastinode = id;
         clear_rollback(&rollback);
     }
 }
@@ -2647,9 +2652,6 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    if (id > Vcb->last_root && !(id & 0x8000000000000000))
-        Vcb->last_root = id;
-    
     r->id = id;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
@@ -3639,7 +3641,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->roots);
     InitializeListHead(&Vcb->drop_roots);
     
-    Vcb->last_root = 0;
     Vcb->log_to_phys_loaded = FALSE;
     
     Vcb->max_inline = Vcb->superblock.node_size / 2;

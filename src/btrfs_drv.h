@@ -306,7 +306,6 @@ typedef struct _device_extension {
 //     log_to_phys* log_to_phys;
     LIST_ENTRY roots;
     LIST_ENTRY drop_roots;
-    UINT64 last_root;
     root* chunk_root;
     root* root_root;
     root* extent_root;
@@ -375,6 +374,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 fcb* create_fcb();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTRY* rollback);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -599,12 +599,36 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
 #define S_ISDIR(mode)    __S_ISTYPE((mode), __S_IFDIR)
 #endif
 
+#ifndef S_IRUSR
+#define S_IRUSR 0000400
+#endif
+
+#ifndef S_IWUSR
+#define S_IWUSR 0000200
+#endif
+
 #ifndef S_IXUSR
 #define S_IXUSR 0000100
 #endif
 
+#ifndef S_IRGRP
+#define S_IRGRP (S_IRUSR >> 3)
+#endif
+
+#ifndef S_IWGRP
+#define S_IWGRP (S_IWUSR >> 3)
+#endif
+
 #ifndef S_IXGRP
 #define S_IXGRP (S_IXUSR >> 3)
+#endif
+
+#ifndef S_IROTH
+#define S_IROTH (S_IRGRP >> 3)
+#endif
+
+#ifndef S_IWOTH
+#define S_IWOTH (S_IWGRP >> 3)
 #endif
 
 #ifndef S_IXOTH
