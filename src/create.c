@@ -1395,6 +1395,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
     LONG oc;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    ULONG access;
+    PACCESS_STATE access_state = IrpSp->Parameters.Create.SecurityContext->AccessState;
             
     TRACE("(%p, %p, %p, %.*S, %x, %x)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
     
@@ -1494,6 +1497,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+            if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
+                WARN("SeAccessCheck failed, returning %08x\n", Status);
+                goto end;
+            }
+            
             Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar, rollback);
         
             if (!NT_SUCCESS(Status)) {
@@ -1507,6 +1516,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         free_fcb(parfcb);
         parfcb = newpar;
+        
+        if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto end;
+        }
         
         if (newpar->type != BTRFS_TYPE_FILE && newpar->type != BTRFS_TYPE_SYMLINK) {
             WARN("parent not file or symlink\n");
@@ -1662,6 +1677,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExFreePool(fpus.Buffer);
         fpus.Buffer = NULL;
     } else {
+        if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto end;
+        }
+        
         Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &fcb, rollback);
         
         if (!NT_SUCCESS(Status)) {
@@ -1692,6 +1713,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     RtlInitUnicodeString(&ccb->query_string, NULL);
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
+    ccb->access = access;
     
     oc = InterlockedIncrement(&fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -2234,6 +2256,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         RtlInitUnicodeString(&ccb->query_string, NULL);
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
+        ccb->access = access;
         
         FileObject->FsContext2 = ccb;
         

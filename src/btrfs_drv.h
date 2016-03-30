@@ -136,6 +136,7 @@ typedef struct _ccb {
     UNICODE_STRING query_string;
     BOOL has_wildcard;
     BOOL specific_file;
+    ACCESS_MASK access;
 } ccb;
 
 // typedef struct _log_to_phys {
