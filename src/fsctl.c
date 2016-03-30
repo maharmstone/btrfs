@@ -57,6 +57,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG len, disize, rrsize, irsize;
+    UNICODE_STRING nameus;
     ANSI_STRING utf8;
     UINT64 dirpos;
     DIR_ITEM *di, *di2;
@@ -109,12 +110,22 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
+    InitializeListHead(&rollback);
+    
     // FIXME - check FileObject is a directory and hasn't been deleted
-    // FIXME - check name doesn't already exist
     // FIXME - check name doesn't contain slashes or backslashes
     // FIXME - check we have permissions to create a subdirectory
     
-    InitializeListHead(&rollback);
+    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
+    
+    nameus.Length = nameus.MaximumLength = length;
+    nameus.Buffer = name;
+    
+    if (find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL)) {
+        WARN("file already exists\n");
+        Status = STATUS_OBJECT_NAME_COLLISION;
+        goto end;
+    }
     
     if (Vcb->root_root->lastinode == 0)
         get_last_inode(Vcb, Vcb->root_root);
@@ -257,8 +268,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     RtlCopyMemory(di->name, utf8.Buffer, utf8.Length);
     
     RtlCopyMemory(di2, di, disize);
-    
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
     Status = add_dir_item(Vcb, fcb->subvol, fcb->inode, crc32, di, disize, &rollback);
     if (!NT_SUCCESS(Status)) {

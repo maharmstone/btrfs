@@ -88,25 +88,35 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             if (di->key.obj_type == TYPE_ROOT_ITEM) {
                                 LIST_ENTRY* le = Vcb->roots.Flink;
                                 
-                                *subvol = NULL;
-                                
-                                while (le != &Vcb->roots) {
-                                    root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                                if (subvol) {
+                                    *subvol = NULL;
                                     
-                                    if (r2->id == di->key.obj_id) {
-                                        *subvol = r2;
-                                        break;
+                                    while (le != &Vcb->roots) {
+                                        root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                                        
+                                        if (r2->id == di->key.obj_id) {
+                                            *subvol = r2;
+                                            break;
+                                        }
+                                        
+                                        le = le->Flink;
                                     }
-                                    
-                                    le = le->Flink;
                                 }
-                                                                
-                                *inode = SUBVOL_ROOT_INODE;
-                                *type = BTRFS_TYPE_DIRECTORY;
+
+                                if (inode)
+                                    *inode = SUBVOL_ROOT_INODE;
+                                
+                                if (type)
+                                    *type = BTRFS_TYPE_DIRECTORY;
                             } else {
-                                *subvol = r;
-                                *inode = di->key.obj_id;
-                                *type = di->type;
+                                if (subvol)
+                                    *subvol = r;
+                                
+                                if (inode)
+                                    *inode = di->key.obj_id;
+                                
+                                if (type)
+                                    *type = di->type;
                             }
                             
                             if (utf8) {
@@ -126,7 +136,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             free_traverse_ptr(&tp);
                             ExFreePool(utf16);
                             
-                            TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
+//                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
                             
                             return TRUE;
                         }
@@ -205,28 +215,38 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                     if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
                         if (di->key.obj_type == TYPE_ROOT_ITEM) {
                             LIST_ENTRY* le = Vcb->roots.Flink;
+
+                            if (subvol) {
+                                *subvol = NULL;
                                 
-                            *subvol = NULL;
-                            
-                            while (le != &Vcb->roots) {
-                                root* r2 = CONTAINING_RECORD(le, root, list_entry);
-                                
-                                if (r2->id == di->key.obj_id) {
-                                    *subvol = r2;
-                                    break;
+                                while (le != &Vcb->roots) {
+                                    root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                                    
+                                    if (r2->id == di->key.obj_id) {
+                                        *subvol = r2;
+                                        break;
+                                    }
+                                    
+                                    le = le->Flink;
                                 }
-                                
-                                le = le->Flink;
                             }
                             
-                            *inode = SUBVOL_ROOT_INODE;
-                            *type = BTRFS_TYPE_DIRECTORY;
+                            if (inode)
+                                *inode = SUBVOL_ROOT_INODE;
+                            
+                            if (type)
+                                *type = BTRFS_TYPE_DIRECTORY;
                         } else {
-                            *subvol = r;
-                            *inode = di->key.obj_id;
-                            *type = di->type;
+                            if (subvol)
+                                *subvol = r;
+                            
+                            if (inode)
+                                *inode = di->key.obj_id;
+                            
+                            if (type)
+                                *type = di->type;
                         }
-                        TRACE("found %.*S at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
+//                         TRACE("found %.*S at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
                         
                         if (utf8) {
                             utf8->MaximumLength = di->n;
