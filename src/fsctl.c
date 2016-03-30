@@ -50,13 +50,14 @@ static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) 
 
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length) {
     fcb* fcb;
+    ccb* ccb;
     NTSTATUS Status;
     LIST_ENTRY rollback;
     UINT64 id;
     root* r;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    ULONG len, disize, rrsize, irsize;
+    ULONG i, len, disize, rrsize, irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     UINT64 dirpos;
@@ -76,6 +77,39 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!fcb) {
         ERR("error - fcb was NULL\n");
         return STATUS_INTERNAL_ERROR;
+    }
+    
+    ccb = FileObject->FsContext2;
+    if (!ccb) {
+        ERR("error - ccb was NULL\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+        ERR("parent FCB was not a directory\n");
+        return STATUS_NOT_A_DIRECTORY;
+    }
+    
+    if (fcb->deleted) {
+        ERR("parent FCB has been deleted\n");
+        return STATUS_FILE_DELETED;
+    }
+    
+    if (!(ccb->access & FILE_ADD_SUBDIRECTORY)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    for (i = 0; i < length / sizeof(WCHAR); i++) {
+        if (name[i] == '/' || name[i] == '\\')
+            return STATUS_INVALID_PARAMETER;
+        else if (name[i] == 0)
+            length = i * sizeof(WCHAR);
+    }
+    
+    if (length == 0) {
+        ERR("name has a length of zero\n");
+        return STATUS_INVALID_PARAMETER;
     }
     
     utf8.Buffer = NULL;
@@ -111,10 +145,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     win_time_to_unix(time, &now);
     
     InitializeListHead(&rollback);
-    
-    // FIXME - check FileObject is a directory and hasn't been deleted
-    // FIXME - check name doesn't contain slashes or backslashes
-    // FIXME - check we have permissions to create a subdirectory
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
