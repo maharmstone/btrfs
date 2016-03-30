@@ -1134,6 +1134,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
             if (r->treeholder.tree && r->treeholder.tree->header.num_items == 0) {
                 tp.tree = r->treeholder.tree;
                 tp.item = NULL;
+                increase_tree_rc(tp.tree);
             } else {
                 ERR("error: unable to load tree for root %llx\n", r->id);
                 goto end;
