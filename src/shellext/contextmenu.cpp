@@ -31,6 +31,8 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 #endif
 #define STATUS_SUCCESS 0
 
+typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
+
 extern HMODULE module;
 
 HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
@@ -49,7 +51,6 @@ HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
 }
 
 HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
-    WCHAR path[MAX_PATH];
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
@@ -96,7 +97,43 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
         return E_FAIL;
 
-    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, idCmdFirst + 1);
+    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
+}
+
+static void ShowError(HWND hwnd, ULONG err) {
+    WCHAR* buf;
+    
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
+        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
+    
+    LocalFree(buf);
+}
+
+static void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
+    _RtlNtStatusToDosError RtlNtStatusToDosError;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+    
+    if (!ntdll) {
+        MessageBoxW(hwnd, L"Error loading ntdll.dll", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+    
+    if (!ntdll) {
+        MessageBoxW(hwnd, L"Error loading RtlNtStatusToDosError in ntdll.dll", L"Error", MB_ICONERROR);
+        FreeLibrary(ntdll);
+        return;
+    }
+    
+    ShowError(hwnd, RtlNtStatusToDosError(Status));
+    
+    FreeLibrary(ntdll);
 }
 
 HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
@@ -104,7 +141,27 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         return E_INVALIDARG;
     
     if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA)) {
-        MessageBoxW(pici->hwnd, L"new subvol", 0, 0);
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS Status;
+        static WCHAR name[] = L"test"; // FIXME
+        
+        h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowError(pici->hwnd, GetLastError());
+            return E_FAIL;
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0, name, wcslen(name) * sizeof(WCHAR));
+        
+        if (Status != STATUS_SUCCESS) {
+            CloseHandle(h);
+            ShowNtStatusError(pici->hwnd, Status);
+            return E_FAIL;
+        }
+        
+        CloseHandle(h);
         
         return S_OK;
     }

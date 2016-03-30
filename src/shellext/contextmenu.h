@@ -44,4 +44,5 @@ public:
 private:
     LONG refcount;
     BOOL ignore;
+    WCHAR path[MAX_PATH];
 };
