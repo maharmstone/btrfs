@@ -109,6 +109,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // FIXME - check FileObject is a directory and hasn't been deleted
     // FIXME - check name doesn't already exist
+    // FIXME - check name doesn't contain slashes or backslashes
     // FIXME - check we have permissions to create a subdirectory
     
     InitializeListHead(&rollback);
@@ -334,6 +335,39 @@ end:
         clear_rollback(&rollback);
     
     release_tree_lock(Vcb, TRUE);
+    
+    if (NT_SUCCESS(Status)) {
+        UNICODE_STRING ffn;
+        
+        ffn.Length = fcb->full_filename.Length + length;
+        if (fcb != fcb->Vcb->root_fcb)
+            ffn.Length += sizeof(WCHAR);
+        
+        ffn.MaximumLength = ffn.Length;
+        ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
+        
+        if (ffn.Buffer) {
+            ULONG i;
+            
+            RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
+            i = fcb->full_filename.Length;
+            
+            if (fcb != fcb->Vcb->root_fcb) {
+                ffn.Buffer[i / sizeof(WCHAR)] = '\\';
+                i += sizeof(WCHAR);
+            }
+            
+            RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], name, length);
+            
+            TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
+            
+            FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
+                                        FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
+            
+            ExFreePool(ffn.Buffer);
+        } else
+            ERR("out of memory\n");
+    }
     
 end2:
     if (utf8.Buffer)
