@@ -105,8 +105,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    ERR("create subvol!\n");
-    
     // FIXME - check FileObject is a directory and hasn't been deleted
     // FIXME - check name doesn't already exist
     // FIXME - check name doesn't contain slashes or backslashes
@@ -125,7 +123,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         goto end;
     }
     
-    ERR("created root %llx\n", id);
+    TRACE("created root %llx\n", id);
     
     // FIXME - generate r->root_item.uuid
     // FIXME - add entry to tree 9
