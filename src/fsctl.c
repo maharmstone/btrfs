@@ -48,6 +48,20 @@ static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) 
     return STATUS_SUCCESS;
 }
 
+static void get_uuid(BTRFS_UUID* uuid) {
+    LARGE_INTEGER seed;
+    UINT8 i;
+    
+    seed = KeQueryPerformanceCounter(NULL);
+
+    for (i = 0; i < 16; i+=2) {
+        ULONG rand = RtlRandomEx(&seed.LowPart);
+        
+        uuid->uuid[i] = (rand & 0xff00) >> 8;
+        uuid->uuid[i+1] = rand & 0xff;
+    }
+}
+
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length) {
     fcb* fcb;
     ccb* ccb;
@@ -72,6 +86,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     SECURITY_SUBJECT_CONTEXT subjcont;
     PSID owner;
     BOOLEAN defaulted;
+    UINT64* root_num;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
@@ -160,6 +175,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (Vcb->root_root->lastinode == 0)
         get_last_inode(Vcb, Vcb->root_root);
     
+    // FIXME - make sure rollback removes new roots from internal structures
+    
     id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
     Status = create_root(Vcb, id, &r, &rollback);
     
@@ -170,8 +187,52 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     TRACE("created root %llx\n", id);
     
-    // FIXME - generate r->root_item.uuid
-    // FIXME - add entry to tree 9
+    if (!Vcb->uuid_root) {
+        root* uuid_root;
+        
+        TRACE("uuid root doesn't exist, creating it\n");
+        
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, &rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("create_root returned %08x\n", Status);
+            goto end;
+        }
+        
+        Vcb->uuid_root = uuid_root;
+    }
+    
+    root_num = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64), ALLOC_TAG);
+    if (!root_num) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    tp.tree = NULL;
+    
+    do {
+        get_uuid(&r->root_item.uuid);
+        
+        RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid, sizeof(UINT64));
+        searchkey.obj_type = TYPE_SUBVOL_UUID;
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+        
+        if (tp.tree)
+            free_traverse_ptr(&tp);
+        
+        Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE);
+    } while (NT_SUCCESS(Status) && !keycmp(&searchkey, &tp.item->key));
+    
+    free_traverse_ptr(&tp);
+    
+    *root_num = r->id;
+    
+    if (!insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
     
     r->root_item.inode.generation = 1;
     r->root_item.inode.st_size = 3;
