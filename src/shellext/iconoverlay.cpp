@@ -1,20 +1,7 @@
 #include <windows.h>
+#include <winternl.h>
 #include "iconoverlay.h"
 #include "../btrfsioctl.h"
-
-typedef struct _IO_STATUS_BLOCK {
-  union {
-    NTSTATUS Status;
-    PVOID Pointer;
-  } DUMMYUNIONNAME;
-  ULONG_PTR Information;
-} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
-
-typedef VOID
-(NTAPI *PIO_APC_ROUTINE)(
-  IN PVOID ApcContext,
-  IN PIO_STATUS_BLOCK IoStatusBlock,
-  IN ULONG Reserved);
 
 #ifdef __cplusplus
 extern "C" {

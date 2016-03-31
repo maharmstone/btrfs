@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <strsafe.h>
+#include <winternl.h>
 
 #include "contextmenu.h"
 #include "resource.h"
@@ -7,20 +8,6 @@
 
 #define NEW_SUBVOL_VERBA "newsubvol"
 #define NEW_SUBVOL_VERBW L"newsubvol"
-
-typedef struct _IO_STATUS_BLOCK {
-  union {
-    NTSTATUS Status;
-    PVOID Pointer;
-  } DUMMYUNIONNAME;
-  ULONG_PTR Information;
-} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
-
-typedef VOID
-(NTAPI *PIO_APC_ROUTINE)(
-  IN PVOID ApcContext,
-  IN PIO_STATUS_BLOCK IoStatusBlock,
-  IN ULONG Reserved);
 
 #ifdef __cplusplus
 extern "C" {
