@@ -9,6 +9,7 @@
 #define NEW_SUBVOL_VERBA "newsubvol"
 #define NEW_SUBVOL_VERBW L"newsubvol"
 
+// FIXME - is there a way to link to the proper header files without breaking everything?
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -131,7 +132,10 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        WCHAR name[MAX_PATH];
+        ULONG pathlen, searchpathlen, pathend;
+        WCHAR name[MAX_PATH], *searchpath;
+        HANDLE fff;
+        WIN32_FIND_DATAW wfd;
         
         if (!LoadStringW(module, IDS_NEW_SUBVOL_FILENAME, name, MAX_PATH)) {
             ShowError(pici->hwnd, GetLastError());
@@ -147,7 +151,36 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
             return E_FAIL;
         }
         
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0, name, wcslen(name) * sizeof(WCHAR));
+        pathlen = wcslen(path);
+        
+        searchpathlen = pathlen + wcslen(name) + 10;
+        searchpath = (WCHAR*)malloc(searchpathlen * sizeof(WCHAR));
+        
+        StringCchCopyW(searchpath, searchpathlen, path);
+        StringCchCatW(searchpath, searchpathlen, L"\\");
+        pathend = wcslen(searchpath);
+        
+        StringCchCatW(searchpath, searchpathlen, name);
+        
+        fff = FindFirstFileW(searchpath, &wfd);
+        
+        if (fff != INVALID_HANDLE_VALUE) {
+            ULONG i = wcslen(searchpath), num = 2;
+            
+            do {
+                FindClose(fff);
+                
+                searchpath[i] = 0;
+                StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num);
+
+                fff = FindFirstFileW(searchpath, &wfd);
+                num++;
+            } while (fff != INVALID_HANDLE_VALUE);
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0, &searchpath[pathend], wcslen(&searchpath[pathend]) * sizeof(WCHAR));
+        
+        free(searchpath);
         
         if (Status != STATUS_SUCCESS) {
             CloseHandle(h);
