@@ -3801,12 +3801,41 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
     len = tp.item->size - sizeof(EXTENT_ITEM);
     siptr = (UINT8*)&ei[1];
     
-    // FIXME - increase subitem refcount if there already?
     do {
         if (*siptr == TYPE_EXTENT_DATA_REF) {
             UINT64 sihash;
             
             edr = (EXTENT_DATA_REF*)&siptr[1];
+            
+            // already exists - increase refcount
+            if (edr->root == subvol->id && edr->objid == inode && edr->offset == offset) {
+                ei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!ei) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(ei, tp.item->data, tp.item->size);
+                
+                edr = (EXTENT_DATA_REF*)((UINT8*)ei + ((UINT8*)edr - tp.item->data));
+                edr->count++;
+                ei->refcount++;
+                
+                delete_tree_item(Vcb, &tp, rollback);
+    
+                free_traverse_ptr(&tp);
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, tp.item->size, NULL, rollback)) {
+                    ERR("error - failed to insert item\n");
+                    ExFreePool(ei);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                return STATUS_SUCCESS;
+            }
+            
             sihash = get_extent_data_ref_hash(edr->root, edr->objid, edr->offset);
             
             if (sihash >= hash)
@@ -4864,6 +4893,15 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
+                    
+                    if (ed2->address != 0) {
+                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, ed2->offset - tp.item->key.offset, rollback);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("add_extent_ref returned %08x\n", Status);
+                            goto end;
+                        }
+                    }
                 }
             }
         }
@@ -4929,41 +4967,20 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
 static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
-    EXTENT_ITEM_DATA_REF* eidr;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
-    traverse_ptr tp;
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, data, changed_sector_list);
     
     if (!find_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
     
-    eidr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_DATA_REF), ALLOC_TAG);
-    if (!eidr) {
-        ERR("out of memory\n");
+    Status = add_extent_ref(Vcb, address, length, fcb->subvol, fcb->inode, start_data, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_extent_ref returned %08x\n", Status);
         return FALSE;
     }
-    
-    eidr->ei.refcount = 1;
-    eidr->ei.generation = Vcb->superblock.generation;
-    eidr->ei.flags = EXTENT_ITEM_DATA;
-    eidr->type = TYPE_EXTENT_DATA_REF;
-    eidr->edr.root = fcb->subvol->id;
-    eidr->edr.objid = fcb->inode;
-    eidr->edr.offset = start_data;
-    eidr->edr.count = 1;
-    
-    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, length, eidr, sizeof(EXTENT_ITEM_DATA_REF), &tp, rollback)) {
-        ERR("insert_tree_item failed\n");
-        ExFreePool(eidr);
-        return FALSE;
-    }
-    
-    tp.tree->header.generation = eidr->ei.generation;
-    
-    free_traverse_ptr(&tp);
     
     if (!prealloc) {
         Status = do_write_data(Vcb, address, data, length, changed_sector_list);
@@ -6214,6 +6231,15 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                 Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + tp.item->key.offset - start_data, end_data - tp.item->key.offset, changed_sector_list);
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_write_data returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return Status;
+                }
+                
+                Status = add_extent_ref(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_extent_ref returned %08x\n", Status);
                     free_traverse_ptr(&tp);
                     if (b) free_traverse_ptr(&next_tp);
                     
