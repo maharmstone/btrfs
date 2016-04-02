@@ -2030,8 +2030,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
-        // FIXME - pass flag to say that new extents should be prealloc rather than sparse
-        Status = extend_file(fcb, feofi->EndOfFile.QuadPart, rollback);
+        Status = extend_file(fcb, feofi->EndOfFile.QuadPart, TRUE, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - extend_file failed\n");
             return Status;

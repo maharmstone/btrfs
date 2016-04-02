@@ -4887,7 +4887,7 @@ end:
     return Status;
 }
 
-static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_ITEM_DATA_REF* eidr;
@@ -4928,35 +4928,37 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     
     free_traverse_ptr(&tp);
     
-    Status = write_data(Vcb, address, data, length);
-    if (!NT_SUCCESS(Status)) {
-        ERR("write_data returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    if (changed_sector_list) {
-        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-        if (!sc) {
-            ERR("out of memory\n");
+    if (!prealloc) {
+        Status = write_data(Vcb, address, data, length);
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_data returned %08x\n", Status);
             return FALSE;
         }
         
-        sc->ol.key = address;
-        sc->length = length / Vcb->superblock.sector_size;
-        sc->deleted = FALSE;
-        
-        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-        if (!sc->checksums) {
-            ERR("out of memory\n");
-            ExFreePool(sc);
-            return FALSE;
-        }
-        
-        for (i = 0; i < sc->length; i++) {
-            sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        }
+        if (changed_sector_list) {
+            sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+            if (!sc) {
+                ERR("out of memory\n");
+                return FALSE;
+            }
+            
+            sc->ol.key = address;
+            sc->length = length / Vcb->superblock.sector_size;
+            sc->deleted = FALSE;
+            
+            sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+            if (!sc->checksums) {
+                ERR("out of memory\n");
+                ExFreePool(sc);
+                return FALSE;
+            }
+            
+            for (i = 0; i < sc->length; i++) {
+                sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            }
 
-        insert_into_ordered_list(changed_sector_list, &sc->ol);
+            insert_into_ordered_list(changed_sector_list, &sc->ol);
+        }
     }
     
     // add extent data to inode
@@ -4971,7 +4973,7 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     ed->compression = BTRFS_COMPRESSION_NONE;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
     ed->encoding = BTRFS_ENCODING_NONE;
-    ed->type = EXTENT_TYPE_REGULAR;
+    ed->type = prealloc ? EXTENT_TYPE_PREALLOC : EXTENT_TYPE_REGULAR;
     
     ed2 = (EXTENT_DATA2*)ed->data;
     ed2->address = address;
@@ -5270,6 +5272,41 @@ end:
     return success;
 }
 
+static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le = fcb->Vcb->chunks.Flink;
+    chunk* c;
+    UINT64 flags;
+    
+    // FIXME - how do we know which RAID level to put this to?
+    flags = BLOCK_FLAG_DATA; // SINGLE
+    
+    // FIXME - if length is more than max chunk size, loop through and
+    // create the new chunks first
+    
+    while (le != &fcb->Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback))
+                return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+    
+    if ((c = alloc_chunk(fcb->Vcb, flags, rollback))) {
+        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback))
+                return STATUS_SUCCESS;
+        }
+    }
+    
+    // FIXME - rebalance chunks if free space elsewhere?
+    WARN("couldn't find any data chunks with %llx bytes free\n", length);
+
+    return STATUS_DISK_FULL;
+}
+
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -5418,7 +5455,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, data, changed_sector_list, rollback))
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback))
                 return STATUS_SUCCESS;
         }
 
@@ -5427,7 +5464,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     
     if ((c = alloc_chunk(Vcb, flags, rollback))) {
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, data, changed_sector_list, rollback))
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback))
                 return STATUS_SUCCESS;
         }
     }
@@ -5667,7 +5704,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
+NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) {
     UINT64 oldalloc, newalloc;
     KEY searchkey;
     traverse_ptr tp;
@@ -5793,12 +5830,24 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
                 newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
             
                 if (newalloc > oldalloc) {
-                    Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
+                    if (prealloc) {
+                        // FIXME - try and extend previous extent first
+                        
+                        Status = insert_prealloc_extent(fcb, oldalloc, newalloc - oldalloc, rollback);
                     
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_sparse_extent returned %08x\n", Status);
-                        free_traverse_ptr(&tp);
-                        return Status;
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("insert_prealloc_extent returned %08x\n", Status);
+                            free_traverse_ptr(&tp);
+                            return Status;
+                        }
+                    } else {
+                        Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("insert_sparse_extent returned %08x\n", Status);
+                            free_traverse_ptr(&tp);
+                            return Status;
+                        }
                     }
                 }
                 
@@ -5814,12 +5863,22 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
             if (end > fcb->Vcb->max_inline) {
                 newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
             
-                Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, 0, newalloc, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_sparse_extent returned %08x\n", Status);
-                    free_traverse_ptr(&tp);
-                    return Status;
+                if (prealloc) {
+                    Status = insert_prealloc_extent(fcb, 0, newalloc, rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_prealloc_extent returned %08x\n", Status);
+                        free_traverse_ptr(&tp);
+                        return Status;
+                    }
+                } else {
+                    Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, 0, newalloc, rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_sparse_extent returned %08x\n", Status);
+                        free_traverse_ptr(&tp);
+                        return Status;
+                    }
                 }
                 
                 fcb->inode_item.st_size = end;
@@ -6423,7 +6482,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (changed_length) {
         if (newlength > fcb->Header.AllocationSize.QuadPart) {
-            Status = extend_file(fcb, newlength, rollback);
+            Status = extend_file(fcb, newlength, FALSE, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("extend_file returned %08x\n", Status);
                 goto end;
