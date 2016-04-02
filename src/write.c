@@ -3794,8 +3794,6 @@ NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 si
         return STATUS_INTERNAL_ERROR;
     }
     
-    // FIXME - is ei->refcount definitely the number of items, or is it the sum of the subitem refcounts?
-
     hash = get_extent_data_ref_hash(subvol->id, inode, offset);
     
     len = tp.item->size - sizeof(EXTENT_ITEM);
@@ -4409,8 +4407,6 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
         return STATUS_INTERNAL_ERROR;
     }
     
-    // FIXME - is ei->refcount definitely the number of items, or is it the sum of the subitem refcounts?
-    
     if (extent_item_is_shared(ei, tp.item->size - sizeof(EXTENT_ITEM))) {
         NTSTATUS Status = convert_shared_data_extent(Vcb, address, size, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -4445,6 +4441,35 @@ NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64
             edr = (EXTENT_DATA_REF*)&siptr[1];
             
             if (edr->root == subvol->id && edr->objid == inode && edr->offset == offset) {
+                if (edr->count > 1) {
+                    ei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                    if (!ei) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(ei, tp.item->data, tp.item->size);
+                    
+                    edr = (EXTENT_DATA_REF*)((UINT8*)ei + ((UINT8*)edr - tp.item->data));
+                    edr->count--;
+                    ei->refcount--;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+        
+                    free_traverse_ptr(&tp);
+                    
+                    if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, tp.item->size, NULL, rollback)) {
+                        ERR("error - failed to insert item\n");
+                        ExFreePool(ei);
+                        free_traverse_ptr(&tp);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    return STATUS_SUCCESS;
+                }
+                
                 found = TRUE;
                 break;
             }
@@ -6082,6 +6107,155 @@ end:
     return Status;
 }
 
+static NTSTATUS merge_data_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+    BOOL b;
+    EXTENT_DATA* ed;
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.offset = start_data;
+    
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA) {
+        ERR("error - EXTENT_DATA not found\n");
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->key.offset > 0) {
+        traverse_ptr tp2, prev_tp;
+        
+        tp2 = tp;
+        do {
+            b = find_prev_item(Vcb, &tp2, &prev_tp, FALSE);
+            
+            if (b) {
+                if (!prev_tp.item->ignore)
+                    break;
+                
+                free_traverse_ptr(&tp2);
+                tp2 = prev_tp;
+            }
+        } while (b);
+        
+        if (b) {
+            if (prev_tp.item->key.obj_id == fcb->inode && prev_tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                free_traverse_ptr(&tp);
+                tp = prev_tp;
+            } else {
+                free_traverse_ptr(&prev_tp);
+            }
+        }
+    }
+    
+    ed = (EXTENT_DATA*)tp.item->data;
+    if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    do {
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        
+        if (b) {
+            EXTENT_DATA* ned;
+            
+            if (next_tp.item->key.obj_id != fcb->inode || next_tp.item->key.obj_type != TYPE_EXTENT_DATA) {
+                free_traverse_ptr(&tp);
+                free_traverse_ptr(&next_tp);
+                return STATUS_SUCCESS;
+            }
+            
+            if (next_tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", next_tp.item->key.obj_id, next_tp.item->key.obj_type, next_tp.item->key.offset, next_tp.item->size, sizeof(EXTENT_DATA));
+                free_traverse_ptr(&tp);
+                free_traverse_ptr(&next_tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            ned = (EXTENT_DATA*)next_tp.item->data;
+            if ((ned->type == EXTENT_TYPE_REGULAR || ned->type == EXTENT_TYPE_PREALLOC) && next_tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", next_tp.item->key.obj_id, next_tp.item->key.obj_type, next_tp.item->key.offset, next_tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                free_traverse_ptr(&tp);
+                free_traverse_ptr(&next_tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (ed->type == ned->type && (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)) {
+                EXTENT_DATA2 *ed2, *ned2;
+                
+                ed2 = (EXTENT_DATA2*)ed->data;
+                ned2 = (EXTENT_DATA2*)ned->data;
+                
+                if (next_tp.item->key.offset == tp.item->key.offset + ed2->num_bytes && ed2->address == ned2->address && ed2->size == ned2->size && ned2->offset == ed2->offset + ed2->num_bytes) {
+                    EXTENT_DATA* buf = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                    EXTENT_DATA2* buf2;
+                    traverse_ptr tp2;
+                    
+                    if (!buf) {
+                        ERR("out of memory\n");
+                        free_traverse_ptr(&tp);
+                        free_traverse_ptr(&next_tp);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(buf, tp.item->data, tp.item->size);
+                    buf->generation = Vcb->superblock.generation;
+                    
+                    buf2 = (EXTENT_DATA2*)buf->data;
+                    buf2->num_bytes += ned2->num_bytes;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    delete_tree_item(Vcb, &next_tp, rollback);
+                    
+                    if (!insert_tree_item(Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, buf, tp.item->size, &tp2, rollback)) {
+                        ERR("insert_tree_item failed\n");
+                        ExFreePool(buf);
+                        free_traverse_ptr(&tp);
+                        free_traverse_ptr(&next_tp);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - buf2->offset, NULL, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("remove_extent_ref returned %08x\n", Status);
+                        
+                        free_traverse_ptr(&tp);
+                        free_traverse_ptr(&next_tp);
+                        free_traverse_ptr(&tp2);
+                        
+                        return Status;
+                    }
+                        
+                    free_traverse_ptr(&tp);
+                    free_traverse_ptr(&next_tp);
+                    
+                    tp = tp2;
+                    
+                    continue;
+                }
+            }
+            
+            free_traverse_ptr(&tp);
+            tp = next_tp;
+            ed = ned;
+        }
+    } while (b);
+    
+    free_traverse_ptr(&tp);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
@@ -6367,15 +6541,15 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                 
         if (!NT_SUCCESS(Status)) {
             ERR("do_cow_write returned %08x\n", Status);
-            free_traverse_ptr(&tp);
-            if (b) free_traverse_ptr(&next_tp);
-            
             return Status;
         }
     }
     
-    // FIXME - update refcounts in extent tree
-    // FIXME - merge together adjacent EXTENT_DATA items when we can
+    Status = merge_data_extents(Vcb, fcb, start_data, end_data, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("merge_data_extents returned %08x\n", Status);
+        return Status;
+    }
     
     return STATUS_SUCCESS;
 }
