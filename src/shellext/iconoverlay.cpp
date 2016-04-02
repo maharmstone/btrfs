@@ -74,8 +74,6 @@ HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) 
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
     
-    // FIXME - return S_FALSE for volume root
-     
     h = CreateFileW(pwszPath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     
     if (h == INVALID_HANDLE_VALUE)

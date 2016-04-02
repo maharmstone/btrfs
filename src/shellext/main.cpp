@@ -212,7 +212,7 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
     }
     
-    if (!reg_context_menu_handler(CLSID_ShellBtrfs, L"Folder", ICON_OVERLAY_NAME)) {
+    if (!reg_context_menu_handler(CLSID_ShellBtrfs, L"Directory\\Background", ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
         return E_FAIL;
     }
@@ -221,7 +221,7 @@ STDAPI DllRegisterServer(void) {
 }
 
 STDAPI DllUnregisterServer(void) {
-    unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
+    unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
     unreg_icon_overlay(ICON_OVERLAY_NAME);
     
     if (!unregister_clsid(CLSID_ShellBtrfs))

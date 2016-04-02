@@ -1,4 +1,4 @@
-OBJS = main.o factory.o iconoverlay.o
+OBJS = main.o factory.o iconoverlay.o contextmenu.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
@@ -17,6 +17,9 @@ factory.o: factory.cpp factory.h iconoverlay.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 iconoverlay.o: iconoverlay.cpp iconoverlay.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+contextmenu.o: contextmenu.cpp contextmenu.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)
