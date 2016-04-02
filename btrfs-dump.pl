@@ -371,12 +371,12 @@ sub dump_item {
 				@b=unpack("QQQv",$s);
 				$s=substr($s,28);
 				printf("extent_data_ref root=%x objid=%x offset=%x count=%x ",@b);
-				$refcount+=$b[3]-1;
+				$refcount-=$b[3]-1;
 			} elsif ($irt == 0xb8) {
 				@b=unpack("Qv",$s);
 				$s=substr($s,12);
 				printf("shared_data_ref offset=%x count=%x ",@b);
-				$refcount+=$b[1]-1;
+				$refcount-=$b[1]-1;
 			} else {
 				printf("unknown %x (length %u)", $irt, length($s));
 			}
