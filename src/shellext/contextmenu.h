@@ -6,6 +6,7 @@ class BtrfsContextMenu : public IShellExtInit, IContextMenu {
 public:
     BtrfsContextMenu() {
         refcount = 0;
+        ignore = TRUE;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -42,4 +43,5 @@ public:
 
 private:
     LONG refcount;
+    BOOL ignore;
 };
