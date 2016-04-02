@@ -5,6 +5,7 @@
 #define IDI_ICON1                       101
 #define IDS_NEW_SUBVOL_HELP_TEXT        102
 #define IDS_NEW_SUBVOL                  103
+#define IDS_NEW_SUBVOL_FILENAME         104
 
 // Next default values for new objects
 // 

@@ -103,6 +103,7 @@ STRINGTABLE
 BEGIN
     IDS_NEW_SUBVOL_HELP_TEXT "Creates a new Btrfs subvolume."
     IDS_NEW_SUBVOL          "New subvolume"
+    IDS_NEW_SUBVOL_FILENAME "New subvolume"
 END
 
 #endif    // English (U.K.) resources

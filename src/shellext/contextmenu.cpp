@@ -144,7 +144,14 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        static WCHAR name[] = L"test"; // FIXME
+        WCHAR name[MAX_PATH];
+        
+        if (!LoadStringW(module, IDS_NEW_SUBVOL_FILENAME, name, MAX_PATH)) {
+            ShowError(pici->hwnd, GetLastError());
+            return E_FAIL;
+        }
+        
+        // FIXME - if already exists, append " (2)" etc.
         
         h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     
