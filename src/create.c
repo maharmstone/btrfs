@@ -1219,8 +1219,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         return Status;
     }
     
-    // FIXME - handle Irp->Overlay.AllocationSize
-    
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
@@ -1335,7 +1333,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_new_sd returned %08x\n", Status);
-        ExFreePool(utf8);
         return Status;
     }
 
@@ -1344,7 +1341,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     Status = set_xattr(Vcb, parfcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("set_xattr returned %08x\n", Status);
-        ExFreePool(utf8);
         return Status;
     }
     
@@ -1353,7 +1349,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.Length, ALLOC_TAG);
     if (!fcb->full_filename.Buffer) {
         ERR("out of memory\n");
-        ExFreePool(utf8);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -1367,8 +1362,16 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
-        ExFreePool(utf8);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+        Status = extend_file(fcb, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("extend_file returned %08x\n", Status);
+            return Status;
+        }
     }
     
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
