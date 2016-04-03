@@ -5046,6 +5046,9 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     
     fcb->inode_item.st_blocks += length;
     
+    if (prealloc)
+        fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
+    
     return TRUE;
 }
 
