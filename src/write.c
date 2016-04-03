@@ -65,6 +65,7 @@ typedef struct {
 static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
+static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -4592,7 +4593,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
-    BOOL b;
+    BOOL b, deleted_prealloc = FALSE;
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, changed_sector_list);
     
@@ -4785,6 +4786,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         fcb->inode_item.st_blocks -= len;
                     }
                     
+                    if (ed->type == EXTENT_TYPE_PREALLOC)
+                        deleted_prealloc = TRUE;
+                    
                     delete_tree_item(Vcb, &tp, rollback);
                 } else if (start_data <= tp.item->key.offset && end_data < tp.item->key.offset + len) { // remove beginning
                     EXTENT_DATA* ned;
@@ -4941,6 +4945,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     } while (b);
     
     // FIXME - do bitmap analysis of changed extents, and free what we can
+    
+    if (deleted_prealloc && !is_file_prealloc(fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size)))
+        fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
     
     Status = STATUS_SUCCESS;
     
@@ -6263,7 +6270,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
-    BOOL b;
+    BOOL b, deleted_prealloc = FALSE;
     UINT64 last_written = start_data;
     
     searchkey.obj_id = fcb->inode;
@@ -6347,6 +6354,8 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     
                     return Status;
                 }
+                
+                deleted_prealloc = TRUE;
                 
                 last_written = tp.item->key.offset + ed2->num_bytes;
             } else if (start_data <= tp.item->key.offset && end_data < tp.item->key.offset + ed2->num_bytes) { // replace beginning
@@ -6642,6 +6651,9 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
         ERR("merge_data_extents returned %08x\n", Status);
         return Status;
     }
+    
+    if (deleted_prealloc && !is_file_prealloc(fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size)))
+        fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
     
     return STATUS_SUCCESS;
 }
