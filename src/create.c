@@ -2104,7 +2104,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         
         if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
             ULONG defda;
-            LIST_ENTRY changed_sector_list;
             
             if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && fcb->atts & FILE_ATTRIBUTE_READONLY) {
                 WARN("cannot overwrite readonly file\n");
@@ -2120,7 +2119,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
 //                 free_fcb(fcb);
 //                 goto exit;
 //             }
-            InitializeListHead(&changed_sector_list);
             
             // FIXME - make sure not ADS!
             Status = truncate_file(fcb, fcb->inode_item.st_size, rollback);
@@ -2128,6 +2126,15 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
                 ERR("truncate_file returned %08x\n", Status);
                 free_fcb(fcb);
                 goto exit;
+            }
+            
+            if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+                Status = extend_file(fcb, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("extend_file returned %08x\n", Status);
+                    return Status;
+                }
             }
             
             Status = update_inode_item(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, rollback);
