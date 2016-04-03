@@ -6383,6 +6383,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     ERR("insert_tree_item failed\n");
                     free_traverse_ptr(&tp);
                     if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(ned);
                     ExFreePool(nedb);
                     
                     return STATUS_INTERNAL_ERROR;
@@ -6422,106 +6423,194 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                 
                 last_written = end_data;
             } else if (start_data > tp.item->key.offset && end_data >= tp.item->key.offset + ed2->num_bytes) { // replace end
-//                 EXTENT_DATA* ned;
-//                 EXTENT_DATA2* ned2;
+                EXTENT_DATA *ned, *nedb;
+                EXTENT_DATA2* ned2;
                 
-                FIXME("replace end\n");
-//                 
-//                 if (ed2->address != 0)
-//                     fcb->inode_item.st_blocks -= tp.item->key.offset + len - start_data;
-//                 
-//                 delete_tree_item(Vcb, &tp, rollback);
-//                 
-//                 ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
-//                 if (!ned) {
-//                     ERR("out of memory\n");
-//                     Status = STATUS_INSUFFICIENT_RESOURCES;
-//                     goto end;
-//                 }
-//                 
-//                 ned2 = (EXTENT_DATA2*)&ned->data[0];
-//                 
-//                 ned->generation = Vcb->superblock.generation;
-//                 ned->decoded_size = ed->decoded_size;
-//                 ned->compression = ed->compression;
-//                 ned->encryption = ed->encryption;
-//                 ned->encoding = ed->encoding;
-//                 ned->type = ed->type;
-//                 ned2->address = ed2->address;
-//                 ned2->size = ed2->size;
-//                 ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
-//                 ned2->num_bytes = start_data - tp.item->key.offset;
-//                 
-//                 if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
-//                     ERR("insert_tree_item failed\n");
-//                     ExFreePool(ned);
-//                     Status = STATUS_INTERNAL_ERROR;
-//                     goto end;
-//                 }
+                // FIXME - test this
+                
+                ned = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!ned) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                nedb = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!nedb) {
+                    ERR("out of memory\n");
+                    ExFreePool(ned);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                delete_tree_item(Vcb, &tp, rollback);
+                
+                RtlCopyMemory(ned, tp.item->data, tp.item->size);
+                
+                ned2 = (EXTENT_DATA2*)ned->data;
+                ned2->num_bytes = start_data - tp.item->key.offset;
+                
+                if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, tp.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(ned);
+                    ExFreePool(nedb);
+                    
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                RtlCopyMemory(nedb, tp.item->data, tp.item->size);
+                
+                nedb->type = EXTENT_TYPE_REGULAR;
+                ned2 = (EXTENT_DATA2*)nedb->data;
+                ned2->offset += start_data - tp.item->key.offset;
+                ned2->num_bytes = tp.item->key.offset + ed2->num_bytes - start_data;
+                
+                if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start_data, nedb, tp.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(nedb);
+                    
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                Status = do_write_data(Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write_data returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return Status;
+                }
+                
+                Status = add_extent_ref(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_extent_ref returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return Status;
+                }
+                
+                last_written = start_data + ned2->num_bytes;
             } else if (start_data > tp.item->key.offset && end_data < tp.item->key.offset + ed2->num_bytes) { // replace middle
-//                 EXTENT_DATA* ned;
-//                 EXTENT_DATA2* ned2;
+                EXTENT_DATA *ned, *nedb, *nedc;
+                EXTENT_DATA2* ned2;
+                UINT8 i;
                 
-                FIXME("replace middle\n");
-//                 
-//                 if (ed2->address != 0)
-//                     fcb->inode_item.st_blocks -= end_data - start_data;
-//                 
-//                 delete_tree_item(Vcb, &tp, rollback);
-//                 
-//                 ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
-//                 if (!ned) {
-//                     ERR("out of memory\n");
-//                     Status = STATUS_INSUFFICIENT_RESOURCES;
-//                     goto end;
-//                 }
-//                 
-//                 ned2 = (EXTENT_DATA2*)&ned->data[0];
-//                 
-//                 ned->generation = Vcb->superblock.generation;
-//                 ned->decoded_size = ed->decoded_size;
-//                 ned->compression = ed->compression;
-//                 ned->encryption = ed->encryption;
-//                 ned->encoding = ed->encoding;
-//                 ned->type = ed->type;
-//                 ned2->address = ed2->address;
-//                 ned2->size = ed2->size;
-//                 ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
-//                 ned2->num_bytes = start_data - tp.item->key.offset;
-//                 
-//                 if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
-//                     ERR("insert_tree_item failed\n");
-//                     ExFreePool(ned);
-//                     Status = STATUS_INTERNAL_ERROR;
-//                     goto end;
-//                 }
-//                 
-//                 ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
-//                 if (!ned) {
-//                     ERR("out of memory\n");
-//                     Status = STATUS_INSUFFICIENT_RESOURCES;
-//                     goto end;
-//                 }
-//                 
-//                 ned2 = (EXTENT_DATA2*)&ned->data[0];
-//                 
-//                 ned->generation = Vcb->superblock.generation;
-//                 ned->decoded_size = ed->decoded_size;
-//                 ned->compression = ed->compression;
-//                 ned->encryption = ed->encryption;
-//                 ned->encoding = ed->encoding;
-//                 ned->type = ed->type;
-//                 ned2->address = ed2->address;
-//                 ned2->size = ed2->size;
-//                 ned2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - tp.item->key.offset));
-//                 ned2->num_bytes = tp.item->key.offset + len - end_data;
-//                 
-//                 if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
-//                     ERR("insert_tree_item failed\n");
-//                     ExFreePool(ned);
-//                     Status = STATUS_INTERNAL_ERROR;
-//                     goto end;
-//                 }
+                // FIXME - test this
+                
+                ned = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!ned) {
+                    ERR("out of memory\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                nedb = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!nedb) {
+                    ERR("out of memory\n");
+                    ExFreePool(ned);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                nedc = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!nedb) {
+                    ERR("out of memory\n");
+                    ExFreePool(nedb);
+                    ExFreePool(ned);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                delete_tree_item(Vcb, &tp, rollback);
+                
+                RtlCopyMemory(ned, tp.item->data, tp.item->size);
+                RtlCopyMemory(nedb, tp.item->data, tp.item->size);
+                RtlCopyMemory(nedc, tp.item->data, tp.item->size);
+                
+                ned2 = (EXTENT_DATA2*)ned->data;
+                ned2->num_bytes = start_data - tp.item->key.offset;
+                
+                if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, tp.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(ned);
+                    ExFreePool(nedb);
+                    ExFreePool(nedc);
+                    
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                nedb->type = EXTENT_TYPE_REGULAR;
+                ned2 = (EXTENT_DATA2*)nedb->data;
+                ned2->offset += start_data - tp.item->key.offset;
+                ned2->num_bytes = end_data - start_data;
+                
+                if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start_data, nedb, tp.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(nedb);
+                    ExFreePool(nedc);
+                    
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                ned2 = (EXTENT_DATA2*)nedc->data;
+                ned2->offset += end_data - tp.item->key.offset;
+                ned2->num_bytes -= end_data - tp.item->key.offset;
+                
+                if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, nedc, tp.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    ExFreePool(nedc);
+                    
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                ned2 = (EXTENT_DATA2*)nedb->data;
+                Status = do_write_data(Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write_data returned %08x\n", Status);
+                    free_traverse_ptr(&tp);
+                    if (b) free_traverse_ptr(&next_tp);
+                    
+                    return Status;
+                }
+                
+                for (i = 0; i < 2; i++) {
+                    Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_extent_ref returned %08x\n", Status);
+                        free_traverse_ptr(&tp);
+                        if (b) free_traverse_ptr(&next_tp);
+                        
+                        return Status;
+                    }
+                }
+                
+                last_written = end_data;
             }
         }
         
