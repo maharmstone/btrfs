@@ -240,7 +240,41 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         
         Status = STATUS_SUCCESS;
     } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-        Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, buffer, 0, buflen, retlen);
+        if (fcb->type == BTRFS_TYPE_FILE) {
+            Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, buffer, 0, buflen, retlen);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_file returned %08x\n", Status);
+            }
+        } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+            UINT8* data;
+            UINT16 datalen;
+            
+            if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen)) {
+                Status = STATUS_NOT_A_REPARSE_POINT;
+                goto end;
+            }
+            
+            if (!data) {
+                Status = STATUS_NOT_A_REPARSE_POINT;
+                goto end;
+            }
+            
+            if (datalen < sizeof(ULONG)) {
+                ExFreePool(data);
+                Status = STATUS_NOT_A_REPARSE_POINT;
+                goto end;
+            }
+            
+            if (buflen > 0) {
+                *retlen = min(buflen, datalen);
+                RtlCopyMemory(buffer, data, *retlen);
+            } else
+                *retlen = 0;
+            
+            ExFreePool(data);
+        } else
+            Status = STATUS_NOT_A_REPARSE_POINT;
     } else {
         Status = STATUS_NOT_A_REPARSE_POINT;
     }
