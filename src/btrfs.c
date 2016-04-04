@@ -440,6 +440,8 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
     
     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
     
+    // FIXME - make sure xasize not too big
+    
     if (!keycmp(&tp.item->key, &searchkey)) { // key exists
         UINT8* newdata;
         ULONG size = tp.item->size;

@@ -579,7 +579,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto end;
     }
     
-    // FIXME - die if not file
+    // FIXME - die if not file or directory
     // FIXME - die if ADS
     
     if (buflen < sizeof(ULONG)) {
@@ -590,28 +590,34 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     RtlCopyMemory(&tag, buffer, sizeof(ULONG));
     
-    if (tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) {
+    if (fcb->type == BTRFS_TYPE_FILE && tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) {
         Status = set_symlink(Irp, fcb, rdb, buflen, &rollback);
     } else {
         LARGE_INTEGER offset;
         char val[64];
         
-        // FIXME - for directory junctions, store data as xattr instead
-        
-        Status = truncate_file(fcb, 0, &rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("truncate_file returned %08x\n", Status);
-            goto end;
+        if (fcb->type == BTRFS_TYPE_DIRECTORY) { // for directories, store as xattr
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, buffer, buflen, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else { // otherwise, store as file data
+            Status = truncate_file(fcb, 0, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("truncate_file returned %08x\n", Status);
+                goto end;
+            }
+            
+            offset.QuadPart = 0;
+            
+            Status = write_file2(fcb->Vcb, Irp, offset, buffer, &buflen, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_file2 returned %08x\n", Status);
+                goto end;
+            }
         }
-        
-        offset.QuadPart = 0;
-        
-        Status = write_file2(fcb->Vcb, Irp, offset, buffer, &buflen, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE, &rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("write_file2 returned %08x\n", Status);
-            goto end;
-        }
-        
+            
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
         
         sprintf(val, "0x%lx", fcb->atts);
