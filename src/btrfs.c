@@ -2367,6 +2367,8 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     char* eaval;
     UINT16 ealen;
     
+    // ii can be NULL
+    
     if (!ignore_xa && get_xattr(Vcb, r, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8**)&eaval, &ealen)) {
         if (ealen > 2) {
             if (eaval[0] == '0' && eaval[1] == 'x') {

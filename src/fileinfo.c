@@ -2614,6 +2614,7 @@ static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMAT
 static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, LONG* length) {
     *length -= sizeof(FILE_EA_INFORMATION);
     
+    // FIXME - should this be the reparse tag for symlinks?
     eai->EaSize = 0;
     
     return STATUS_SUCCESS;

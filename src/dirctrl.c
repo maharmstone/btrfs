@@ -31,6 +31,38 @@ typedef struct {
     enum DirEntryType dir_entry_type;
 } dir_entry;
 
+static ULONG STDCALL get_reparse_tag(device_extension* Vcb, dir_entry* de, root* subvol, UINT64 inode) {
+    ULONG att, tag, br;
+    NTSTATUS Status;
+    
+    // FIXME - will this slow things down?
+    
+    if (de->type == BTRFS_TYPE_SYMLINK)
+        return IO_REPARSE_TAG_SYMLINK;
+    
+    if (de->type != BTRFS_TYPE_FILE)
+        return 0;
+    
+    att = get_file_attributes(Vcb, NULL, subvol, inode, de->type, FALSE, FALSE);
+    
+    if (!(att & FILE_ATTRIBUTE_REPARSE_POINT))
+        return 0;
+    
+    // FIXME - see if file loaded and cached, and do CcCopyRead if it is
+
+    Status = read_file(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), &br);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("read_file returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (br < sizeof(ULONG))
+        return 0;
+    
+    return tag;
+}
+
 static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     UINT32 needed;
@@ -174,7 +206,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
             fbdi->FileNameLength = stringlen;
-            fbdi->EaSize = de->type == BTRFS_TYPE_SYMLINK ? IO_REPARSE_TAG_SYMLINK : 0;
+            fbdi->EaSize = get_reparse_tag(fcb->Vcb, de, r, inode);
             fbdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             
@@ -249,7 +281,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
             ffdi->FileNameLength = stringlen;
-            ffdi->EaSize = de->type == BTRFS_TYPE_SYMLINK ? IO_REPARSE_TAG_SYMLINK : 0;
+            ffdi->EaSize = get_reparse_tag(fcb->Vcb, de, r, inode);
             
             Status = RtlUTF8ToUnicodeN(ffdi->FileName, stringlen, &stringlen, de->name, de->namelen);
 
@@ -289,7 +321,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
             fibdi->FileNameLength = stringlen;
-            fibdi->EaSize = de->type == BTRFS_TYPE_SYMLINK ? IO_REPARSE_TAG_SYMLINK : 0;
+            fibdi->EaSize = get_reparse_tag(fcb->Vcb, de, r, inode);
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             fibdi->FileId.QuadPart = inode;
