@@ -40,7 +40,7 @@ static ULONG STDCALL get_reparse_tag(device_extension* Vcb, dir_entry* de, root*
     if (de->type == BTRFS_TYPE_SYMLINK)
         return IO_REPARSE_TAG_SYMLINK;
     
-    if (de->type != BTRFS_TYPE_FILE)
+    if (de->type != BTRFS_TYPE_FILE && de->type != BTRFS_TYPE_DIRECTORY)
         return 0;
     
     att = get_file_attributes(Vcb, NULL, subvol, inode, de->type, FALSE, FALSE);
@@ -48,17 +48,37 @@ static ULONG STDCALL get_reparse_tag(device_extension* Vcb, dir_entry* de, root*
     if (!(att & FILE_ATTRIBUTE_REPARSE_POINT))
         return 0;
     
-    // FIXME - see if file loaded and cached, and do CcCopyRead if it is
+    if (de->type == BTRFS_TYPE_DIRECTORY) {
+        UINT8* data;
+        UINT16 datalen;
+        
+        if (!get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen))
+            return 0;
+        
+        if (!data)
+            return 0;
+        
+        if (datalen < sizeof(ULONG)) {
+            ExFreePool(data);
+            return 0;
+        }
+        
+        RtlCopyMemory(&tag, data, sizeof(ULONG));
+        
+        ExFreePool(data);
+    } else {
+        // FIXME - see if file loaded and cached, and do CcCopyRead if it is
 
-    Status = read_file(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), &br);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("read_file returned %08x\n", Status);
-        return 0;
+        Status = read_file(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), &br);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            return 0;
+        }
+        
+        if (br < sizeof(ULONG))
+            return 0;
     }
-    
-    if (br < sizeof(ULONG))
-        return 0;
     
     return tag;
 }
