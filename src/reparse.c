@@ -172,77 +172,78 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     
     acquire_tree_lock(fcb->Vcb, FALSE);
     
-    if (fcb->type != BTRFS_TYPE_SYMLINK) {
-        Status = STATUS_NOT_A_REPARSE_POINT;
-        goto end;
-    }
-    
-    data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
-    if (!data) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
-    Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("read_file returned %08x\n", Status);
-        ExFreePool(data);
-        goto end;
-    }
-    
-    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, fcb->inode_item.st_size);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-        ExFreePool(data);
-        goto end;
-    }
-    
-    subnamelen = stringlen;
-    printnamelen = stringlen;
-    
-    reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
-    
-    if (buflen < reqlen) {
-        Status = STATUS_BUFFER_OVERFLOW;
-        goto end;
-    }
-    
-    rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-    rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
-    rdb->Reserved = 0;
-    
-    rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
-    rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
-    rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
-    rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
-    rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
-    
-    Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                               stringlen, &stringlen, data, fcb->inode_item.st_size);
+    if (fcb->type == BTRFS_TYPE_SYMLINK) {
+        data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+        if (!data) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
+        Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            ExFreePool(data);
+            goto end;
+        }
+        
+        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, fcb->inode_item.st_size);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+            ExFreePool(data);
+            goto end;
+        }
+        
+        subnamelen = stringlen;
+        printnamelen = stringlen;
+        
+        reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
+        
+        if (buflen < reqlen) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        }
+        
+        rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+        rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+        rdb->Reserved = 0;
+        
+        rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
+        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
+        rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
+        rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
+        rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
+        
+        Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                                stringlen, &stringlen, data, fcb->inode_item.st_size);
 
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+            ExFreePool(data);
+            goto end;
+        }
+        
+        for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
+            if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
+                rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
+        }
+        
+        RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
+                    &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                    rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
+        
+        *retlen = reqlen;
+        
         ExFreePool(data);
-        goto end;
+        
+        Status = STATUS_SUCCESS;
+    } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+        Status = read_file(DeviceObject->DeviceExtension, fcb->subvol, fcb->inode, buffer, 0, buflen, retlen);
+    } else {
+        Status = STATUS_NOT_A_REPARSE_POINT;
     }
-      
-    for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
-        if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
-            rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
-    }
-    
-    RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
-                  &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                  rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
-    
-    *retlen = reqlen;
-    
-    ExFreePool(data);
-    
-    Status = STATUS_SUCCESS;
     
 end:
     release_tree_lock(fcb->Vcb, FALSE);
