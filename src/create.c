@@ -1899,11 +1899,12 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
     }
 }
 
-static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, LIST_ENTRY* rollback) {
+NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     INODE_ITEM* newii;
     NTSTATUS Status;
+    UINT64 offset = 0;
     
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_INODE_ITEM;
@@ -1917,6 +1918,8 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
     
     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
         delete_tree_item(Vcb, &tp, rollback);
+        
+        offset = tp.item->key.offset;
     } else {
         WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
     }
@@ -1931,7 +1934,7 @@ static NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 in
 
     RtlCopyMemory(newii, ii, sizeof(INODE_ITEM));
     
-    insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, 0, newii, sizeof(INODE_ITEM), NULL, rollback);
+    insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, offset, newii, sizeof(INODE_ITEM), NULL, rollback);
     
     return STATUS_SUCCESS;
 }

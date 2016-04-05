@@ -26,6 +26,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     char* data;
     NTSTATUS Status;
     
+    // FIXME - check permissions
+    
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
     
     acquire_tree_lock(fcb->Vcb, FALSE);
@@ -429,6 +431,164 @@ static NTSTATUS set_symlink(PIRP Irp, fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG 
     return Status;
 }
 
+static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    BOOL b;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_INODE_REF;
+    searchkey.offset = 0;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    do {
+        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_REF) {
+            if (tp.item->size < sizeof(INODE_REF)) {
+                WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+            } else {
+                INODE_REF* ir;
+                ULONG size = tp.item->size;
+                ANSI_STRING utf8;
+                
+                ir = (INODE_REF*)tp.item->data;
+                
+                do {
+                    if (size < sizeof(INODE_REF) || size < sizeof(INODE_REF) - 1 + ir->n) {
+                        WARN("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        break;
+                    }
+                    
+                    utf8.Buffer = ir->name;
+                    utf8.Length = utf8.MaximumLength = ir->n;
+                    
+                    Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, tp.item->key.offset, ir->index, &utf8, BTRFS_TYPE_FILE, rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("error - change_file_type returned %08x\n", Status);
+                        free_traverse_ptr(&tp);
+                        return Status;
+                    }
+                    
+                    if (size > sizeof(INODE_REF) - 1 + ir->n) {
+                        size -= sizeof(INODE_REF) - 1 + ir->n;
+                        
+                        ir = (INODE_REF*)&ir->name[ir->n];
+                    } else
+                        break;
+                } while (TRUE);
+            }
+        }
+        
+        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+        if (b) {
+            free_traverse_ptr(&tp);
+            tp = next_tp;
+            
+            b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_REF;
+        }
+    } while (b);
+    
+    free_traverse_ptr(&tp);
+    
+    if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+        searchkey.obj_id = fcb->inode;
+        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.offset = 0;
+        
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        do {
+            if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                if (tp.item->size < sizeof(INODE_EXTREF)) {
+                    WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_EXTREF));
+                } else {
+                    INODE_EXTREF* ier;
+                    ULONG size = tp.item->size;
+                    ANSI_STRING utf8;
+                    
+                    ier = (INODE_EXTREF*)tp.item->data;
+                    
+                    do {
+                        if (size < sizeof(INODE_EXTREF) || size < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                            WARN("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                            break;
+                        }
+                        
+                        utf8.Buffer = ier->name;
+                        utf8.Length = utf8.MaximumLength = ier->n;
+                        
+                        Status = change_file_type(fcb->Vcb, fcb->inode, fcb->subvol, ier->dir, ier->index, &utf8, BTRFS_TYPE_FILE, rollback);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("error - change_file_type returned %08x\n", Status);
+                            free_traverse_ptr(&tp);
+                            return Status;
+                        }
+                        
+                        if (size > sizeof(INODE_EXTREF) - 1 + ier->n) {
+                            size -= sizeof(INODE_EXTREF) - 1 + ier->n;
+                            
+                            ier = (INODE_EXTREF*)&ier->name[ier->n];
+                        } else
+                            break;
+                    } while (TRUE);
+                }
+            }
+            
+            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+            if (b) {
+                free_traverse_ptr(&tp);
+                tp = next_tp;
+                
+                b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_EXTREF;
+            }
+        } while (b);
+        
+        free_traverse_ptr(&tp);
+    }   
+    
+    Status = truncate_file(fcb, 0, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("truncate_file returned %08x\n", Status);
+        return Status;
+    }
+    
+    KeQuerySystemTime(&time);
+    
+    win_time_to_unix(time, &now);
+    
+    fcb->type = BTRFS_TYPE_FILE;
+    fcb->inode_item.st_mode &= ~__S_IFLNK;
+    fcb->inode_item.st_mode |= __S_IFREG;
+    fcb->inode_item.transid = fcb->Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
+    fcb->inode_item.st_ctime = now;
+    fcb->inode_item.st_mtime = now;
+
+    Status = update_inode_item(fcb->Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_inode_item returned %08x\n", Status);
+        return Status;
+    }
+
+    fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
+    fcb->subvol->root_item.ctime = now;
+    
+    return Status;
+}
+
 NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
@@ -441,6 +601,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     LIST_ENTRY rollback;
     
     // FIXME - send notification if this succeeds? The attributes will have changed.
+    // FIXME - check permissions
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
@@ -520,6 +681,84 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto end;
         }
     }
+    
+    if (NT_SUCCESS(Status))
+        Status = consider_write(fcb->Vcb);
+    
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(fcb->Vcb, &rollback);
+
+    release_tree_lock(fcb->Vcb, TRUE);
+    
+    return Status;
+}
+
+NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    REPARSE_DATA_BUFFER* rdb = Irp->AssociatedIrp.SystemBuffer;
+    DWORD buflen = IrpSp->Parameters.DeviceIoControl.InputBufferLength;
+    NTSTATUS Status;
+    fcb* fcb;
+    LIST_ENTRY rollback;
+    
+    // FIXME - send notification if this succeeds? The attributes will have changed.
+    // FIXME - check permissions
+    
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
+    
+    InitializeListHead(&rollback);
+    
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    fcb = FileObject->FsContext;
+    
+    TRACE("filename: %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    
+    if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer)) {
+        ERR("buffer was too short\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (rdb->ReparseDataLength > 0) {
+        WARN("rdb->ReparseDataLength was not zero\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    acquire_tree_lock(fcb->Vcb, TRUE);
+    
+    if (fcb->ads) {
+        WARN("tried to delete reparse point on ADS\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (fcb->type == BTRFS_TYPE_SYMLINK) {
+        if (rdb->ReparseTag != IO_REPARSE_TAG_SYMLINK) {
+            WARN("reparse tag was not IO_REPARSE_TAG_SYMLINK\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+        
+        Status = delete_symlink(fcb, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_symlink returned %08x\n", Status);
+            goto end;
+        }
+    } else {
+        FIXME("stub\n"); // FIXME
+    }
+    
+    // FIXME - files
+    // FIXME - directories
+    
+    Status = STATUS_SUCCESS;
     
     if (NT_SUCCESS(Status))
         Status = consider_write(fcb->Vcb);

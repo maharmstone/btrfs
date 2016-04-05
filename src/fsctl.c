@@ -685,8 +685,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_DELETE_REPARSE_POINT:
-            WARN("STUB: FSCTL_DELETE_REPARSE_POINT\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = delete_reparse_point(DeviceObject, Irp);
             break;
 
         case FSCTL_ENUM_USN_DATA:
