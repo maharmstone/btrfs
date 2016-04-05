@@ -2072,10 +2072,8 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
              * a pointer to the reparse data buffer in Irp->Tail.Overlay.AuxiliaryBuffer,
              * IopSymlinkProcessReparse will do the translation for us. */
             
-            // FIXME - symlink
-            
-            if (fcb->type == BTRFS_TYPE_FILE) {
-                ULONG size, bytes_read;
+            if (fcb->type == BTRFS_TYPE_FILE || fcb->type == BTRFS_TYPE_SYMLINK) {
+                ULONG size, bytes_read, i;
                 
                 if (fcb->inode_item.st_size < sizeof(ULONG)) {
                     WARN("file was too short to be a reparse point\n");
@@ -2100,11 +2098,70 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
                     goto exit;
                 }
                 
-                Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)data);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                if (fcb->type == BTRFS_TYPE_SYMLINK) {
+                    ULONG stringlen, subnamelen, printnamelen, reqlen;
+                    REPARSE_DATA_BUFFER* rdb;
+                    
+                    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, (char*)data, bytes_read);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                        ExFreePool(data);
+                        goto exit;
+                    }
+                    
+                    subnamelen = stringlen;
+                    printnamelen = stringlen;
+                    
+                    reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
+                    
+                    rdb = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+                    
+                    if (!rdb) {
+                        ERR("out of memory\n");
+                        ExFreePool(data);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+                    rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+                    rdb->Reserved = 0;
+                    
+                    rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
+                    rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
+                    rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
+                    rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
+                    rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
+                    
+                    Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                                            stringlen, &stringlen, (char*)data, size);
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ExFreePool(rdb);
+                        ExFreePool(data);
+                        goto exit;
+                    }
+                    
+                    for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
+                        if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
+                            rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
+                    }
+                    
+                    RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
+                                &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                                rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
+                    
                     ExFreePool(data);
-                    goto exit;
+                    
+                    data = (UINT8*)rdb;
+                } else {
+                    Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)data);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                        ExFreePool(data);
+                        goto exit;
+                    }
                 }
             } else {
                 UINT16 datalen;
