@@ -475,6 +475,7 @@ NTSTATUS consider_write(device_extension* Vcb);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type);
 
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -493,7 +494,6 @@ NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvo
 NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback);
 
 // in reparse.c
-BOOL follow_symlink(fcb* fcb, PFILE_OBJECT FileObject);
 NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen);
 NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 

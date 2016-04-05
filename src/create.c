@@ -2061,16 +2061,84 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             sf = sf->par;
         }
         
-        if (fcb->type == BTRFS_TYPE_SYMLINK && !(options & FILE_OPEN_REPARSE_POINT))  {
-            if (!follow_symlink(fcb, FileObject)) {
-                ERR("follow_symlink failed\n");
-                Status = STATUS_INTERNAL_ERROR;
-                free_fcb(fcb);
-                goto exit;
+        if ((fcb->type == BTRFS_TYPE_SYMLINK || fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
+            ULONG tag;
+            UINT8* data;
+            
+            /* How reparse points work from the point of view of the filesystem appears to
+             * undocumented. When returning STATUS_REPARSE, MSDN encourages us to return
+             * IO_REPARSE in Irp->IoStatus.Information, but that means we have to do our own
+             * translation. If we instead return the reparse tag in Information, and store
+             * a pointer to the reparse data buffer in Irp->Tail.Overlay.AuxiliaryBuffer,
+             * IopSymlinkProcessReparse will do the translation for us. */
+            
+            // FIXME - symlink
+            
+            if (fcb->type == BTRFS_TYPE_FILE) {
+                ULONG size, bytes_read;
+                
+                if (fcb->inode_item.st_size < sizeof(ULONG)) {
+                    WARN("file was too short to be a reparse point\n");
+                    Status = STATUS_INVALID_PARAMETER;
+                    goto exit;
+                }
+                
+                // 0x10007 = 0xffff (maximum length of data buffer) + 8 bytes header
+                size = min(0x10007, fcb->inode_item.st_size);
+                
+                data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+                if (!data) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
+                
+                Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, 0, size, &bytes_read);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_file returned %08x\n", Status);
+                    ExFreePool(data);
+                    goto exit;
+                }
+                
+                Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)data);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                    ExFreePool(data);
+                    goto exit;
+                }
+            } else {
+                UINT16 datalen;
+                
+                if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen)) {
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit;
+                }
+                
+                if (!data) {
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit;
+                }
+                
+                if (datalen < sizeof(ULONG)) {
+                    WARN("xattr was too short to be a reparse point\n");
+                    ExFreePool(data);
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit;
+                }
+                
+                Status = FsRtlValidateReparsePointBuffer(datalen, (REPARSE_DATA_BUFFER*)data);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                    ExFreePool(data);
+                    goto exit;
+                }
             }
             
             Status = STATUS_REPARSE;
-            Irp->IoStatus.Information = IO_REPARSE;
+            RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
+            
+            Irp->Tail.Overlay.AuxiliaryBuffer = data;
+            
             free_fcb(fcb);
             goto exit;
         }
