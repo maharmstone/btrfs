@@ -756,6 +756,8 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         BTRFS_TIME now;
         ULONG defda;
         
+        // FIXME - do we need to check that the reparse tags match?
+        
         Status = truncate_file(fcb, 0, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("truncate_file returned %08x\n", Status);
@@ -783,9 +785,6 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         win_time_to_unix(time, &now);
         
-        fcb->type = BTRFS_TYPE_FILE;
-        fcb->inode_item.st_mode &= ~__S_IFLNK;
-        fcb->inode_item.st_mode |= __S_IFREG;
         fcb->inode_item.transid = fcb->Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         fcb->inode_item.st_ctime = now;
@@ -800,7 +799,49 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
     } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        FIXME("stub\n"); // FIXME
+        LARGE_INTEGER time;
+        BTRFS_TIME now;
+        ULONG defda;
+        
+        // FIXME - do we need to check that the reparse tags match?
+        
+        fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
+        
+        defda = get_file_attributes(fcb->Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fcb->filepart.Length > 0 && fcb->filepart.Buffer[0] == '.', TRUE);
+        defda |= FILE_ATTRIBUTE_DIRECTORY;
+        
+        if (defda != fcb->atts) {
+            char val[64];
+            
+            sprintf(val, "0x%lx", fcb->atts);
+        
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, &rollback);
+        
+        delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, &rollback);
+        
+        KeQuerySystemTime(&time);
+        
+        win_time_to_unix(time, &now);
+        
+        fcb->inode_item.transid = fcb->Vcb->superblock.generation;
+        fcb->inode_item.sequence++;
+        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.st_mtime = now;
+
+        Status = update_inode_item(fcb->Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_inode_item returned %08x\n", Status);
+            goto end;
+        }
+
+        fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
+        fcb->subvol->root_item.ctime = now;
     } else {
         ERR("unsupported file type %u\n", fcb->type);
         Status = STATUS_INVALID_PARAMETER;
