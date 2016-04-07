@@ -2392,6 +2392,11 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
 
                 ExFreePool(eaval);
                 
+                if (type == BTRFS_TYPE_DIRECTORY)
+                    dosnum |= FILE_ATTRIBUTE_DIRECTORY;
+                else if (type == BTRFS_TYPE_SYMLINK)
+                    dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
+                
                 return dosnum;
             }
         }
