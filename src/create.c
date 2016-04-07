@@ -731,7 +731,7 @@ static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
 // }
 // #endif
 
-NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* relatedfcb, BOOL parent) {
+NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* relatedfcb, BOOL parent, USHORT* unparsed) {
     fcb *dir, *sf, *sf2;
     ULONG i, num_parts;
     UNICODE_STRING fnus2;
@@ -818,6 +818,16 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
     
     for (i = 0; i < num_parts; i++) {
         BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
+        
+        if (sf->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+            Status = STATUS_REPARSE;
+            *pfcb = sf;
+            
+            if (unparsed)
+                *unparsed = fnus->Length - ((parts[i].Buffer - fnus->Buffer - 1) * sizeof(WCHAR));
+            
+            goto end2;
+        }
         
         sf2 = search_fcb_children(sf, &parts[i]);
         
@@ -1414,7 +1424,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     // FIXME - apparently you can open streams using RelatedFileObject. How can we test this?
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = get_fcb(Vcb, &parfcb, fnus, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, TRUE);
+    Status = get_fcb(Vcb, &parfcb, fnus, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, TRUE, NULL);
     ExReleaseResourceLite(&Vcb->fcb_lock);
     if (!NT_SUCCESS(Status))
         goto end;
@@ -1496,7 +1506,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = get_fcb(Vcb, &newpar, &fpus, parfcb, FALSE);
+        Status = get_fcb(Vcb, &newpar, &fpus, parfcb, FALSE, NULL);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
@@ -1939,6 +1949,123 @@ NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, IN
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
+    NTSTATUS Status;
+    
+    if (fcb->type == BTRFS_TYPE_FILE || fcb->type == BTRFS_TYPE_SYMLINK) {
+        ULONG size, bytes_read, i;
+        
+        if (fcb->inode_item.st_size < sizeof(ULONG)) {
+            WARN("file was too short to be a reparse point\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        // 0x10007 = 0xffff (maximum length of data buffer) + 8 bytes header
+        size = min(0x10007, fcb->inode_item.st_size);
+        
+        *data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+        if (!*data) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, *data, 0, size, &bytes_read);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            ExFreePool(*data);
+            return Status;
+        }
+        
+        if (fcb->type == BTRFS_TYPE_SYMLINK) {
+            ULONG stringlen, subnamelen, printnamelen, reqlen;
+            REPARSE_DATA_BUFFER* rdb;
+            
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, (char*)*data, bytes_read);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                ExFreePool(*data);
+                return Status;
+            }
+            
+            subnamelen = stringlen;
+            printnamelen = stringlen;
+            
+            reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
+            
+            rdb = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+            
+            if (!rdb) {
+                ERR("out of memory\n");
+                ExFreePool(*data);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+            rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+            rdb->Reserved = 0;
+            
+            rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
+            rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
+            rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
+            rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
+            rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
+            
+            Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                                    stringlen, &stringlen, (char*)*data, size);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                ExFreePool(rdb);
+                ExFreePool(*data);
+                return Status;
+            }
+            
+            for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
+                if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
+                    rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
+            }
+            
+            RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
+                        &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
+            
+            ExFreePool(*data);
+            
+            *data = (UINT8*)rdb;
+        } else {
+            Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)*data);
+            if (!NT_SUCCESS(Status)) {
+                ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                ExFreePool(*data);
+                return Status;
+            }
+        }
+    } else {
+        UINT16 datalen;
+        
+        if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, data, &datalen))
+            return STATUS_INTERNAL_ERROR;
+        
+        if (!*data)
+            return STATUS_INTERNAL_ERROR;
+        
+        if (datalen < sizeof(ULONG)) {
+            WARN("xattr was too short to be a reparse point\n");
+            ExFreePool(*data);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        Status = FsRtlValidateReparsePointBuffer(datalen, (REPARSE_DATA_BUFFER*)*data);
+        if (!NT_SUCCESS(Status)) {
+            ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+            ExFreePool(*data);
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
@@ -1951,6 +2078,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     ULONG access;
     PACCESS_STATE access_state = Stack->Parameters.Create.SecurityContext->AccessState;
     LONG oc;
+    USHORT unparsed;
     
     Irp->IoStatus.Information = 0;
     
@@ -2009,8 +2137,29 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     // FIXME - if Vcb->readonly or subvol readonly, don't allow the write ACCESS_MASK flags
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = get_fcb(Vcb, &fcb, &FileObject->FileName, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, Stack->Flags & SL_OPEN_TARGET_DIRECTORY);
+    Status = get_fcb(Vcb, &fcb, &FileObject->FileName, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
     ExReleaseResourceLite(&Vcb->fcb_lock);
+    
+    if (Status == STATUS_REPARSE) {
+        REPARSE_DATA_BUFFER* data;
+        
+        Status = get_reparse_block(fcb, (UINT8**)&data);
+        if (!NT_SUCCESS(Status)) {
+            ERR("get_reparse_block returned %08x\n", Status);
+            free_fcb(fcb);
+            goto exit;
+        }
+        
+        Status = STATUS_REPARSE;
+        RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
+        
+        data->Reserved = unparsed;
+        
+        Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
+        
+        free_fcb(fcb);
+        goto exit;
+    }
     
     if (NT_SUCCESS(Status) && fcb->deleted) {
         free_fcb(fcb);
@@ -2065,7 +2214,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         }
         
         if ((fcb->type == BTRFS_TYPE_SYMLINK || fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
-            ULONG tag;
             UINT8* data;
             
             /* How reparse points work from the point of view of the filesystem appears to
@@ -2075,129 +2223,17 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
              * a pointer to the reparse data buffer in Irp->Tail.Overlay.AuxiliaryBuffer,
              * IopSymlinkProcessReparse will do the translation for us. */
             
-            if (fcb->type == BTRFS_TYPE_FILE || fcb->type == BTRFS_TYPE_SYMLINK) {
-                ULONG size, bytes_read, i;
-                
-                if (fcb->inode_item.st_size < sizeof(ULONG)) {
-                    WARN("file was too short to be a reparse point\n");
-                    Status = STATUS_INVALID_PARAMETER;
-                    goto exit;
-                }
-                
-                // 0x10007 = 0xffff (maximum length of data buffer) + 8 bytes header
-                size = min(0x10007, fcb->inode_item.st_size);
-                
-                data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
-                if (!data) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto exit;
-                }
-                
-                Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, 0, size, &bytes_read);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("read_file returned %08x\n", Status);
-                    ExFreePool(data);
-                    goto exit;
-                }
-                
-                if (fcb->type == BTRFS_TYPE_SYMLINK) {
-                    ULONG stringlen, subnamelen, printnamelen, reqlen;
-                    REPARSE_DATA_BUFFER* rdb;
-                    
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, (char*)data, bytes_read);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        ExFreePool(data);
-                        goto exit;
-                    }
-                    
-                    subnamelen = stringlen;
-                    printnamelen = stringlen;
-                    
-                    reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
-                    
-                    rdb = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
-                    
-                    if (!rdb) {
-                        ERR("out of memory\n");
-                        ExFreePool(data);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto exit;
-                    }
-                    
-                    rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-                    rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
-                    rdb->Reserved = 0;
-                    
-                    rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
-                    rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
-                    rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
-                    rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
-                    rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
-                    
-                    Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                                            stringlen, &stringlen, (char*)data, size);
-
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        ExFreePool(rdb);
-                        ExFreePool(data);
-                        goto exit;
-                    }
-                    
-                    for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
-                        if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
-                            rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
-                    }
-                    
-                    RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
-                                &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                                rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
-                    
-                    ExFreePool(data);
-                    
-                    data = (UINT8*)rdb;
-                } else {
-                    Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)data);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
-                        ExFreePool(data);
-                        goto exit;
-                    }
-                }
-            } else {
-                UINT16 datalen;
-                
-                if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen)) {
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto exit;
-                }
-                
-                if (!data) {
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto exit;
-                }
-                
-                if (datalen < sizeof(ULONG)) {
-                    WARN("xattr was too short to be a reparse point\n");
-                    ExFreePool(data);
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto exit;
-                }
-                
-                Status = FsRtlValidateReparsePointBuffer(datalen, (REPARSE_DATA_BUFFER*)data);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
-                    ExFreePool(data);
-                    goto exit;
-                }
+            Status = get_reparse_block(fcb, &data);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_reparse_block returned %08x\n", Status);
+                free_fcb(fcb);
+                goto exit;
             }
             
             Status = STATUS_REPARSE;
             RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
             
-            Irp->Tail.Overlay.AuxiliaryBuffer = data;
+            Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
             
             free_fcb(fcb);
             goto exit;

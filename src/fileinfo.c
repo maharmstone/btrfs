@@ -1440,7 +1440,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 
     oldfcb = NULL;
 
-    Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE);
+    Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE, NULL);
 
     if (NT_SUCCESS(Status)) {
         WARN("destination file %.*S already exists\n", oldfcb->full_filename.Length / sizeof(WCHAR), oldfcb->full_filename.Buffer);
@@ -2187,7 +2187,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, (ULONG)utf8.Length);
 
-    Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE);
+    Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE, NULL);
 
     if (NT_SUCCESS(Status)) {
         WARN("destination file %.*S already exists\n", oldfcb->full_filename.Length / sizeof(WCHAR), oldfcb->full_filename.Buffer);
