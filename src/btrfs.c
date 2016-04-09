@@ -2285,7 +2285,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         goto exit;
     }
     
-    if (FileObject) {
+    if (FileObject && FileObject->FsContext) {
         LONG oc;
         
         fcb = FileObject->FsContext;
