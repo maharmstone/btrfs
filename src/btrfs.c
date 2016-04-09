@@ -3958,10 +3958,8 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             
         case IRP_MN_KERNEL_CALL:
             TRACE("IRP_MN_KERNEL_CALL\n");
-            break;
             
-        case IRP_MN_LOAD_FILE_SYSTEM:
-            TRACE("IRP_MN_LOAD_FILE_SYSTEM\n");
+            status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, FALSE);
             break;
             
         case IRP_MN_USER_FS_REQUEST:
@@ -3971,13 +3969,11 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             break;
             
         case IRP_MN_VERIFY_VOLUME:
-            TRACE("IRP_MN_VERIFY_VOLUME\n");
+            FIXME("STUB: IRP_MN_VERIFY_VOLUME\n");
             break;
            
         default:
-            WARN("unknown minor %u\n", IrpSp->MinorFunction);
             break;
-            
     }
 
     Irp->IoStatus.Status = status;

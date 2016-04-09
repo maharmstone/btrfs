@@ -510,6 +510,12 @@ end2:
     return Status;
 }
 
+static NTSTATUS is_volume_mounted(PIRP Irp) {
+    FIXME("STUB\n");
+    
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -561,8 +567,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_IS_VOLUME_MOUNTED:
-            WARN("STUB: FSCTL_IS_VOLUME_MOUNTED\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = is_volume_mounted(Irp);
             break;
 
         case FSCTL_IS_PATHNAME_VALID:
