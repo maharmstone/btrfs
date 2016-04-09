@@ -155,6 +155,7 @@ end:
 static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
+    LIST_ENTRY rollback;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
@@ -170,6 +171,17 @@ static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
 
     Vcb->removing = TRUE;
+    
+    InitializeListHead(&rollback);
+    
+    acquire_tree_lock(Vcb, TRUE);
+
+    if (Vcb->write_trees > 0)
+        do_write(Vcb, &rollback);
+    
+    clear_rollback(&rollback);
+
+    release_tree_lock(Vcb, TRUE);
 
     Status = STATUS_SUCCESS;
 end:
