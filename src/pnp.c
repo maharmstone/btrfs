@@ -3,7 +3,7 @@
 static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     FIXME("STUB\n");
 
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
