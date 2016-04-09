@@ -181,7 +181,7 @@ end:
 static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     FIXME("STUB\n");
 
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS pnp_start_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -193,7 +193,7 @@ static NTSTATUS pnp_start_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 static NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     FIXME("STUB\n");
 
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
