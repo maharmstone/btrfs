@@ -1324,7 +1324,7 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, root* dests
     return STATUS_SUCCESS;
 }
 
-static BOOL has_open_children(fcb* fcb) {
+BOOL has_open_children(fcb* fcb) {
     LIST_ENTRY* le = fcb->children.Flink;
     struct _fcb* c;
     
