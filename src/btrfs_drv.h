@@ -292,6 +292,7 @@ typedef struct _device_extension {
     superblock superblock;
 //     WCHAR label[MAX_LABEL_SIZE];
     BOOL readonly;
+    BOOL removing;
     fcb* volume_fcb;
     fcb* root_fcb;
     ERESOURCE DirResource;

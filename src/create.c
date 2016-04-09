@@ -745,6 +745,9 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
 //     print_fcbs(Vcb);
 // #endif
     
+    if (Vcb->removing)
+        return STATUS_ACCESS_DENIED;
+    
     fnus2 = *fnus;
     
     if (fnus2.Length < sizeof(WCHAR) && !relatedfcb) {

@@ -16,12 +16,6 @@ typedef struct {
     pnp_stripe* stripes;
 } pnp_context;
 
-static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-    FIXME("STUB\n");
-
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS STDCALL pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     pnp_stripe* stripe = conptr;
     pnp_context* context = (pnp_context*)stripe->context;
@@ -134,6 +128,30 @@ end:
     return Status;
 }
 
+static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+device_extension* Vcb = DeviceObject->DeviceExtension;
+    NTSTATUS Status;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+
+    if (Vcb->root_fcb && (Vcb->root_fcb->open_count > 0 || has_open_children(Vcb->root_fcb))) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
+    Status = send_disks_pnp_message(Vcb, IRP_MN_CANCEL_REMOVE_DEVICE);
+    if (!NT_SUCCESS(Status)) {
+        WARN("send_disks_pnp_message returned %08x\n", Status);
+        goto end;
+    }
+
+    Vcb->removing = FALSE;
+end:
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
@@ -151,13 +169,13 @@ static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto end;
     }
 
-    // FIXME - set "removing" flag
+    Vcb->removing = TRUE;
 
     Status = STATUS_SUCCESS;
 end:
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
