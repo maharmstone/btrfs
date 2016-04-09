@@ -3519,6 +3519,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                        &piex, sizeof(piex), TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("error reading partition information: %08x\n", Status);
+        Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
 
@@ -3529,8 +3530,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                             0,
                             FALSE,
                             &NewDeviceObject);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoCreateDevice returned %08x\n", Status);
+        Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
+    }
     
 //     TRACE("DEV_ITEM = %x, superblock = %x\n", sizeof(DEV_ITEM), sizeof(superblock));
 
