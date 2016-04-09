@@ -1367,6 +1367,11 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
         goto end;
     }
     
+    if (Vcb->removing) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
     switch (IrpSp->Parameters.SetVolume.FsInformationClass) {
         case FileFsControlInformation:
             FIXME("STUB: FileFsControlInformation\n");
