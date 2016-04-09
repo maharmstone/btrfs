@@ -2204,24 +2204,26 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     return STATUS_SUCCESS;
 }
 
-static void STDCALL uninit(device_extension* Vcb) {
+void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     chunk* c;
     space* s;
     UINT64 i;
     LIST_ENTRY rollback;
     
-    InitializeListHead(&rollback);
-    
-    acquire_tree_lock(Vcb, TRUE);
+    if (flush) {
+        InitializeListHead(&rollback);
+        
+        acquire_tree_lock(Vcb, TRUE);
 
-    if (Vcb->write_trees > 0)
-        do_write(Vcb, &rollback);
-    
-    free_tree_cache(&Vcb->tree_cache);
-    
-    clear_rollback(&rollback);
+        if (Vcb->write_trees > 0)
+            do_write(Vcb, &rollback);
+        
+        free_tree_cache(&Vcb->tree_cache);
+        
+        clear_rollback(&rollback);
 
-    release_tree_lock(Vcb, TRUE);
+        release_tree_lock(Vcb, TRUE);
+    }
 
     while (!IsListEmpty(&Vcb->roots)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->roots);
@@ -4094,7 +4096,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         
         TRACE("shutting down Vcb %p\n", Vcb);
         
-        uninit(Vcb);
+        uninit(Vcb, TRUE);
     }
     
     Irp->IoStatus.Status = Status;

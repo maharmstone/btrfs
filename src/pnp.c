@@ -191,7 +191,18 @@ end:
 }
 
 static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-    FIXME("STUB\n");
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    NTSTATUS Status;
+    
+    Status = send_disks_pnp_message(Vcb, IRP_MN_REMOVE_DEVICE);
+    if (!NT_SUCCESS(Status)) {
+        WARN("send_disks_pnp_message returned %08x\n", Status);
+    }
+    
+    if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
+        uninit(Vcb, FALSE);
+        DeviceObject->Vpb->Flags &= ~VPB_MOUNTED;
+    }
 
     return STATUS_SUCCESS;
 }

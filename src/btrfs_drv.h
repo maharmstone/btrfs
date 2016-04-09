@@ -380,6 +380,7 @@ fcb* create_fcb();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTRY* rollback);
+void STDCALL uninit(device_extension* Vcb, BOOL flush);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
