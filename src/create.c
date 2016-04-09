@@ -819,16 +819,6 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
     for (i = 0; i < num_parts; i++) {
         BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
         
-        if (sf->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-            Status = STATUS_REPARSE;
-            *pfcb = sf;
-            
-            if (unparsed)
-                *unparsed = fnus->Length - ((parts[i].Buffer - fnus->Buffer - 1) * sizeof(WCHAR));
-            
-            goto end2;
-        }
-        
         sf2 = search_fcb_children(sf, &parts[i]);
         
         if (sf2 && sf2->type != BTRFS_TYPE_DIRECTORY && !lastpart) {
@@ -1062,11 +1052,21 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
         if (i == num_parts - 1)
             break;
         
+        if (sf2->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+            Status = STATUS_REPARSE;
+            
+            if (unparsed)
+                *unparsed = fnus->Length - ((parts[i+1].Buffer - fnus->Buffer - 1) * sizeof(WCHAR));
+            
+            break;
+        }
+        
         free_fcb(sf);
         sf = sf2;
     }
     
-    Status = STATUS_SUCCESS;
+    if (Status != STATUS_REPARSE)
+        Status = STATUS_SUCCESS;
     *pfcb = sf2;
     
 end:
@@ -2146,7 +2146,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         Status = get_reparse_block(fcb, (UINT8**)&data);
         if (!NT_SUCCESS(Status)) {
             ERR("get_reparse_block returned %08x\n", Status);
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
             goto exit;
         }
         
@@ -2157,12 +2160,17 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         
         Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
         
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
         goto exit;
     }
     
     if (NT_SUCCESS(Status) && fcb->deleted) {
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
         goto exit;
     }
@@ -2207,7 +2215,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             if (sf->delete_on_close) {
                 WARN("could not open as deletion pending\n");
                 Status = STATUS_DELETE_PENDING;
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
                 goto exit;
             }
             sf = sf->par;
@@ -2226,7 +2237,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             Status = get_reparse_block(fcb, &data);
             if (!NT_SUCCESS(Status)) {
                 ERR("get_reparse_block returned %08x\n", Status);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
                 goto exit;
             }
             
@@ -2235,14 +2249,19 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             
             Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
             
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
             goto exit;
         }
         
         if (!SeAccessCheck(fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
             IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
+        
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
             goto exit;
         }
         
@@ -2251,7 +2270,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             
             if (!NT_SUCCESS(Status)) {
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
                 goto exit;
             }
         } else {
@@ -2261,7 +2283,10 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         if (access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForWrite)) {
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
                 goto exit;
             }
         }
@@ -2363,14 +2388,22 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+                
                 goto exit;
             }
             
             if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                 ERR("error - could not find EXTENT_DATA items for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
                 free_traverse_ptr(&tp);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+                
                 Status = STATUS_INTERNAL_ERROR;
                 goto exit;
             }
@@ -2379,7 +2412,11 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
                 ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
                 free_traverse_ptr(&tp);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+        
                 Status = STATUS_INTERNAL_ERROR;
                 goto exit;
             }
@@ -2398,12 +2435,19 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         }
     
         if (options & FILE_NON_DIRECTORY_FILE && fcb->type == BTRFS_TYPE_DIRECTORY) {
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            
             Status = STATUS_FILE_IS_A_DIRECTORY;
             goto exit;
         } else if (options & FILE_DIRECTORY_FILE && fcb->type != BTRFS_TYPE_DIRECTORY) {
             TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u, path = %.*S)\n", fcb->type, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            
             Status = STATUS_NOT_A_DIRECTORY;
             goto exit;
         }
@@ -2416,7 +2460,11 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         ccb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ccb), ALLOC_TAG);
         if (!ccb) {
             ERR("out of memory\n");
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }

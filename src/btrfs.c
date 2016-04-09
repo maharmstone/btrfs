@@ -2107,8 +2107,8 @@ exit:
 }
 
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {
-    ULONG rc;
-    
+    LONG rc;
+
     rc = InterlockedDecrement(&fcb->refcount);
     
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -2192,7 +2192,9 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     CcUninitializeCacheMap(FileObject, NULL, NULL);
     
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     free_fcb(fcb);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     return STATUS_SUCCESS;
 }
