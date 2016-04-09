@@ -2601,7 +2601,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
 }
 
 static NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID InputBuffer,
-                    ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override)
+                    ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb)
 {
     PIRP Irp;
     KEVENT Event;
@@ -2634,6 +2634,9 @@ static NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatus.Status;
     }
+    
+    if (iosb)
+        *iosb = IoStatus;
 
     return Status;
 }
@@ -3490,7 +3493,7 @@ static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
     NTSTATUS Status;
     STORAGE_HOTPLUG_INFO shi;
     
-    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi, sizeof(STORAGE_HOTPLUG_INFO), TRUE);
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi, sizeof(STORAGE_HOTPLUG_INFO), TRUE, NULL);
     
     if (!NT_SUCCESS(Status)) {
         ERR("dev_ioctl returned %08x\n", Status);
@@ -3498,6 +3501,26 @@ static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
     }
     
     return shi.MediaRemovable != 0 ? TRUE : FALSE;
+}
+
+static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    ULONG cc;
+    IO_STATUS_BLOCK iosb;
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (iosb.Information < sizeof(ULONG)) {
+        ERR("iosb.Information was too short\n");
+        return 0;
+    }
+    
+    return cc;
 }
 
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -3530,7 +3553,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     }
 
     Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
-                       &piex, sizeof(piex), TRUE);
+                       &piex, sizeof(piex), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("error reading partition information: %08x\n", Status);
         Status = STATUS_UNRECOGNIZED_VOLUME;
@@ -3658,6 +3681,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     Vcb->devices[0].removable = is_device_removable(Vcb->devices[0].devobj);
+    Vcb->devices[0].change_count = Vcb->devices[0].removable ? get_device_change_count(Vcb->devices[0].devobj) : 0;
     
     if (Vcb->superblock.num_devices > 1)
         RtlZeroMemory(&Vcb->devices[1], sizeof(DEV_ITEM) * (Vcb->superblock.num_devices - 1));

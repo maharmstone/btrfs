@@ -264,6 +264,7 @@ typedef struct {
     PDEVICE_OBJECT devobj;
     DEV_ITEM devitem;
     BOOL removable;
+    ULONG change_count;
     LIST_ENTRY disk_holes;
 } device;
 
