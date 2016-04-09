@@ -277,6 +277,17 @@ static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf
     
     // FIXME - if checksum error, write good data over bad
     
+    // check if any of the devices return a "user-induced" error
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadTreeStatus_Error && IoIsErrorUserInduced(context->stripes[i].iosb.Status)) {
+            IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
+            
+            Status = context->stripes[i].iosb.Status;
+            goto exit;
+        }
+    }
+    
     // check if any of the stripes succeeded
     
     for (i = 0; i < ci->num_stripes; i++) {
