@@ -30,15 +30,9 @@ static NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static NTSTATUS pnp_query_device_relations(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-    FIXME("STUB\n");
-
-    return STATUS_NOT_IMPLEMENTED;
-}
-
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-//     device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     BOOL top_level;
 
@@ -68,14 +62,13 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         case IRP_MN_SURPRISE_REMOVAL:
             Status = pnp_surprise_removal(DeviceObject, Irp);
             break;
-            
-        case IRP_MN_QUERY_DEVICE_RELATIONS:
-            Status = pnp_query_device_relations(DeviceObject, Irp);
-            break;
-        
+
         default:
-            WARN("Unrecognized minor function 0x%x\n", IrpSp->MinorFunction);
-            break;
+            TRACE("passing minor function 0x%x on\n", IrpSp->MinorFunction);
+            
+            IoSkipCurrentIrpStackLocation(Irp);
+            Status = IoCallDriver(Vcb->devices[0].devobj, Irp);
+            goto end;
     }
 
 // //     Irp->IoStatus.Status = Status;
@@ -91,6 +84,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+end:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
