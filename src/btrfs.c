@@ -3486,6 +3486,20 @@ static root* find_default_subvol(device_extension* Vcb) {
     return NULL;
 }
 
+static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    STORAGE_HOTPLUG_INFO shi;
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi, sizeof(STORAGE_HOTPLUG_INFO), TRUE);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    return shi.MediaRemovable != 0 ? TRUE : FALSE;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION Stack;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3643,6 +3657,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
+    Vcb->devices[0].removable = is_device_removable(Vcb->devices[0].devobj);
     
     if (Vcb->superblock.num_devices > 1)
         RtlZeroMemory(&Vcb->devices[1], sizeof(DEV_ITEM) * (Vcb->superblock.num_devices - 1));

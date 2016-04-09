@@ -263,6 +263,7 @@ typedef struct {
 typedef struct {
     PDEVICE_OBJECT devobj;
     DEV_ITEM devitem;
+    BOOL removable;
     LIST_ENTRY disk_holes;
 } device;
 
