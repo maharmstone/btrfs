@@ -324,7 +324,6 @@ typedef struct _device_extension {
     LIST_ENTRY trees;
     LIST_ENTRY tree_cache;
     HANDLE flush_thread_handle;
-    KTIMER flush_thread_timer;
     LIST_ENTRY list_entry;
 } device_extension;
 

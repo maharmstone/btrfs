@@ -3854,12 +3854,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     RtlCopyMemory(NewDeviceObject->Vpb->VolumeLabel,
 //                   Vcb->NtfsInfo.VolumeLabel,
 //                   Vcb->NtfsInfo.VolumeLabelLength);
-    
-    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, Vcb);
-    if (!NT_SUCCESS(Status)) {
-        ERR("PsCreateSystemThread returned %08x\n", Status);
-        goto exit;
-    }
 
     NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
     Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
@@ -3869,6 +3863,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
+    
+    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("PsCreateSystemThread returned %08x\n", Status);
+        goto exit;
+    }
     
     Status = STATUS_SUCCESS;
 
