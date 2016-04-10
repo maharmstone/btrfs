@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "btrfsioctl.h"
+#include <winioctl.h>
 
 #ifndef FSCTL_CSV_CONTROL
 #define FSCTL_CSV_CONTROL CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 181, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -510,10 +511,38 @@ end2:
     return Status;
 }
 
-static NTSTATUS is_volume_mounted(PIRP Irp) {
-    FIXME("STUB\n");
+static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
+    UINT64 i, num_devices;
+    NTSTATUS Status;
+    ULONG cc;
+    IO_STATUS_BLOCK iosb;
+    BOOL verify = FALSE;
     
-    return STATUS_NOT_IMPLEMENTED;
+    num_devices = Vcb->superblock.num_devices;
+    for (i = 0; i < num_devices; i++) {
+        if (Vcb->devices[i].devobj && Vcb->devices[i].removable) {
+            Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), FALSE, &iosb);
+            
+            if (iosb.Information != sizeof(ULONG))
+                cc = 0;
+            
+            if (Status == STATUS_VERIFY_REQUIRED || (NT_SUCCESS(Status) && cc != Vcb->devices[i].change_count)) {
+                Vcb->devices[i].devobj->Flags |= DO_VERIFY_VOLUME;
+                verify = TRUE;
+            }
+            
+            if (NT_SUCCESS(Status) && iosb.Information == sizeof(ULONG))
+                Vcb->devices[i].change_count = cc;
+            
+            if (!NT_SUCCESS(Status) || verify) {
+                IoSetHardErrorOrVerifyDevice(Irp, Vcb->devices[i].devobj);
+                
+                return verify ? STATUS_VERIFY_REQUIRED : Status;
+            }
+        }
+    }
+    
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
@@ -567,7 +596,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_IS_VOLUME_MOUNTED:
-            Status = is_volume_mounted(Irp);
+            Status = is_volume_mounted(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_IS_PATHNAME_VALID:
