@@ -3045,7 +3045,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     UINT32 *checksums, crc32;
     FREE_SPACE_ENTRY* fse;
     UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum;
-//     LIST_ENTRY* le;
+    LIST_ENTRY* le;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
     
@@ -3209,16 +3209,26 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         }
     }
     
-    // FIXME - merge together consecutive space entries
-    
-//     le = c->space.Flink;
-//     while (le != &c->space) {
-//         space* s = CONTAINING_RECORD(le, space, list_entry);
-//         
-//         ERR("(%llx,%llx)\n", s->offset, s->size);
-//         
-//         le = le->Flink;
-//     }
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+        LIST_ENTRY* le2 = le->Flink;
+        
+        if (le2 != &c->space) {
+            space* s2 = CONTAINING_RECORD(le2, space, list_entry);
+            
+            if (s2->offset == s->offset + s->size) {
+                s->size += s2->size;
+                
+                RemoveEntryList(&s2->list_entry);
+                ExFreePool(s2);
+                
+                le2 = le;
+            }
+        }
+        
+        le = le2;
+    }
     
     ExFreePool(data);
     free_traverse_ptr(&tp2);
