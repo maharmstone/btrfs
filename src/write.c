@@ -4589,19 +4589,79 @@ static __inline BOOL entry_in_ordered_list(LIST_ENTRY* list, UINT64 value) {
     return FALSE;
 }
 
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static BOOL is_file_prealloc_inode(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 start_data, UINT64 end_data) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    BOOL b;
+    
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.offset = start_data;
+    
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (tp.item->key.obj_id != inode || tp.item->key.obj_type != TYPE_EXTENT_DATA) {
+        free_traverse_ptr(&tp);
+        return FALSE;
+    }
+    
+    do {
+        EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+        UINT64 len;
+        
+        if (tp.item->size < sizeof(EXTENT_DATA)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            free_traverse_ptr(&tp);
+            return FALSE;
+        }
+        
+        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+            free_traverse_ptr(&tp);
+            return FALSE;
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        
+        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+        
+        if (tp.item->key.offset < end_data && tp.item->key.offset + len >= start_data && ed->type == EXTENT_TYPE_PREALLOC) {
+            free_traverse_ptr(&tp);
+            if (b) free_traverse_ptr(&next_tp);
+            return TRUE;
+        }
+        
+        if (b) {
+            free_traverse_ptr(&tp);
+            tp = next_tp;
+            
+            if (tp.item->key.obj_id > inode || tp.item->key.obj_type > TYPE_EXTENT_DATA || tp.item->key.offset >= end_data)
+                break;
+        }
+    } while (b);
+    
+    free_traverse_ptr(&tp);
+    
+    return FALSE;
+}
+
+NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     BOOL b, deleted_prealloc = FALSE;
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, changed_sector_list);
-    
-    searchkey.obj_id = fcb->inode;
+    searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = start_data;
     
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -4636,7 +4696,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             }
             
             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                WARN("root %llx, inode %llx, extent %llx: encryption not supported (type %x)\n", fcb->subvol->id, fcb->inode, tp.item->key.offset, ed->encryption);
+                WARN("root %llx, inode %llx, extent %llx: encryption not supported (type %x)\n", subvol->id, inode, tp.item->key.offset, ed->encryption);
                 Status = STATUS_NOT_SUPPORTED;
                 goto end;
             }
@@ -4651,7 +4711,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                 if (start_data <= tp.item->key.offset && end_data >= tp.item->key.offset + len) { // remove all
                     delete_tree_item(Vcb, &tp, rollback);
                     
-                    fcb->inode_item.st_blocks -= len;
+                    if (ii)
+                        ii->st_blocks -= len;
                 } else if (start_data <= tp.item->key.offset && end_data < tp.item->key.offset + len) { // remove beginning
                     EXTENT_DATA* ned;
                     UINT64 size;
@@ -4676,14 +4737,15 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     
                     RtlCopyMemory(&ned->data[0], &ed->data[end_data - tp.item->key.offset], size);
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
                     
-                    fcb->inode_item.st_blocks -= end_data - tp.item->key.offset;
+                    if (ii)
+                        ii->st_blocks -= end_data - tp.item->key.offset;
                 } else if (start_data > tp.item->key.offset && end_data >= tp.item->key.offset + len) { // remove end
                     EXTENT_DATA* ned;
                     UINT64 size;
@@ -4708,14 +4770,15 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     
                     RtlCopyMemory(&ned->data[0], &ed->data[0], size);
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
                     
-                    fcb->inode_item.st_blocks -= tp.item->key.offset + len - start_data;
+                    if (ii)
+                        ii->st_blocks -= tp.item->key.offset + len - start_data;
                 } else if (start_data > tp.item->key.offset && end_data < tp.item->key.offset + len) { // remove middle
                     EXTENT_DATA* ned;
                     UINT64 size;
@@ -4740,7 +4803,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     
                     RtlCopyMemory(&ned->data[0], &ed->data[0], size);
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
@@ -4765,25 +4828,27 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     
                     RtlCopyMemory(&ned->data[0], &ed->data[end_data - tp.item->key.offset], size);
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + size, NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
                     
-                    fcb->inode_item.st_blocks -= end_data - start_data;
+                    if (ii)
+                        ii->st_blocks -= end_data - start_data;
                 }
             } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                 if (start_data <= tp.item->key.offset && end_data >= tp.item->key.offset + len) { // remove all
                     if (ed2->address != 0) {
-                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, changed_sector_list, rollback);
+                        Status = remove_extent_ref(Vcb, ed2->address, ed2->size, subvol, inode, tp.item->key.offset - ed2->offset, changed_sector_list, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("remove_extent_ref returned %08x\n", Status);
                             goto end;
                         }
                         
-                        fcb->inode_item.st_blocks -= len;
+                        if (ii)
+                            ii->st_blocks -= len;
                     }
                     
                     if (ed->type == EXTENT_TYPE_PREALLOC)
@@ -4794,8 +4859,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     EXTENT_DATA* ned;
                     EXTENT_DATA2* ned2;
                     
-                    if (ed2->address != 0)
-                        fcb->inode_item.st_blocks -= end_data - tp.item->key.offset;
+                    if (ed2->address != 0 && ii)
+                        ii->st_blocks -= end_data - tp.item->key.offset;
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
@@ -4819,7 +4884,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     ned2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - tp.item->key.offset));
                     ned2->num_bytes = ed2->num_bytes - (end_data - tp.item->key.offset);
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
@@ -4829,8 +4894,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     EXTENT_DATA* ned;
                     EXTENT_DATA2* ned2;
                     
-                    if (ed2->address != 0)
-                        fcb->inode_item.st_blocks -= tp.item->key.offset + len - start_data;
+                    if (ed2->address != 0 && ii)
+                        ii->st_blocks -= tp.item->key.offset + len - start_data;
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
@@ -4854,7 +4919,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
                     ned2->num_bytes = start_data - tp.item->key.offset;
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
@@ -4864,8 +4929,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     EXTENT_DATA* ned;
                     EXTENT_DATA2* ned2;
                     
-                    if (ed2->address != 0)
-                        fcb->inode_item.st_blocks -= end_data - start_data;
+                    if (ed2->address != 0 && ii)
+                        ii->st_blocks -= end_data - start_data;
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
@@ -4889,7 +4954,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
                     ned2->num_bytes = start_data - tp.item->key.offset;
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, tp.item->key.offset, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
@@ -4916,7 +4981,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     ned2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - tp.item->key.offset));
                     ned2->num_bytes = tp.item->key.offset + len - end_data;
                     
-                    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, end_data, ned, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(ned);
                         Status = STATUS_INTERNAL_ERROR;
@@ -4924,7 +4989,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     }
                     
                     if (ed2->address != 0) {
-                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, ed2->offset - tp.item->key.offset, rollback);
+                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, subvol, inode, ed2->offset - tp.item->key.offset, rollback);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("add_extent_ref returned %08x\n", Status);
@@ -4939,22 +5004,34 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             free_traverse_ptr(&tp);
             tp = next_tp;
             
-            if (tp.item->key.obj_id > fcb->inode || tp.item->key.obj_type > TYPE_EXTENT_DATA || tp.item->key.offset >= end_data)
+            if (tp.item->key.obj_id > inode || tp.item->key.obj_type > TYPE_EXTENT_DATA || tp.item->key.offset >= end_data)
                 break;
         }
     } while (b);
     
     // FIXME - do bitmap analysis of changed extents, and free what we can
     
-    if (deleted_prealloc && !is_file_prealloc(fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size)))
-        fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
-    
-    Status = STATUS_SUCCESS;
+    if (ii && deleted_prealloc && !is_file_prealloc_inode(Vcb, subvol, inode, 0, sector_align(ii->st_size, Vcb->superblock.sector_size)))
+        ii->flags &= ~BTRFS_INODE_PREALLOC;
     
 end:
     free_traverse_ptr(&tp);
     
     return Status;
+}
+
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, changed_sector_list);
+    
+    Status = excise_extents_inode(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, start_data, end_data, changed_sector_list, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents_inode returned %08x\n");
+        return Status;
+    }
+    
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, LIST_ENTRY* changed_sector_list) {
@@ -6034,65 +6111,7 @@ static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
 }
 
 static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
-    NTSTATUS Status;
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    BOOL b;
-    
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
-    searchkey.offset = start_data;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA) {
-        free_traverse_ptr(&tp);
-        return FALSE;
-    }
-    
-    do {
-        EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
-        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-        UINT64 len;
-        
-        if (tp.item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-            free_traverse_ptr(&tp);
-            return FALSE;
-        }
-        
-        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-            free_traverse_ptr(&tp);
-            return FALSE;
-        }
-        
-        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
-        
-        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-        
-        if (tp.item->key.offset < end_data && tp.item->key.offset + len >= start_data && ed->type == EXTENT_TYPE_PREALLOC) {
-            free_traverse_ptr(&tp);
-            if (b) free_traverse_ptr(&next_tp);
-            return TRUE;
-        }
-        
-        if (b) {
-            free_traverse_ptr(&tp);
-            tp = next_tp;
-            
-            if (tp.item->key.obj_id > fcb->inode || tp.item->key.obj_type > TYPE_EXTENT_DATA || tp.item->key.offset >= end_data)
-                break;
-        }
-    } while (b);
-    
-    free_traverse_ptr(&tp);
-    
-    return FALSE;
+    return is_file_prealloc_inode(fcb->Vcb, fcb->subvol, fcb->inode, start_data, end_data);
 }
 
 static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {

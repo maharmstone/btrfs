@@ -468,6 +468,7 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, LIST_ENTRY* rollback);
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
+NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
@@ -526,6 +527,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in free-space.c
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
+NTSTATUS clear_free_space_cache(device_extension* Vcb);
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;

@@ -17,6 +17,106 @@
 
 #include "btrfs_drv.h"
 
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    traverse_ptr tp;
+    INODE_ITEM* ii;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, key, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(key, &tp.item->key)) {
+        ERR("could not find (%llx,%x,%llx) in root_root\n", key->obj_id, key->obj_type, key->offset);
+        free_traverse_ptr(&tp);
+        return STATUS_NOT_FOUND;
+    }
+    
+    if (tp.item->size < offsetof(INODE_ITEM, st_blocks)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(INODE_ITEM, st_blocks));
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    ii = (INODE_ITEM*)tp.item->data;
+    
+    Status = excise_extents_inode(Vcb, Vcb->root_root, key->obj_id, NULL, 0, ii->st_size, NULL, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        return Status;
+    }
+    
+    delete_tree_item(Vcb, &tp, rollback);
+    
+    free_traverse_ptr(&tp);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS clear_free_space_cache(device_extension* Vcb) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+    BOOL b;
+    LIST_ENTRY rollback;
+    
+    InitializeListHead(&rollback);
+    
+    searchkey.obj_id = FREE_SPACE_CACHE_ID;
+    searchkey.obj_type = 0;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    do {
+        if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+            break;
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            delete_tree_item(Vcb, &tp, &rollback);
+            
+            if (tp.item->size >= sizeof(FREE_SPACE_ITEM)) {
+                FREE_SPACE_ITEM* fsi = (FREE_SPACE_ITEM*)tp.item->data;
+                
+                if (fsi->key.obj_type != TYPE_INODE_ITEM)
+                    WARN("key (%llx,%x,%llx) does not point to an INODE_ITEM\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset);
+                else {
+                    Status = remove_free_space_inode(Vcb, &fsi->key, &rollback);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
+                        goto end;
+                    }
+                }
+            } else
+                WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        if (b) {
+            free_traverse_ptr(&tp);
+            tp = next_tp;
+        }
+    } while (b);
+    
+    free_traverse_ptr(&tp);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+    
+    return Status;
+}
+
 static NTSTATUS add_space_entry(chunk* c, UINT64 offset, UINT64 size) {
     space* s;
     
@@ -102,12 +202,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
     
     TRACE("(%p, %llx)\n", Vcb, c->offset);
-    
-    // We've already increased the generation by one
-    if (Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) {
-        // FIXME - delete any entry there already?
-        return STATUS_NOT_FOUND;
-    }
     
     searchkey.obj_id = FREE_SPACE_CACHE_ID;
     searchkey.obj_type = 0;
@@ -297,12 +391,15 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
-    Status = load_stored_free_space_cache(Vcb, c);
-    
-    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-        ERR("load_stored_free_space_cache returned %08x\n", Status);
-        return Status;
-    }
+    if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
+        Status = load_stored_free_space_cache(Vcb, c);
+        
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+            ERR("load_stored_free_space_cache returned %08x\n", Status);
+            return Status;
+        }
+    } else
+        Status = STATUS_NOT_FOUND;
      
     if (Status == STATUS_NOT_FOUND) {
         TRACE("generating free space cache for chunk %llx\n", c->offset);
