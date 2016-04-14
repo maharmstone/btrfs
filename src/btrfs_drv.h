@@ -276,7 +276,8 @@ typedef struct {
     UINT32 oldused;
     BOOL space_changed;
     device** devices;
-    UINT64 cache_size, new_cache_size;
+    UINT64 cache_size;
+    UINT64 cache_inode;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
 } chunk;
@@ -529,6 +530,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 // in free-space.c
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
 NTSTATUS clear_free_space_cache(device_extension* Vcb);
+NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;

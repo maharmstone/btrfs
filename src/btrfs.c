@@ -2917,6 +2917,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
                 c->space_changed = FALSE;
+                c->cache_inode = 0;
+                c->cache_size = 0;
                 
                 c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                 
@@ -3048,8 +3050,6 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb) {
         
         // FIXME - make sure we free occasionally after doing one of these, or we
         // might use up a lot of memory with a big disk.
-        
-        c->cache_size = 0;
         
         Status = load_free_space_cache(Vcb, c);
         if (!NT_SUCCESS(Status)) {

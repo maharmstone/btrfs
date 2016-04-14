@@ -17,6 +17,10 @@
 
 #include "btrfs_drv.h"
 
+// Number of increments in the size of each cache inode, in sectors. Should
+// this be a constant number of sectors, a constant 256 KB, or what?
+#define CACHE_INCREMENTS    64
+
 static NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     traverse_ptr tp;
@@ -271,6 +275,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     c->cache_size = ii->st_size;
+    c->cache_inode = fsi->key.obj_id;
     
     size = sector_align(ii->st_size, Vcb->superblock.sector_size);
     
@@ -518,6 +523,96 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         s = CONTAINING_RECORD(le, space, list_entry);
         
         TRACE("%llx,%llx,%u\n", s->offset, s->size, s->type);
+        
+        le = le->Flink;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    UINT64 new_cache_size;
+    UINT64 lastused = c->offset;
+    UINT32 num_sectors;
+    
+    // FIXME - also do bitmaps
+    // FIXME - make sure this works when sector_size is not 4096
+    
+    *changed = FALSE;
+    
+    new_cache_size = sizeof(UINT64); // for generation
+    
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
+            if (s->offset > lastused) {
+//                 TRACE("free: (%llx,%llx)\n", lastused, s->offset - lastused);
+                new_cache_size += sizeof(FREE_SPACE_ENTRY);
+            }
+            
+            lastused = s->offset + s->size;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (c->offset + c->chunk_item->size > lastused) {
+//         TRACE("free: (%llx,%llx)\n", lastused, c->offset + c->chunk_item->size - lastused);
+        new_cache_size += sizeof(FREE_SPACE_ENTRY);
+    }
+    
+    num_sectors = sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+    num_sectors = sector_align(num_sectors, CACHE_INCREMENTS);
+    
+    new_cache_size += sizeof(UINT32) * num_sectors;
+    
+    new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
+    
+    TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache_size, new_cache_size);
+    
+    if (new_cache_size > c->cache_size) {
+        if (c->cache_size == 0) {
+            FIXME("FIXME: create new inode\n"); // FIXME
+        } else {
+            FIXME("FIXME: extend existing inode\n"); // FIXME
+            // FIXME - add the inode's tree to the write cache - we'll change it later
+        }
+        
+        c->cache_size = new_cache_size;
+        *changed = TRUE;
+    }
+    
+    // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le = Vcb->chunks.Flink;
+    NTSTATUS Status;
+    chunk* c;
+
+    *changed = FALSE;
+    
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (c->space_changed) {
+            BOOL b;
+            
+            Status = allocate_cache_chunk(Vcb, c, &b, rollback);
+            
+            if (b)
+                *changed = TRUE;
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+                return Status;
+            }
+        }
         
         le = le->Flink;
     }

@@ -846,6 +846,8 @@ static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollb
     c->offset = logaddr;
     c->used = c->oldused = 0;
     c->space_changed = FALSE;
+    c->cache_size = 0;
+    c->cache_inode = 0;
     InitializeListHead(&c->space);
     
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
@@ -1081,9 +1083,11 @@ static void clean_space_cache(device_extension* Vcb) {
     }
 }
 
-static BOOL trees_consistent(device_extension* Vcb) {
+static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
     ULONG maxsize = Vcb->superblock.node_size - sizeof(tree_header);
     LIST_ENTRY* le;
+    NTSTATUS Status;
+    BOOL cache_changed;
     
     le = Vcb->tree_cache.Flink;
     while (le != &Vcb->tree_cache) {
@@ -1102,6 +1106,13 @@ static BOOL trees_consistent(device_extension* Vcb) {
         
         le = le->Flink;
     }
+    
+    Status = allocate_cache(Vcb, &cache_changed, rollback);
+    if (!NT_SUCCESS(Status))
+        ERR("allocate_cache returned %08x\n", Status);
+    
+    if (cache_changed)
+        return FALSE;
     
     return TRUE;
 }
@@ -3562,7 +3573,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             ERR("update_chunk_usage returned %08x\n", Status);
             goto end;
         }
-    } while (!trees_consistent(Vcb));
+    } while (!trees_consistent(Vcb, rollback));
     
     TRACE("trees consistent\n");
     
