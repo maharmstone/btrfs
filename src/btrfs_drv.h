@@ -276,6 +276,7 @@ typedef struct {
     UINT32 oldused;
     BOOL space_changed;
     device** devices;
+    UINT64 cache_size, new_cache_size;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
 } chunk;

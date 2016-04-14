@@ -270,6 +270,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         return STATUS_NOT_FOUND;
     }
     
+    c->cache_size = ii->st_size;
+    
     size = sector_align(ii->st_size, Vcb->superblock.sector_size);
     
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);

@@ -3049,6 +3049,8 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb) {
         // FIXME - make sure we free occasionally after doing one of these, or we
         // might use up a lot of memory with a big disk.
         
+        c->cache_size = 0;
+        
         Status = load_free_space_cache(Vcb, c);
         if (!NT_SUCCESS(Status)) {
             ERR("load_free_space_cache returned %08x\n", Status);
