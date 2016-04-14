@@ -658,7 +658,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     return STATUS_SUCCESS;
 }
 
-static chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
+chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     UINT64 max_stripe_size, max_chunk_size, stripe_size;
     UINT64 total_size = 0, i, j, logaddr;
     int num_stripes;
@@ -4689,13 +4689,16 @@ NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode,
             goto end;
         }
         
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type)
+            goto cont;
+        
         if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
-        
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         
         len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
         
@@ -5011,6 +5014,7 @@ NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode,
             }
         }
 
+cont:
         if (b) {
             free_traverse_ptr(&tp);
             tp = next_tp;
@@ -5084,25 +5088,26 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
     return STATUS_SUCCESS;
 }
 
-static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
+                               UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, data, changed_sector_list);
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %p, %p)\n", Vcb, subvol->id, inode, c->offset, start_data, length, data, changed_sector_list);
     
     if (!find_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
     
-    Status = add_extent_ref(Vcb, address, length, fcb->subvol, fcb->inode, start_data, rollback);
+    Status = add_extent_ref(Vcb, address, length, subvol, inode, start_data, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_extent_ref returned %08x\n", Status);
         return FALSE;
     }
     
-    if (!prealloc) {
+    if (data) {
         Status = do_write_data(Vcb, address, data, length, changed_sector_list);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
@@ -5130,7 +5135,7 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start_data, ed, edsize, NULL, rollback)) {
+    if (!insert_tree_item(Vcb, subvol, inode, TYPE_EXTENT_DATA, start_data, ed, edsize, NULL, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ed);
         return FALSE;
@@ -5139,12 +5144,18 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     increase_chunk_usage(c, length);
     add_to_space_list(c, address, length, SPACE_TYPE_WRITING);
     
-    fcb->inode_item.st_blocks += length;
-    
-    if (prealloc)
-        fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
+    if (inode_item) {
+        inode_item->st_blocks += length;
+        
+        if (prealloc)
+            inode_item->flags |= BTRFS_INODE_PREALLOC;
+    }
     
     return TRUE;
+}
+
+static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+    return insert_extent_chunk_inode(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, c, start_data, length, prealloc, data, changed_sector_list, rollback);
 }
 
 static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,

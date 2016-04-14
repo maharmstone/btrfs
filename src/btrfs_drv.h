@@ -480,6 +480,9 @@ void print_trees(LIST_ENTRY* tc);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
 NTSTATUS consider_write(device_extension* Vcb);
+BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
+                               UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);

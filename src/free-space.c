@@ -530,6 +530,37 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le = Vcb->chunks.Flink;
+    chunk* c;
+    UINT64 flags;
+    
+    // FIXME - how do we know which RAID level to put this to?
+    flags = BLOCK_FLAG_DATA; // SINGLE
+    
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+                return STATUS_SUCCESS;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if ((c = alloc_chunk(Vcb, flags, rollback))) {
+        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+                return STATUS_SUCCESS;
+        }
+    }
+    
+    WARN("couldn't find any data chunks with %llx bytes free\n", length);
+
+    return STATUS_DISK_FULL;
+}
+
 static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     UINT64 new_cache_size;
@@ -575,15 +606,72 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     if (new_cache_size > c->cache_size) {
         if (c->cache_size == 0) {
-            FIXME("FIXME: create new inode\n"); // FIXME
+            INODE_ITEM* ii;
+            FREE_SPACE_ITEM* fsi;
+            UINT64 inode;
+            NTSTATUS Status;
+            
+            // create new inode
+            
+            ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+            if (!ii) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlZeroMemory(ii, sizeof(INODE_ITEM));
+            ii->st_size = new_cache_size;
+            ii->st_blocks = new_cache_size;
+            ii->st_nlink = 1;
+            ii->st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
+            ii->flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
+            
+            if (Vcb->root_root->lastinode == 0)
+                get_last_inode(Vcb, Vcb->root_root);
+            
+            inode = Vcb->root_root->lastinode + 1;
+
+            if (!insert_tree_item(Vcb, Vcb->root_root, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            // create new free space entry
+            
+            fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_ITEM), ALLOC_TAG);
+            if (!fsi) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            fsi->key.obj_id = inode;
+            fsi->key.obj_type = TYPE_INODE_ITEM;
+            fsi->key.offset = 0;
+            
+            if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            // allocate space
+            
+            Status = insert_cache_extent(Vcb, inode, 0, new_cache_size, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_cache_extent returned %08x\n", Status);
+                return Status;
+            }
+            
+            Vcb->root_root->lastinode = inode;
+            c->cache_inode = inode;
         } else {
             FIXME("FIXME: extend existing inode\n"); // FIXME
-            // FIXME - add the inode's tree to the write cache - we'll change it later
         }
         
         c->cache_size = new_cache_size;
         *changed = TRUE;
     }
+    
+    // FIXME - add the inode's tree to the write cache - we'll change it later. Also the free_space entry
     
     // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
     
