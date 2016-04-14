@@ -1877,6 +1877,12 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
         le = le->Flink;
     }
     
+    Status = update_chunk_caches(Vcb, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_chunk_caches returned %08x\n", Status);
+        return Status;
+    }
+    
     return STATUS_SUCCESS;
 }
 

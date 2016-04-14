@@ -563,6 +563,7 @@ static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 
 
 static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
+    NTSTATUS Status;
     UINT64 new_cache_size;
     UINT64 lastused = c->offset;
     UINT32 num_sectors;
@@ -609,7 +610,6 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             INODE_ITEM* ii;
             FREE_SPACE_ITEM* fsi;
             UINT64 inode;
-            NTSTATUS Status;
             
             // create new inode
             
@@ -665,13 +665,70 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             c->cache_inode = inode;
         } else {
             FIXME("FIXME: extend existing inode\n"); // FIXME
+            
+            // FIXME: add INODE_ITEM and free_space entry to tree cache, for writing later
         }
         
         c->cache_size = new_cache_size;
         *changed = TRUE;
+    } else {
+        KEY searchkey;
+        traverse_ptr tp;
+        
+        // add INODE_ITEM and free_space entry to tree cache, for writing later
+        
+        searchkey.obj_id = c->cache_inode;
+        searchkey.obj_type = TYPE_INODE_ITEM;
+        searchkey.offset = 0;
+        
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (keycmp(&searchkey, &tp.item->key)) {
+            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        if (tp.item->size < sizeof(INODE_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        add_to_tree_cache(Vcb, tp.tree, TRUE);
+
+        free_traverse_ptr(&tp);
+        
+        searchkey.obj_id = FREE_SPACE_CACHE_ID;
+        searchkey.obj_type = 0;
+        searchkey.offset = c->offset;
+        
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (keycmp(&searchkey, &tp.item->key)) {
+            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+            free_traverse_ptr(&tp);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        add_to_tree_cache(Vcb, tp.tree, TRUE);
+
+        free_traverse_ptr(&tp);
     }
-    
-    // FIXME - add the inode's tree to the write cache - we'll change it later. Also the free_space entry
     
     // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
     
@@ -700,6 +757,112 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
                 ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
                 return Status;
             }
+        }
+        
+        le = le->Flink;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    FREE_SPACE_ITEM* fsi;
+    INODE_ITEM* ii;
+
+    // update INODE_ITEM
+    
+    searchkey.obj_id = c->cache_inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(&searchkey, &tp.item->key)) {
+        ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size < sizeof(INODE_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    ii = (INODE_ITEM*)tp.item->data;
+    
+    ii->generation = Vcb->superblock.generation;
+    ii->transid = Vcb->superblock.generation;
+    ii->sequence++;
+    ii->st_ctime = *now;
+    
+    free_traverse_ptr(&tp);
+    
+    // update free_space item
+    
+    searchkey.obj_id = FREE_SPACE_CACHE_ID;
+    searchkey.obj_type = 0;
+    searchkey.offset = c->offset;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(&searchkey, &tp.item->key)) {
+        ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        free_traverse_ptr(&tp);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    fsi = (FREE_SPACE_ITEM*)tp.item->data;
+    
+    fsi->generation = Vcb->superblock.generation;
+    fsi->num_entries = 0; // FIXME
+    fsi->num_bitmaps = 0;
+    
+    free_traverse_ptr(&tp);
+    
+    // FIXME - write cache
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le = Vcb->chunks.Flink;
+    NTSTATUS Status;
+    chunk* c;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (c->space_changed) {
+            Status = update_chunk_cache(Vcb, c, &now, rollback);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
+                return Status;
+            }
+            
         }
         
         le = le->Flink;

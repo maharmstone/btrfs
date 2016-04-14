@@ -534,6 +534,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
 NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
+NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
