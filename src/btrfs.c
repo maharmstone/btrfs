@@ -2969,7 +2969,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
 
 void protect_superblocks(device_extension* Vcb, chunk* c) {
     int i = 0, j;
-    UINT64 addr;
+    UINT64 off_start, off_end;
     
     // FIXME - this will need modifying for RAID
     
@@ -2979,23 +2979,14 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
         
         for (j = 0; j < ci->num_stripes; j++) {
             if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
-                UINT32 size;
-                
                 TRACE("cut out superblock in chunk %llx\n", c->offset);
                 
-                addr = (superblock_addrs[i] - cis[j].offset) + c->offset;
-                TRACE("addr %llx\n", addr);
+                // The Linux driver protects the whole stripe in which the superblock lives
                 
-                // This prevents trees from spanning a stripe boundary, which btrfs check complains
-                // about. It also prevents the chunk tree being placed at 0x11000, which for some
-                // reason makes the FS unmountable on Linux (it tries to read 0x10000, i.e. the 
-                // superblock, instead).
-                if (ci->type & BLOCK_FLAG_SYSTEM || ci->type & BLOCK_FLAG_METADATA)
-                    size = max(sizeof(superblock), Vcb->superblock.node_size);
-                else
-                    size = sizeof(superblock);
+                off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
+                off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
                 
-                add_to_space_list(c, addr, size, SPACE_TYPE_USED);
+                add_to_space_list(c, c->offset + off_start, off_end - off_start, SPACE_TYPE_USED);
             }
         }
         
