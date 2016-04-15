@@ -289,7 +289,7 @@ void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
         } else if (s->offset + s->size > offset && s->offset + s->size <= offset + size) { // truncate before
             s->size = offset - s->offset;
         } else if (s->offset < offset + size && s->offset + s->size > offset + size) { // truncate after
-            s->size -= s->offset - offset + size;
+            s->size -= offset + size - s->offset;
             s->offset = offset + size;
             
             insbef = le;
