@@ -664,9 +664,85 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             Vcb->root_root->lastinode = inode;
             c->cache_inode = inode;
         } else {
-            FIXME("FIXME: extend existing inode\n"); // FIXME
+            KEY searchkey;
+            traverse_ptr tp;
+            INODE_ITEM* ii;
             
-            // FIXME: add INODE_ITEM and free_space entry to tree cache, for writing later
+            ERR("extending existing inode\n");
+            
+            // FIXME - try to extend existing extent first of all
+            // Or ditch all existing extents and replace with one new one?
+            
+            // add INODE_ITEM to tree cache
+            
+            searchkey.obj_id = c->cache_inode;
+            searchkey.obj_type = TYPE_INODE_ITEM;
+            searchkey.offset = 0;
+            
+            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (keycmp(&searchkey, &tp.item->key)) {
+                ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size < sizeof(INODE_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            ii = (INODE_ITEM*)tp.item->data;
+            
+            add_to_tree_cache(Vcb, tp.tree, TRUE);
+
+            free_traverse_ptr(&tp);
+            
+            // add free_space entry to tree cache
+            
+            searchkey.obj_id = FREE_SPACE_CACHE_ID;
+            searchkey.obj_type = 0;
+            searchkey.offset = c->offset;
+            
+            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (keycmp(&searchkey, &tp.item->key)) {
+                ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            add_to_tree_cache(Vcb, tp.tree, TRUE);
+
+            free_traverse_ptr(&tp);
+            
+            // add new extent
+            
+            Status = insert_cache_extent(Vcb, c->cache_inode, c->cache_size, new_cache_size - c->cache_size, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_cache_extent returned %08x\n", Status);
+                return Status;
+            }
+            
+            // modify INODE_ITEM
+            
+            ii->st_size = new_cache_size;
+            ii->st_blocks = new_cache_size;
         }
         
         c->cache_size = new_cache_size;
