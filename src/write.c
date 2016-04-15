@@ -958,7 +958,7 @@ static void increase_chunk_usage(chunk* c, UINT64 delta) {
     TRACE("increasing size of chunk %llx by %llx\n", c->offset, delta);
 }
 
-static NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length) {
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length) {
     KEY searchkey;
     traverse_ptr tp;
     CHUNK_ITEM2* ci;
@@ -3594,6 +3594,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         ERR("write_trees returned %08x\n", Status);
         goto end;
     }
+    
+    Vcb->superblock.cache_generation = Vcb->superblock.generation;
     
     Status = write_superblocks(Vcb);
     if (!NT_SUCCESS(Status)) {

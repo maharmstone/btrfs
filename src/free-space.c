@@ -771,6 +771,51 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
     INODE_ITEM* ii;
+    void* data;
+    FREE_SPACE_ENTRY* fse;
+    UINT64 num_entries, num_sectors, lastused, *cachegen, i;
+    UINT32* checksums;
+    LIST_ENTRY* le;
+    BOOL b;
+    
+    data = ExAllocatePoolWithTag(NonPagedPool, c->cache_size, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(data, c->cache_size);
+    
+    num_entries = 0;
+    num_sectors = c->cache_size / Vcb->superblock.sector_size;
+    fse = (FREE_SPACE_ENTRY*)((UINT8*)data + (sizeof(UINT32) * num_sectors) + sizeof(UINT64));
+    
+    lastused = c->offset;
+    
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
+            if (s->offset > lastused) {
+                fse[num_entries].offset = lastused;
+                fse[num_entries].size = s->offset - lastused;
+                fse[num_entries].type = FREE_SPACE_EXTENT;
+                num_entries++;
+            }
+            
+            lastused = s->offset + s->size;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (c->offset + c->chunk_item->size > lastused) {
+        fse[num_entries].offset = lastused;
+        fse[num_entries].size = c->offset + c->chunk_item->size - lastused;
+        fse[num_entries].type = FREE_SPACE_EXTENT;
+        num_entries++;
+    }
 
     // update INODE_ITEM
     
@@ -832,12 +877,117 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     fsi = (FREE_SPACE_ITEM*)tp.item->data;
     
     fsi->generation = Vcb->superblock.generation;
-    fsi->num_entries = 0; // FIXME
+    fsi->num_entries = num_entries;
     fsi->num_bitmaps = 0;
     
     free_traverse_ptr(&tp);
     
-    // FIXME - write cache
+    // set cache generation
+    
+    cachegen = (UINT64*)((UINT8*)data + (sizeof(UINT32) * num_sectors));
+    *cachegen = Vcb->superblock.generation;
+    
+    // calculate cache checksums
+    
+    checksums = (UINT32*)data;
+    
+    // FIXME - if we know sector is fully zeroed, use cached checksum
+    
+    for (i = 0; i < num_sectors; i++) {
+        if (i * Vcb->superblock.sector_size > sizeof(UINT32) * num_sectors)
+            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(UINT32) * num_sectors)
+            checksums[i] = 0; // FIXME - test this
+        else
+            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (sizeof(UINT32) * num_sectors), ((i + 1) * Vcb->superblock.sector_size) - (sizeof(UINT32) * num_sectors));
+    }
+    
+    // write cache
+    
+    searchkey.obj_id = c->cache_inode;
+    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->key.offset < c->cache_size) {
+            EXTENT_DATA* ed;
+            EXTENT_DATA2* eds;
+            
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            ed = (EXTENT_DATA*)tp.item->data;
+            
+            if (ed->type != EXTENT_TYPE_REGULAR) {
+                ERR("cache EXTENT_DATA type not regular\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            eds = (EXTENT_DATA2*)&ed->data[0];
+
+            if (ed->compression != BTRFS_COMPRESSION_NONE) {
+                ERR("not writing compressed cache\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+                WARN("encryption not supported\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (ed->encoding != BTRFS_ENCODING_NONE) {
+                WARN("other encodings not supported\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (eds->address == 0) {
+                ERR("not writing cache to sparse extent\n");
+                free_traverse_ptr(&tp);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            Status = write_data(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data returned %08x\n", Status);
+                free_traverse_ptr(&tp);
+                return Status;
+            }
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        if (b) {
+            free_traverse_ptr(&tp);
+            tp = next_tp;
+            
+            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                break;
+        }
+    } while (b);
+    
+    free_traverse_ptr(&tp);
+    
+    ExFreePool(data);
     
     return STATUS_SUCCESS;
 }
