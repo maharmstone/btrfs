@@ -755,6 +755,12 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
         return STATUS_INTERNAL_ERROR;
     }
     
+    if (relatedfcb && fnus->Length == 0) {
+        relatedfcb->refcount++;
+        *pfcb = relatedfcb;
+        return STATUS_SUCCESS;
+    }
+    
     if (relatedfcb) {
         dir = relatedfcb;
     } else {
