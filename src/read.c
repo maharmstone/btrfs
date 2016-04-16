@@ -711,6 +711,10 @@ exit:
     if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
         FileObject->CurrentByteOffset.QuadPart = start + (NT_SUCCESS(Status) ? bytes_read : 0);
     
+    // fastfat doesn't do this, but the Wine ntdll file test seems to think we ought to
+    if (Irp->UserIosb)
+        *Irp->UserIosb = Irp->IoStatus;
+    
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
     TRACE("returning %08x\n", Status);
