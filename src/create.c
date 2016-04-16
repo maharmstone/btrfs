@@ -1520,6 +1520,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
                 goto end;
             }
             
+            if ((options & FILE_DIRECTORY_FILE && !(access & FILE_ADD_SUBDIRECTORY)) ||
+                (!(options & FILE_DIRECTORY_FILE) && !(access & FILE_ADD_FILE))) {
+                WARN("insufficient privileges to create file or directory\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            }
+            
             Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar, rollback);
         
             if (!NT_SUCCESS(Status)) {
@@ -1694,6 +1701,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto end;
+        }
+        
+        if ((options & FILE_DIRECTORY_FILE && !(access & FILE_ADD_SUBDIRECTORY)) ||
+            (!(options & FILE_DIRECTORY_FILE) && !(access & FILE_ADD_FILE))) {
+            WARN("insufficient privileges to create file or directory\n");
+            Status = STATUS_ACCESS_DENIED;
             goto end;
         }
         
