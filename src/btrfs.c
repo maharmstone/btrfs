@@ -2294,8 +2294,10 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     if (FileObject && FileObject->FsContext) {
         LONG oc;
+        ccb* ccb;
         
         fcb = FileObject->FsContext;
+        ccb = FileObject->FsContext2;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
@@ -2306,6 +2308,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 #ifdef DEBUG_FCB_REFCOUNTS
         ERR("fcb %p: open_count now %i\n", fcb, oc);
 #endif
+        
+        if (ccb && ccb->options & FILE_DELETE_ON_CLOSE)
+            fcb->delete_on_close = TRUE;
         
         if (oc == 0) {
             if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {

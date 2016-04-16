@@ -152,7 +152,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     }
     
     fcb->delete_on_close = fdi->DeleteFile;
-    // FIXME - should this fail if file opened with FILE_DELETE_ON_CLOSE?
+    
     FileObject->DeletePending = fdi->DeleteFile;
     
     return STATUS_SUCCESS;

@@ -1333,9 +1333,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fcb->atts = IrpSp->Parameters.Create.FileAttributes;
     
-    if (options & FILE_DELETE_ON_CLOSE)
-        fcb->delete_on_close = TRUE;
-    
     fcb->par = parfcb;
     rc = InterlockedIncrement(&parfcb->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1570,9 +1567,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fcb->Header.AllocationSize.QuadPart = 0;
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
-        
-        if (options & FILE_DELETE_ON_CLOSE)
-            fcb->delete_on_close = TRUE;
         
         fcb->par = parfcb;
         rc = InterlockedIncrement(&parfcb->refcount);
@@ -2462,9 +2456,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         }
     
         Status = attach_fcb_to_fileobject(Vcb, fcb, FileObject);
-        
-        if (options & FILE_DELETE_ON_CLOSE)
-            fcb->delete_on_close = TRUE;
         
         ccb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ccb), ALLOC_TAG);
         if (!ccb) {
