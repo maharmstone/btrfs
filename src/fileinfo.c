@@ -1895,9 +1895,8 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             return STATUS_INTERNAL_ERROR;
         }
         
-        if (tp.item->size < datalen) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
-            free_traverse_ptr(&tp);
+        if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
+            ERR("get_xattr failed\n");
             return STATUS_INTERNAL_ERROR;
         }
         
@@ -1909,11 +1908,6 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             ERR("error - xattr too long (%llu > %u)\n", feofi->EndOfFile.QuadPart, maxlen);
             return STATUS_DISK_FULL;
         }
-        
-        if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
-            ERR("get_xattr failed\n");
-            return STATUS_INTERNAL_ERROR;
-        }
 
         data2 = ExAllocatePoolWithTag(PagedPool, feofi->EndOfFile.QuadPart, ALLOC_TAG);
         if (!data2) {
@@ -1922,8 +1916,10 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        RtlCopyMemory(data2, data, datalen);
-        ExFreePool(data);
+        if (data) {
+            RtlCopyMemory(data2, data, datalen);
+            ExFreePool(data);
+        }
         
         RtlZeroMemory(&data2[datalen], feofi->EndOfFile.QuadPart - datalen);
         
