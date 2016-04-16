@@ -536,7 +536,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     UINT8 *curitem, *lastitem;
     LONG length;
     ULONG count;
-    BOOL has_wildcard = FALSE, specific_file = FALSE;
+    BOOL has_wildcard = FALSE, specific_file = FALSE, initial;
 //     UINT64 num_reads_orig;
     traverse_ptr tp;
     dir_entry de;
@@ -580,6 +580,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (flags != 0)
             TRACE("    unknown flags: %u\n", flags);
     }
+    
+    initial = !ccb->query_string.Buffer;
     
     if (IrpSp->Flags & SL_RESTART_SCAN) {
         ccb->query_dir_offset = 0;
@@ -631,6 +633,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else {
         has_wildcard = ccb->has_wildcard;
         specific_file = ccb->specific_file;
+        
+        if (!(IrpSp->Flags & SL_RESTART_SCAN))
+            initial = FALSE;
     }
     
     if (ccb->query_string.Buffer) {
@@ -641,7 +646,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = next_dir_entry(fcb, &ccb->query_dir_offset, &de, &tp);
     
     if (!NT_SUCCESS(Status)) {
-        if (Status == STATUS_NO_MORE_FILES && IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
+        if (Status == STATUS_NO_MORE_FILES && initial)
             Status = STATUS_NO_SUCH_FILE;
         goto end;
     }
@@ -740,7 +745,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             } else {
                 if (tp.tree) free_traverse_ptr(&tp);
 
-                if (Status == STATUS_NO_MORE_FILES && IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
+                if (Status == STATUS_NO_MORE_FILES && initial)
                     Status = STATUS_NO_SUCH_FILE;
                 
                 goto end;
