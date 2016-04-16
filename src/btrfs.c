@@ -2312,6 +2312,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE)
             fcb->delete_on_close = TRUE;
         
+        if (fcb->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
+            fcb->delete_on_close = FALSE;
+        
         if (oc == 0) {
             if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
                 LIST_ENTRY rollback;
