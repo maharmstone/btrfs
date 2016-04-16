@@ -931,6 +931,10 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 
     if (func != IRP_MN_NOTIFY_CHANGE_DIRECTORY || Status != STATUS_PENDING) {
         Irp->IoStatus.Status = Status;
+        
+        if (Irp->UserIosb)
+            *Irp->UserIosb = Irp->IoStatus;
+        
         IoCompleteRequest( Irp, IO_DISK_INCREMENT );
     }
     
