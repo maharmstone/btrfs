@@ -813,7 +813,7 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
     if (parent) {
         num_parts--;
         
-        if (has_stream) {
+        if (has_stream && num_parts > 0) {
             num_parts--;
             has_stream = FALSE;
         }
@@ -1427,15 +1427,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     dsus.Length = dsus.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
     fpus.Buffer = NULL;
     
-    // FIXME - apparently you can open streams using RelatedFileObject. How can we test this?
-    
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = get_fcb(Vcb, &parfcb, fnus, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, TRUE, NULL);
     ExReleaseResourceLite(&Vcb->fcb_lock);
     if (!NT_SUCCESS(Status))
         goto end;
     
-    if (parfcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (parfcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
         Status = STATUS_OBJECT_PATH_NOT_FOUND;
         goto end;
     }
