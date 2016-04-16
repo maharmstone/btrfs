@@ -629,7 +629,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             if (Vcb->root_root->lastinode == 0)
                 get_last_inode(Vcb, Vcb->root_root);
             
-            inode = Vcb->root_root->lastinode + 1;
+            inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
 
             if (!insert_tree_item(Vcb, Vcb->root_root, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
                 ERR("insert_tree_item failed\n");
