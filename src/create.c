@@ -2256,7 +2256,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             goto exit;
         }
         
-        if (!SeAccessCheck(fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+        if (!SeAccessCheck(fcb->ads ? fcb->par->sd : fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
             IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
         
