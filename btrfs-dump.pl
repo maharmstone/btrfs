@@ -4,7 +4,7 @@
 # Do something like:
 #
 # qemu-nbd -r -n -c /dev/nbd0 ~/vms/win7/win7-32.img ; sleep 1 ; chmod 666 /dev/nbd0p3
-# ./btrfs-dump.pl > dump2.txt
+# ./btrfs-dump.pl /dev/nbd0p3 > dump2.txt
 # diff -u dump1.txt dump2.txt > diff2.txt
 
 # Like btrfs.h, I'm disclaiming any copyright on this file, but I'd appreciate
@@ -12,8 +12,14 @@
 
 use Data::Dumper;
 
-# open($f,"/root/btrfs-test4");
-open($f,"/dev/nbd0p3");
+if (scalar(@ARGV) != 1) {
+    @dp=split(/\//,$0);
+    
+    print "Usage: ".$dp[$#dp]." [BLOCKDEVICE]\n";
+    exit;
+}
+
+open($f,$ARGV[0]) || die "Error opening ".$ARGV[0].": $!";
 binmode($f);
 
 %roots=();
