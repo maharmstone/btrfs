@@ -980,6 +980,9 @@ void free_tree_cache_root(LIST_ENTRY* tc, root* r) {
                 
                 RemoveEntryList(&tc2->list_entry);
                 ExFreePool(tc2);
+                
+                if (IsListEmpty(tc))
+                    return;
             }
             
             le = nextle;
