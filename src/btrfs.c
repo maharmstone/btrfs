@@ -1226,7 +1226,6 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     t->header.num_items = 0;
     t->header.level = 0;
 
-    t->refcount = 0;
     t->has_address = FALSE;
     t->size = 0;
     t->Vcb = Vcb;

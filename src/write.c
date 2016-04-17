@@ -2583,7 +2583,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->header.num_items = t->header.num_items - numitems;
     nt->header.flags = HEADER_FLAG_MIXED_BACKREF;
     
-    nt->refcount = 0;
     nt->has_address = FALSE;
     nt->Vcb = Vcb;
     nt->parent = t->parent;
@@ -2640,9 +2639,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     add_to_tree_cache(Vcb, nt, TRUE);
     
     InterlockedIncrement(&Vcb->open_trees);
-#ifdef DEBUG_TREE_REFCOUNTS
-    TRACE("created new split tree %p\n", nt);
-#endif
     InsertTailList(&Vcb->trees, &nt->list_entry);
     
 // //     // TESTING
@@ -2665,19 +2661,14 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
         while (le != &nt->itemlist) {
             tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
             
-            if (td2->treeholder.tree) {
+            if (td2->treeholder.tree)
                 td2->treeholder.tree->parent = nt;
-                increase_tree_rc(nt);
-                free_tree(t);
-            }
             
             le = le->Flink;
         }
     }
     
     if (nt->parent) {
-        increase_tree_rc(nt->parent);
-        
         td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
         if (!td) {
             ERR("out of memory\n");
@@ -2720,7 +2711,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->header.level = nt->header.level + 1;
     pt->header.flags = HEADER_FLAG_MIXED_BACKREF;
     
-    pt->refcount = 2;
     pt->has_address = FALSE;
     pt->Vcb = Vcb;
     pt->parent = NULL;
@@ -2736,9 +2726,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 //     ExInitializeResourceLite(&pt->nonpaged->load_tree_lock);
     
     InterlockedIncrement(&Vcb->open_trees);
-#ifdef DEBUG_TREE_REFCOUNTS
-    TRACE("created new parent tree %p\n", pt);
-#endif
     InsertTailList(&Vcb->trees, &pt->list_entry);
     
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
@@ -2885,9 +2872,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         return Status;
     }
     
-    if (loaded)
-        increase_tree_rc(t->parent);
-        
 //     ExReleaseResourceLite(&t->parent->nonpaged->load_tree_lock);
     
     next_tree = nextparitem->treeholder.tree;
@@ -2904,11 +2888,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             while (le != &next_tree->itemlist) {
                 tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
                 
-                if (td2->treeholder.tree) {
+                if (td2->treeholder.tree)
                     td2->treeholder.tree->parent = t;
-                    increase_tree_rc(t);
-                    free_tree(next_tree);
-                }
                 
                 le = le->Flink;
             }
@@ -2939,7 +2920,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08x\n", Status);
-                free_tree(next_tree);
                 return Status;
             }
         } else if (next_tree->has_address) {
@@ -2947,7 +2927,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08x\n", Status);
-                free_tree(next_tree);
                 return Status;
             }
         }
@@ -2970,15 +2949,12 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         
         next_tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
         
-        free_tree(next_tree);
-        
         // remove next_tree from tree cache
         le = Vcb->tree_cache.Flink;
         while (le != &Vcb->tree_cache) {
             tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
             
             if (tc2->tree == next_tree) {
-                free_tree(next_tree);
                 RemoveEntryList(le);
                 ExFreePool(tc2);
                 break;
@@ -2986,6 +2962,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             
             le = le->Flink;
         }
+        
+        free_tree(next_tree);
     } else {
         // rebalance by moving items from second tree into first
         ULONG avg_size = (t->size + next_tree->size) / 2;
@@ -3010,11 +2988,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
                 
-                if (next_tree->header.level > 0 && td->treeholder.tree) {
+                if (next_tree->header.level > 0 && td->treeholder.tree)
                     td->treeholder.tree->parent = t;
-                    increase_tree_rc(t);
-                    free_tree(next_tree);
-                }
                 
                 if (!td->ignore) {
                     next_tree->size -= size;
@@ -3051,8 +3026,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
             add_to_tree_cache(Vcb, par, TRUE);
             par = par->parent;
         }
-        
-        free_tree(next_tree);
     }
     
     return STATUS_SUCCESS;
@@ -3340,7 +3313,6 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         if (child_tree) {
                             child_tree->parent = NULL;
                             child_tree->paritem = NULL;
-                            free_tree(tc2->tree);
                         }
                         
                         tc2->tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
@@ -3374,8 +3346,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
                 ERR("load_tree(%llx) returned %08x\n", th->address, Status);
                 return Status;
             }
-        } else
-            increase_tree_rc(th->tree);
+        }
         
         if (th->tree->header.level > 0) {
             LIST_ENTRY* le = th->tree->itemlist.Flink;
@@ -3395,8 +3366,6 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
                 le = le->Flink;
             }
         }
-        
-        th->tree = free_tree(th->tree);
     }
     
     if (!th->tree || th->tree->has_address) {
@@ -3412,7 +3381,6 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
 }
 
 static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) {
-    LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -3461,29 +3429,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
     
     // delete items in tree cache
     
-    le = Vcb->tree_cache.Flink;
-    while (le != &Vcb->tree_cache) {
-        tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
-        
-        le2 = le->Flink;
-        
-        if (tc2->tree->root == r) {
-            tree* nt;
-            BOOL top = !tc2->tree->paritem;
-            
-            nt = free_tree(tc2->tree);
-            if (top && !nt && r->treeholder.tree == tc2->tree)
-                r->treeholder.tree = NULL;
-            
-            if (tc2->write)
-                Vcb->write_trees--;
-            
-            RemoveEntryList(&tc2->list_entry);
-            ExFreePool(tc2);
-        }
-        
-        le = le2;
-    }
+    free_tree_cache_root(&Vcb->tree_cache, r);
     
     return STATUS_SUCCESS;
 }
@@ -3994,8 +3940,6 @@ static NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, U
                 }
             }
             
-            free_tree(t);
-            
             delete_tree_item(Vcb, &tp, rollback);
         }
         
@@ -4209,8 +4153,6 @@ static NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address
                     le2 = le2->Flink;
                 }
             }
-            
-            free_tree(t);
 
             RemoveEntryList(&er->list_entry);
             

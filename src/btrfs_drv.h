@@ -37,7 +37,6 @@
 #include "btrfs.h"
 
 #ifdef _DEBUG
-// #define DEBUG_TREE_REFCOUNTS
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
 #define DEBUG_PARANOID
@@ -196,7 +195,6 @@ typedef struct _tree {
 //     UINT64 address;
 //     UINT8 level;
     tree_header header;
-    LONG refcount;
     BOOL has_address;
     UINT32 size;
     struct _device_extension* Vcb;
@@ -446,6 +444,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
 NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, const char* func, const char* file, unsigned int line);
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
+void free_tree_cache_root(LIST_ENTRY* tc, root* r);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
@@ -540,8 +539,8 @@ static __inline void print_open_trees(device_extension* Vcb) {
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         tree_data* td = CONTAINING_RECORD(t->itemlist.Flink, tree_data, list_entry);
-        ERR("tree %p: root %llx, level %u, refcount %u, first key (%llx,%x,%llx)\n",
-                      t, t->root->id, t->header.level, t->refcount, td->key.obj_id, td->key.obj_type, td->key.offset);
+        ERR("tree %p: root %llx, level %u, first key (%llx,%x,%llx)\n",
+                      t, t->root->id, t->header.level, td->key.obj_id, td->key.obj_type, td->key.offset);
 
         le = le->Flink;
     }
@@ -592,24 +591,6 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
     } \
     ExReleaseResourceLite(&Vcb->tree_lock); \
 }
-
-#ifdef DEBUG_TREE_REFCOUNTS
-#ifdef DEBUG_LONG_MESSAGES
-#define _increase_tree_rc(t, func, file, line) { \
-    LONG rc = InterlockedIncrement(&t->refcount); \
-    _debug_message(func, file, line, "tree %p: refcount increased to %i (increase_tree_rc)\n", t, rc); \
-}
-#else
-#define _increase_tree_rc(t, func, file, line) { \
-    LONG rc = InterlockedIncrement(&t->refcount); \
-    _debug_message(func, "tree %p: refcount increased to %i (increase_tree_rc)\n", t, rc); \
-}
-#endif
-#define increase_tree_rc(t) _increase_tree_rc(t, funcname, __FILE__, __LINE__)
-#else
-#define increase_tree_rc(t) InterlockedIncrement(&t->refcount);
-#define _increase_tree_rc(t, func, file, line) increase_tree_rc(t)
-#endif
 
 // from sys/stat.h
 #define __S_IFMT        0170000 /* These bits determine file type.  */
