@@ -2375,6 +2375,83 @@ end:
     return Status;
 }
 
+static void update_backup_superblock(device_extension* Vcb, superblock_backup* sb) {
+    KEY searchkey;
+    traverse_ptr tp;
+    
+    RtlZeroMemory(sb, sizeof(superblock_backup));
+    
+    sb->root_tree_addr = Vcb->superblock.root_tree_addr;
+    sb->root_tree_generation = Vcb->superblock.generation;
+    sb->root_level = Vcb->superblock.root_level;
+
+    sb->chunk_tree_addr = Vcb->superblock.chunk_tree_addr;
+    sb->chunk_tree_generation = Vcb->superblock.chunk_root_generation;
+    sb->chunk_root_level = Vcb->superblock.chunk_root_level;
+
+    searchkey.obj_id = BTRFS_ROOT_EXTENT;
+    searchkey.obj_type = TYPE_ROOT_ITEM;
+    searchkey.offset = 0;
+    
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+            
+            sb->extent_tree_addr = ri->block_number;
+            sb->extent_tree_generation = ri->generation;
+            sb->extent_root_level = ri->root_level;
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+
+    searchkey.obj_id = BTRFS_ROOT_FSTREE;
+    
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+            
+            sb->fs_tree_addr = ri->block_number;
+            sb->fs_tree_generation = ri->generation;
+            sb->fs_root_level = ri->root_level;
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+    
+    searchkey.obj_id = BTRFS_ROOT_DEVTREE;
+    
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+            
+            sb->dev_root_addr = ri->block_number;
+            sb->dev_root_generation = ri->generation;
+            sb->dev_root_level = ri->root_level;
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+
+    searchkey.obj_id = BTRFS_ROOT_CHECKSUM;
+    
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+            
+            sb->csum_root_addr = ri->block_number;
+            sb->csum_root_generation = ri->generation;
+            sb->csum_root_level = ri->root_level;
+        }
+        
+        free_traverse_ptr(&tp);
+    }
+
+    sb->total_bytes = Vcb->superblock.total_bytes;
+    sb->bytes_used = Vcb->superblock.bytes_used;
+    sb->num_devices = Vcb->superblock.num_devices;
+}
+
 static NTSTATUS write_superblocks(device_extension* Vcb) {
     UINT64 i;
     NTSTATUS Status;
@@ -2399,6 +2476,12 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
         
         le = le->Flink;
     }
+    
+    for (i = 0; i < BTRFS_NUM_BACKUP_ROOTS - 1; i++) {
+        RtlCopyMemory(&Vcb->superblock.backup[i], &Vcb->superblock.backup[i+1], sizeof(superblock_backup));
+    }
+    
+    update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1]);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         if (Vcb->devices[i].devobj) {
