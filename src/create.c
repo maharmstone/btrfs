@@ -2634,7 +2634,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;
     } else {
-        BOOL exclusive;
+        BOOL exclusive, skip_lock;
         ULONG disposition;
         
         TRACE("file name: %.*S\n", IrpSp->FileObject->FileName.Length / sizeof(WCHAR), IrpSp->FileObject->FileName.Buffer);
@@ -2650,8 +2650,12 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         
         // We acquire the lock exclusively if there's the possibility we might be writing
         exclusive = disposition != FILE_OPEN;
+        
+        // Don't lock again if we're being called from within CcCopyRead etc.
+        skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
 
-        acquire_tree_lock(Vcb, exclusive); 
+        if (!skip_lock)
+            acquire_tree_lock(Vcb, exclusive); 
         
 //         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
     //     Status = NtfsCreateFile(DeviceObject,
@@ -2664,7 +2668,8 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         else
             clear_rollback(&rollback);
         
-        release_tree_lock(Vcb, exclusive);
+        if (!skip_lock)
+            release_tree_lock(Vcb, exclusive);
         
 //         Status = STATUS_ACCESS_DENIED;
     }
