@@ -34,7 +34,6 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_EN
     
     if (keycmp(key, &tp.item->key)) {
         ERR("could not find (%llx,%x,%llx) in root_root\n", key->obj_id, key->obj_type, key->offset);
-        free_traverse_ptr(&tp);
         return STATUS_NOT_FOUND;
     }
     
@@ -52,8 +51,6 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_EN
     }
     
     delete_tree_item(Vcb, &tp, rollback);
-    
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -102,13 +99,9 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-        if (b) {
-            free_traverse_ptr(&tp);
+        if (b)
             tp = next_tp;
-        }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     Status = STATUS_SUCCESS;
     
@@ -219,13 +212,11 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (keycmp(&tp.item->key, &searchkey)) {
         TRACE("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        free_traverse_ptr(&tp);
         return STATUS_NOT_FOUND;
     }
     
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
         WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-        free_traverse_ptr(&tp);
         return STATUS_NOT_FOUND;
     }
     
@@ -233,7 +224,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (fsi->key.obj_type != TYPE_INODE_ITEM) {
         WARN("cache pointed to something other than an INODE_ITEM\n");
-        free_traverse_ptr(&tp);
         return STATUS_NOT_FOUND;
     }
     
@@ -247,21 +237,16 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        free_traverse_ptr(&tp);
         return Status;
     }
     
     if (keycmp(&tp2.item->key, &searchkey)) {
         WARN("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return STATUS_NOT_FOUND;
     }
     
     if (tp2.item->size < sizeof(INODE_ITEM)) {
         WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(INODE_ITEM));
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return STATUS_NOT_FOUND;
     }
     
@@ -269,8 +254,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (ii->st_size == 0) {
         ERR("inode %llx had a length of 0\n", inode);
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return STATUS_NOT_FOUND;
     }
     
@@ -283,8 +266,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (!data) {
         ERR("out of memory\n");
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -292,8 +273,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
         ExFreePool(data);
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return Status;
     }
     
@@ -307,12 +286,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, generation, fsi->generation);
         ExFreePool(data);
-        free_traverse_ptr(&tp);
-        free_traverse_ptr(&tp2);
         return STATUS_NOT_FOUND;
     }
-    
-    free_traverse_ptr(&tp);
     
     extent_length = (num_sectors * sizeof(UINT32)) + sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
     
@@ -321,7 +296,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
         ExFreePool(data);
-        free_traverse_ptr(&tp2);
         return STATUS_NOT_FOUND;
     }
     
@@ -338,7 +312,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         if (crc32 != checksums[i]) {
             WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
             ExFreePool(data);
-            free_traverse_ptr(&tp2);
             return STATUS_NOT_FOUND;
         }
     }
@@ -352,7 +325,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08x\n", Status);
                 ExFreePool(data);
-                free_traverse_ptr(&tp2);
                 return Status;
             }
         } else if (fse[i].type == FREE_SPACE_BITMAP) {
@@ -384,7 +356,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     ExFreePool(data);
-    free_traverse_ptr(&tp2);
     
     return STATUS_SUCCESS;
 }
@@ -451,10 +422,8 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             }
             
             b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-            if (b) {
-                free_traverse_ptr(&tp);
+            if (b)
                 tp = next_tp;
-            }
         } while (b);
         
         if (lastaddr < c->offset + c->chunk_item->size) {
@@ -472,8 +441,6 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             
             TRACE("(%llx,%llx)\n", s->offset, s->size);
         }
-        
-        free_traverse_ptr(&tp);
     }
     
     // add allocated space
@@ -687,13 +654,11 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             
             if (keycmp(&searchkey, &tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             if (tp.item->size < sizeof(INODE_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
@@ -701,8 +666,6 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             
             add_to_tree_cache(Vcb, tp.tree, TRUE);
 
-            free_traverse_ptr(&tp);
-            
             // add free_space entry to tree cache
             
             searchkey.obj_id = FREE_SPACE_CACHE_ID;
@@ -717,20 +680,16 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             
             if (keycmp(&searchkey, &tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             add_to_tree_cache(Vcb, tp.tree, TRUE);
 
-            free_traverse_ptr(&tp);
-            
             // add new extent
             
             Status = insert_cache_extent(Vcb, c->cache_inode, c->cache_size, new_cache_size - c->cache_size, rollback);
@@ -765,20 +724,16 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         if (keycmp(&searchkey, &tp.item->key)) {
             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-            free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
         
         if (tp.item->size < sizeof(INODE_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-            free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
         
         add_to_tree_cache(Vcb, tp.tree, TRUE);
 
-        free_traverse_ptr(&tp);
-        
         searchkey.obj_id = FREE_SPACE_CACHE_ID;
         searchkey.obj_type = 0;
         searchkey.offset = c->offset;
@@ -791,19 +746,15 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         if (keycmp(&searchkey, &tp.item->key)) {
             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-            free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
         
         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-            free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
         
         add_to_tree_cache(Vcb, tp.tree, TRUE);
-
-        free_traverse_ptr(&tp);
     }
     
     // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
@@ -907,13 +858,11 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        free_traverse_ptr(&tp);
         return STATUS_INTERNAL_ERROR;
     }
     
     if (tp.item->size < sizeof(INODE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-        free_traverse_ptr(&tp);
         return STATUS_INTERNAL_ERROR;
     }
     
@@ -923,8 +872,6 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     ii->transid = Vcb->superblock.generation;
     ii->sequence++;
     ii->st_ctime = *now;
-    
-    free_traverse_ptr(&tp);
     
     // update free_space item
     
@@ -940,13 +887,11 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        free_traverse_ptr(&tp);
         return STATUS_INTERNAL_ERROR;
     }
     
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-        free_traverse_ptr(&tp);
         return STATUS_INTERNAL_ERROR;
     }
     
@@ -955,8 +900,6 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     fsi->generation = Vcb->superblock.generation;
     fsi->num_entries = num_entries;
     fsi->num_bitmaps = 0;
-    
-    free_traverse_ptr(&tp);
     
     // set cache generation
     
@@ -999,7 +942,6 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
             
             if (tp.item->size < sizeof(EXTENT_DATA)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
@@ -1007,13 +949,11 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
             
             if (ed->type != EXTENT_TYPE_REGULAR) {
                 ERR("cache EXTENT_DATA type not regular\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
@@ -1021,47 +961,39 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
             if (ed->compression != BTRFS_COMPRESSION_NONE) {
                 ERR("not writing compressed cache\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
                 WARN("encryption not supported\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (ed->encoding != BTRFS_ENCODING_NONE) {
                 WARN("other encodings not supported\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             if (eds->address == 0) {
                 ERR("not writing cache to sparse extent\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INTERNAL_ERROR;
             }
             
             Status = write_data(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
-                free_traverse_ptr(&tp);
                 return Status;
             }
         }
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
                 break;
         }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     ExFreePool(data);
     

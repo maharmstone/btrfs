@@ -331,7 +331,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
 
     if (tp.item->key.obj_id < searchkey.obj_id || tp.item->key.obj_type < searchkey.obj_type) {
         if (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -339,7 +338,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        free_traverse_ptr(&tp);
         ERR("couldn't find EXTENT_DATA for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
@@ -347,7 +345,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     
     if (tp.item->key.offset > start) {
         ERR("first EXTENT_DATA was after offset\n");
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
@@ -375,14 +372,12 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
         
         if (tp.item->size < sizeof(EXTENT_DATA)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-            free_traverse_ptr(&tp);
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
         
         if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-            free_traverse_ptr(&tp);
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
@@ -393,28 +388,24 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
         
         if (tp.item->key.offset + len < start) {
             ERR("Tried to read beyond end of file\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_END_OF_FILE;
             goto exit;
         }
         
         if (ed->compression != BTRFS_COMPRESSION_NONE) {
             FIXME("FIXME - compression not yet supported\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_NOT_IMPLEMENTED;
             goto exit;
         }
         
         if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
             WARN("Encryption not supported\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_NOT_IMPLEMENTED;
             goto exit;
         }
         
         if (ed->encoding != BTRFS_ENCODING_NONE) {
             WARN("Other encodings not supported\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_NOT_IMPLEMENTED;
             goto exit;
         }
@@ -452,7 +443,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     
                     if (!buf) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto exit;
                     }
@@ -463,7 +453,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         ExFreePool(buf);
-                        free_traverse_ptr(&tp);
                         goto exit;
                     }
                     
@@ -495,7 +484,6 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                 
             default:
                 WARN("Unsupported extent data type %u\n", ed->type);
-                free_traverse_ptr(&tp);
                 Status = STATUS_NOT_IMPLEMENTED;
                 goto exit;
         }
@@ -509,19 +497,15 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                 next_tp.item->key.obj_type != TYPE_EXTENT_DATA ||
                 next_tp.item->key.offset != tp.item->key.offset + len
             ) {
-                free_traverse_ptr(&next_tp);
                 break;
             } else {
                 TRACE("found next key (%llx,%x,%llx)\n", next_tp.item->key.obj_id, next_tp.item->key.obj_type, next_tp.item->key.offset);
                 
-                free_traverse_ptr(&tp);
                 tp = next_tp;
             }
         } else
             break;
     } while (TRUE);
-    
-    free_traverse_ptr(&tp);
     
     Status = STATUS_SUCCESS;
     if (pbr)

@@ -72,7 +72,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                     
                     if (!utf16) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         return FALSE;
                     }
                     
@@ -125,7 +124,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                 utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
                                 if (!utf8->Buffer) {
                                     ERR("out of memory\n");
-                                    free_traverse_ptr(&tp);
                                     ExFreePool(utf16);
                                     return FALSE;
                                 }
@@ -133,7 +131,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                 RtlCopyMemory(utf8->Buffer, di->name, di->n);
                             }
                             
-                            free_traverse_ptr(&tp);
                             ExFreePool(utf16);
                             
 //                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
@@ -157,28 +154,23 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
     Status = find_item(Vcb, r, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        free_traverse_ptr(&tp);
         return FALSE;
     }
     
-    free_traverse_ptr(&tp);
     tp = tp2;
     
     TRACE("found item %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     
     if (keycmp(&tp.item->key, &searchkey) == -1) {
         if (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         }
     }
     
-    if (tp.item->key.obj_id != parinode || tp.item->key.obj_type != TYPE_DIR_INDEX) {
-        free_traverse_ptr(&tp);
+    if (tp.item->key.obj_id != parinode || tp.item->key.obj_type != TYPE_DIR_INDEX)
         return FALSE;
-    }
     
     b = TRUE;
     do {
@@ -199,8 +191,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                 
                 if (!utf16) {
                     ERR("out of memory\n");
-                    
-                    free_traverse_ptr(&tp);
                     return FALSE;
                 }
                 
@@ -254,7 +244,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
                             if (!utf8->Buffer) {
                                 ERR("out of memory\n");
-                                free_traverse_ptr(&tp);
                                 ExFreePool(utf16);
                                 
                                 return FALSE;
@@ -263,7 +252,6 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             RtlCopyMemory(utf8->Buffer, di->name, di->n);
                         }
                         
-                        free_traverse_ptr(&tp);
                         ExFreePool(utf16);
                         
                         return TRUE;
@@ -277,15 +265,12 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
          
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             b = tp.item->key.obj_id == parinode && tp.item->key.obj_type == TYPE_DIR_INDEX;
         }
     } while (b);
     
-    free_traverse_ptr(&tp);
-
     return FALSE;
 }
 
@@ -450,15 +435,12 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                     xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
                     if (!xattr->Buffer) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         goto end;
                     }
                     
                     xattr->Length = xattr->MaximumLength = di->n;
                     RtlCopyMemory(xattr->Buffer, di->name, di->n);
                     xattr->Buffer[di->n] = 0;
-                    
-                    free_traverse_ptr(&tp);
                     
                     success = TRUE;
                     goto end;
@@ -474,8 +456,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
             }
         }
     }
-    
-    free_traverse_ptr(&tp);
     
     searchkey.offset = 0;
     
@@ -513,7 +493,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                         WCHAR* utf16 = ExAllocatePoolWithTag(PagedPool, utf16len, ALLOC_TAG);
                         if (!utf16) {
                             ERR("out of memory\n");
-                            free_traverse_ptr(&tp);
                             goto end;
                         }
                         
@@ -537,7 +516,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                                 xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
                                 if (!xattr->Buffer) {
                                     ERR("out of memory\n");
-                                    free_traverse_ptr(&tp);
                                     ExFreePool(utf16);
                                     goto end;
                                 }
@@ -545,8 +523,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                                 xattr->Length = xattr->MaximumLength = di->n;
                                 RtlCopyMemory(xattr->Buffer, di->name, di->n);
                                 xattr->Buffer[di->n] = 0;
-                                
-                                free_traverse_ptr(&tp);
                                 
                                 success = TRUE;
                                 goto end;
@@ -569,7 +545,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
         
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             if (next_tp.item->key.obj_id > fcb->inode || next_tp.item->key.obj_type > TYPE_XATTR_ITEM)
@@ -577,8 +552,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
         }
     } while (b);
     
-    free_traverse_ptr(&tp);
-   
 end:
     ExFreePool(utf8);
     
@@ -1038,14 +1011,11 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
                         ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", sf2->inode, sf2->subvol->id);
                         Status = STATUS_INTERNAL_ERROR;
                         free_fcb(sf2);
-                        free_traverse_ptr(&tp);
                         goto end;
                     }
                     
                     if (tp.item->size > 0)
                         RtlCopyMemory(&sf2->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-                    
-                    free_traverse_ptr(&tp);
                     
                     sf2->atts = get_file_attributes(Vcb, &sf2->inode_item, sf2->subvol, sf2->inode, sf2->type, sf2->filepart.Buffer[0] == '.', FALSE);
                     
@@ -1176,7 +1146,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - could not find INODE_ITEM for parent directory %llx in subvol %llx\n", parfcb->inode, parfcb->subvol->id);
-        free_traverse_ptr(&tp);
         ExFreePool(utf8);
         return STATUS_INTERNAL_ERROR;
     }
@@ -1184,7 +1153,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!dirii) {
         ERR("out of memory\n");
-        free_traverse_ptr(&tp);
         ExFreePool(utf8);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -1193,8 +1161,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     delete_tree_item(Vcb, &tp, rollback);
     
     insert_tree_item(Vcb, parfcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL, rollback);
-    
-    free_traverse_ptr(&tp);
     
     if (parfcb->subvol->lastinode == 0)
         get_last_inode(Vcb, parfcb->subvol);
@@ -1672,8 +1638,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, parfcb->subvol->id);
         }
         
-        free_traverse_ptr(&tp);
-        
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
@@ -1934,8 +1898,6 @@ NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, IN
     } else {
         WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
     }
-    
-    free_traverse_ptr(&tp);
     
     newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!newii) {
@@ -2399,7 +2361,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             
             if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                 ERR("error - could not find EXTENT_DATA items for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-                free_traverse_ptr(&tp);
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
@@ -2412,7 +2373,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             if (tp.item->size < sizeof(EXTENT_DATA)) {
                 ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
-                free_traverse_ptr(&tp);
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fcb(fcb);
@@ -2431,8 +2391,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             
             fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
             fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
-            
-            free_traverse_ptr(&tp);
         }
     
         if (options & FILE_NON_DIRECTORY_FILE && fcb->type == BTRFS_TYPE_DIRECTORY) {

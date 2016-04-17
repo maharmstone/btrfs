@@ -219,13 +219,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         searchkey.obj_type = TYPE_SUBVOL_UUID;
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
         
-        if (tp.tree)
-            free_traverse_ptr(&tp);
-        
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE);
     } while (NT_SUCCESS(Status) && !keycmp(&searchkey, &tp.item->key));
-    
-    free_traverse_ptr(&tp);
     
     *root_num = r->id;
     
@@ -436,7 +431,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - could not find INODE_ITEM for directory %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -444,7 +438,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
-        free_traverse_ptr(&tp);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -454,8 +447,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback);
     
-    free_traverse_ptr(&tp);
-
     Vcb->root_root->lastinode = id;
 
     Status = STATUS_SUCCESS;    

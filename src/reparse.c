@@ -173,7 +173,6 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
             
             if (!di) {
                 ERR("out of memory\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
@@ -209,8 +208,6 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
         WARN("search for DIR_ITEM by crc32 failed\n");
     }
 
-    free_traverse_ptr(&tp);
-
     searchkey.obj_id = parinode;
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = index;
@@ -229,7 +226,6 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
             DIR_ITEM* di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!di2) {
                 ERR("out of memory\n");
-                free_traverse_ptr(&tp);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
@@ -240,8 +236,6 @@ static NTSTATUS change_file_type(device_extension* Vcb, UINT64 inode, root* subv
             insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, di2, tp.item->size, NULL, rollback);
         }
     }
-    
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -304,7 +298,6 @@ static NTSTATUS set_symlink(PIRP Irp, fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG 
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("error - change_file_type returned %08x\n", Status);
-                        free_traverse_ptr(&tp);
                         return Status;
                     }
                     
@@ -320,14 +313,11 @@ static NTSTATUS set_symlink(PIRP Irp, fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG 
         
         b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_REF;
         }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
         searchkey.obj_id = fcb->inode;
@@ -364,7 +354,6 @@ static NTSTATUS set_symlink(PIRP Irp, fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG 
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("error - change_file_type returned %08x\n", Status);
-                            free_traverse_ptr(&tp);
                             return Status;
                         }
                         
@@ -380,14 +369,11 @@ static NTSTATUS set_symlink(PIRP Irp, fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG 
             
             b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
             if (b) {
-                free_traverse_ptr(&tp);
                 tp = next_tp;
                 
                 b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_EXTREF;
             }
         } while (b);
-        
-        free_traverse_ptr(&tp);
     }
     
     fcb->inode_item.st_mode |= __S_IFLNK;
@@ -473,7 +459,6 @@ static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("error - change_file_type returned %08x\n", Status);
-                        free_traverse_ptr(&tp);
                         return Status;
                     }
                     
@@ -489,14 +474,11 @@ static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
         
         b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             
             b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_REF;
         }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
         searchkey.obj_id = fcb->inode;
@@ -533,7 +515,6 @@ static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("error - change_file_type returned %08x\n", Status);
-                            free_traverse_ptr(&tp);
                             return Status;
                         }
                         
@@ -549,14 +530,11 @@ static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
             
             b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
             if (b) {
-                free_traverse_ptr(&tp);
                 tp = next_tp;
                 
                 b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_INODE_EXTREF;
             }
         } while (b);
-        
-        free_traverse_ptr(&tp);
     }   
     
     Status = truncate_file(fcb, 0, rollback);

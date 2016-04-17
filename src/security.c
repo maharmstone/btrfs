@@ -895,12 +895,10 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     if (keycmp(&tp.item->key, &searchkey)) {
         ERR("error - could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
         Status = STATUS_INTERNAL_ERROR;
-        free_traverse_ptr(&tp);
         goto end;
     }
     
     delete_tree_item(Vcb, &tp, &rollback);
-    free_traverse_ptr(&tp);
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);

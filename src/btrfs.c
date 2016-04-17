@@ -319,20 +319,16 @@ BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
     }
     
     while (find_prev_item(Vcb, &tp, &prev_tp, FALSE)) {
-        free_traverse_ptr(&tp);
         tp = prev_tp;
         
         TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         
         if (tp.item->key.obj_type == TYPE_INODE_ITEM || (tp.item->key.obj_type == TYPE_ROOT_ITEM && !(tp.item->key.obj_id & 0x8000000000000000))) {
             r->lastinode = tp.item->key.obj_id;
-            free_traverse_ptr(&tp);
             TRACE("last inode for tree %llx is %llx\n", r->id, r->lastinode);
             return TRUE;
         }
     }
-    
-    free_traverse_ptr(&tp);
     
     r->lastinode = SUBVOL_ROOT_INODE;
     
@@ -362,13 +358,11 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     
     if (keycmp(&tp.item->key, &searchkey)) {
         TRACE("could not find item (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        free_traverse_ptr(&tp);
         return FALSE;
     }
     
     if (tp.item->size < sizeof(DIR_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-        free_traverse_ptr(&tp);
         return FALSE;
     }
     
@@ -378,7 +372,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     while (TRUE) {
         if (size < sizeof(DIR_ITEM) || size < (sizeof(DIR_ITEM) - 1 + xa->m + xa->n)) {
             WARN("(%llx,%x,%llx) is truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-            free_traverse_ptr(&tp);
             return FALSE;
         }
         
@@ -391,7 +384,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
                 *data = ExAllocatePoolWithTag(PagedPool, xa->m, ALLOC_TAG);
                 if (!*data) {
                     ERR("out of memory\n");
-                    free_traverse_ptr(&tp);
                     return FALSE;
                 }
                 
@@ -399,7 +391,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
             } else
                 *data = NULL;
             
-            free_traverse_ptr(&tp);
             return TRUE;
         }
         
@@ -413,8 +404,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     }
     
     TRACE("xattr %s not found in (%llx,%x,%llx)\n", name, searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-    
-    free_traverse_ptr(&tp);
     
     return FALSE;
 }
@@ -468,7 +457,6 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
@@ -504,7 +492,6 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
@@ -537,7 +524,6 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
         xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
         if (!xa) {
             ERR("out of memory\n");
-            free_traverse_ptr(&tp);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -553,8 +539,6 @@ NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, ch
         
         insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL, rollback);
     }
-    
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -583,7 +567,6 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
         if (tp.item->size < sizeof(DIR_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             
-            free_traverse_ptr(&tp);
             return FALSE;
         } else {
             xa = (DIR_ITEM*)tp.item->data;
@@ -593,7 +576,6 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                 
                 if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
                     ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    free_traverse_ptr(&tp);
                         
                     return FALSE;
                 }
@@ -610,7 +592,6 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                     
                     if (newsize == 0) {
                         TRACE("xattr %s deleted\n", name);
-                        free_traverse_ptr(&tp);
                         
                         return TRUE;
                     }
@@ -619,7 +600,6 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                     newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
-                        free_traverse_ptr(&tp);
                         return FALSE;
                     }
 
@@ -635,14 +615,12 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
                     
                     insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, rollback);
                     
-                    free_traverse_ptr(&tp);
                         
                     return TRUE;
                 }
                 
                 if (xa->m + xa->n >= size) { // FIXME - test this works
                     WARN("xattr %s not found\n", name);
-                    free_traverse_ptr(&tp);
 
                     return FALSE;
                 } else {
@@ -653,7 +631,6 @@ BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, cha
         }
     } else {
         WARN("xattr %s not found\n", name);
-        free_traverse_ptr(&tp);
         
         return FALSE;
     }
@@ -680,14 +657,12 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
         
         if (tp.item->size + disize > maxlen) {
             WARN("DIR_ITEM was longer than maxlen (%u + %u > %u)\n", tp.item->size, disize, maxlen);
-            free_traverse_ptr(&tp);
             return STATUS_INTERNAL_ERROR;
         }
         
         di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
         if (!di2) {
             ERR("out of memory\n");
-            free_traverse_ptr(&tp);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -704,8 +679,6 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
     } else {
         insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di, disize, NULL, rollback);
     }
-
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -728,7 +701,6 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
     
     if (!keycmp(&searchkey, &tp.item->key)) {
         if (!find_prev_item(Vcb, &tp, &prev_tp, FALSE)) {
-            free_traverse_ptr(&tp);
             tp = prev_tp;
             
             TRACE("moving back to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -739,8 +711,6 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
         dirpos = tp.item->key.offset + 1;
     } else
         dirpos = 2;
-    
-    free_traverse_ptr(&tp);
     
     return dirpos;
 }
@@ -1270,8 +1240,6 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     t->has_new_address = FALSE;
     t->flags = tp.tree->flags;
     
-    free_traverse_ptr(&tp);
-    
     InsertTailList(&Vcb->trees, &t->list_entry);
     
     add_to_tree_cache(Vcb, t, TRUE);
@@ -1444,7 +1412,6 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
                         
                         if (!newdi) {
                             ERR("out of memory\n");
-                            free_traverse_ptr(&tp);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
@@ -1473,8 +1440,6 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
     } else {
         WARN("could not find DIR_ITEM for crc32 %08x\n", crc32);
     }
-    
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -1528,7 +1493,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                         
                         if (!newir) {
                             ERR("out of memory\n");
-                            free_traverse_ptr(&tp);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
@@ -1567,8 +1531,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     } else {
         WARN("could not find INODE_REF entry for inode %llx in %llx\n", searchkey.obj_id, searchkey.offset);
     }
-    
-    free_traverse_ptr(&tp);
     
     if (changed)
         return STATUS_SUCCESS;
@@ -1619,7 +1581,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                         
                         if (!newier) {
                             ERR("out of memory\n");
-                            free_traverse_ptr(&tp);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
@@ -1654,8 +1615,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     } else {
         WARN("couldn't find INODE_EXTREF entry either (offset = %08x)\n", (UINT32)searchkey.offset);
     }
-    
-    free_traverse_ptr(&tp);
     
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
@@ -1710,8 +1669,6 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     }
     
-    free_traverse_ptr(&tp);
-    
     if (fcb->subvol->root_item.num_references > 1) {
         // change ROOT_ITEM num_references
         
@@ -1733,8 +1690,6 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
         } else {
             ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
         }
-        
-        free_traverse_ptr(&tp);
         
         ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
         if (!ri) {
@@ -1840,7 +1795,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         
         if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
             ERR("error - could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->par->inode, fcb->par->subvol->id);
-            free_traverse_ptr(&tp);
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
@@ -1848,7 +1802,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -1857,8 +1810,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         delete_tree_item(fcb->Vcb, &tp, rollback);
         
         insert_tree_item(fcb->Vcb, fcb->par->subvol, searchkey.obj_id, searchkey.obj_type, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
-        
-        free_traverse_ptr(&tp);
         
         fcb->par->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->par->subvol->root_item.ctime = now;
@@ -1915,7 +1866,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
@@ -1934,23 +1884,19 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     Status = find_item(fcb->Vcb, fcb->subvol, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        free_traverse_ptr(&tp);
         goto exit;
     }
     
-    free_traverse_ptr(&tp);
     tp = tp2;
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - INODE_ITEM not found\n");
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
     if (tp.item->size < sizeof(INODE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
@@ -1964,7 +1910,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!newii) {
             ERR("out of memory\n");
-            free_traverse_ptr(&tp);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -1982,8 +1927,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newii, sizeof(INODE_ITEM), NULL, rollback))
             ERR("error - failed to insert item\n");
         
-        free_traverse_ptr(&tp);
-        
         goto success2;
     }
     
@@ -1993,7 +1936,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     // delete XATTR_ITEM (0x18)
     
     while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
-        free_traverse_ptr(&tp);
         tp = tp2;
         
         if (tp.item->key.obj_id == fcb->inode) {
@@ -2005,8 +1947,6 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         } else
             break;
     }
-    
-    free_traverse_ptr(&tp);
     
     // excise extents
     
@@ -2038,7 +1978,6 @@ success2:
     
     if (keycmp(&searchkey, &tp.item->key)) {
         ERR("error - could not find INODE_ITEM for parent directory %llx in subvol %llx\n", parinode, parsubvol->id);
-        free_traverse_ptr(&tp);
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
@@ -2054,7 +1993,6 @@ success2:
     dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!dirii) {
         ERR("out of memory\n");
-        free_traverse_ptr(&tp);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto exit;
     }
@@ -2063,8 +2001,6 @@ success2:
     delete_tree_item(fcb->Vcb, &tp, rollback);
     
     insert_tree_item(fcb->Vcb, parsubvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, dirii, sizeof(INODE_ITEM), NULL, rollback);
-    
-    free_traverse_ptr(&tp);
     
     parsubvol->root_item.ctransid = fcb->Vcb->superblock.generation;
     parsubvol->root_item.ctime = now;
@@ -2771,13 +2707,9 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb) {
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         
-        if (b) {
-            free_traverse_ptr(&tp);
+        if (b)
             tp = next_tp;
-        }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     return STATUS_SUCCESS;
 }
@@ -2842,14 +2774,11 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         
         if (b) {
-            free_traverse_ptr(&tp);
             tp = next_tp;
             if (tp.item->key.obj_id > searchkey.obj_id || tp.item->key.obj_type > searchkey.obj_type)
                 break;
         }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     if (lastaddr < dev->devitem.num_bytes) {
         Status = add_disk_hole(&dev->disk_holes, lastaddr, dev->devitem.num_bytes - lastaddr);
@@ -2962,13 +2891,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
         
-        if (b) {
-            free_traverse_ptr(&tp);
+        if (b)
             tp = next_tp;
-        }
     } while (b);
-    
-    free_traverse_ptr(&tp);
     
     Vcb->log_to_phys_loaded = TRUE;
     
@@ -3040,7 +2965,6 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb) {
             }
         }
         
-        free_traverse_ptr(&tp);
 //         if (addr >= c->offset && (addr - c->offset) < c->chunk_item->size && c->chunk_item->num_stripes > 0) {
 //             cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 // 
@@ -3530,14 +3454,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ERR("couldn't find INODE_ITEM for root directory\n");
         Status = STATUS_INTERNAL_ERROR;
-        free_traverse_ptr(&tp);
         goto exit;
     }
     
     if (tp.item->size > 0)
         RtlCopyMemory(&Vcb->root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-    
-    free_traverse_ptr(&tp);
     
     fcb_get_sd(Vcb->root_fcb);
     

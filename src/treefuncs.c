@@ -743,7 +743,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                 if (!tp->item->ignore)
                     return STATUS_SUCCESS;
                 
-                free_traverse_ptr(&oldtp);
                 oldtp = *tp;
             }
             
@@ -757,7 +756,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                 if (!tp->item->ignore)
                     return STATUS_SUCCESS;
                 
-                free_traverse_ptr(&oldtp);
                 oldtp = *tp;
             }
             
@@ -831,12 +829,6 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
 // #endif
     
     return Status;
-}
-
-void STDCALL _free_traverse_ptr(traverse_ptr* tp, const char* func, const char* file, unsigned int line) {
-    if (tp->tree) {
-        tp->tree = free_tree2(tp->tree, func, file, line);
-    }
 }
 
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line) {
@@ -917,17 +909,14 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
         BOOL b;
         
         while ((b = _find_next_item(Vcb, next_tp, &ntp2, TRUE, func, file, line))) {
-            _free_traverse_ptr(next_tp, func, file, line);
             *next_tp = ntp2;
             
             if (!next_tp->item->ignore)
                 break;
         }
         
-        if (!b) {
-            _free_traverse_ptr(next_tp, func, file, line);
+        if (!b)
             return FALSE;
-        }
     }
     
     add_to_tree_cache(Vcb, t, FALSE);
@@ -1164,7 +1153,6 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         
         if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
-            free_traverse_ptr(&tp);
             goto end;
         }
     } else
@@ -1173,7 +1161,6 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
     if (!td) {
         ERR("out of memory\n");
-        free_traverse_ptr(&tp);
         goto end;
     }
     
@@ -1219,9 +1206,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     add_to_tree_cache(Vcb, tp.tree, TRUE);
     
-    if (!ptp)
-        free_traverse_ptr(&tp);
-    else
+    if (ptp)
         *ptp = tp;
     
     t = tp.tree;

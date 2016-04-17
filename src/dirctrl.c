@@ -157,7 +157,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
                     
                     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                         ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
-                        free_traverse_ptr(&tp);
                         return STATUS_INTERNAL_ERROR;
                     }
                     
@@ -165,8 +164,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
                     
                     if (tp.item->size > 0)
                         RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-                    
-                    free_traverse_ptr(&tp);
                 }
                 
                 break;
@@ -453,7 +450,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         Status = find_item(fcb->Vcb, fcb->subvol, tp, &searchkey, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
-            free_traverse_ptr(tp);
             tp->tree = NULL;
             return Status;
         }
@@ -462,7 +458,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         
         if (keycmp(&tp->item->key, &searchkey) == -1) {
             if (find_next_item(fcb->Vcb, tp, &next_tp, FALSE)) {
-                free_traverse_ptr(tp);
                 *tp = next_tp;
                 
                 TRACE("moving on to %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
@@ -470,7 +465,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         }
         
         if (tp->item->key.obj_id != searchkey.obj_id || tp->item->key.obj_type != searchkey.obj_type || tp->item->key.offset < *offset) {
-            free_traverse_ptr(tp);
             tp->tree = NULL;
             return STATUS_NO_MORE_FILES;
         }
@@ -482,7 +476,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
         if (tp->item->size < sizeof(DIR_ITEM) || tp->item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->size, sizeof(DIR_ITEM));
             
-            free_traverse_ptr(tp);
             tp->tree = NULL;
             return STATUS_INTERNAL_ERROR;
         }
@@ -497,7 +490,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
     } else {
         if (find_next_item(fcb->Vcb, tp, &next_tp, FALSE)) {
             if (next_tp.item->key.obj_type == TYPE_DIR_INDEX && next_tp.item->key.obj_id == tp->item->key.obj_id) {
-                free_traverse_ptr(tp);
                 *tp = next_tp;
                 
                 *offset = tp->item->key.offset + 1;
@@ -506,8 +498,6 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
                 
                 if (tp->item->size < sizeof(DIR_ITEM) || tp->item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
                     ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->size, sizeof(DIR_ITEM));
-                    
-                    free_traverse_ptr(&next_tp);
                     return STATUS_INTERNAL_ERROR;
                 }
         
@@ -518,10 +508,8 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
                 de->dir_entry_type = DirEntryType_File;
                 
                 return STATUS_SUCCESS;
-            } else {
-                free_traverse_ptr(&next_tp);
+            } else
                 return STATUS_NO_MORE_FILES;
-            }
         } else
             return STATUS_NO_MORE_FILES;
     }
@@ -673,7 +661,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (Irp->MdlAddress && !buf) {
         ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        if (tp.tree) free_traverse_ptr(&tp);
         goto end;
     }
     
@@ -688,14 +675,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de.name, de.namelen);
         if (!NT_SUCCESS(Status)) {
             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-            if (tp.tree) free_traverse_ptr(&tp);
             goto end;
         }
         
         uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
         if (!uni_fn) {
             ERR("out of memory\n");
-            if (tp.tree) free_traverse_ptr(&tp);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
@@ -704,7 +689,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         if (!NT_SUCCESS(Status)) {
             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-            if (tp.tree) free_traverse_ptr(&tp);
             goto end;
         }
         
@@ -719,14 +703,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de.name, de.namelen);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-                    if (tp.tree) free_traverse_ptr(&tp);
                     goto end;
                 }
                 
                 uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                 if (!uni_fn) {
                     ERR("out of memory\n");
-                    if (tp.tree) free_traverse_ptr(&tp);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
@@ -736,15 +718,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
                     ExFreePool(uni_fn);
-                    if (tp.tree) free_traverse_ptr(&tp);
                     goto end;
                 }
                 
                 di_uni_fn.Length = di_uni_fn.MaximumLength = stringlen;
                 di_uni_fn.Buffer = uni_fn;
             } else {
-                if (tp.tree) free_traverse_ptr(&tp);
-
                 if (Status == STATUS_NO_MORE_FILES && initial)
                     Status = STATUS_NO_SUCH_FILE;
                 
@@ -794,14 +773,12 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de.name, de.namelen);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-                            if (tp.tree) free_traverse_ptr(&tp);
                             goto end;
                         }
                         
                         uni_fn = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
                         if (!uni_fn) {
                             ERR("out of memory\n");
-                            if (tp.tree) free_traverse_ptr(&tp);
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto end;
                         }
@@ -811,7 +788,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
                             ExFreePool(uni_fn);
-                            if (tp.tree) free_traverse_ptr(&tp);
                             goto end;
                         }
                         
@@ -857,8 +833,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     Irp->IoStatus.Information = IrpSp->Parameters.QueryDirectory.Length - length;
-    
-    if (tp.tree) free_traverse_ptr(&tp);
     
 end:
     release_tree_lock(fcb->Vcb, FALSE);
