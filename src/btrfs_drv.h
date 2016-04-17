@@ -396,23 +396,30 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
 
 #ifdef _DEBUG
 
+extern BOOL log_started;
+extern UINT32 debug_log_level;
+
 #ifdef DEBUG_LONG_MESSAGES
 
-#define TRACE(s, ...) _debug_message(funcname, 3, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#define WARN(s, ...) _debug_message(funcname, 2, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#define FIXME(s, ...) _debug_message(funcname, 1, __FILE__, __LINE__, s, ##__VA_ARGS__)
-#define ERR(s, ...) _debug_message(funcname, 1, __FILE__, __LINE__, s, ##__VA_ARGS__)
+#define MSG(fn, file, line, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, file, line, s, ##__VA_ARGS__) : 0
 
-void STDCALL _debug_message(const char* func, UINT8 priority, const char* file, unsigned int line, char* s, ...);
+#define TRACE(s, ...) MSG(funcname, __FILE__, __LINE__, s, 3, ##__VA_ARGS__)
+#define WARN(s, ...) MSG(funcname, __FILE__, __LINE__, s, 2, ##__VA_ARGS__)
+#define FIXME(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
+#define ERR(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
+
+void STDCALL _debug_message(const char* func, const char* file, unsigned int line, char* s, ...);
 
 #else
 
-#define TRACE(s, ...) _debug_message(funcname, 3, s, ##__VA_ARGS__)
-#define WARN(s, ...) _debug_message(funcname, 2, s, ##__VA_ARGS__)
-#define FIXME(s, ...) _debug_message(funcname, 1, s, ##__VA_ARGS__)
-#define ERR(s, ...) _debug_message(funcname, 1, s, ##__VA_ARGS__)
+#define MSG(fn, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, s, ##__VA_ARGS__) : 0
 
-void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...);
+#define TRACE(s, ...) MSG(funcname, s, 3, ##__VA_ARGS__)
+#define WARN(s, ...) MSG(funcname, s, 2, ##__VA_ARGS__)
+#define FIXME(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
+#define ERR(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
+
+void STDCALL _debug_message(const char* func, char* s, ...);
 
 #endif
 

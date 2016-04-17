@@ -74,9 +74,9 @@ static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PV
 }
 
 #ifdef DEBUG_LONG_MESSAGES
-void STDCALL _debug_message(const char* func, UINT8 priority, const char* file, unsigned int line, char* s, ...) {
+void STDCALL _debug_message(const char* func, const char* file, unsigned int line, char* s, ...) {
 #else
-void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
+void STDCALL _debug_message(const char* func, char* s, ...) {
 #endif
     LARGE_INTEGER offset;
     PIO_STACK_LOCATION IrpSp;
@@ -86,9 +86,6 @@ void STDCALL _debug_message(const char* func, UINT8 priority, char* s, ...) {
     char *buf2 = NULL, *buf;
     read_context* context = NULL;
     UINT32 length;
-    
-    if (log_started && priority > debug_log_level)
-        return;
     
     buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
     
