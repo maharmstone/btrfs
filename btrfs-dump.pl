@@ -365,7 +365,7 @@ sub dump_item {
 			$s=substr($s,18);
 		}
 		
-		for (my $i=0;$i<$refcount;$i++) {
+		while (length($s)>0) {
 			my $irt=unpack("C",$s);
 			$s = substr($s,1);
 			
@@ -388,6 +388,10 @@ sub dump_item {
 			}
 			# FIXME - SHARED_BLOCK_REF
 		}
+	} elsif ($type == 0xb2) {
+		@b=unpack("QQQv",$s);
+		$s=substr($s,28);
+		printf("extent_data_ref root=%x objid=%x offset=%x count=%x ",@b);
 	} elsif ($type == 0xb4) { # EXTENT_REF_V0
 		@b=unpack("QQQv",$s);
 		$s=substr($s,28);
