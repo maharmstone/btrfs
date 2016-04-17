@@ -1514,16 +1514,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-            if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+            if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
                 WARN("SeAccessCheck failed, returning %08x\n", Status);
-                goto end;
-            }
-            
-            if ((options & FILE_DIRECTORY_FILE && !(access & FILE_ADD_SUBDIRECTORY)) ||
-                (!(options & FILE_DIRECTORY_FILE) && !(access & FILE_ADD_FILE))) {
-                WARN("insufficient privileges to create file or directory\n");
-                Status = STATUS_ACCESS_DENIED;
                 goto end;
             }
             
@@ -1698,16 +1691,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExFreePool(fpus.Buffer);
         fpus.Buffer = NULL;
     } else {
-        if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+        if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
-            goto end;
-        }
-        
-        if ((options & FILE_DIRECTORY_FILE && !(access & FILE_ADD_SUBDIRECTORY)) ||
-            (!(options & FILE_DIRECTORY_FILE) && !(access & FILE_ADD_FILE))) {
-            WARN("insufficient privileges to create file or directory\n");
-            Status = STATUS_ACCESS_DENIED;
             goto end;
         }
         
