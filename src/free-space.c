@@ -187,13 +187,13 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
     traverse_ptr tp, tp2;
     FREE_SPACE_ITEM* fsi;
-    UINT64 inode, num_sectors, num_valid_sectors, i, generation;
+    UINT64 inode, num_sectors, num_valid_sectors, i, *generation;
     INODE_ITEM* ii;
     UINT8* data;
     NTSTATUS Status;
     UINT32 *checksums, crc32;
     FREE_SPACE_ENTRY* fse;
-    UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum;
+    UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum, off;
     LIST_ENTRY* le;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
@@ -281,9 +281,9 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     num_sectors = size / Vcb->superblock.sector_size;
     
-    generation = *(data + (num_sectors * sizeof(UINT32)));
+    generation = (UINT64*)(data + (num_sectors * sizeof(UINT32)));
     
-    if (generation != fsi->generation) {
+    if (*generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, generation, fsi->generation);
         ExFreePool(data);
         return STATUS_NOT_FOUND;
@@ -316,21 +316,46 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         }
     }
     
-    fse = (FREE_SPACE_ENTRY*)&data[(sizeof(UINT32) * num_sectors) + sizeof(UINT64)];
+    off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
 
     bmpnum = 0;
     for (i = 0; i < num_entries; i++) {
-        if (fse[i].type == 1) {
-            Status = add_space_entry(c, fse[i].offset, fse[i].size);
+        if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+            off = sector_align(off, Vcb->superblock.sector_size);
+        
+        fse = (FREE_SPACE_ENTRY*)&data[off];
+        
+        if (fse->type == FREE_SPACE_EXTENT) {
+            Status = add_space_entry(c, fse->offset, fse->size);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08x\n", Status);
                 ExFreePool(data);
                 return Status;
             }
-        } else if (fse[i].type == FREE_SPACE_BITMAP) {
-            // FIXME - make sure we don't overflow the buffer here
-            load_free_space_bitmap(Vcb, c, fse[i].offset, &data[(bmpnum + 1) * Vcb->superblock.sector_size]);
-            bmpnum++;
+        } else if (fse->type != FREE_SPACE_BITMAP) {
+            ERR("unknown free-space type %x\n", fse->type);
+        }
+                
+        off += sizeof(FREE_SPACE_ENTRY);
+    }
+    
+    if (num_bitmaps > 0) {
+        bmpnum = sector_align(off, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+        off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
+        
+        for (i = 0; i < num_entries; i++) {
+            if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+                off = sector_align(off, Vcb->superblock.sector_size);
+            
+            fse = (FREE_SPACE_ENTRY*)&data[off];
+            
+            if (fse->type == FREE_SPACE_BITMAP) {
+                // FIXME - make sure we don't overflow the buffer here
+                load_free_space_bitmap(Vcb, c, fse->offset, &data[bmpnum * Vcb->superblock.sector_size]);
+                bmpnum++;
+            }
+            
+            off += sizeof(FREE_SPACE_ENTRY);
         }
     }
     
@@ -531,7 +556,7 @@ static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 
 static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
-    UINT64 new_cache_size;
+    UINT64 num_entries, new_cache_size, i;
     UINT64 lastused = c->offset;
     UINT32 num_sectors;
     
@@ -540,7 +565,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     *changed = FALSE;
     
-    new_cache_size = sizeof(UINT64); // for generation
+    num_entries = 0;
     
     le = c->space.Flink;
     while (le != &c->space) {
@@ -549,7 +574,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
             if (s->offset > lastused) {
 //                 TRACE("free: (%llx,%llx)\n", lastused, s->offset - lastused);
-                new_cache_size += sizeof(FREE_SPACE_ENTRY);
+                num_entries++;
             }
             
             lastused = s->offset + s->size;
@@ -560,13 +585,23 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     if (c->offset + c->chunk_item->size > lastused) {
 //         TRACE("free: (%llx,%llx)\n", lastused, c->offset + c->chunk_item->size - lastused);
-        new_cache_size += sizeof(FREE_SPACE_ENTRY);
+        num_entries++;
     }
+    
+    new_cache_size = sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
     
     num_sectors = sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
     num_sectors = sector_align(num_sectors, CACHE_INCREMENTS);
     
-    new_cache_size += sizeof(UINT32) * num_sectors;
+    // adjust for padding
+    // FIXME - there must be a more efficient way of doing this
+    new_cache_size = sizeof(UINT64) + (sizeof(UINT32) * num_sectors);
+    for (i = 0; i < num_entries; i++) {
+        if ((new_cache_size / Vcb->superblock.sector_size) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size))
+            new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
+        
+        new_cache_size += sizeof(FREE_SPACE_ENTRY);
+    }
     
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
     
@@ -800,7 +835,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     INODE_ITEM* ii;
     void* data;
     FREE_SPACE_ENTRY* fse;
-    UINT64 num_entries, num_sectors, lastused, *cachegen, i;
+    UINT64 num_entries, num_sectors, lastused, *cachegen, i, off;
     UINT32* checksums;
     LIST_ENTRY* le;
     BOOL b;
@@ -815,7 +850,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     num_entries = 0;
     num_sectors = c->cache_size / Vcb->superblock.sector_size;
-    fse = (FREE_SPACE_ENTRY*)((UINT8*)data + (sizeof(UINT32) * num_sectors) + sizeof(UINT64));
+    off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
     
     lastused = c->offset;
     
@@ -825,10 +860,17 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
         if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
             if (s->offset > lastused) {
-                fse[num_entries].offset = lastused;
-                fse[num_entries].size = s->offset - lastused;
-                fse[num_entries].type = FREE_SPACE_EXTENT;
+                if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+                    off = sector_align(off, Vcb->superblock.sector_size);
+                
+                fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
+                
+                fse->offset = lastused;
+                fse->size = s->offset - lastused;
+                fse->type = FREE_SPACE_EXTENT;
                 num_entries++;
+                
+                off += sizeof(FREE_SPACE_ENTRY);
             }
             
             lastused = s->offset + s->size;
@@ -838,9 +880,14 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     }
     
     if (c->offset + c->chunk_item->size > lastused) {
-        fse[num_entries].offset = lastused;
-        fse[num_entries].size = c->offset + c->chunk_item->size - lastused;
-        fse[num_entries].type = FREE_SPACE_EXTENT;
+        if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+            off = sector_align(off, Vcb->superblock.sector_size);
+        
+        fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
+        
+        fse->offset = lastused;
+        fse->size = c->offset + c->chunk_item->size - lastused;
+        fse->type = FREE_SPACE_EXTENT;
         num_entries++;
     }
 
