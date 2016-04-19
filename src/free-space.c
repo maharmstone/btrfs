@@ -699,7 +699,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             
             ii = (INODE_ITEM*)tp.item->data;
             
-            add_to_tree_cache(Vcb, tp.tree, TRUE);
+            if (!tp.tree->write) {
+                tp.tree->write = TRUE;
+                Vcb->write_trees++;
+            }
 
             // add free_space entry to tree cache
             
@@ -723,7 +726,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
                 return STATUS_INTERNAL_ERROR;
             }
             
-            add_to_tree_cache(Vcb, tp.tree, TRUE);
+            if (!tp.tree->write) {
+                tp.tree->write = TRUE;
+                Vcb->write_trees++;
+            }
 
             // add new extent
             
@@ -767,7 +773,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return STATUS_INTERNAL_ERROR;
         }
         
-        add_to_tree_cache(Vcb, tp.tree, TRUE);
+        if (!tp.tree->write) {
+            tp.tree->write = TRUE;
+            Vcb->write_trees++;
+        }
 
         searchkey.obj_id = FREE_SPACE_CACHE_ID;
         searchkey.obj_type = 0;
@@ -789,7 +798,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return STATUS_INTERNAL_ERROR;
         }
         
-        add_to_tree_cache(Vcb, tp.tree, TRUE);
+        if (!tp.tree->write) {
+            tp.tree->write = TRUE;
+            Vcb->write_trees++;
+        }
     }
     
     // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops

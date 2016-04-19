@@ -207,6 +207,7 @@ typedef struct _tree {
     UINT64 new_address;
     BOOL has_new_address;
     UINT64 flags;
+    BOOL write;
 } tree;
 
 typedef struct {
@@ -227,12 +228,6 @@ typedef struct {
     tree* tree;
     tree_data* item;
 } traverse_ptr;
-
-typedef struct _tree_cache {
-    tree* tree;
-    BOOL write;
-    LIST_ENTRY list_entry;
-} tree_cache;
 
 typedef struct _root_cache {
     root* root;
@@ -324,7 +319,6 @@ typedef struct _device_extension {
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
     LIST_ENTRY trees;
-    LIST_ENTRY tree_cache;
     HANDLE flush_thread_handle;
     LIST_ENTRY list_entry;
 } device_extension;
@@ -442,16 +436,15 @@ UINT32 STDCALL calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen);
 NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
-void STDCALL free_tree_cache(LIST_ENTRY* tc);
+void STDCALL free_trees(device_extension* Vcb);
 BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, LIST_ENTRY* rollback);
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
-void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write);
 tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line);
 NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, const char* func, const char* file, unsigned int line);
 NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, const char* func, const char* file, unsigned int line);
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
-void free_tree_cache_root(LIST_ENTRY* tc, root* r);
+void free_trees_root(device_extension* Vcb, root* r);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
@@ -480,7 +473,6 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback);
 NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
-void print_trees(LIST_ENTRY* tc);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
 NTSTATUS consider_write(device_extension* Vcb);

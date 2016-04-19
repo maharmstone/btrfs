@@ -31,7 +31,7 @@ static void do_flush(device_extension* Vcb) {
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);
     
-    free_tree_cache(&Vcb->tree_cache);
+    free_trees(Vcb);
     
     clear_rollback(&rollback);
 

@@ -405,6 +405,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->size = 0;
     t->new_address = 0;
     t->has_new_address = FALSE;
+    t->write = FALSE;
     
     c = get_chunk_from_address(Vcb, addr);
     
@@ -721,8 +722,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         } else {
             tp->tree = t;
             tp->item = td;
-            
-            add_to_tree_cache(Vcb, t, FALSE);
         }
         
         return STATUS_SUCCESS;
@@ -866,8 +865,6 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
             return FALSE;
     }
     
-    add_to_tree_cache(Vcb, t, FALSE);
-    
 #ifdef DEBUG_PARANOID
     if (!ignore && next_tp->item->ignore) {
         ERR("error - returning ignored item\n");
@@ -936,8 +933,6 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
         t = li->treeholder.tree;
     }
     
-    add_to_tree_cache(Vcb, t, FALSE);
-    
     prev_tp->tree = t;
     prev_tp->item = last_item(t);
     
@@ -956,32 +951,29 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
 //     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
 // }
 
-void free_tree_cache_root(LIST_ENTRY* tc, root* r) {
+void free_trees_root(device_extension* Vcb, root* r) {
     LIST_ENTRY* le;
     UINT8 level;
     
     for (level = 0; level <= 255; level++) {
         BOOL empty = TRUE;
         
-        le = tc->Flink;
+        le = Vcb->trees.Flink;
         
-        while (le != tc) {
+        while (le != &Vcb->trees) {
             LIST_ENTRY* nextle = le->Flink;
-            tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
+            tree* t = CONTAINING_RECORD(le, tree, list_entry);
             
-            if (tc2->tree->root == r && tc2->tree->header.level == level) {
-                BOOL top = !tc2->tree->paritem;
+            if (t->root == r && t->header.level == level) {
+                BOOL top = !t->paritem;
                 
                 empty = FALSE;
                 
-                free_tree2(tc2->tree, funcname, __FILE__, __LINE__);
-                if (top && r->treeholder.tree == tc2->tree)
+                free_tree2(t, funcname, __FILE__, __LINE__);
+                if (top && r->treeholder.tree == t)
                     r->treeholder.tree = NULL;
                 
-                RemoveEntryList(&tc2->list_entry);
-                ExFreePool(tc2);
-                
-                if (IsListEmpty(tc))
+                if (IsListEmpty(&Vcb->trees))
                     return;
             }
             
@@ -993,54 +985,20 @@ void free_tree_cache_root(LIST_ENTRY* tc, root* r) {
     }
 }
 
-void STDCALL free_tree_cache(LIST_ENTRY* tc) {
-    tree_cache* tc2;
+void STDCALL free_trees(device_extension* Vcb) {
+    tree* t;
     root* r;
 
-    while (!IsListEmpty(tc)) {
-        tc2 = CONTAINING_RECORD(tc->Flink, tree_cache, list_entry);
-        r = tc2->tree->root;
+    while (!IsListEmpty(&Vcb->trees)) {
+        t = CONTAINING_RECORD(Vcb->trees.Flink, tree, list_entry);
+        r = t->root;
         
         ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
         
-        free_tree_cache_root(tc, r);
+        free_trees_root(Vcb, r);
         
         ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
     }
-}
-
-void STDCALL add_to_tree_cache(device_extension* Vcb, tree* t, BOOL write) {
-    LIST_ENTRY* le;
-    tree_cache* tc2;
-    
-    le = Vcb->tree_cache.Flink;
-    while (le != &Vcb->tree_cache) {
-        tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
-        
-        if (tc2->tree == t) {
-            if (write && !tc2->write) {
-                Vcb->write_trees++;
-                tc2->write = TRUE;
-            }
-            return;
-        }
-        
-        le = le->Flink;
-    }
-    
-    tc2 = ExAllocatePoolWithTag(PagedPool, sizeof(tree_cache), ALLOC_TAG);
-    if (!tc2) {
-        ERR("out of memory\n");
-        return;
-    }
-    
-    TRACE("adding %p to tree cache\n", t);
-    
-    tc2->tree = t;
-    tc2->write = write;
-    InsertTailList(&Vcb->tree_cache, &tc2->list_entry);
-
-//     print_trees(tc);
 }
 
 static void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
@@ -1163,7 +1121,10 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
 //     ERR("tree %p, num_items now %x\n", tp.tree, tp.tree->header.num_items);
 //     ERR("size now %x\n", tp.tree->size);
     
-    add_to_tree_cache(Vcb, tp.tree, TRUE);
+    if (!tp.tree->write) {
+        tp.tree->write = TRUE;
+        Vcb->write_trees++;
+    }
     
     if (ptp)
         *ptp = tp;
@@ -1232,7 +1193,10 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 
     tp->item->ignore = TRUE;
     
-    add_to_tree_cache(Vcb, tp->tree, TRUE);
+    if (!tp->tree->write) {
+        tp->tree->write = TRUE;
+        Vcb->write_trees++;
+    }
     
     tp->tree->header.num_items--;
     
