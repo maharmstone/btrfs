@@ -1146,7 +1146,7 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
-                    if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, 0, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
                         ERR("insert_tree_item failed\n");
                         return STATUS_INTERNAL_ERROR;
                     }
@@ -2308,10 +2308,10 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
 
     searchkey.obj_id = BTRFS_ROOT_EXTENT;
     searchkey.obj_type = TYPE_ROOT_ITEM;
-    searchkey.offset = 0;
+    searchkey.offset = 0xffffffffffffffff;
     
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
-        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
             sb->extent_tree_addr = ri->block_number;
@@ -2323,7 +2323,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     searchkey.obj_id = BTRFS_ROOT_FSTREE;
     
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
-        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
             sb->fs_tree_addr = ri->block_number;
@@ -2335,7 +2335,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     searchkey.obj_id = BTRFS_ROOT_DEVTREE;
     
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
-        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
             sb->dev_root_addr = ri->block_number;
@@ -2347,7 +2347,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     searchkey.obj_id = BTRFS_ROOT_CHECKSUM;
     
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
-        if (!keycmp(&searchkey, &tp.item->key) && tp.item->size >= sizeof(ROOT_ITEM)) {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
             sb->csum_root_addr = ri->block_number;
@@ -3376,7 +3376,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
     
     searchkey.obj_id = r->id;
     searchkey.obj_type = TYPE_ROOT_ITEM;
-    searchkey.offset = 0;
+    searchkey.offset = 0xffffffffffffffff;
     
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
@@ -3384,7 +3384,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey))
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
         delete_tree_item(Vcb, &tp, rollback);
     else
         WARN("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);

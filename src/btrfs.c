@@ -1667,13 +1667,15 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     }
     
     if (fcb->subvol->root_item.num_references > 1) {
+        UINT64 offset;
+        
         // change ROOT_ITEM num_references
         
         fcb->subvol->root_item.num_references--;
         
         searchkey.obj_id = fcb->subvol->id;
         searchkey.obj_type = TYPE_ROOT_ITEM;
-        searchkey.offset = 0;
+        searchkey.offset = 0xffffffffffffffff;
         
         Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
         if (!NT_SUCCESS(Status)) {
@@ -1681,11 +1683,13 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
             return Status;
         }
         
-        if (!keycmp(&tp.item->key, &searchkey)) {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             delete_tree_item(fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            offset = tp.item->key.offset;
         } else {
             ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
+            offset = 0;
         }
         
         ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
@@ -1696,7 +1700,7 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
         
         RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
         
-        if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+        if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
             ERR("insert_tree_item failed\n");
             return STATUS_INTERNAL_ERROR;
         }
