@@ -56,8 +56,6 @@ static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
 
 static UINT64 get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
     UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
-    
-    // FIXME - can we test this?
 
     high_crc = calc_crc32c(high_crc, (UINT8*)&edr->root, sizeof(UINT64));
     low_crc = calc_crc32c(low_crc, (UINT8*)&edr->objid, sizeof(UINT64));
