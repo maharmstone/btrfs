@@ -81,6 +81,8 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     EXTENT_ITEM* ei;
     UINT8* ptr;
     UINT64 inline_rc, offset;
+    UINT8* data2;
+    EXTENT_ITEM* newei;
     
     // FIXME - handle A9s
     // FIXME - handle shared extents
@@ -195,10 +197,10 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
                 EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
                 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
-                    EXTENT_ITEM* newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                     UINT32 rc = get_extent_data_refcount(type, data);
                     EXTENT_DATA_REF* sectedr2;
                     
+                    newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                     if (!newei) {
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
@@ -242,8 +244,6 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     // If we can, add entry as inline extent item
     
     if (inline_rc == ei->refcount && tp.item->size + sizeof(UINT8) + datalen < max_extent_item_size) {
-        EXTENT_ITEM* newei;
-        
         len = tp.item->size - sizeof(EXTENT_ITEM);
         ptr = (UINT8*)&ei[1];
         
@@ -296,17 +296,90 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         return STATUS_SUCCESS;
     }
     
+    // Look for existing non-inline entry, and increase refcount if found
+    
     if (inline_rc != ei->refcount) {
-        // FIXME - look for existing non-inline entry, and increase refcount if found
+        traverse_ptr tp2;
+        
+        searchkey.obj_id = address;
+        searchkey.obj_type = type;
+        searchkey.offset = offset;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&tp.item->key, &searchkey)) {
+            if (tp.item->size < datalen) {
+                ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp.item->size, datalen);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            data2 = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+            RtlCopyMemory(data2, tp2.item->data, tp2.item->size);
+            
+            if (type == TYPE_EXTENT_DATA_REF) {
+                EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data2;
+                
+                edr->count += get_extent_data_refcount(type, data);
+            } else if (type == TYPE_TREE_BLOCK_REF) {
+                ERR("trying to increase refcount of tree extent\n");
+                return STATUS_INTERNAL_ERROR;
+            } else {
+                ERR("unhandled extent type %x\n", type);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            delete_tree_item(Vcb, &tp2, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, data2, tp2.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            RtlCopyMemory(newei, tp.item->data, tp.item->size);
+            
+            newei->generation = Vcb->superblock.generation;
+            newei->refcount += get_extent_data_refcount(type, data);
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            return STATUS_SUCCESS;
+        }
     }
     
-    // FIXME - add new non-inline entry
+    // Otherwise, add new non-inline entry
     
-    int3;
+    data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+    RtlCopyMemory(data2, data, datalen);
     
-    // FIXME - otherwise, increase refcount and add entry as separate item
+    if (!insert_tree_item(Vcb, Vcb->extent_root, address, type, offset, data2, datalen, NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        return STATUS_INTERNAL_ERROR;
+    }
     
-    return STATUS_NOT_IMPLEMENTED;
+    newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+    RtlCopyMemory(newei, tp.item->data, tp.item->size);
+    
+    newei->generation = Vcb->superblock.generation;
+    newei->refcount += get_extent_data_refcount(type, data);
+    
+    delete_tree_item(Vcb, &tp, rollback);
+    
+    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback) {
