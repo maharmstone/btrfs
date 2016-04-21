@@ -54,27 +54,35 @@ static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
     }
 }
 
-// static UINT64 get_extent_data_ref_hash(UINT64 root, UINT64 objid, UINT64 offset) {
-//     UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
-//     
-//     // FIXME - can we test this?
-// 
-//     // FIXME - make sure numbers here are little-endian
-//     high_crc = calc_crc32c(high_crc, (UINT8*)&root, sizeof(UINT64));
-//     low_crc = calc_crc32c(low_crc, (UINT8*)&objid, sizeof(UINT64));
-//     low_crc = calc_crc32c(low_crc, (UINT8*)&offset, sizeof(UINT64));
-//     
-//     return ((UINT64)high_crc << 31) ^ (UINT64)low_crc;
-// }
+static UINT64 get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
+    UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
+    
+    // FIXME - can we test this?
+
+    high_crc = calc_crc32c(high_crc, (UINT8*)&edr->root, sizeof(UINT64));
+    low_crc = calc_crc32c(low_crc, (UINT8*)&edr->objid, sizeof(UINT64));
+    low_crc = calc_crc32c(low_crc, (UINT8*)&edr->offset, sizeof(UINT64));
+    
+    return ((UINT64)high_crc << 31) ^ (UINT64)low_crc;
+}
+
+static UINT64 get_extent_hash(UINT8 type, void* data) {
+    if (type == TYPE_EXTENT_DATA_REF) {
+        return get_extent_data_ref_hash((EXTENT_DATA_REF*)data);
+    } else {
+        ERR("unhandled extent type %x\n", type);
+        return 0;
+    }
+}
 
 static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    ULONG datalen = get_extent_data_len(type), len;
+    ULONG datalen = get_extent_data_len(type), len, max_extent_item_size;
     EXTENT_ITEM* ei;
     UINT8* ptr;
-    UINT64 inline_rc;
+    UINT64 inline_rc, offset;
     
     // FIXME - handle A9s
     // FIXME - handle shared extents
@@ -200,6 +208,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
                     
                     RtlCopyMemory(newei, tp.item->data, tp.item->size);
                     
+                    newei->generation = Vcb->superblock.generation;
                     newei->refcount += rc;
                     
                     sectedr2 = (EXTENT_DATA_REF*)((UINT8*)newei + ((UINT8*)sectedr - tp.item->data));
@@ -228,10 +237,75 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         inline_rc += sectcount;
     }
     
+    offset = get_extent_hash(type, data);
+    
+    max_extent_item_size = (Vcb->superblock.node_size >> 4) - sizeof(leaf_node);
+    
+    // If we can, add entry as inline extent item
+    
+    if (inline_rc == ei->refcount && tp.item->size + sizeof(UINT8) + datalen < max_extent_item_size) {
+        EXTENT_ITEM* newei;
+        
+        len = tp.item->size - sizeof(EXTENT_ITEM);
+        ptr = (UINT8*)&ei[1];
+        
+        if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+            len -= sizeof(EXTENT_ITEM2);
+            ptr += sizeof(EXTENT_ITEM2);
+        }
+
+        while (len > 0) {
+            UINT8 secttype = *ptr;
+            ULONG sectlen = get_extent_data_len(secttype);
+            
+            if (secttype > type)
+                break;
+            
+            len--;
+            
+            if (secttype == type) {
+                UINT64 sectoff = get_extent_hash(secttype, ptr + 1);
+                
+                if (sectoff > offset)
+                    break;
+            }
+            
+            len -= sectlen;
+            ptr += sizeof(UINT8) + sectlen;
+        }
+        
+        newei = ExAllocatePoolWithTag(PagedPool, tp.item->size + sizeof(UINT8) + datalen, ALLOC_TAG);
+        RtlCopyMemory(newei, tp.item->data, ptr - tp.item->data);
+        
+        newei->generation = Vcb->superblock.generation;
+        newei->refcount += get_extent_data_refcount(type, data);
+        
+        if (len > 0)
+            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr, len);
+        
+        ptr = (ptr - tp.item->data) + (UINT8*)newei;
+        
+        *ptr = type;
+        RtlCopyMemory(ptr + 1, data, datalen);
+        
+        delete_tree_item(Vcb, &tp, rollback);
+        
+        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size + sizeof(UINT8) + datalen, NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        return STATUS_SUCCESS;
+    }
+    
+    if (inline_rc != ei->refcount) {
+        // FIXME - look for existing non-inline entry, and increase refcount if found
+    }
+    
+    // FIXME - add new non-inline entry
+    
     int3;
     
-    // FIXME - calculate hash
-    // FIXME - if refcount was what was expected and entry not too long, add to appropriate place and increase refcount
     // FIXME - otherwise, increase refcount and add entry as separate item
     
     return STATUS_NOT_IMPLEMENTED;
