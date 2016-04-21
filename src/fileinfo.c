@@ -701,10 +701,10 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
                         }
                         
                         if (!has_hardlink) {
-                            Status = remove_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset, NULL, rollback);
+                            Status = decrease_extent_refcount_data(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, 1, NULL, rollback);
                         
                             if (!NT_SUCCESS(Status)) {
-                                ERR("remove_extent_ref returned %08x\n", Status);
+                                ERR("decrease_extent_refcount_data returned %08x\n", Status);
                                 return Status;
                             }
                         }

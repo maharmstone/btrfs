@@ -329,6 +329,18 @@ typedef struct {
     UINT32 uid;
 } uid_map;
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    UINT64 key;
+} ordered_list;
+
+typedef struct {
+    ordered_list ol;
+    ULONG length;
+    UINT32* checksums;
+    BOOL deleted;
+} changed_sector;
+
 // #pragma pack(pop)
 
 static __inline void init_tree_holder(tree_holder* th) {
@@ -354,6 +366,27 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
     
     out->seconds = l / 10000000;
     out->nanoseconds = (l % 10000000) * 100;
+}
+
+static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* ins) {
+    LIST_ENTRY* le = list->Flink;
+    ordered_list* ol;
+    
+    while (le != list) {
+        ol = (ordered_list*)le;
+        
+        if (ol->key > ins->key) {
+            le->Blink->Flink = &ins->list_entry;
+            ins->list_entry.Blink = le->Blink;
+            le->Blink = &ins->list_entry;
+            ins->list_entry.Flink = le;
+            return;
+        }
+        
+        le = le->Flink;
+    }
+    
+    InsertTailList(list, &ins->list_entry);
 }
 
 // in btrfs.c
@@ -471,7 +504,6 @@ NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode,
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
-NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
 NTSTATUS consider_write(device_extension* Vcb);
@@ -534,6 +566,8 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
+NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+void decrease_chunk_usage(chunk* c, UINT64 delta);
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
