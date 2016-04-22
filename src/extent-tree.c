@@ -444,12 +444,13 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                                          UINT8 level, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     KEY searchkey;
     NTSTATUS Status;
-    traverse_ptr tp;
+    traverse_ptr tp, tp2;
     EXTENT_ITEM* ei;
     ULONG len;
-    UINT64 inline_rc;
+    UINT64 inline_rc, offset;
     UINT8* ptr;
     UINT32 rc = get_extent_data_refcount(type, data);
+    ULONG datalen = get_extent_data_len(type);
     
     // FIXME - handle trees
     // FIXME - handle shared extents
@@ -595,14 +596,106 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         inline_rc += sectcount;
     }
     
-    // FIXME - if inline_rc == ei->refcount, throw error
-    // FIXME - look for non-inline extent item
-    // FIXME - if not found, throw error
-    // FIXME - otherwise, reduce refcount
+    if (inline_rc == ei->refcount) {
+        ERR("entry not found in inline extent item for address %llx\n", address);
+        return STATUS_INTERNAL_ERROR;
+    }
     
-    int3;
+    offset = get_extent_hash(type, data);
     
-    return STATUS_NOT_IMPLEMENTED;
+    searchkey.obj_id = address;
+    searchkey.obj_type = type;
+    searchkey.offset = offset;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(&tp2.item->key, &searchkey)) {
+        ERR("(%llx,%x,%llx) not found\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp2.item->size < datalen) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (type == TYPE_EXTENT_DATA_REF) {
+        EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)tp2.item->data;
+        EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
+        EXTENT_ITEM* newei;
+        
+        if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+            if (ei->refcount == edr->count) {
+                Status = remove_extent(Vcb, address, size, changed_sector_list);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("remove_extent returned %08x\n", Status);
+                    return Status;
+                }
+                
+                delete_tree_item(Vcb, &tp, rollback);
+                delete_tree_item(Vcb, &tp2, rollback);
+                return STATUS_SUCCESS;
+            }
+            
+            if (sectedr->count < edr->count) {
+                ERR("error - extent section has refcount %x, trying to reduce by %x\n", sectedr->count, edr->count);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            delete_tree_item(Vcb, &tp2, rollback);
+            
+            if (sectedr->count > edr->count) {
+                EXTENT_DATA_REF* newedr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+                
+                if (!newedr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(newedr, sectedr, tp2.item->size);
+                
+                newedr->count -= edr->count;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, newedr, tp2.item->size, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            }
+            
+            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!newei) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+            newei->generation = Vcb->superblock.generation;
+            newei->refcount -= rc;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            return STATUS_SUCCESS;
+        } else {
+            ERR("error - hash collision?\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+//     } else if (type == TYPE_TREE_BLOCK_REF) {
+//         ERR("trying to increase refcount of tree extent\n");
+//         return STATUS_INTERNAL_ERROR;
+    } else {
+        ERR("unhandled extent type %x\n", type);
+        return STATUS_INTERNAL_ERROR;
+    }
 }
 
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode,
