@@ -116,7 +116,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         eisize += sizeof(UINT8);
         eisize += datalen;
         
-        ei = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM), ALLOC_TAG);
+        ei = ExAllocatePoolWithTag(PagedPool, eisize, ALLOC_TAG);
         if (!ei) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
