@@ -926,12 +926,6 @@ end:
     return success ? c : NULL;
 }
 
-void increase_chunk_usage(chunk* c, UINT64 delta) {
-    c->used += delta;
-    
-    TRACE("increasing size of chunk %llx by %llx\n", c->offset, delta);
-}
-
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length) {
     KEY searchkey;
     traverse_ptr tp;

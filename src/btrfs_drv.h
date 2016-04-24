@@ -484,6 +484,12 @@ void STDCALL _debug_message(const char* func, char* s, ...);
 
 #endif
 
+static __inline void increase_chunk_usage(chunk* c, UINT64 delta) {
+    c->used += delta;
+    
+    TRACE("increasing size of chunk %llx by %llx\n", c->offset, delta);
+}
+
 // in fastio.c
 void STDCALL init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 

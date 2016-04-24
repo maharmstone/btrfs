@@ -70,6 +70,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     LIST_ENTRY* le;
     tree t;
     tree_header* th;
+    chunk* c;
     
     buf = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
     if (!buf) {
@@ -106,6 +107,16 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     
     if (!t.has_new_address) {
         ERR("tree new address not set\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    c = get_chunk_from_address(Vcb, t.new_address);
+            
+    if (c) {
+        increase_chunk_usage(c, Vcb->superblock.node_size);
+    } else {
+        ERR("could not find chunk for address %llx\n", t.new_address);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
