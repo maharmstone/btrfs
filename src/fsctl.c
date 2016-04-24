@@ -63,6 +63,303 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
+static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64 dupflags, UINT64* newaddr, LIST_ENTRY* rollback) {
+    UINT8* buf;
+    NTSTATUS Status;
+    write_tree_context* wtc;
+    LIST_ENTRY* le;
+    tree t;
+    tree_header* th;
+    
+    buf = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    if (!buf) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_context), ALLOC_TAG);
+    if (!wtc) {
+        ERR("out of memory\n");
+        ExFreePool(buf);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = read_tree(Vcb, addr, buf);
+    if (!NT_SUCCESS(Status)) {
+        ERR("read_tree returned %08x\n", Status);
+        goto end;
+    }
+    
+    th = (tree_header*)buf;
+    
+    RtlZeroMemory(&t, sizeof(tree));
+    t.flags = dupflags;
+    t.root = subvol;
+    t.header.level = th->level;
+    t.header.tree_id = t.root->id;
+    
+    Status = get_tree_new_address(Vcb, &t, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_tree_new_address returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!t.has_new_address) {
+        ERR("tree new address not set\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    th->address = t.new_address;
+    th->tree_id = subvol->id;
+    th->generation = Vcb->superblock.generation;
+    
+    // FIXME - loop through items etc.
+    // FIXME - recalc checksum
+    
+    *((UINT32*)buf) = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+    
+    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
+    InitializeListHead(&wtc->stripes);
+    
+    Status = write_tree(Vcb, t.new_address, buf, wtc);
+    if (!NT_SUCCESS(Status)) {
+        ERR("write_tree returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (wtc->stripes.Flink != &wtc->stripes) {
+        // launch writes and wait
+        le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            
+            IoCallDriver(stripe->device->devobj, stripe->Irp);
+            
+            le = le->Flink;
+        }
+        
+        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
+        
+        le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            
+            if (!NT_SUCCESS(stripe->iosb.Status)) {
+                Status = stripe->iosb.Status;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        free_write_tree_stripes(wtc);
+        buf = NULL;
+    }
+    
+    if (NT_SUCCESS(Status))
+        *newaddr = t.new_address;
+    
+end:
+    ExFreePool(wtc);
+    
+    if (buf)
+        ExFreePool(buf);
+    
+    return Status;
+}
+
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, root* subvol, PUNICODE_STRING name) {
+    LIST_ENTRY rollback;
+    UINT64 id;
+    NTSTATUS Status;
+    root* r;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 address;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    
+    InitializeListHead(&rollback);
+    
+    acquire_tree_lock(Vcb, TRUE);
+    
+    // FIXME - flush open files on this subvol
+
+    // flush metadata
+    
+    if (Vcb->write_trees > 0)
+        do_write(Vcb, &rollback);
+    
+    free_trees(Vcb);
+    
+    clear_rollback(&rollback);
+    
+    InitializeListHead(&rollback);
+    
+    // create new root
+    
+    if (Vcb->root_root->lastinode == 0)
+        get_last_inode(Vcb, Vcb->root_root);
+    
+    id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+    Status = create_root(Vcb, id, &r, TRUE, &rollback);
+    // FIXME - make sure offset is generation
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("create_root returned %08x\n", Status);
+        goto end;
+    }
+    
+    searchkey.obj_id = r->id;
+    searchkey.obj_type = TYPE_ROOT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    // FIXME - create uuid tree if doesn't exist
+    // FIXME - add uuid to tree
+    
+//     searchkey.obj_id = subvol->id;
+//     searchkey.obj_type = TYPE_ROOT_ITEM;
+//     searchkey.offset = 0xffffffffffffffff;
+//     
+//     Status = find_item(Vcb, Vcb->root_tree, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         goto end;
+//     }
+//     
+//     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+//         ERR("error - could not find ROOT_ITEM for subvol %llx\n", subvol->id);
+//         Status = STATUS_INTERNAL_ERROR;
+//         goto end;
+//     }
+//     
+//     if (tp.item->size < sizeof(ROOT_ITEM)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_ITEM));
+//         Status = STATUS_INTERNAL_ERROR;
+//         goto end;
+//     }
+    
+    // FIXME - copy trees
+    
+    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("snapshot_tree_copy returned %08x\n", Status);
+        goto end;
+    }
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    r->root_item.inode.generation = 1;
+    r->root_item.inode.st_size = 3;
+    r->root_item.inode.st_blocks = subvol->root_item.inode.st_blocks;
+    r->root_item.inode.st_nlink = 1;
+    r->root_item.inode.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
+    r->root_item.inode.flags = 0xffffffff80000000; // FIXME - find out what these mean
+    r->root_item.generation = Vcb->superblock.generation;
+    r->root_item.objid = subvol->root_item.objid;
+    r->root_item.block_number = address;
+    r->root_item.bytes_used = subvol->root_item.bytes_used;
+    // FIXME - last_snapshot_generation
+    r->root_item.root_level = subvol->root_item.root_level;
+    r->root_item.generation2 = Vcb->superblock.generation;
+    // FIXME - uuid
+    // FIXME - parent uuid
+    r->root_item.ctransid = subvol->root_item.ctransid;
+    r->root_item.otransid = Vcb->superblock.generation;
+    r->root_item.ctime = subvol->root_item.ctime;
+    r->root_item.otime = now;
+    
+    // FIXME - do we need to copy over the send and receive fields too?
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        ERR("error - could not find ROOT_ITEM for subvol %llx\n", r->id);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    RtlCopyMemory(tp.item->data, &r->root_item, sizeof(ROOT_ITEM));
+    Vcb->root_root->lastinode = r->id;
+    
+    // FIXME - update ROOT_ITEM of original subvol
+    
+    if (Vcb->write_trees > 0)
+        do_write(Vcb, &rollback);
+    
+    free_trees(Vcb);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+
+    release_tree_lock(Vcb, TRUE);
+    
+    return Status;
+}
+
+static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
+    PFILE_OBJECT subvol_obj;
+    NTSTATUS Status;
+    btrfs_create_snapshot* bcs = data;
+    fcb* subvol_fcb;
+    UNICODE_STRING us;
+    
+    if (length < offsetof(btrfs_create_snapshot, name))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (length < offsetof(btrfs_create_snapshot, name) + bcs->namelen)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!bcs->subvol)
+        return STATUS_INVALID_PARAMETER;
+    
+    // FIXME - check FileObject is a directory, and we have permissions to create new folder
+    // FIXME - reduce namelen if NULL encountered in name
+    // FIXME - check name is valid
+    // FIXME - check name doesn't exist already
+    
+    Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, UserMode, (void**)&subvol_obj, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+        return Status;
+    }
+    
+    subvol_fcb = subvol_obj->FsContext;
+    if (!subvol_fcb) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (subvol_fcb->inode != subvol_fcb->subvol->root_item.objid) {
+        WARN("handle inode was %llx, expected %llx\n", subvol_fcb->inode, subvol_fcb->subvol->root_item.objid);
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    // FIXME - check we have traverse permissions on subvol_obj
+    
+    us.Buffer = bcs->name;
+    us.Length = us.MaximumLength = bcs->namelen;
+    
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb->subvol, &us);
+    
+end:
+    ObDereferenceObject(subvol_obj);
+    
+    return Status;
+}
+
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length) {
     fcb* fcb;
     ccb* ccb;
@@ -179,7 +476,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     // FIXME - make sure rollback removes new roots from internal structures
     
     id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-    Status = create_root(Vcb, id, &r, &rollback);
+    Status = create_root(Vcb, id, &r, FALSE, &rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
@@ -193,7 +490,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         
         TRACE("uuid root doesn't exist, creating it\n");
         
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, &rollback);
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, &rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
@@ -1015,6 +1312,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_CREATE_SUBVOL:
             Status = create_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.OutputBufferLength);
+            break;
+            
+        case FSCTL_BTRFS_CREATE_SNAPSHOT:
+            Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.OutputBufferLength);
             break;
 
         default:

@@ -1185,7 +1185,7 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     }
 }
 
-static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
     EXTENT_ITEM_SKINNY_METADATA* eism;
     traverse_ptr insert_tp;
     
@@ -1199,9 +1199,9 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, 
     eism->ei.generation = Vcb->superblock.generation;
     eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
     eism->type = TYPE_TREE_BLOCK_REF;
-    eism->tbr.offset = t->header.tree_id;
+    eism->tbr.offset = root_id;
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, t->header.level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(eism);
         return FALSE;
@@ -1211,24 +1211,27 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, tree* t, chunk* c, 
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
-    t->new_address = address;
-    t->has_new_address = TRUE;
-    
     return TRUE;
 }
 
-static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64* new_address, LIST_ENTRY* rollback) {
     UINT64 address;
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
     
-    TRACE("(%p, %p, %p, %p)\n", Vcb, t, c, rollback);
+    TRACE("(%p, %x, %llx, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, rollback);
     
     if (!find_address_in_chunk(Vcb, c, Vcb->superblock.node_size, &address))
         return FALSE;
     
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
-        return insert_tree_extent_skinny(Vcb, t, c, address, rollback);
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        BOOL b = insert_tree_extent_skinny(Vcb, level, root_id, c, address, rollback);
+        
+        if (b)
+            *new_address = address;
+        
+        return b;
+    }
     
     eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
     if (!eit2) {
@@ -1240,9 +1243,9 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_EN
     eit2->eit.extent_item.generation = Vcb->superblock.generation;
     eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
 //     eit2->eit.firstitem = wt->firstitem;
-    eit2->eit.level = t->header.level;
+    eit2->eit.level = level;
     eit2->type = TYPE_TREE_BLOCK_REF;
-    eit2->tbr.offset = t->header.tree_id;
+    eit2->tbr.offset = root_id;
     
 // #ifdef DEBUG_PARANOID
 //     if (wt->firstitem.obj_type == 0xcc) { // TESTING
@@ -1262,16 +1265,13 @@ static BOOL insert_tree_extent(device_extension* Vcb, tree* t, chunk* c, LIST_EN
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
-    t->new_address = address;
-    t->has_new_address = TRUE;
-    
     return TRUE;
 }
 
-static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
+NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
-    UINT64 flags = t->flags;
+    UINT64 flags = t->flags, addr;
     
     if (flags == 0)
         flags = (t->root->id == BTRFS_ROOT_CHUNK ? BLOCK_FLAG_SYSTEM : BLOCK_FLAG_METADATA) | BLOCK_FLAG_DUPLICATE;
@@ -1292,19 +1292,23 @@ static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY*
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (insert_tree_extent(Vcb, t, origchunk, rollback))
+        if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, rollback)) {
+            t->new_address = addr;
+            t->has_new_address = TRUE;
             return STATUS_SUCCESS;
+        }
     }
     
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        // FIXME - make sure to avoid superblocks
-        
         if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t, c, rollback))
+            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+                t->new_address = addr;
+                t->has_new_address = TRUE;
                 return STATUS_SUCCESS;
+            }
         }
 
         le = le->Flink;
@@ -1313,8 +1317,11 @@ static NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY*
     // allocate new chunk if necessary
     if ((c = alloc_chunk(Vcb, flags, rollback))) {
         if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t, c, rollback))
+            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+                t->new_address = addr;
+                t->has_new_address = TRUE;
                 return STATUS_SUCCESS;
+            }
         }
     }
     
@@ -1789,31 +1796,6 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-enum write_tree_status {
-    WriteTreeStatus_Pending,
-    WriteTreeStatus_Success,
-    WriteTreeStatus_Error,
-    WriteTreeStatus_Cancelling,
-    WriteTreeStatus_Cancelled
-};
-
-struct write_tree_context;
-
-typedef struct {
-    struct write_tree_context* context;
-    UINT8* buf;
-    device* device;
-    PIRP Irp;
-    IO_STATUS_BLOCK iosb;
-    enum write_tree_status status;
-    LIST_ENTRY list_entry;
-} write_tree_stripe;
-
-typedef struct {
-    KEVENT Event;
-    LIST_ENTRY stripes;
-} write_tree_context;
-
 static NTSTATUS STDCALL write_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_tree_stripe* stripe = conptr;
     write_tree_context* context = (write_tree_context*)stripe->context;
@@ -1867,7 +1849,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_context* wtc) {
+NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_context* wtc) {
     chunk* c;
     CHUNK_ITEM_STRIPE* cis;
     write_tree_stripe* stripe;
@@ -1940,7 +1922,7 @@ static NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, writ
     return STATUS_SUCCESS;
 }
 
-static void free_stripes(write_tree_context* wtc) {
+void free_write_tree_stripes(write_tree_context* wtc) {
     LIST_ENTRY *le, *le2, *nextle;
     
     le = wtc->stripes.Flink;
@@ -2265,7 +2247,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             le = le->Flink;
         }
         
-        free_stripes(wtc);
+        free_write_tree_stripes(wtc);
     }
     
 end:

@@ -1152,7 +1152,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTRY* rollback) {
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, LIST_ENTRY* rollback) {
     root* r;
     tree* t;
     ROOT_ITEM* ri;
@@ -1171,18 +1171,23 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
-    if (!t) {
-        ERR("out of memory\n");
-        ExFreePool(r->nonpaged);
-        ExFreePool(r);
-        return STATUS_INSUFFICIENT_RESOURCES;
+    if (!no_tree) {
+        t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+        if (!t) {
+            ERR("out of memory\n");
+            ExFreePool(r->nonpaged);
+            ExFreePool(r);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
     }
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
-        ExFreePool(t);
+        
+        if (!no_tree)
+            ExFreePool(t);
+        
         ExFreePool(r->nonpaged);
         ExFreePool(r);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1191,7 +1196,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     r->id = id;
     r->treeholder.address = 0;
     r->treeholder.generation = Vcb->superblock.generation;
-    r->treeholder.tree = t;
+    r->treeholder.tree = no_tree ? NULL : t;
     r->lastinode = 0;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
@@ -1204,7 +1209,10 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     if (!insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), &tp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ri);
-        ExFreePool(t);
+        
+        if (!no_tree)
+            ExFreePool(t);
+        
         ExFreePool(r->nonpaged);
         ExFreePool(r);
         return STATUS_INTERNAL_ERROR;
@@ -1214,32 +1222,34 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTR
     
     InsertTailList(&Vcb->roots, &r->list_entry);
     
-    t->header.fs_uuid = tp.tree->header.fs_uuid;
-    t->header.address = 0;
-    t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
-    t->header.chunk_tree_uuid = tp.tree->header.chunk_tree_uuid;
-    t->header.generation = Vcb->superblock.generation;
-    t->header.tree_id = id;
-    t->header.num_items = 0;
-    t->header.level = 0;
+    if (!no_tree) {
+        t->header.fs_uuid = tp.tree->header.fs_uuid;
+        t->header.address = 0;
+        t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
+        t->header.chunk_tree_uuid = tp.tree->header.chunk_tree_uuid;
+        t->header.generation = Vcb->superblock.generation;
+        t->header.tree_id = id;
+        t->header.num_items = 0;
+        t->header.level = 0;
 
-    t->has_address = FALSE;
-    t->size = 0;
-    t->Vcb = Vcb;
-    t->parent = NULL;
-    t->paritem = NULL;
-    t->root = r;
+        t->has_address = FALSE;
+        t->size = 0;
+        t->Vcb = Vcb;
+        t->parent = NULL;
+        t->paritem = NULL;
+        t->root = r;
+        
+        InitializeListHead(&t->itemlist);
     
-    InitializeListHead(&t->itemlist);
-   
-    t->new_address = 0;
-    t->has_new_address = FALSE;
-    t->flags = tp.tree->flags;
-    
-    InsertTailList(&Vcb->trees, &t->list_entry);
-    
-    t->write = TRUE;
-    Vcb->write_trees++;
+        t->new_address = 0;
+        t->has_new_address = FALSE;
+        t->flags = tp.tree->flags;
+        
+        InsertTailList(&Vcb->trees, &t->list_entry);
+        
+        t->write = TRUE;
+        Vcb->write_trees++;
+    }
     
     *rootptr = r;
 

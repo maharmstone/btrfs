@@ -341,6 +341,31 @@ typedef struct {
     BOOL deleted;
 } changed_sector;
 
+enum write_tree_status {
+    WriteTreeStatus_Pending,
+    WriteTreeStatus_Success,
+    WriteTreeStatus_Error,
+    WriteTreeStatus_Cancelling,
+    WriteTreeStatus_Cancelled
+};
+
+struct write_tree_context;
+
+typedef struct {
+    struct write_tree_context* context;
+    UINT8* buf;
+    device* device;
+    PIRP Irp;
+    IO_STATUS_BLOCK iosb;
+    enum write_tree_status status;
+    LIST_ENTRY list_entry;
+} write_tree_stripe;
+
+typedef struct {
+    KEVENT Event;
+    LIST_ENTRY stripes;
+} write_tree_context;
+
 // #pragma pack(pop)
 
 static __inline void init_tree_holder(tree_holder* th) {
@@ -407,7 +432,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 fcb* create_fcb();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, LIST_ENTRY* rollback);
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, LIST_ENTRY* rollback);
 void STDCALL uninit(device_extension* Vcb, BOOL flush);
 NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID InputBuffer,
                            ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
@@ -478,6 +503,7 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
+NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
@@ -511,6 +537,9 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
                                UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length);
+NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_context* wtc);
+void free_write_tree_stripes(write_tree_context* wtc);
+NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);

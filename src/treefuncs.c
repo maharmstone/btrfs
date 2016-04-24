@@ -105,7 +105,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf) {
+NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_tree_context* context;
