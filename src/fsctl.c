@@ -193,16 +193,20 @@ end:
     return Status;
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, root* subvol, PUNICODE_STRING name) {
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, root* subvol, UINT32 crc32, PANSI_STRING utf8) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
     root* r;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 address;
+    UINT64 address, dirpos;
     LARGE_INTEGER time;
     BTRFS_TIME now;
+    fcb* fcb = parent->FsContext;
+    ULONG disize, rrsize;
+    DIR_ITEM *di, *di2;
+    ROOT_REF *rr, *rr2;
     
     InitializeListHead(&rollback);
     
@@ -301,6 +305,8 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     r->root_item.ctime = subvol->root_item.ctime;
     r->root_item.otime = now;
     
+    r->treeholder.address = address;
+    
     // FIXME - do we need to copy over the send and receive fields too?
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -313,6 +319,94 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     Vcb->root_root->lastinode = r->id;
     
     // FIXME - update ROOT_ITEM of original subvol
+    
+    // add DIR_ITEM
+    
+    dirpos = find_next_dir_index(Vcb, fcb->subvol, fcb->inode);
+    if (dirpos == 0) {
+        ERR("find_next_dir_index failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    disize = sizeof(DIR_ITEM) - 1 + utf8->Length;
+    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di2) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(di);
+        goto end;
+    }
+    
+    di->key.obj_id = id;
+    di->key.obj_type = TYPE_ROOT_ITEM;
+    di->key.offset = 0xffffffffffffffff;
+    di->transid = Vcb->superblock.generation;
+    di->m = 0;
+    di->n = utf8->Length;
+    di->type = BTRFS_TYPE_DIRECTORY;
+    RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
+    
+    RtlCopyMemory(di2, di, disize);
+    
+    Status = add_dir_item(Vcb, fcb->subvol, fcb->inode, crc32, di, disize, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_dir_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    // add DIR_INDEX
+    
+    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    // add ROOT_REF
+    
+    rrsize = sizeof(ROOT_REF) - 1 + utf8->Length;
+    rr = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
+    if (!rr) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    rr->dir = fcb->inode;
+    rr->index = dirpos;
+    rr->n = utf8->Length;
+    RtlCopyMemory(rr->name, utf8->Buffer, utf8->Length);
+    
+    if (!insert_tree_item(Vcb, Vcb->root_root, fcb->subvol->id, TYPE_ROOT_REF, r->id, rr, rrsize, NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    // add ROOT_BACKREF
+    
+    rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
+    if (!rr2) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(rr2, rr, rrsize);
+    
+    if (!insert_tree_item(Vcb, Vcb->root_root, r->id, TYPE_ROOT_BACKREF, fcb->subvol->id, rr2, rrsize, NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
     
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);
@@ -337,7 +431,10 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     NTSTATUS Status;
     btrfs_create_snapshot* bcs = data;
     fcb* subvol_fcb;
-    UNICODE_STRING us;
+    ANSI_STRING utf8;
+    ULONG len;
+    UINT32 crc32;
+    fcb* fcb;
     
     if (length < offsetof(btrfs_create_snapshot, name))
         return STATUS_INVALID_PARAMETER;
@@ -348,6 +445,40 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (!bcs->subvol)
         return STATUS_INVALID_PARAMETER;
     
+    if (!FileObject || !FileObject->FsContext)
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    
+    utf8.Buffer = NULL;
+    
+    Status = RtlUnicodeToUTF8N(NULL, 0, &len, bcs->name, bcs->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        return Status;
+    }
+    
+    if (len == 0) {
+        ERR("RtlUnicodeToUTF8N returned a length of 0\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    utf8.MaximumLength = utf8.Length = len;
+    utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.Length, ALLOC_TAG);
+    
+    if (!utf8.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, bcs->name, bcs->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        goto end2;
+    }
+    
+    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
+    
     // FIXME - check FileObject is a directory, and we have permissions to create new folder
     // FIXME - reduce namelen if NULL encountered in name
     // FIXME - check name is valid
@@ -356,7 +487,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, UserMode, (void**)&subvol_obj, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
-        return Status;
+        goto end2;
     }
     
     subvol_fcb = subvol_obj->FsContext;
@@ -373,13 +504,46 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     // FIXME - check we have traverse permissions on subvol_obj
     
-    us.Buffer = bcs->name;
-    us.Length = us.MaximumLength = bcs->namelen;
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb->subvol, crc32, &utf8);
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb->subvol, &us);
+    if (NT_SUCCESS(Status)) {
+        UNICODE_STRING ffn;
+        
+        ffn.Length = fcb->full_filename.Length + length;
+        if (fcb != fcb->Vcb->root_fcb)
+            ffn.Length += sizeof(WCHAR);
+        
+        ffn.MaximumLength = ffn.Length;
+        ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
+        
+        if (ffn.Buffer) {
+            ULONG i;
+            
+            RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
+            i = fcb->full_filename.Length;
+            
+            if (fcb != fcb->Vcb->root_fcb) {
+                ffn.Buffer[i / sizeof(WCHAR)] = '\\';
+                i += sizeof(WCHAR);
+            }
+            
+            RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], bcs->name, bcs->namelen);
+            
+            TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
+            
+            FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
+                                        FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
+            
+            ExFreePool(ffn.Buffer);
+        } else
+            ERR("out of memory\n");
+    }
     
 end:
     ObDereferenceObject(subvol_obj);
+    
+end2:
+    ExFreePool(utf8.Buffer);
     
     return Status;
 }
