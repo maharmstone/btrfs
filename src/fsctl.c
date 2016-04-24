@@ -518,9 +518,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     btrfs_create_snapshot* bcs = data;
     fcb* subvol_fcb;
     ANSI_STRING utf8;
-    ULONG len;
+    UNICODE_STRING nameus;
+    ULONG len, i;
     UINT32 crc32;
     fcb* fcb;
+    ccb* ccb;
     
     if (length < offsetof(btrfs_create_snapshot, name))
         return STATUS_INVALID_PARAMETER;
@@ -535,6 +537,30 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_INVALID_PARAMETER;
     
     fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+    
+    if (!fcb || !ccb || fcb->type != BTRFS_TYPE_DIRECTORY)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!(ccb->access & FILE_ADD_SUBDIRECTORY)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    for (i = 0; i < bcs->namelen / sizeof(WCHAR); i++) {
+        if (bcs->name[i] == '/')
+            return STATUS_INVALID_PARAMETER;
+        else if (bcs->name[i] == 0) {
+            bcs->namelen = i * sizeof(WCHAR);
+            break;
+        }
+    }
+    
+    if (bcs->namelen < sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (bcs->name[0] == '.' && (bcs->namelen == sizeof(WCHAR) || (bcs->namelen == 2 * sizeof(WCHAR) && bcs->name[1] == '.')))
+        return STATUS_INVALID_PARAMETER;
     
     utf8.Buffer = NULL;
     
@@ -565,10 +591,13 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    // FIXME - check FileObject is a directory, and we have permissions to create new folder
-    // FIXME - reduce namelen if NULL encountered in name
-    // FIXME - check name is valid
-    // FIXME - check name doesn't exist already
+    nameus.Buffer = bcs->name;
+    nameus.Length = nameus.MaximumLength = bcs->namelen;
+    if (find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL)) {
+        WARN("file already exists\n");
+        Status = STATUS_OBJECT_NAME_COLLISION;
+        goto end2;
+    }
     
     Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, UserMode, (void**)&subvol_obj, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -588,7 +617,18 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
-    // FIXME - check we have traverse permissions on subvol_obj
+    ccb = subvol_obj->FsContext2;
+    
+    if (!ccb) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (!(ccb->access & FILE_TRAVERSE)) {
+        WARN("insufficient privileges\n");
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
     
     Status = do_create_snapshot(Vcb, FileObject, subvol_fcb->subvol, crc32, &utf8);
     
