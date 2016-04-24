@@ -491,6 +491,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     
     insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback);
     
+    fcb->subvol->root_item.ctime = now;
+    fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);
     
