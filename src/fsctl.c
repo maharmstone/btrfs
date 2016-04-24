@@ -306,28 +306,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
         goto end;
     }
     
-//     searchkey.obj_id = subvol->id;
-//     searchkey.obj_type = TYPE_ROOT_ITEM;
-//     searchkey.offset = 0xffffffffffffffff;
-//     
-//     Status = find_item(Vcb, Vcb->root_tree, &tp, &searchkey, FALSE);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         goto end;
-//     }
-//     
-//     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-//         ERR("error - could not find ROOT_ITEM for subvol %llx\n", subvol->id);
-//         Status = STATUS_INTERNAL_ERROR;
-//         goto end;
-//     }
-//     
-//     if (tp.item->size < sizeof(ROOT_ITEM)) {
-//         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_ITEM));
-//         Status = STATUS_INTERNAL_ERROR;
-//         goto end;
-//     }
-    
     Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("snapshot_tree_copy returned %08x\n", Status);
@@ -369,7 +347,25 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     RtlCopyMemory(tp.item->data, &r->root_item, sizeof(ROOT_ITEM));
     Vcb->root_root->lastinode = r->id;
     
-    // FIXME - update ROOT_ITEM of original subvol
+    // update ROOT_ITEM of original subvol
+    
+    subvol->root_item.last_snapshot_generation = Vcb->superblock.generation;
+    
+    // We also rewrite the top of the old subvolume tree, for some reason
+    searchkey.obj_id = 0;
+    searchkey.obj_type = 0;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!subvol->treeholder.tree->write) {
+        subvol->treeholder.tree->write = TRUE;
+        Vcb->write_trees++;
+    }
     
     // add DIR_ITEM
     
