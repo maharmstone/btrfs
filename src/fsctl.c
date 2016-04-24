@@ -138,7 +138,21 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
             }
         }
     } else {
-        // FIXME - do recursion
+        UINT32 i;
+        UINT64 newaddr;
+        internal_node* in = (internal_node*)&th[1];
+        
+        for (i = 0; i < th->num_items; i++) {
+            Status = snapshot_tree_copy(Vcb, in[i].address, subvol, dupflags, &newaddr, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("snapshot_tree_copy returned %08x\n", Status);
+                goto end;
+            }
+            
+            in[i].generation = Vcb->superblock.generation;
+            in[i].address = newaddr;
+        }
     }
     
     *((UINT32*)buf) = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
@@ -274,8 +288,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
 //         Status = STATUS_INTERNAL_ERROR;
 //         goto end;
 //     }
-    
-    // FIXME - copy trees
     
     Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, &rollback);
     if (!NT_SUCCESS(Status)) {
