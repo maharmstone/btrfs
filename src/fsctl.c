@@ -114,8 +114,32 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     th->tree_id = subvol->id;
     th->generation = Vcb->superblock.generation;
     
-    // FIXME - loop through items etc.
-    // FIXME - recalc checksum
+    if (th->level == 0) {
+        UINT32 i;
+        leaf_node* ln = (leaf_node*)&th[1];
+        
+        for (i = 0; i < th->num_items; i++) {
+            if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(tree_header)) {
+                EXTENT_DATA* ed = (EXTENT_DATA*)(((UINT8*)&th[1]) + ln[i].offset);
+                
+                // FIXME - what are we supposed to do with prealloc here? Replace it with sparse extents, or do new preallocation?
+                if (ed->type == EXTENT_TYPE_REGULAR && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                    
+                    if (ed2->size != 0) { // not sparse
+                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol, ln[i].key.obj_id, ln[i].key.offset - ed2->offset, 1, rollback);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("increase_extent_refcount_data returned %08x\n", Status);
+                            goto end;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // FIXME - do recursion
+    }
     
     *((UINT32*)buf) = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
     
