@@ -1152,7 +1152,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, LIST_ENTRY* rollback) {
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, LIST_ENTRY* rollback) {
     root* r;
     tree* t;
     ROOT_ITEM* ri;
@@ -1206,7 +1206,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     // We ask here for a traverse_ptr to the item we're inserting, so we can
     // copy some of the tree's variables
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, 0, ri, sizeof(ROOT_ITEM), &tp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ri);
         

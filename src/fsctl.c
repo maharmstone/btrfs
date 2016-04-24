@@ -246,8 +246,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
         get_last_inode(Vcb, Vcb->root_root);
     
     id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-    Status = create_root(Vcb, id, &r, TRUE, &rollback);
-    // FIXME - make sure offset is generation
+    Status = create_root(Vcb, id, &r, TRUE, Vcb->superblock.generation, &rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
@@ -713,7 +712,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     // FIXME - make sure rollback removes new roots from internal structures
     
     id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-    Status = create_root(Vcb, id, &r, FALSE, &rollback);
+    Status = create_root(Vcb, id, &r, FALSE, 0, &rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
@@ -727,7 +726,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         
         TRACE("uuid root doesn't exist, creating it\n");
         
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, &rollback);
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, &rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
