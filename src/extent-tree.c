@@ -279,7 +279,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         newei->refcount += get_extent_data_refcount(type, data);
         
         if (len > 0)
-            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr, len);
+            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data) + sizeof(UINT8) + datalen, ptr, len + 1);
         
         ptr = (ptr - tp.item->data) + (UINT8*)newei;
         
