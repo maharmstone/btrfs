@@ -214,7 +214,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     root* r;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 address, dirpos;
+    UINT64 address, dirpos, *root_num;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     fcb* fcb = parent->FsContext;
@@ -253,6 +253,49 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
         goto end;
     }
     
+    if (!Vcb->uuid_root) {
+        root* uuid_root;
+        
+        TRACE("uuid root doesn't exist, creating it\n");
+        
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, &rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("create_root returned %08x\n", Status);
+            goto end;
+        }
+        
+        Vcb->uuid_root = uuid_root;
+    }
+    
+    root_num = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64), ALLOC_TAG);
+    if (!root_num) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    tp.tree = NULL;
+    
+    do {
+        get_uuid(&r->root_item.uuid);
+        
+        RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid, sizeof(UINT64));
+        searchkey.obj_type = TYPE_SUBVOL_UUID;
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+        
+        Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE);
+    } while (NT_SUCCESS(Status) && !keycmp(&searchkey, &tp.item->key));
+    
+    *root_num = r->id;
+    
+    if (!insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(root_num);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
     searchkey.obj_id = r->id;
     searchkey.obj_type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
@@ -262,9 +305,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
         ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
-    
-    // FIXME - create uuid tree if doesn't exist
-    // FIXME - add uuid to tree
     
 //     searchkey.obj_id = subvol->id;
 //     searchkey.obj_type = TYPE_ROOT_ITEM;
@@ -307,11 +347,10 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     r->root_item.objid = subvol->root_item.objid;
     r->root_item.block_number = address;
     r->root_item.bytes_used = subvol->root_item.bytes_used;
-    // FIXME - last_snapshot_generation
+    r->root_item.last_snapshot_generation = Vcb->superblock.generation;
     r->root_item.root_level = subvol->root_item.root_level;
     r->root_item.generation2 = Vcb->superblock.generation;
-    // FIXME - uuid
-    // FIXME - parent uuid
+    r->root_item.parent_uuid = subvol->root_item.uuid;
     r->root_item.ctransid = subvol->root_item.ctransid;
     r->root_item.otransid = Vcb->superblock.generation;
     r->root_item.ctime = subvol->root_item.ctime;
