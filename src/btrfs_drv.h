@@ -515,6 +515,9 @@ void STDCALL flush_thread(void* context);
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr);
 
+// in pnp.c
+NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
