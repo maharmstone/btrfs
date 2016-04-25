@@ -218,11 +218,35 @@ end:
     return Status;
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, root* subvol, UINT32 crc32, PANSI_STRING utf8) {
+static void flush_children(fcb* fcb) {
+    LIST_ENTRY* le;
+    
+    // FIXME - recursion is bad. Add list of fcbs to each volume instead
+    
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        if (!IsListEmpty(&fcb->children)) {
+            le = fcb->children.Flink;
+            
+            while (le != &fcb->children) {
+                struct _fcb* child = CONTAINING_RECORD(le, struct _fcb, list_entry);
+                
+                flush_children(child);
+                
+                le = le->Flink;
+            }
+        }
+    } else if (!fcb->deleted) {
+        IO_STATUS_BLOCK iosb;
+        
+        CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+    }
+}
+
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, UINT32 crc32, PANSI_STRING utf8) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
-    root* r;
+    root *r, *subvol = subvol_fcb->subvol;
     KEY searchkey;
     traverse_ptr tp;
     UINT64 address, dirpos, *root_num;
@@ -238,7 +262,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, r
     
     acquire_tree_lock(Vcb, TRUE);
     
-    // FIXME - flush open files on this subvol
+    // flush open files on this subvol
+    
+    flush_children(subvol_fcb);
 
     // flush metadata
     
@@ -641,7 +667,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb->subvol, crc32, &utf8);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, crc32, &utf8);
     
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
