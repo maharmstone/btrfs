@@ -7,10 +7,16 @@ public:
     BtrfsContextMenu() {
         refcount = 0;
         ignore = TRUE;
+        stgm_set = FALSE;
         InterlockedIncrement(&objs_loaded);
     }
 
     virtual ~BtrfsContextMenu() {
+        if (stgm_set) {
+            GlobalUnlock(stgm.hGlobal);
+            ReleaseStgMedium(&stgm);
+        }
+        
         InterlockedDecrement(&objs_loaded);
     }
 
@@ -44,5 +50,8 @@ public:
 private:
     LONG refcount;
     BOOL ignore;
+    BOOL bg;
     WCHAR path[MAX_PATH];
+    STGMEDIUM stgm;
+    BOOL stgm_set;
 };

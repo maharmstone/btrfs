@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+#include <shlwapi.h>
 
 #include "contextmenu.h"
 #include "resource.h"
@@ -8,6 +9,8 @@
 
 #define NEW_SUBVOL_VERBA "newsubvol"
 #define NEW_SUBVOL_VERBW L"newsubvol"
+#define SNAPSHOT_VERBA "snapshot"
+#define SNAPSHOT_VERBW L"snapshot"
 
 // FIXME - is there a way to link to the proper header files without breaking everything?
 #ifdef __cplusplus
@@ -17,11 +20,19 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 #ifdef __cplusplus
 }
 #endif
-#define STATUS_SUCCESS 0
+
+#define STATUS_SUCCESS          (NTSTATUS)0x00000000
+
+typedef struct _KEY_NAME_INFORMATION {
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_NAME_INFORMATION;
 
 typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
 
 extern HMODULE module;
+
+// FIXME - don't assume subvol's top inode is 0x100
 
 HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IContextMenu) {
@@ -43,6 +54,70 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
     NTSTATUS Status;
+    
+    if (!pidlFolder) {
+        FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        UINT num_files, i;
+        WCHAR fn[MAX_PATH];
+        HDROP hdrop;
+        
+        if (!pdtobj)
+            return E_FAIL;
+        
+        stgm.tymed = TYMED_HGLOBAL;
+        
+        if (FAILED(pdtobj->GetData(&format, &stgm)))
+            return E_INVALIDARG;
+        
+        stgm_set = TRUE;
+        
+        hdrop = (HDROP)GlobalLock(stgm.hGlobal);
+        
+        if (!hdrop) {
+            ReleaseStgMedium(&stgm);
+            stgm_set = FALSE;
+            return E_INVALIDARG;
+        }
+         
+        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+        
+        for (i = 0; i < num_files; i++) {
+            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+                h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    
+                if (h != INVALID_HANDLE_VALUE) {
+                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+                        
+                    if (Status == STATUS_SUCCESS && bgfi.inode == 0x100 && !bgfi.top) {
+                        WCHAR parpath[MAX_PATH];
+                        HANDLE h2;
+                        
+                        StringCchCopyW(parpath, sizeof(parpath) / sizeof(WCHAR), fn);
+                        
+                        PathRemoveFileSpecW(parpath);
+                        
+                        h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    
+                        if (h2 == INVALID_HANDLE_VALUE) {
+                            CloseHandle(h);
+                            return E_FAIL;
+                        }
+                        
+                        ignore = FALSE;
+                        bg = FALSE;
+                        
+                        CloseHandle(h2);
+                        CloseHandle(h);
+                        return S_OK;
+                    }
+                    
+                    CloseHandle(h);
+                }
+            }
+        }
+        
+        return S_OK;
+    }
 
     if (!SHGetPathFromIDListW(pidlFolder, path))
         return E_FAIL;
@@ -66,6 +141,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     CloseHandle(h);
     
     ignore = FALSE;
+    bg = TRUE;
     
     return S_OK;
 }
@@ -78,6 +154,16 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     
     if (uFlags & CMF_DEFAULTONLY)
         return S_OK;
+    
+    if (!bg) {
+        if (LoadStringW(module, IDS_CREATE_SNAPSHOT, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            return E_FAIL;
+
+        if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
+            return E_FAIL;
+
+        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
+    }
     
     if (LoadStringW(module, IDS_NEW_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
         return E_FAIL;
@@ -128,6 +214,17 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
     if (ignore)
         return E_INVALIDARG;
     
+    if (!bg) {
+        if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, SNAPSHOT_VERBA)) {
+            MessageBoxW(pici->hwnd, L"FIXME", L"Error", MB_ICONERROR);
+            // FIXME
+            
+            return E_FAIL;
+        }
+        
+        return E_FAIL;
+    }
+    
     if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA)) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
@@ -141,8 +238,6 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
             ShowError(pici->hwnd, GetLastError());
             return E_FAIL;
         }
-        
-        // FIXME - if already exists, append " (2)" etc.
         
         h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     
@@ -205,13 +300,13 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     
     switch (uFlags) {
         case GCS_HELPTEXTA:
-            if (LoadStringA(module, IDS_NEW_SUBVOL_HELP_TEXT, pszName, cchMax))
+            if (LoadStringA(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
                 return S_OK;
             else
                 return E_FAIL;
             
         case GCS_HELPTEXTW:
-            if (LoadStringW(module, IDS_NEW_SUBVOL_HELP_TEXT, (LPWSTR)pszName, cchMax))
+            if (LoadStringW(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, (LPWSTR)pszName, cchMax))
                 return S_OK;
             else
                 return E_FAIL;
@@ -221,10 +316,10 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
             return S_OK;
             
         case GCS_VERBA:
-            return StringCchCopyA(pszName, cchMax, NEW_SUBVOL_VERBA);
+            return StringCchCopyA(pszName, cchMax, bg ? NEW_SUBVOL_VERBA : SNAPSHOT_VERBA);
             
         case GCS_VERBW:
-            return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, NEW_SUBVOL_VERBW);
+            return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, bg ? NEW_SUBVOL_VERBW : SNAPSHOT_VERBW);
             
         default:
             return E_INVALIDARG;

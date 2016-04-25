@@ -6,6 +6,8 @@
 #define IDS_NEW_SUBVOL_HELP_TEXT        102
 #define IDS_NEW_SUBVOL                  103
 #define IDS_NEW_SUBVOL_FILENAME         104
+#define IDS_CREATE_SNAPSHOT             105
+#define IDS_CREATE_SNAPSHOT_HELP_TEXT   106
 
 // Next default values for new objects
 // 
