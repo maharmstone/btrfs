@@ -1164,6 +1164,27 @@ static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fs_get_statistics(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen) {
+    FILESYSTEM_STATISTICS* fss;
+    
+    WARN("STUB: FSCTL_FILESYSTEM_GET_STATISTICS\n");
+    
+    // This is hideously wrong, but at least it stops SMB from breaking
+    
+    if (buflen < sizeof(FILESYSTEM_STATISTICS))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    fss = buffer;
+    RtlZeroMemory(fss, sizeof(FILESYSTEM_STATISTICS));
+    
+    fss->Version = 1;
+    fss->SizeOfCompleteStructure = sizeof(FILESYSTEM_STATISTICS);
+    
+    *retlen = sizeof(FILESYSTEM_STATISTICS);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1269,8 +1290,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_FILESYSTEM_GET_STATISTICS:
-            WARN("STUB: FSCTL_FILESYSTEM_GET_STATISTICS\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = fs_get_statistics(DeviceObject, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                       IrpSp->Parameters.DeviceIoControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_GET_NTFS_VOLUME_DATA:
