@@ -1178,6 +1178,7 @@ static NTSTATUS fs_get_statistics(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT File
     RtlZeroMemory(fss, sizeof(FILESYSTEM_STATISTICS));
     
     fss->Version = 1;
+    fss->FileSystemType = FILESYSTEM_STATISTICS_TYPE_NTFS;
     fss->SizeOfCompleteStructure = sizeof(FILESYSTEM_STATISTICS);
     
     *retlen = sizeof(FILESYSTEM_STATISTICS);
