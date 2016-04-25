@@ -105,7 +105,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     
     // If entry doesn't exist yet, create new inline extent item
     
-    if (tp.item->key.obj_id != searchkey.obj_id && tp.item->key.obj_type != searchkey.obj_type) {
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ULONG eisize;
         EXTENT_ITEM* ei;
         BOOL is_tree = type == TYPE_TREE_BLOCK_REF;
