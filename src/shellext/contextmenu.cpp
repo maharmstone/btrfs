@@ -210,16 +210,126 @@ static void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
     FreeLibrary(ntdll);
 }
 
+static void create_snapshot(HWND hwnd, WCHAR* fn) {
+    HANDLE h;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_get_file_ids bgfi;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    
+    if (h != INVALID_HANDLE_VALUE) {
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+            
+        if (Status == STATUS_SUCCESS && bgfi.inode == 0x100 && !bgfi.top) {
+            WCHAR parpath[MAX_PATH], subvolname[MAX_PATH], templ[MAX_PATH], name[MAX_PATH], searchpath[MAX_PATH];
+            HANDLE h2, fff;
+            btrfs_create_snapshot* bcs;
+            ULONG namelen, pathend;
+            WIN32_FIND_DATAW wfd;
+            SYSTEMTIME time;
+            
+            StringCchCopyW(parpath, sizeof(parpath) / sizeof(WCHAR), fn);
+            PathRemoveFileSpecW(parpath);
+            
+            StringCchCopyW(subvolname, sizeof(subvolname) / sizeof(WCHAR), fn);
+            PathStripPathW(subvolname);
+            
+            h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+            if (h2 == INVALID_HANDLE_VALUE) {
+                ShowError(hwnd, GetLastError());
+                CloseHandle(h);
+                return;
+            }
+            
+            if (!LoadStringW(module, IDS_SNAPSHOT_FILENAME, templ, MAX_PATH)) {
+                ShowError(hwnd, GetLastError());
+                CloseHandle(h);
+                CloseHandle(h2);
+                return;
+            }
+            
+            GetLocalTime(&time);
+            
+            if (StringCchPrintfW(name, sizeof(name) / sizeof(WCHAR), templ, subvolname, time.wYear, time.wMonth, time.wDay) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                MessageBoxW(hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
+                CloseHandle(h);
+                CloseHandle(h2);
+                return;
+            }
+            
+            StringCchCopyW(searchpath, sizeof(searchpath) / sizeof(WCHAR), parpath);
+            StringCchCatW(searchpath, sizeof(searchpath) / sizeof(WCHAR), L"\\");
+            pathend = wcslen(searchpath);
+            
+            StringCchCatW(searchpath, sizeof(searchpath) / sizeof(WCHAR), name);
+            
+            fff = FindFirstFileW(searchpath, &wfd);
+            
+            if (fff != INVALID_HANDLE_VALUE) {
+                ULONG i = wcslen(searchpath), num = 2;
+                
+                do {
+                    FindClose(fff);
+                    
+                    searchpath[i] = 0;
+                    if (StringCchPrintfW(searchpath, sizeof(searchpath) / sizeof(WCHAR), L"%s (%u)", searchpath, num) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                        MessageBoxW(hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
+                        CloseHandle(h);
+                        CloseHandle(h2);
+                        return;
+                    }
+
+                    fff = FindFirstFileW(searchpath, &wfd);
+                    num++;
+                } while (fff != INVALID_HANDLE_VALUE);
+            }
+            
+            namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
+                        
+            bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - 1 + namelen);
+            bcs->subvol = h;
+            bcs->namelen = namelen;
+            memcpy(bcs->name, &searchpath[pathend], namelen);
+            
+            Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, NULL, 0, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen);
+        
+            if (Status != STATUS_SUCCESS)
+                ShowNtStatusError(hwnd, Status);
+            
+            CloseHandle(h2);
+        }
+        
+        CloseHandle(h);
+    } else
+        ShowError(hwnd, GetLastError());
+}
+
 HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
     if (ignore)
         return E_INVALIDARG;
     
     if (!bg) {
         if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, SNAPSHOT_VERBA)) {
-            MessageBoxW(pici->hwnd, L"FIXME", L"Error", MB_ICONERROR);
-            // FIXME
+            UINT num_files, i;
+            WCHAR fn[MAX_PATH];
             
-            return E_FAIL;
+            if (!stgm_set)
+                return E_FAIL;
+            
+            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+            
+            if (num_files == 0)
+                return E_FAIL;
+            
+            for (i = 0; i < num_files; i++) {
+                if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+                    create_snapshot(pici->hwnd, fn);
+                }
+            }
+
+            return S_OK;
         }
         
         return E_FAIL;
@@ -266,7 +376,11 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
                 FindClose(fff);
                 
                 searchpath[i] = 0;
-                StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num);
+                if (StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                    MessageBoxW(pici->hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
+                    CloseHandle(h);
+                    return E_FAIL;
+                }
 
                 fff = FindFirstFileW(searchpath, &wfd);
                 num++;

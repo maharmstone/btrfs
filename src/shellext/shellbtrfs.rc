@@ -106,6 +106,7 @@ BEGIN
     IDS_NEW_SUBVOL_FILENAME "New subvolume"
     IDS_CREATE_SNAPSHOT     "Create snapshot"
     IDS_CREATE_SNAPSHOT_HELP_TEXT "Creates a snapshot of a Btrfs subvolume."
+    IDS_SNAPSHOT_FILENAME   "Snapshot of %s (%04u-%02u-%02u)"
 END
 
 #endif    // English (U.K.) resources
