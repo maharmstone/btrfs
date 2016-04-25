@@ -531,52 +531,17 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("read\n");
     
-    switch (IrpSp->MinorFunction) {
-        case IRP_MN_COMPLETE:
-            FIXME("unsupported - IRP_MN_COMPLETE\n");
-            break;
-
-        case IRP_MN_COMPLETE_MDL:
-            FIXME("unsupported - IRP_MN_COMPLETE_MDL\n");
-            break;
-
-        case IRP_MN_COMPLETE_MDL_DPC:
-            FIXME("unsupported - IRP_MN_COMPLETE_MDL_DPC\n");
-            break;
-
-        case IRP_MN_COMPRESSED:
-            FIXME("unsupported - IRP_MN_COMPRESSED\n");
-            break;
-
-        case IRP_MN_DPC:
-            FIXME("unsupported - IRP_MN_DPC\n");
-            break;
-
-        case IRP_MN_MDL:
-            FIXME("unsupported - IRP_MN_MDL\n");
-            break;
-
-        case IRP_MN_MDL_DPC:
-            FIXME("unsupported - IRP_MN_MDL_DPC\n");
-            break;
-
-        case IRP_MN_NORMAL:
-            TRACE("IRP_MN_NORMAL\n");
-            break;
+    Irp->IoStatus.Information = 0;
+    
+    if (IrpSp->MinorFunction & IRP_MN_COMPLETE) {
+        CcMdlReadComplete(IrpSp->FileObject, Irp->MdlAddress);
         
-        default:
-            WARN("unknown minor %u\n", IrpSp->MinorFunction);
-    }
-    
-    data = map_user_buffer(Irp);
-    
-    if (Irp->MdlAddress && !data) {
-        ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
+        Irp->MdlAddress = NULL;
+        Status = STATUS_SUCCESS;
+        bytes_read = 0;
+        
         goto exit;
     }
-    
-    Irp->IoStatus.Information = 0;
     
     start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
     length = IrpSp->Parameters.Read.Length;
@@ -614,9 +579,19 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("FileObject %p fcb %p FileSize = %llx st_size = %llx (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
 //     int3;
     
-    if (length + start > fcb->Header.ValidDataLength.QuadPart) {
-        RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
-        length = fcb->Header.ValidDataLength.QuadPart - start;
+    if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
+        data = map_user_buffer(Irp);
+        
+        if (Irp->MdlAddress && !data) {
+            ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        if (length + start > fcb->Header.ValidDataLength.QuadPart) {
+            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
+            length = fcb->Header.ValidDataLength.QuadPart - start;
+        }
     }
         
     if (!(Irp->Flags & IRP_NOCACHE)) {
@@ -643,16 +618,20 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     //         wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
             wait = TRUE;
             
-            TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
-            TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
-            if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
-                TRACE("CcCopyRead failed\n");
-                
-                IoMarkIrpPending(Irp);
-                Status = STATUS_PENDING;
-                goto exit;
+            if (IrpSp->MinorFunction & IRP_MN_MDL) {
+                CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
+            } else {
+                TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+                TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
+                    TRACE("CcCopyRead failed\n");
+                    
+                    IoMarkIrpPending(Irp);
+                    Status = STATUS_PENDING;
+                    goto exit;
+                }
+                TRACE("CcCopyRead finished\n");
             }
-            TRACE("CcCopyRead finished\n");
 //         } except (EXCEPTION_EXECUTE_HANDLER) {
 //             Status = GetExceptionCode();
 //         }

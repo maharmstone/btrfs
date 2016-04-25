@@ -53,6 +53,8 @@ PDEVICE_OBJECT comdo = NULL;
 HANDLE log_handle = NULL;
 #endif
 
+int __security_cookie = __LINE__;
+
 static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject);
 
 typedef struct {
@@ -755,6 +757,7 @@ exit:
 static NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     FsRtlEnterFileSystem();
 
@@ -762,7 +765,18 @@ static NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
 //     ERR("recursive = %s\n", Irp != IoGetTopLevelIrp() ? "TRUE" : "FALSE");
     
-    Status = write_file(DeviceObject, Irp);
+    try {
+        if (IrpSp->MinorFunction & IRP_MN_COMPLETE) {
+            CcMdlWriteComplete(IrpSp->FileObject, &IrpSp->Parameters.Write.ByteOffset, Irp->MdlAddress);
+            
+            Irp->MdlAddress = NULL;
+            Irp->IoStatus.Status = STATUS_SUCCESS;
+        } else {
+            Status = write_file(DeviceObject, Irp);
+        }
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        Status = GetExceptionCode();
+    }
     
     Irp->IoStatus.Status = Status;
 

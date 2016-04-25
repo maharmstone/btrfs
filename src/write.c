@@ -6884,15 +6884,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 //             wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
         wait = TRUE;
         
-        TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
-        if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
-            TRACE("CcCopyWrite failed.\n");
-            
-            IoMarkIrpPending(Irp);
-            Status = STATUS_PENDING;
-            goto end;
+        if (IrpSp->MinorFunction & IRP_MN_MDL) {
+            CcPrepareMdlWrite(FileObject, &offset, *length, &Irp->MdlAddress, &Irp->IoStatus);
+
+            return Irp->IoStatus.Status;
+        } else {
+            TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
+            if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
+                TRACE("CcCopyWrite failed.\n");
+                
+                IoMarkIrpPending(Irp);
+                Status = STATUS_PENDING;
+                goto end;
+            }
+            TRACE("CcCopyWrite finished\n");
         }
-        TRACE("CcCopyWrite finished\n");
         
         Status = STATUS_SUCCESS;
         goto end;
@@ -7196,44 +7202,6 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("write\n");
     
     Irp->IoStatus.Information = 0;
-    
-    switch (IrpSp->MinorFunction) {
-        case IRP_MN_COMPLETE:
-            FIXME("unsupported - IRP_MN_COMPLETE\n");
-            break;
-
-        case IRP_MN_COMPLETE_MDL:
-            FIXME("unsupported - IRP_MN_COMPLETE_MDL\n");
-            break;
-
-        case IRP_MN_COMPLETE_MDL_DPC:
-            FIXME("unsupported - IRP_MN_COMPLETE_MDL_DPC\n");
-            break;
-
-        case IRP_MN_COMPRESSED:
-            FIXME("unsupported - IRP_MN_COMPRESSED\n");
-            break;
-
-        case IRP_MN_DPC:
-            FIXME("unsupported - IRP_MN_DPC\n");
-            break;
-
-        case IRP_MN_MDL:
-            FIXME("unsupported - IRP_MN_MDL\n");
-            break;
-
-        case IRP_MN_MDL_DPC:
-            FIXME("unsupported - IRP_MN_MDL_DPC\n");
-            break;
-
-        case IRP_MN_NORMAL:
-            TRACE("IRP_MN_NORMAL\n");
-            break;
-
-        default:
-            WARN("unknown minor function %x\n", IrpSp->MinorFunction);
-            break;
-    }
     
     TRACE("offset = %llx\n", offset.QuadPart);
     TRACE("length = %x\n", IrpSp->Parameters.Write.Length);
