@@ -694,10 +694,9 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, fcb* fc
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                     
                     if (ed2->address != 0) {
-                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset, rollback);
-                        
+                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, destsubvol, inode, tp.item->key.offset - ed2->offset, 1, rollback);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("add_extent_ref returned %08x\n", Status);
+                            ERR("increase_extent_refcount_data returned %08x\n", Status);
                             return Status;
                         }
                         

@@ -3586,214 +3586,201 @@ static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* in
     InsertTailList(list, &ins->list_entry);
 }
 
-static UINT64 get_extent_data_ref_hash(UINT64 root, UINT64 objid, UINT64 offset) {
-    UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
-    
-    // FIXME - can we test this?
-
-    // FIXME - make sure numbers here are little-endian
-    high_crc = calc_crc32c(high_crc, (UINT8*)&root, sizeof(UINT64));
-    low_crc = calc_crc32c(low_crc, (UINT8*)&objid, sizeof(UINT64));
-    low_crc = calc_crc32c(low_crc, (UINT8*)&offset, sizeof(UINT64));
-    
-    return ((UINT64)high_crc << 31) ^ (UINT64)low_crc;
-}
-
-NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    EXTENT_ITEM* ei;
-    UINT8 *siptr, *type;
-    ULONG len;
-    UINT64 hash;
-    EXTENT_DATA_REF* edr;
-    NTSTATUS Status;
-    
-    TRACE("(%p, %llx, %llx, %llx, %llx, %llx)\n", Vcb, address, size, subvol->id, inode, offset);
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(&tp.item->key, &searchkey)) {
-        // create new entry
-        
-        len = sizeof(EXTENT_ITEM) + sizeof(UINT8) + sizeof(EXTENT_DATA_REF);
-        
-        ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-        if (!ei) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        ei->refcount = 1;
-        ei->generation = Vcb->superblock.generation;
-        ei->flags = EXTENT_ITEM_DATA;
-        
-        type = (UINT8*)&ei[1];
-        *type = TYPE_EXTENT_DATA_REF;
-        
-        edr = (EXTENT_DATA_REF*)&type[1];
-        edr->root = subvol->id;
-        edr->objid = inode;
-        edr->offset = offset;
-        edr->count = 1;
-        
-        if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, len, NULL, rollback)) {
-            ERR("error - failed to insert item\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        // FIXME - update free space in superblock and CHUNK_ITEM
-        
-        return STATUS_SUCCESS;
-    }
-    
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) { // old extent ref, convert
-        NTSTATUS Status = convert_old_data_extent(Vcb, address, size, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("convert_old_data_extent returned %08x\n", Status);
-            return Status;
-        }
-        
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (keycmp(&tp.item->key, &searchkey)) {
-            WARN("extent item not found for address %llx, size %llx\n", address, size);
-            return STATUS_SUCCESS;
-        }
-    }
-    
-    ei = (EXTENT_ITEM*)tp.item->data;
-    
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (extent_item_is_shared(ei, tp.item->size - sizeof(EXTENT_ITEM))) {
-        NTSTATUS Status = convert_shared_data_extent(Vcb, address, size, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("convert_shared_data_extent returned %08x\n", Status);
-            return Status;
-        }
-        
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (keycmp(&tp.item->key, &searchkey)) {
-            WARN("extent item not found for address %llx, size %llx\n", address, size);
-            return STATUS_SUCCESS;
-        }
-        
-        ei = (EXTENT_ITEM*)tp.item->data;
-    }
-    
-    if (ei->flags != EXTENT_ITEM_DATA) {
-        ERR("error - flag was not EXTENT_ITEM_DATA\n");
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    hash = get_extent_data_ref_hash(subvol->id, inode, offset);
-    
-    len = tp.item->size - sizeof(EXTENT_ITEM);
-    siptr = (UINT8*)&ei[1];
-    
-    do {
-        if (*siptr == TYPE_EXTENT_DATA_REF) {
-            UINT64 sihash;
-            
-            edr = (EXTENT_DATA_REF*)&siptr[1];
-            
-            // already exists - increase refcount
-            if (edr->root == subvol->id && edr->objid == inode && edr->offset == offset) {
-                ei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-                
-                if (!ei) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                RtlCopyMemory(ei, tp.item->data, tp.item->size);
-                
-                edr = (EXTENT_DATA_REF*)((UINT8*)ei + ((UINT8*)edr - tp.item->data));
-                edr->count++;
-                ei->refcount++;
-                
-                delete_tree_item(Vcb, &tp, rollback);
-                
-                if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, tp.item->size, NULL, rollback)) {
-                    ERR("error - failed to insert item\n");
-                    ExFreePool(ei);
-                    return STATUS_INTERNAL_ERROR;
-                }
-                
-                return STATUS_SUCCESS;
-            }
-            
-            sihash = get_extent_data_ref_hash(edr->root, edr->objid, edr->offset);
-            
-            if (sihash >= hash)
-                break;
-            
-            siptr += sizeof(UINT8) + sizeof(EXTENT_DATA_REF);
-            
-            if (len > sizeof(EXTENT_DATA_REF) + sizeof(UINT8)) {
-                len -= sizeof(EXTENT_DATA_REF) + sizeof(UINT8);
-            } else
-                break;
-        // FIXME - TYPE_TREE_BLOCK_REF    0xB0
-        } else {
-            ERR("unrecognized extent subitem %x\n", *siptr);
-            return STATUS_INTERNAL_ERROR;
-        }
-    } while (len > 0);
-    
-    len = tp.item->size + sizeof(UINT8) + sizeof(EXTENT_DATA_REF); // FIXME - die if too big
-    ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-    if (!ei) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(ei, tp.item->data, siptr - tp.item->data);
-    ei->refcount++;
-    
-    type = (UINT8*)ei + (siptr - tp.item->data);
-    *type = TYPE_EXTENT_DATA_REF;
-    
-    edr = (EXTENT_DATA_REF*)&type[1];
-    edr->root = subvol->id;
-    edr->objid = inode;
-    edr->offset = offset;
-    edr->count = 1;
-    
-    if (siptr < tp.item->data + tp.item->size)
-        RtlCopyMemory(&edr[1], siptr, tp.item->data + tp.item->size - siptr);
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    
-    if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, len, NULL, rollback)) {
-        ERR("error - failed to insert item\n");
-        ExFreePool(ei);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    return STATUS_SUCCESS;
-}
+// NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback) {
+//     KEY searchkey;
+//     traverse_ptr tp;
+//     EXTENT_ITEM* ei;
+//     UINT8 *siptr, *type;
+//     ULONG len;
+//     UINT64 hash;
+//     EXTENT_DATA_REF* edr;
+//     NTSTATUS Status;
+//     
+//     TRACE("(%p, %llx, %llx, %llx, %llx, %llx)\n", Vcb, address, size, subvol->id, inode, offset);
+//     
+//     searchkey.obj_id = address;
+//     searchkey.obj_type = TYPE_EXTENT_ITEM;
+//     searchkey.offset = size;
+//     
+//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (keycmp(&tp.item->key, &searchkey)) {
+//         // create new entry
+//         
+//         len = sizeof(EXTENT_ITEM) + sizeof(UINT8) + sizeof(EXTENT_DATA_REF);
+//         
+//         ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+//         if (!ei) {
+//             ERR("out of memory\n");
+//             return STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//         
+//         ei->refcount = 1;
+//         ei->generation = Vcb->superblock.generation;
+//         ei->flags = EXTENT_ITEM_DATA;
+//         
+//         type = (UINT8*)&ei[1];
+//         *type = TYPE_EXTENT_DATA_REF;
+//         
+//         edr = (EXTENT_DATA_REF*)&type[1];
+//         edr->root = subvol->id;
+//         edr->objid = inode;
+//         edr->offset = offset;
+//         edr->count = 1;
+//         
+//         if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, len, NULL, rollback)) {
+//             ERR("error - failed to insert item\n");
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//         
+//         // FIXME - update free space in superblock and CHUNK_ITEM
+//         
+//         return STATUS_SUCCESS;
+//     }
+//     
+//     if (tp.item->size == sizeof(EXTENT_ITEM_V0)) { // old extent ref, convert
+//         NTSTATUS Status = convert_old_data_extent(Vcb, address, size, rollback);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("convert_old_data_extent returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("error - find_item returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         if (keycmp(&tp.item->key, &searchkey)) {
+//             WARN("extent item not found for address %llx, size %llx\n", address, size);
+//             return STATUS_SUCCESS;
+//         }
+//     }
+//     
+//     ei = (EXTENT_ITEM*)tp.item->data;
+//     
+//     if (tp.item->size < sizeof(EXTENT_ITEM)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     if (extent_item_is_shared(ei, tp.item->size - sizeof(EXTENT_ITEM))) {
+//         NTSTATUS Status = convert_shared_data_extent(Vcb, address, size, rollback);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("convert_shared_data_extent returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("error - find_item returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         if (keycmp(&tp.item->key, &searchkey)) {
+//             WARN("extent item not found for address %llx, size %llx\n", address, size);
+//             return STATUS_SUCCESS;
+//         }
+//         
+//         ei = (EXTENT_ITEM*)tp.item->data;
+//     }
+//     
+//     if (ei->flags != EXTENT_ITEM_DATA) {
+//         ERR("error - flag was not EXTENT_ITEM_DATA\n");
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     hash = get_extent_data_ref_hash(subvol->id, inode, offset);
+//     
+//     len = tp.item->size - sizeof(EXTENT_ITEM);
+//     siptr = (UINT8*)&ei[1];
+//     
+//     do {
+//         if (*siptr == TYPE_EXTENT_DATA_REF) {
+//             UINT64 sihash;
+//             
+//             edr = (EXTENT_DATA_REF*)&siptr[1];
+//             
+//             // already exists - increase refcount
+//             if (edr->root == subvol->id && edr->objid == inode && edr->offset == offset) {
+//                 ei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+//                 
+//                 if (!ei) {
+//                     ERR("out of memory\n");
+//                     return STATUS_INSUFFICIENT_RESOURCES;
+//                 }
+//                 
+//                 RtlCopyMemory(ei, tp.item->data, tp.item->size);
+//                 
+//                 edr = (EXTENT_DATA_REF*)((UINT8*)ei + ((UINT8*)edr - tp.item->data));
+//                 edr->count++;
+//                 ei->refcount++;
+//                 
+//                 delete_tree_item(Vcb, &tp, rollback);
+//                 
+//                 if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, tp.item->size, NULL, rollback)) {
+//                     ERR("error - failed to insert item\n");
+//                     ExFreePool(ei);
+//                     return STATUS_INTERNAL_ERROR;
+//                 }
+//                 
+//                 return STATUS_SUCCESS;
+//             }
+//             
+//             sihash = get_extent_data_ref_hash(edr->root, edr->objid, edr->offset);
+//             
+//             if (sihash >= hash)
+//                 break;
+//             
+//             siptr += sizeof(UINT8) + sizeof(EXTENT_DATA_REF);
+//             
+//             if (len > sizeof(EXTENT_DATA_REF) + sizeof(UINT8)) {
+//                 len -= sizeof(EXTENT_DATA_REF) + sizeof(UINT8);
+//             } else
+//                 break;
+//         // FIXME - TYPE_TREE_BLOCK_REF    0xB0
+//         } else {
+//             ERR("unrecognized extent subitem %x\n", *siptr);
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//     } while (len > 0);
+//     
+//     len = tp.item->size + sizeof(UINT8) + sizeof(EXTENT_DATA_REF); // FIXME - die if too big
+//     ei = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+//     if (!ei) {
+//         ERR("out of memory\n");
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//     
+//     RtlCopyMemory(ei, tp.item->data, siptr - tp.item->data);
+//     ei->refcount++;
+//     
+//     type = (UINT8*)ei + (siptr - tp.item->data);
+//     *type = TYPE_EXTENT_DATA_REF;
+//     
+//     edr = (EXTENT_DATA_REF*)&type[1];
+//     edr->root = subvol->id;
+//     edr->objid = inode;
+//     edr->offset = offset;
+//     edr->count = 1;
+//     
+//     if (siptr < tp.item->data + tp.item->size)
+//         RtlCopyMemory(&edr[1], siptr, tp.item->data + tp.item->size - siptr);
+//     
+//     delete_tree_item(Vcb, &tp, rollback);
+//     
+//     if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ei, len, NULL, rollback)) {
+//         ERR("error - failed to insert item\n");
+//         ExFreePool(ei);
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     return STATUS_SUCCESS;
+// }
 
 typedef struct {
     EXTENT_DATA_REF edr;
@@ -4844,10 +4831,10 @@ NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode,
                     }
                     
                     if (ed2->address != 0) {
-                        Status = add_extent_ref(Vcb, ed2->address, ed2->size, subvol, inode, ed2->offset - tp.item->key.offset, rollback);
+                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol, inode, tp.item->key.offset - ed2->offset, 1, rollback);
                         
                         if (!NT_SUCCESS(Status)) {
-                            ERR("add_extent_ref returned %08x\n", Status);
+                            ERR("increase_extent_refcount_data returned %08x\n", Status);
                             goto end;
                         }
                     }
@@ -4940,9 +4927,9 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
     if (!find_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
     
-    Status = add_extent_ref(Vcb, address, length, subvol, inode, start_data, rollback);
+    Status = increase_extent_refcount_data(Vcb, address, length, subvol, inode, start_data, 1, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("add_extent_ref returned %08x\n", Status);
+        ERR("increase_extent_refcount_data returned %08x\n", Status);
         return FALSE;
     }
     
@@ -6220,10 +6207,9 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     return Status;
                 }
                 
-                Status = add_extent_ref(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
+                Status = increase_extent_refcount_data(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, 1, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("add_extent_ref returned %08x\n", Status);
-                    
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
                     return Status;
                 }
                 
@@ -6287,9 +6273,9 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     return Status;
                 }
                 
-                Status = add_extent_ref(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
+                Status = increase_extent_refcount_data(Vcb, ned2->address, ned2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, 1, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("add_extent_ref returned %08x\n", Status);
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
                     
                     return Status;
                 }
@@ -6298,7 +6284,6 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
             } else if (start_data > tp.item->key.offset && end_data < tp.item->key.offset + ed2->num_bytes) { // replace middle
                 EXTENT_DATA *ned, *nedb, *nedc;
                 EXTENT_DATA2* ned2;
-                UINT8 i;
                 
                 // FIXME - test this
                 
@@ -6379,13 +6364,10 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     return Status;
                 }
                 
-                for (i = 0; i < 2; i++) {
-                    Status = add_extent_ref(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("add_extent_ref returned %08x\n", Status);
-                        
-                        return Status;
-                    }
+                Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, fcb->subvol, fcb->inode, tp.item->key.offset - ed2->offset, 2, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
+                    return Status;
                 }
                 
                 last_written = end_data;

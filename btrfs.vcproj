@@ -413,6 +413,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\extent-tree.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\fastio.c"
 				>
 			</File>

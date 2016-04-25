@@ -354,6 +354,11 @@ typedef struct {
 } EXTENT_ITEM;
 
 typedef struct {
+    KEY firstitem;
+    UINT8 level;
+} EXTENT_ITEM2;
+
+typedef struct {
     UINT32 refcount;
 } EXTENT_ITEM_V0;
 

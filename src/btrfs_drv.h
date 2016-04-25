@@ -471,7 +471,6 @@ NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode,
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
-NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback);
 NTSTATUS STDCALL remove_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
@@ -532,6 +531,9 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
 NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
+
+// in extent-tree.c
+NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
