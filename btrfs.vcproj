@@ -425,6 +425,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\free-space.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\fsctl.c"
 				>
 			</File>

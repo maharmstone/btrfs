@@ -524,6 +524,9 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
+// in free-space.c
+NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
+
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
