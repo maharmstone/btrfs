@@ -556,7 +556,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     fcb* subvol_fcb;
     ANSI_STRING utf8;
     UNICODE_STRING nameus;
-    ULONG len, i;
+    ULONG len;
     UINT32 crc32;
     fcb* fcb;
     ccb* ccb;
@@ -584,20 +584,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_ACCESS_DENIED;
     }
     
-    for (i = 0; i < bcs->namelen / sizeof(WCHAR); i++) {
-        if (bcs->name[i] == '/')
-            return STATUS_INVALID_PARAMETER;
-        else if (bcs->name[i] == 0) {
-            bcs->namelen = i * sizeof(WCHAR);
-            break;
-        }
-    }
+    nameus.Buffer = bcs->name;
+    nameus.Length = nameus.MaximumLength = bcs->namelen;
     
-    if (bcs->namelen < sizeof(WCHAR))
-        return STATUS_INVALID_PARAMETER;
-    
-    if (bcs->name[0] == '.' && (bcs->namelen == sizeof(WCHAR) || (bcs->namelen == 2 * sizeof(WCHAR) && bcs->name[1] == '.')))
-        return STATUS_INVALID_PARAMETER;
+    if (!is_file_name_valid(&nameus))
+        return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
     
@@ -628,8 +619,6 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    nameus.Buffer = bcs->name;
-    nameus.Length = nameus.MaximumLength = bcs->namelen;
     if (find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL)) {
         WARN("file already exists\n");
         Status = STATUS_OBJECT_NAME_COLLISION;
@@ -720,7 +709,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     root* r;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    ULONG i, len, disize, rrsize, irsize;
+    ULONG len, disize, rrsize, irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     UINT64 dirpos;
@@ -764,17 +753,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         return STATUS_ACCESS_DENIED;
     }
     
-    for (i = 0; i < length / sizeof(WCHAR); i++) {
-        if (name[i] == '/' || name[i] == '\\')
-            return STATUS_INVALID_PARAMETER;
-        else if (name[i] == 0)
-            length = i * sizeof(WCHAR);
-    }
+    nameus.Length = nameus.MaximumLength = length;
+    nameus.Buffer = name;
     
-    if (length == 0) {
-        ERR("name has a length of zero\n");
-        return STATUS_INVALID_PARAMETER;
-    }
+    if (!is_file_name_valid(&nameus))
+        return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
     
@@ -811,9 +794,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     InitializeListHead(&rollback);
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
-    
-    nameus.Length = nameus.MaximumLength = length;
-    nameus.Buffer = name;
     
     if (find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL)) {
         WARN("file already exists\n");

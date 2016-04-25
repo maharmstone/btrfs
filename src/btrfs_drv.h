@@ -436,6 +436,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 void STDCALL uninit(device_extension* Vcb, BOOL flush);
 NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID InputBuffer,
                            ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
+BOOL is_file_name_valid(PUNICODE_STRING us);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

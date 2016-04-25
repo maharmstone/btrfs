@@ -1303,6 +1303,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     BTRFS_TIME now;
     BOOL across_directories;
     INODE_ITEM* ii;
+    LONG i;
     
     // FIXME - MSDN says we should be able to rename streams here, but I can't get it to work.
     
@@ -1333,8 +1334,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         across_directories = FALSE;
     } else {
-        LONG i;
-        
         tfofcb = tfo->FsContext;
         parsubvol = tfofcb->subvol;
         parinode = tfofcb->inode;
@@ -1354,6 +1353,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
     
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+    
+    if (!is_file_name_valid(&fnus))
+        return STATUS_OBJECT_NAME_INVALID;
     
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))

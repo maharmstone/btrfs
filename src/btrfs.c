@@ -3849,6 +3849,26 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     return Status;
 }
 
+BOOL is_file_name_valid(PUNICODE_STRING us) {
+    ULONG i;
+    
+    if (us->Length < sizeof(WCHAR))
+        return FALSE;
+    
+    if (us->Length > 255 * sizeof(WCHAR))
+        return FALSE;
+    
+    for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
+        if (us->Buffer[i] == '/')
+            return FALSE;
+    }
+    
+    if (us->Buffer[0] == '.' && (us->Length == sizeof(WCHAR) || (us->Length == 2 * sizeof(WCHAR) && us->Buffer[1] == '.')))
+        return FALSE;
+    
+    return TRUE;
+}
+
 #ifdef _DEBUG
 static void STDCALL init_serial() {
     NTSTATUS Status;

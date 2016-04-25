@@ -1486,6 +1486,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
                 goto end;
             }
             
+            if (!is_file_name_valid(&fpus))
+                return STATUS_OBJECT_NAME_INVALID;
+            
             Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar, rollback);
         
             if (!NT_SUCCESS(Status)) {
@@ -1660,6 +1663,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             WARN("SeAccessCheck failed, returning %08x\n", Status);
             goto end;
         }
+        
+        if (!is_file_name_valid(&fpus))
+            return STATUS_OBJECT_NAME_INVALID;
         
         Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &fcb, rollback);
         
