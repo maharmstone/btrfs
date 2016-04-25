@@ -1011,6 +1011,7 @@ NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvo
         }
     } else {
         WARN("could not find ROOT_REF entry for subvol %llx in %llx\n", searchkey.offset, searchkey.obj_id);
+        return STATUS_NOT_FOUND;
     }
     
     return STATUS_SUCCESS;

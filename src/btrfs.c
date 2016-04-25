@@ -1633,21 +1633,32 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     UINT32 crc32;
     ROOT_ITEM* ri;
+    BOOL no_ref = FALSE;
     
     // delete ROOT_REF in root tree
     
     Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fcb->par->subvol->id, fcb->par->inode, &fcb->utf8, &index, rollback);
-    if (!NT_SUCCESS(Status)) {
+    
+    // A bug in Linux means that if you create a snapshot of a subvol containing another subvol,
+    // the ROOT_REF and ROOT_BACKREF items won't be created, nor will num_references of ROOT_ITEM
+    // be increased. In this case, we just unlink the subvol from its parent, and don't worry
+    // about anything else.
+    
+    if (Status == STATUS_NOT_FOUND)
+        no_ref = TRUE;
+    else if (!NT_SUCCESS(Status)) {
         ERR("delete_root_ref returned %08x\n", Status);
         return Status;
     }
     
-    // delete ROOT_BACKREF in root tree
-    
-    Status = update_root_backref(fcb->Vcb, fcb->subvol->id, fcb->par->subvol->id, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("update_root_backref returned %08x\n", Status);
-        return Status;
+    if (!no_ref) {
+        // delete ROOT_BACKREF in root tree
+        
+        Status = update_root_backref(fcb->Vcb, fcb->subvol->id, fcb->par->subvol->id, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_root_backref returned %08x\n", Status);
+            return Status;
+        }
     }
     
     // delete DIR_ITEM in parent
@@ -1661,20 +1672,61 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     
     // delete DIR_INDEX in parent
     
-    searchkey.obj_id = fcb->par->inode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
-    searchkey.offset = index;
+    if (!no_ref) {
+        searchkey.obj_id = fcb->par->inode;
+        searchkey.obj_type = TYPE_DIR_INDEX;
+        searchkey.offset = index;
+        
+        Status = find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item 1 returned %08x\n", Status);
+            return Status;
+        }
     
-    Status = find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_item 1 returned %08x\n", Status);
-        return Status;
+        if (!keycmp(&searchkey, &tp.item->key)) {
+            delete_tree_item(fcb->Vcb, &tp, rollback);
+            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        }
+    } else {
+        BOOL b;
+        traverse_ptr next_tp;
+        
+        // If we have no ROOT_REF, we have to look through all the DIR_INDEX entries manually :-(
+        
+        searchkey.obj_id = fcb->par->inode;
+        searchkey.obj_type = TYPE_DIR_INDEX;
+        searchkey.offset = 0;
+        
+        Status = find_item(fcb->Vcb, fcb->par->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item 1 returned %08x\n", Status);
+            return Status;
+        }
+        
+        do {
+            if (tp.item->key.obj_type == TYPE_DIR_INDEX && tp.item->size >= sizeof(DIR_ITEM)) {
+                DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+                
+                if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fcb->utf8.Length &&
+                    tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fcb->utf8.Buffer, di->name, di->n) == di->n) {
+                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                    break;
+                }
+            }
+        
+            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+            
+            if (b) {
+                tp = next_tp;
+                
+                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                    break;
+            }
+        } while (b);
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
-        delete_tree_item(fcb->Vcb, &tp, rollback);
-        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-    }
+    if (no_ref)
+        return STATUS_SUCCESS;
     
     if (fcb->subvol->root_item.num_references > 1) {
         UINT64 offset;
