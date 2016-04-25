@@ -1480,6 +1480,8 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+            UNICODE_STRING fpus2;
+            
             if (!SeAccessCheck(parfcb->sd, &access_state->SubjectSecurityContext, FALSE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
                 WARN("SeAccessCheck failed, returning %08x\n", Status);
@@ -1489,10 +1491,22 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             if (!is_file_name_valid(&fpus))
                 return STATUS_OBJECT_NAME_INVALID;
             
-            Status = file_create2(Irp, Vcb, &fpus, parfcb, options, &newpar, rollback);
+            fpus2.Length = fpus2.MaximumLength = fpus.Length;
+            fpus2.Buffer = ExAllocatePoolWithTag(PagedPool, fpus2.MaximumLength, ALLOC_TAG);
+            
+            if (!fpus2.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            RtlCopyMemory(fpus2.Buffer, fpus.Buffer, fpus2.Length);
+            
+            Status = file_create2(Irp, Vcb, &fpus2, parfcb, options, &newpar, rollback);
         
             if (!NT_SUCCESS(Status)) {
                 ERR("file_create2 returned %08x\n", Status);
+                ExFreePool(fpus2.Buffer);
                 goto end;
             }
         } else if (!NT_SUCCESS(Status)) {
