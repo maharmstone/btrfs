@@ -1761,9 +1761,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
-    FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
+NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
     KEY searchkey;
@@ -1774,36 +1772,36 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
     UINT16 datalen;
     NTSTATUS Status;
     
-    TRACE("setting new end to %llx bytes (currently %x)\n", feofi->EndOfFile.QuadPart, fcb->adssize);
+    TRACE("setting new end to %llx bytes (currently %x)\n", end, fcb->adssize);
     
-    if (feofi->EndOfFile.QuadPart < fcb->adssize) {
+    if (end < fcb->adssize) {
         if (advance_only)
             return STATUS_SUCCESS;
         
-        TRACE("truncating stream to %llx bytes\n", feofi->EndOfFile.QuadPart);
+        TRACE("truncating stream to %llx bytes\n", end);
         
-        if (feofi->EndOfFile.QuadPart > 0) {
+        if (end > 0) {
             if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
                 ERR("get_xattr failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
         }
         
-        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data, feofi->EndOfFile.QuadPart, rollback);
+        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data, end, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
             return Status;
         }
         
-        fcb->adssize = feofi->EndOfFile.QuadPart;
+        fcb->adssize = end;
         
         if (data)
             ExFreePool(data);
-    } else if (feofi->EndOfFile.QuadPart > fcb->adssize) {
+    } else if (end > fcb->adssize) {
         UINT16 maxlen;
         UINT8* data2;
         
-        TRACE("extending stream to %llx bytes\n", feofi->EndOfFile.QuadPart);
+        TRACE("extending stream to %llx bytes\n", end);
         
         // find maximum length of xattr
         maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
@@ -1830,12 +1828,12 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
         
         maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
         
-        if (feofi->EndOfFile.QuadPart > maxlen) {
-            ERR("error - xattr too long (%llu > %u)\n", feofi->EndOfFile.QuadPart, maxlen);
+        if (end > maxlen) {
+            ERR("error - xattr too long (%llu > %u)\n", end, maxlen);
             return STATUS_DISK_FULL;
         }
 
-        data2 = ExAllocatePoolWithTag(PagedPool, feofi->EndOfFile.QuadPart, ALLOC_TAG);
+        data2 = ExAllocatePoolWithTag(PagedPool, end, ALLOC_TAG);
         if (!data2) {
             ERR("out of memory\n");
             ExFreePool(data);
@@ -1847,24 +1845,26 @@ static NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb
             ExFreePool(data);
         }
         
-        RtlZeroMemory(&data2[datalen], feofi->EndOfFile.QuadPart - datalen);
+        RtlZeroMemory(&data2[datalen], end - datalen);
         
-        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, feofi->EndOfFile.QuadPart, rollback);
+        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, end, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
             return Status;
         }
         
-        fcb->adssize = feofi->EndOfFile.QuadPart;
+        fcb->adssize = end;
         
         ExFreePool(data2);
     }
 
-    ccfs.AllocationSize = fcb->Header.AllocationSize;
-    ccfs.FileSize = fcb->Header.FileSize;
-    ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+    if (FileObject) {
+        ccfs.AllocationSize = fcb->Header.AllocationSize;
+        ccfs.FileSize = fcb->Header.FileSize;
+        ccfs.ValidDataLength = fcb->Header.ValidDataLength;
 
-    CcSetFileSizes(FileObject, &ccfs);
+        CcSetFileSizes(FileObject, &ccfs);
+    }
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1917,7 +1917,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         return STATUS_FILE_CLOSED;
     
     if (fcb->ads)
-        return stream_set_end_of_file_information(Vcb, Irp, FileObject, advance_only, rollback);
+        return stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, FileObject, advance_only, rollback);
     
     TRACE("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
     TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE");

@@ -5621,11 +5621,9 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) 
     
     TRACE("(%p, %x, %p)\n", fcb, end, rollback);
 
-    if (fcb->ads) {
-        FIXME("FIXME - support streams here\n");
-        // FIXME - merge this with stream_set_end_of_file_information
-        return STATUS_NOT_IMPLEMENTED;
-    } else {
+    if (fcb->ads)
+        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, NULL, FALSE, rollback) ;
+    else {
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_EXTENT_DATA;
         searchkey.offset = 0xffffffffffffffff;
