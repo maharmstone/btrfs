@@ -2155,7 +2155,6 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
-        goto exit;
     }
     
     if (NT_SUCCESS(Status)) {
