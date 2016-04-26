@@ -2205,6 +2205,9 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
         if (ccb->query_string.Buffer)
             RtlFreeUnicodeString(&ccb->query_string);
         
+        // FIXME - use refcounts for fileref
+        ExFreePool(ccb->fileref);
+        
         ExFreePool(ccb);
     }
     

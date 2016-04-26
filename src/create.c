@@ -1703,6 +1703,16 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     }
     
     RtlZeroMemory(ccb, sizeof(*ccb));
+    
+    // FIXME - use refcounts for fileref
+    ccb->fileref = ExAllocatePoolWithTag(PagedPool, sizeof(file_ref), ALLOC_TAG);
+    if (!ccb->fileref) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(ccb);
+        goto end;
+    }
+    
     ccb->NodeType = BTRFS_NODE_TYPE_CCB;
     ccb->NodeSize = sizeof(ccb);
     ccb->disposition = disposition;
@@ -1712,6 +1722,8 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
     ccb->access = access;
+    
+    ccb->fileref->fcb = fcb;
     
     oc = InterlockedIncrement(&fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -2445,6 +2457,21 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         }
         
         RtlZeroMemory(ccb, sizeof(*ccb));
+        
+        // FIXME - use refcounts for fileref
+        ccb->fileref = ExAllocatePoolWithTag(PagedPool, sizeof(file_ref), ALLOC_TAG);
+        if (!ccb->fileref) {
+            ERR("out of memory\n");
+            ExFreePool(ccb);
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         ccb->NodeType = BTRFS_NODE_TYPE_CCB;
         ccb->NodeSize = sizeof(ccb);
         ccb->disposition = RequestedDisposition;
@@ -2454,6 +2481,8 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
         ccb->access = access;
+        
+        ccb->fileref->fcb = fcb;
         
         FileObject->FsContext2 = ccb;
         

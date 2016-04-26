@@ -128,6 +128,11 @@ typedef struct _fcb {
     LIST_ENTRY list_entry;
 } fcb;
 
+typedef struct {
+//     UNICODE_STRING full_filename;
+    fcb* fcb;
+} file_ref;
+
 typedef struct _ccb {
     USHORT NodeType;
     CSHORT NodeSize;
@@ -139,6 +144,7 @@ typedef struct _ccb {
     BOOL has_wildcard;
     BOOL specific_file;
     ACCESS_MASK access;
+    file_ref* fileref;
 } ccb;
 
 // typedef struct _log_to_phys {
