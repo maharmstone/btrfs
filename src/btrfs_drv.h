@@ -612,6 +612,8 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 
+#define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
+
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {

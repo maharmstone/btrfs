@@ -1292,7 +1292,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
             fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
     }
     
-//     fcb->Header.IsFastIoPossible = TRUE;
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     fcb->Header.AllocationSize.QuadPart = 0;
     fcb->Header.FileSize.QuadPart = 0;
     fcb->Header.ValidDataLength.QuadPart = 0;
@@ -1544,7 +1544,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         fcb->Vcb = Vcb;
         
-//         fcb->Header.IsFastIoPossible = TRUE;
+        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
         fcb->Header.AllocationSize.QuadPart = 0;
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
@@ -2360,7 +2360,7 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             }
         }
     
-//         fcb->Header.IsFastIoPossible = TRUE;
+        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
         
         if (fcb->ads) {
             fcb->Header.AllocationSize.QuadPart = fcb->adssize;

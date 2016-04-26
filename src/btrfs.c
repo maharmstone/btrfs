@@ -3756,6 +3756,8 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     TRACE("lock control\n");
     
     Status = FsRtlProcessFileLock(&fcb->lock, Irp, NULL);
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     
     if (top_level) 
         IoSetTopLevelIrp(NULL);
