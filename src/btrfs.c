@@ -2151,7 +2151,8 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     ExFreePool(fcb->nonpaged);
     
     if (fcb->par/* && fcb->par != fcb->par->Vcb->root_fcb*/) {
-        RemoveEntryList(&fcb->list_entry);
+        if (fcb->list_entry.Flink)
+            RemoveEntryList(&fcb->list_entry);
         _free_fcb(fcb->par, func, file, line);
     }
     
