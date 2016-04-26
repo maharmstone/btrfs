@@ -6885,7 +6885,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (IrpSp->MinorFunction & IRP_MN_MDL) {
             CcPrepareMdlWrite(FileObject, &offset, *length, &Irp->MdlAddress, &Irp->IoStatus);
 
-            return Irp->IoStatus.Status;
+            Status = Irp->IoStatus.Status;
+            goto end;
         } else {
             TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
             if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
@@ -7217,8 +7218,10 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("buf = %p\n", buf);
     
-    acquire_tree_lock(Vcb, TRUE);
-    locked = TRUE;
+    if (Irp->Flags & IRP_NOCACHE) {
+        acquire_tree_lock(Vcb, TRUE);
+        locked = TRUE;
+    }
     
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
         WARN("tried to write to locked region\n");
@@ -7234,13 +7237,15 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    Status = consider_write(Vcb);
+    if (locked)
+        Status = consider_write(Vcb);
 
     if (NT_SUCCESS(Status)) {
         Irp->IoStatus.Information = IrpSp->Parameters.Write.Length;
     
 #ifdef DEBUG_PARANOID
-        check_extents_consistent(Vcb, FileObject->FsContext); // TESTING
+        if (locked)
+            check_extents_consistent(Vcb, FileObject->FsContext); // TESTING
     
 //         check_extent_tree_consistent(Vcb);
 #endif
