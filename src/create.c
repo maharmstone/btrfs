@@ -2085,6 +2085,12 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
         Status = STATUS_INVALID_PARAMETER;
         goto exit;
     }
+    
+    if (options & FILE_OPEN_BY_FILE_ID) {
+        WARN("FILE_OPEN_BY_FILE_ID not supported\n");
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto exit;
+    }
 
     FileObject = Stack->FileObject;
 
