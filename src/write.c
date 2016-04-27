@@ -6768,7 +6768,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK) {
         WARN("tried to write to something other than a file or symlink (inode %llx, type %u, %p, %p)\n", fcb->inode, fcb->type, &fcb->type, fcb);
-        return STATUS_ACCESS_DENIED;
+        return STATUS_INVALID_DEVICE_REQUEST;
     }
     
     if (offset.LowPart == FILE_WRITE_TO_END_OF_FILE && offset.HighPart == -1) {
