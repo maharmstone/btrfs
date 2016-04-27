@@ -2224,6 +2224,12 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             sf = sf->par;
         }
         
+        if (fcb->type == BTRFS_TYPE_DIRECTORY && (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF)) {
+            Status = STATUS_ACCESS_DENIED;
+            free_fcb(fcb);
+            goto exit;
+        }
+        
         if ((fcb->type == BTRFS_TYPE_SYMLINK || fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
             UINT8* data;
             
