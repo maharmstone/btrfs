@@ -556,7 +556,10 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("offset = %llx, length = %x\n", start, length);
     TRACE("paging_io = %s, no cache = %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE", Irp->Flags & IRP_NOCACHE ? "TRUE" : "FALSE");
 
-    // FIXME - shouldn't be able to read from a directory
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        goto exit;
+    }
     
     if (!(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForReadAccess(&fcb->lock, Irp)) {
         WARN("tried to read locked region\n");
