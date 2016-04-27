@@ -2880,6 +2880,328 @@ static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LIN
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    UNICODE_STRING name;
+    UINT64 inode;
+    LIST_ENTRY list_entry;
+} name_bit;
+
+static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us) {
+    KEY searchkey;
+    NTSTATUS Status;
+    UINT64 in;
+    traverse_ptr tp;
+    LIST_ENTRY name_trail, *le;
+    UINT16 levels = 0;
+    UINT32 namelen = 0;
+    WCHAR* usbuf;
+    
+    InitializeListHead(&name_trail);
+    
+    in = inode;
+    
+    // FIXME - start with subvol prefix
+    
+    while (in != subvol->root_item.objid) {
+        searchkey.obj_id = in;
+        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id) {
+            ERR("could not find INODE_REF for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+            INODE_REF* ir = (INODE_REF*)tp.item->data;
+            name_bit* nb;
+            ULONG len;
+            
+            if (tp.item->size < sizeof(INODE_REF)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            if (tp.item->size < sizeof(INODE_REF) - 1 + ir->n) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF) - 1 + ir->n);
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG);
+            if (!nb) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            nb->name.Buffer = NULL;
+            
+            InsertTailList(&name_trail, &nb->list_entry);
+            levels++;
+            
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &len, ir->name, ir->n);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                goto end;
+            }
+            
+            if (len == 0) {
+                ERR("length was 0\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            nb->name.Length = nb->name.MaximumLength = len;
+            
+            nb->name.Buffer = ExAllocatePoolWithTag(PagedPool, nb->name.Length, ALLOC_TAG);
+            if (!nb->name.Buffer) {  
+                ERR("out of memory\n");
+                
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+                
+            Status = RtlUTF8ToUnicodeN(nb->name.Buffer, len, &len, ir->name, ir->n);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                goto end;
+            }
+            
+            in = tp.item->key.offset;
+            namelen += nb->name.Length;
+            
+//         } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+//             // FIXME
+        } else {
+            ERR("could not find INODE_REF for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+    }
+    
+    namelen += (levels + 1) * sizeof(WCHAR);
+    
+    us->Length = us->MaximumLength = namelen;
+    us->Buffer = ExAllocatePoolWithTag(PagedPool, us->Length, ALLOC_TAG);
+    
+    if (!us->Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    us->Buffer[0] = '\\';
+    usbuf = &us->Buffer[1];
+    
+    le = name_trail.Blink;
+    while (le != &name_trail) {
+        name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
+        
+        RtlCopyMemory(usbuf, nb->name.Buffer, nb->name.Length);
+        usbuf += nb->name.Length / sizeof(WCHAR);
+        
+        usbuf[0] = '\\';
+        usbuf++;
+        
+        le = le->Blink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    while (!IsListEmpty(&name_trail)) {
+        name_bit* nb = CONTAINING_RECORD(name_trail.Flink, name_bit, list_entry);
+        
+        if (nb->name.Buffer)
+            ExFreePool(nb->name.Buffer);
+        
+        RemoveEntryList(&nb->list_entry);
+        
+        ExFreePool(nb);
+    }
+
+    return Status;
+}
+
+static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, fcb* fcb, LONG* length) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+    BOOL b;
+    LIST_ENTRY hardlinks, *le;
+    ULONG bytes_needed, num_entries = 0;
+    FILE_LINK_ENTRY_INFORMATION* feli;
+    
+    if (fcb->ads)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (*length < offsetof(FILE_LINKS_INFORMATION, Entry))
+        return STATUS_INVALID_PARAMETER;
+    
+    RtlZeroMemory(fli, *length);
+    
+    InitializeListHead(&hardlinks);
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_INODE_REF;
+    searchkey.offset = 0;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    bytes_needed = offsetof(FILE_LINKS_INFORMATION, Entry);
+    
+    do {
+        if (tp.item->key.obj_id == fcb->inode) {
+            if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                ULONG len = tp.item->size;
+                INODE_REF* ir = (INODE_REF*)tp.item->data;
+                
+                if (tp.item->size >= sizeof(INODE_REF)) {
+                    UNICODE_STRING dirpath;
+                    
+                    Status = get_inode_dir_path(fcb->Vcb, fcb->subvol, tp.item->key.offset, &dirpath);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("get_inode_dir_path returned %08x\n", Status);
+                        goto end;
+                    }
+                    
+                    while (len >= sizeof(INODE_REF) && len >= sizeof(INODE_REF) - 1 + ir->n) {
+                        name_bit* nb;
+                        ULONG namelen;
+                        
+                        Status = RtlUTF8ToUnicodeN(NULL, 0, &namelen, ir->name, ir->n);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                            goto end;
+                        }
+                        
+                        if (namelen == 0) {
+                            ERR("length was 0\n");
+                            Status = STATUS_INTERNAL_ERROR;
+                            goto end;
+                        }
+                        
+                        nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG);
+                        if (!nb) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }
+                        
+                        nb->inode = tp.item->key.offset;
+                        nb->name.Buffer = NULL;
+                        
+                        InsertTailList(&hardlinks, &nb->list_entry);
+                        
+                        nb->name.Length = nb->name.MaximumLength = namelen + dirpath.Length;
+                        
+                        nb->name.Buffer = ExAllocatePoolWithTag(PagedPool, nb->name.Length, ALLOC_TAG);
+                        if (!nb->name.Buffer) {  
+                            ERR("out of memory\n");
+                            
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }
+                        
+                        RtlCopyMemory(nb->name.Buffer, dirpath.Buffer, dirpath.Length);
+
+                        Status = RtlUTF8ToUnicodeN(&nb->name.Buffer[dirpath.Length / sizeof(WCHAR)], namelen, &namelen, ir->name, ir->n);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                            goto end;
+                        }
+                        
+                        ERR("nb->name = %.*S\n", nb->name.Length / sizeof(WCHAR), nb->name.Buffer);
+                        
+                        if (num_entries > 0)
+                            bytes_needed = sector_align(bytes_needed, 8);
+                        
+                        num_entries++;
+                        bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + max(sizeof(WCHAR), nb->name.Length);
+                        
+                        len -= sizeof(INODE_REF) - 1 + ir->n;
+                        ir = (INODE_REF*)&ir->name[ir->n];
+                    }
+                    
+                    ExFreePool(dirpath.Buffer);
+                }
+            } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                // FIXME
+            }
+        }
+        
+        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+        if (b) {
+            tp = next_tp;
+            
+            if (next_tp.item->key.obj_id > fcb->inode || next_tp.item->key.obj_type > TYPE_INODE_EXTREF)
+                break;
+        }
+    } while (b);
+    
+    bytes_needed = sector_align(bytes_needed, 8);
+    
+    fli->BytesNeeded = bytes_needed;
+    fli->EntriesReturned = 0;
+    
+    *length -= offsetof(FILE_LINKS_INFORMATION, Entry);
+    feli = NULL;
+    
+    le = hardlinks.Flink;
+    while (le != &hardlinks) {
+        name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
+        
+        if (sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + max(sizeof(WCHAR), nb->name.Length), 8) > *length) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        }
+        
+        if (feli) {
+            feli->NextEntryOffset = sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
+            feli = (FILE_LINK_ENTRY_INFORMATION*)((UINT8*)feli + feli->NextEntryOffset);
+        } else
+            feli = &fli->Entry;
+        
+        feli->NextEntryOffset = 0;
+        feli->ParentFileId = nb->inode;
+        feli->FileNameLength = nb->name.Length / sizeof(WCHAR);
+        RtlCopyMemory(feli->FileName, nb->name.Buffer, nb->name.Length);
+        
+        *length -= sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + max(sizeof(WCHAR), nb->name.Length), 8);
+        fli->EntriesReturned++;
+        
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    while (!IsListEmpty(&hardlinks)) {
+        name_bit* nb = CONTAINING_RECORD(hardlinks.Flink, name_bit, list_entry);
+        
+        if (nb->name.Buffer)
+            ExFreePool(nb->name.Buffer);
+        
+        RemoveEntryList(&nb->list_entry);
+        
+        ExFreePool(nb);
+    }
+    return Status;
+}
+
 static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
@@ -3060,9 +3382,15 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
         }
 
         case FileHardLinkInformation:
-            FIXME("STUB: FileHardLinkInformation\n");
-            Status = STATUS_INVALID_PARAMETER;
-            goto exit;
+        {
+            FILE_LINKS_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
+            
+            TRACE("FileHardLinkInformation\n");
+            
+            Status = fill_in_hard_link_information(fli, fcb, &length);
+            
+            break;
+        }
             
         case FileNormalizedNameInformation:
         {
