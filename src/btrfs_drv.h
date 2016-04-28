@@ -227,6 +227,7 @@ typedef struct _root {
     root_nonpaged* nonpaged;
     UINT64 lastinode;
     ROOT_ITEM root_item;
+    UNICODE_STRING path;
     LIST_ENTRY list_entry;
 } root;
 

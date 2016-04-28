@@ -2886,6 +2886,128 @@ typedef struct {
     LIST_ENTRY list_entry;
 } name_bit;
 
+static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us);
+
+static NTSTATUS get_subvol_path(device_extension* Vcb, root* subvol) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    root* parsubvol;
+    UNICODE_STRING dirpath;
+    ROOT_REF* rr;
+    ULONG namelen;
+    
+    // FIXME - add subvol->parent field
+    
+    if (subvol == Vcb->root_fcb->subvol) {
+        subvol->path.Length = subvol->path.MaximumLength = sizeof(WCHAR);
+        subvol->path.Buffer = ExAllocatePoolWithTag(PagedPool, subvol->path.Length, ALLOC_TAG);
+        subvol->path.Buffer[0] = '\\';
+        return STATUS_SUCCESS;
+    }
+    
+    searchkey.obj_id = subvol->id;
+    searchkey.obj_type = TYPE_ROOT_BACKREF;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) { // top subvol
+        subvol->path.Length = subvol->path.MaximumLength = sizeof(WCHAR);
+        subvol->path.Buffer = ExAllocatePoolWithTag(PagedPool, subvol->path.Length, ALLOC_TAG);
+        subvol->path.Buffer[0] = '\\';
+        return STATUS_SUCCESS;
+    }
+    
+    if (tp.item->size < sizeof(ROOT_REF)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    rr = (ROOT_REF*)tp.item->data;
+    
+    if (tp.item->size < sizeof(ROOT_REF) - 1 + rr->n) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF) - 1 + rr->n);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    le = Vcb->roots.Flink;
+
+    parsubvol = NULL;
+
+    while (le != &Vcb->roots) {
+        root* r2 = CONTAINING_RECORD(le, root, list_entry);
+        
+        if (r2->id == tp.item->key.offset) {
+            parsubvol = r2;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!parsubvol) {
+        ERR("unable to find subvol %llx\n", tp.item->key.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    // FIXME - recursion
+
+    Status = get_inode_dir_path(Vcb, parsubvol, rr->dir, &dirpath);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_inode_dir_path returned %08x\n", Status);
+        return Status;
+    }
+    
+    Status = RtlUTF8ToUnicodeN(NULL, 0, &namelen, rr->name, rr->n);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (namelen == 0) {
+        ERR("length was 0\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    subvol->path.Length = subvol->path.MaximumLength = dirpath.Length + namelen;
+    subvol->path.Buffer = ExAllocatePoolWithTag(PagedPool, subvol->path.Length, ALLOC_TAG);
+    
+    if (!subvol->path.Buffer) {  
+        ERR("out of memory\n");
+        
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(subvol->path.Buffer, dirpath.Buffer, dirpath.Length);
+        
+    Status = RtlUTF8ToUnicodeN(&subvol->path.Buffer[dirpath.Length / sizeof(WCHAR)], namelen, &namelen, rr->name, rr->n);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+        goto end;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (dirpath.Buffer)
+        ExFreePool(dirpath.Buffer);
+    
+    if (!NT_SUCCESS(Status) && subvol->path.Buffer) {
+        ExFreePool(subvol->path.Buffer);
+        subvol->path.Buffer = NULL;
+    }
+    
+    return Status;
+}
+
 static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us) {
     KEY searchkey;
     NTSTATUS Status;
@@ -2901,6 +3023,13 @@ static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 i
     in = inode;
     
     // FIXME - start with subvol prefix
+    if (!subvol->path.Buffer) {
+        Status = get_subvol_path(Vcb, subvol);
+        if (!NT_SUCCESS(Status)) {
+            ERR("get_subvol_path returned %08x\n", Status);
+            return Status;
+        }
+    }
     
     while (in != subvol->root_item.objid) {
         searchkey.obj_id = in;
