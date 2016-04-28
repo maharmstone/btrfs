@@ -3078,21 +3078,8 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                         goto end;
                     }
                     
-                    while (len >= sizeof(INODE_REF) && len >= sizeof(INODE_REF) - 1 + ir->n) {
+                    if (fcb->inode == fcb->subvol->root_item.objid) {
                         name_bit* nb;
-                        ULONG namelen;
-                        
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &namelen, ir->name, ir->n);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-                            goto end;
-                        }
-                        
-                        if (namelen == 0) {
-                            ERR("length was 0\n");
-                            Status = STATUS_INTERNAL_ERROR;
-                            goto end;
-                        }
                         
                         nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG);
                         if (!nb) {
@@ -3102,41 +3089,70 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                         }
                         
                         nb->inode = tp.item->key.offset;
-                        nb->name.Buffer = NULL;
+                        nb->name = dirpath;
                         
                         InsertTailList(&hardlinks, &nb->list_entry);
-                        
-                        nb->name.Length = nb->name.MaximumLength = namelen + dirpath.Length;
-                        
-                        nb->name.Buffer = ExAllocatePoolWithTag(PagedPool, nb->name.Length, ALLOC_TAG);
-                        if (!nb->name.Buffer) {  
-                            ERR("out of memory\n");
+                    } else {
+                        while (len >= sizeof(INODE_REF) && len >= sizeof(INODE_REF) - 1 + ir->n) {
+                            name_bit* nb;
+                            ULONG namelen;
                             
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        RtlCopyMemory(nb->name.Buffer, dirpath.Buffer, dirpath.Length);
+                            Status = RtlUTF8ToUnicodeN(NULL, 0, &namelen, ir->name, ir->n);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                                goto end;
+                            }
+                            
+                            if (namelen == 0) {
+                                ERR("length was 0\n");
+                                Status = STATUS_INTERNAL_ERROR;
+                                goto end;
+                            }
+                            
+                            nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG);
+                            if (!nb) {
+                                ERR("out of memory\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto end;
+                            }
+                            
+                            nb->inode = tp.item->key.offset;
+                            nb->name.Buffer = NULL;
+                            
+                            InsertTailList(&hardlinks, &nb->list_entry);
+                            
+                            nb->name.Length = nb->name.MaximumLength = namelen + dirpath.Length;
+                            
+                            nb->name.Buffer = ExAllocatePoolWithTag(PagedPool, nb->name.Length, ALLOC_TAG);
+                            if (!nb->name.Buffer) {  
+                                ERR("out of memory\n");
+                                
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto end;
+                            }
+                            
+                            RtlCopyMemory(nb->name.Buffer, dirpath.Buffer, dirpath.Length);
 
-                        Status = RtlUTF8ToUnicodeN(&nb->name.Buffer[dirpath.Length / sizeof(WCHAR)], namelen, &namelen, ir->name, ir->n);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
-                            goto end;
+                            Status = RtlUTF8ToUnicodeN(&nb->name.Buffer[dirpath.Length / sizeof(WCHAR)], namelen, &namelen, ir->name, ir->n);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                                goto end;
+                            }
+                            
+                            ERR("nb->name = %.*S\n", nb->name.Length / sizeof(WCHAR), nb->name.Buffer);
+                            
+                            if (num_entries > 0)
+                                bytes_needed = sector_align(bytes_needed, 8);
+                            
+                            num_entries++;
+                            bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + max(sizeof(WCHAR), nb->name.Length);
+                            
+                            len -= sizeof(INODE_REF) - 1 + ir->n;
+                            ir = (INODE_REF*)&ir->name[ir->n];
                         }
                         
-                        ERR("nb->name = %.*S\n", nb->name.Length / sizeof(WCHAR), nb->name.Buffer);
-                        
-                        if (num_entries > 0)
-                            bytes_needed = sector_align(bytes_needed, 8);
-                        
-                        num_entries++;
-                        bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + max(sizeof(WCHAR), nb->name.Length);
-                        
-                        len -= sizeof(INODE_REF) - 1 + ir->n;
-                        ir = (INODE_REF*)&ir->name[ir->n];
+                        ExFreePool(dirpath.Buffer);
                     }
-                    
-                    ExFreePool(dirpath.Buffer);
                 }
             } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
                 // FIXME
