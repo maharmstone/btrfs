@@ -1288,6 +1288,7 @@ BOOL has_open_children(fcb* fcb) {
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *oldparfcb, *oldfcb;
+    ccb* ccb = FileObject->FsContext2;
     root* parsubvol;
     UINT64 parinode, dirpos;
     WCHAR* fn;
@@ -1680,9 +1681,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fcb->subvol->root_item.ctime = now;
     
     // FIXME - handle overwrite by rename here
-    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fcb->full_filename, fcb->name_offset * sizeof(WCHAR), NULL, NULL,
-                                fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
-                                across_directories ? FILE_ACTION_REMOVED : FILE_ACTION_RENAMED_OLD_NAME, NULL);
+    send_notification_fileref(ccb->fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
+                              across_directories ? FILE_ACTION_REMOVED : FILE_ACTION_RENAMED_OLD_NAME);
 
     // FIXME - change full_filename and name_offset of open children
     
@@ -1745,9 +1745,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     RtlAppendUnicodeStringToString(&fcb->full_filename, &fcb->filepart);
     
-    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fcb->full_filename, fcb->name_offset * sizeof(WCHAR), NULL, NULL,
-                                fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
-                                across_directories ? FILE_ACTION_ADDED : FILE_ACTION_RENAMED_NEW_NAME, NULL);
+    send_notification_fileref(ccb->fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
+                              across_directories ? FILE_ACTION_ADDED : FILE_ACTION_RENAMED_NEW_NAME);
     
     Status = STATUS_SUCCESS;
     

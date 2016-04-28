@@ -1790,6 +1790,13 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
+    fcb* fcb = fileref->fcb;
+    
+    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fcb->full_filename, fcb->name_offset * sizeof(WCHAR),
+                                NULL, NULL, filter_match, action, NULL);
+}
+
 NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     ULONG bytecount;
     NTSTATUS Status;
@@ -2104,11 +2111,12 @@ success:
     
     // FIXME - set deleted flag of any open FCBs for ADS
     
-    TRACE("sending notification for deletion of %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
-    
-    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fcb->full_filename, fcb->name_offset * sizeof(WCHAR), NULL, NULL,
-                                fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
-                                FILE_ACTION_REMOVED, NULL);
+    if (FileObject && FileObject->FsContext2) {
+        ccb* ccb = FileObject->FsContext2;
+        
+        if (ccb->fileref)
+            send_notification_fileref(ccb->fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+    }
     
 #ifdef _DEBUG
     time2 = KeQueryPerformanceCounter(NULL);

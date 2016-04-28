@@ -661,6 +661,8 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
         
+        // FIXME - use fileref for this
+        
         ffn.Length = fcb->full_filename.Length + bcs->namelen;
         if (fcb != fcb->Vcb->root_fcb)
             ffn.Length += sizeof(WCHAR);
@@ -1092,6 +1094,8 @@ end:
     
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
+        
+        // FIXME - use fileref for this
         
         ffn.Length = fcb->full_filename.Length + length;
         if (fcb != fcb->Vcb->root_fcb)
