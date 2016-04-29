@@ -592,7 +592,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     fcb = FileObject->FsContext;
     
-    ERR("filename: %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("%S\n", file_desc(FileObject));
     
     acquire_tree_lock(fcb->Vcb, TRUE);
     
@@ -697,7 +697,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     fcb = FileObject->FsContext;
     
-    TRACE("filename: %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("%S\n", file_desc(FileObject));
     
     if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer)) {
         ERR("buffer was too short\n");

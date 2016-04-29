@@ -541,7 +541,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     acquire_tree_lock(fcb->Vcb, FALSE);
     
-    TRACE("%.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("%S\n", file_desc(IrpSp->FileObject));
     
     if (IrpSp->Flags == 0) {
         TRACE("QD flags: (none)\n");
@@ -861,7 +861,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     
     // FIXME - raise exception if FCB marked for deletion?
     
-    TRACE("%.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("%S\n", file_desc(FileObject));
     
     FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&fcb->full_filename,
         IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp, NULL, NULL);

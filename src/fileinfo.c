@@ -29,7 +29,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     if (fcb->ads)
         fcb = fcb->par;
     
-    TRACE("file = %.*S, attributes = %x\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fbi->FileAttributes);
+    TRACE("file = %S, attributes = %x\n", file_desc(FileObject), fbi->FileAttributes);
     
     if (fbi->FileAttributes & FILE_ATTRIBUTE_DIRECTORY && fcb->type != BTRFS_TYPE_DIRECTORY) {
         WARN("attempted to set FILE_ATTRIBUTE_DIRECTORY on non-directory\n");
@@ -132,7 +132,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     fcb* fcb = FileObject->FsContext;
     ULONG atts;
     
-    TRACE("changing delete_on_close to %s for %.*S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb);
+    TRACE("changing delete_on_close to %s for %S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
     
     atts = fcb->ads ? fcb->par->atts : fcb->atts;
     TRACE("atts = %x\n", atts);
@@ -1918,7 +1918,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     if (fcb->ads)
         return stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, FileObject, advance_only, rollback);
     
-    TRACE("filename %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("file: %S\n", file_desc(FileObject));
     TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE");
     TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
@@ -1960,7 +1960,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     ccfs.ValidDataLength = fcb->Header.ValidDataLength;
 
     CcSetFileSizes(FileObject, &ccfs);
-    TRACE("setting FileSize for %.*S to %llx\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, ccfs.FileSize);
+    TRACE("setting FileSize for %S to %llx\n", file_desc(FileObject), ccfs.FileSize);
     
     KeQuerySystemTime(&time);
     
@@ -2006,9 +2006,8 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
 
 static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
-    fcb* fcb = FileObject->FsContext;
     
-    TRACE("setting the position on %.*S to %llx\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fpi->CurrentByteOffset.QuadPart);
+    TRACE("setting the position on %S to %llx\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
     
     // FIXME - make sure aligned for FO_NO_INTERMEDIATE_BUFFERING
     

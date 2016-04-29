@@ -1790,6 +1790,24 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+WCHAR* file_desc(PFILE_OBJECT FileObject) {
+    fcb* fcb = FileObject->FsContext;
+    
+    // FIXME - store in fileref
+    
+    if (fcb->debug_desc)
+        return fcb->debug_desc;
+    
+    fcb->debug_desc = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.Length + sizeof(WCHAR), ALLOC_TAG);
+    if (!fcb->debug_desc)
+        return L"(memory error)";
+    
+    RtlCopyMemory(fcb->debug_desc, fcb->full_filename.Buffer, fcb->full_filename.Length);
+    fcb->debug_desc[fcb->full_filename.Length / sizeof(WCHAR)] = 0;
+    
+    return fcb->debug_desc;
+}
+
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
     fcb* fcb = fileref->fcb;
     
@@ -2176,6 +2194,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     
     if (fcb->utf8.Buffer)
         ExFreePool(fcb->utf8.Buffer);
+    
+    if (fcb->debug_desc)
+        ExFreePool(fcb->debug_desc);
     
     FsRtlUninitializeFileLock(&fcb->lock);
     
@@ -3814,7 +3835,7 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         FIXME("FIXME - pass through\n");
         Status = STATUS_NOT_IMPLEMENTED;
     } else {
-        TRACE("filename = %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+        TRACE("filename = %S\n", file_desc(FileObject));
         
         switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
             case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:

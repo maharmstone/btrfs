@@ -119,6 +119,7 @@ typedef struct _fcb {
     PKTHREAD lazy_writer_thread;
     ULONG atts;
     SHARE_ACCESS share_access;
+    WCHAR* debug_desc;
     
     BOOL ads;
     UINT32 adssize;
@@ -445,6 +446,7 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
                            ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
 BOOL is_file_name_valid(PUNICODE_STRING us);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action);
+WCHAR* file_desc(PFILE_OBJECT FileObject);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
