@@ -2594,7 +2594,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
     ULONG options;
@@ -3155,7 +3155,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 //         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
     //     Status = NtfsCreateFile(DeviceObject,
     //                             Irp);
-        Status = create_file(DeviceObject, Irp, &rollback);
+        Status = open_file(DeviceObject, Irp, &rollback);
 //         ExReleaseResourceLite(&Vpb->DirResource);
         
         if (exclusive && !NT_SUCCESS(Status))
