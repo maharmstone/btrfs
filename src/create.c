@@ -1626,15 +1626,6 @@ end2:
     return Status;
 }
 
-static NTSTATUS STDCALL attach_fcb_to_fileobject(device_extension* Vcb, fcb* fcb, PFILE_OBJECT FileObject) {
-    FileObject->FsContext = fcb;
-//     FileObject->FsContext2 = 0x0badc0de;//NULL;
-    
-    // FIXME - cache stuff
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
@@ -3213,9 +3204,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         InterlockedIncrement(&Vcb->volume_fcb->refcount);
         InterlockedIncrement(&Vcb->volume_fcb->open_count);
 #endif
-        attach_fcb_to_fileobject(Vcb, Vcb->volume_fcb, IrpSp->FileObject);
-// //         NtfsAttachFCBToFileObject(DeviceExt, DeviceExt->VolumeFcb, FileObject);
-// //         DeviceExt->VolumeFcb->RefCount++;
+        IrpSp->FileObject->FsContext = Vcb->volume_fcb;
         
         IrpSp->FileObject->SectionObjectPointer = &Vcb->volume_fcb->nonpaged->segment_object;
 
