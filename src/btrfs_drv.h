@@ -127,6 +127,7 @@ typedef struct _fcb {
     ANSI_STRING adsxattr;
     
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_subvol;
 } fcb;
 
 typedef struct {
@@ -234,6 +235,7 @@ typedef struct _root {
     UINT64 lastinode;
     ROOT_ITEM root_item;
     UNICODE_STRING path;
+    LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
 } root;
 
@@ -437,6 +439,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
 NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback);
 BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
+void free_fileref(file_ref* fr);
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r);
 NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, LIST_ENTRY* rollback);
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback);
@@ -454,6 +457,7 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
 BOOL is_file_name_valid(PUNICODE_STRING us);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
+WCHAR* file_desc_fileref(file_ref* fileref);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

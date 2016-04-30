@@ -1215,6 +1215,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->path.Buffer = NULL;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
+    InitializeListHead(&r->fcbs);
     
     RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
     
@@ -1790,11 +1791,7 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-WCHAR* file_desc(PFILE_OBJECT FileObject) {
-    fcb* fcb = FileObject->FsContext;
-    
-    // FIXME - store in fileref
-    
+static WCHAR* file_desc_fcb(fcb* fcb) {
     if (fcb->debug_desc)
         return fcb->debug_desc;
     
@@ -1806,6 +1803,18 @@ WCHAR* file_desc(PFILE_OBJECT FileObject) {
     fcb->debug_desc[fcb->full_filename.Length / sizeof(WCHAR)] = 0;
     
     return fcb->debug_desc;
+}
+
+WCHAR* file_desc_fileref(file_ref* fileref) {
+    return file_desc_fcb(fileref->fcb);
+}
+
+WCHAR* file_desc(PFILE_OBJECT FileObject) {
+    fcb* fcb = FileObject->FsContext;
+    
+    // FIXME - store in fileref
+    
+    return file_desc_fcb(fcb);
 }
 
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
@@ -2183,6 +2192,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         _free_fcb(fcb->par, func, file, line);
     }
     
+    if (fcb->list_entry_subvol.Flink)
+        RemoveEntryList(&fcb->list_entry_subvol);
+    
     if (fcb->full_filename.Buffer)
         ExFreePool(fcb->full_filename.Buffer);
     
@@ -2212,10 +2224,17 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 #endif
 }
 
-static void free_fileref(file_ref* fr) {
+void free_fileref(file_ref* fr) {
     LONG rc;
 
     rc = InterlockedDecrement(&fr->refcount);
+    
+#ifdef _DEBUG
+    if (rc < 0) {
+        ERR("refcount now %i\n", rc);
+        int3;
+    }
+#endif
     
     if (rc > 0)
         return;
@@ -2223,7 +2242,10 @@ static void free_fileref(file_ref* fr) {
     // FIXME - do we need a file_ref lock?
     
     // FIXME - do delete if needed
-    // FIXME - free filepart
+    
+    if (fr->filepart.Buffer)
+        ExFreePool(fr->filepart.Buffer);
+    
     // FIXME - throw error if children not empty
     
     free_fcb(fr->fcb);
@@ -2237,6 +2259,7 @@ static void free_fileref(file_ref* fr) {
 static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject) {
     fcb* fcb;
     ccb* ccb;
+    file_ref* fileref = NULL;
     
     TRACE("FileObject = %p\n", FileObject);
     
@@ -2259,7 +2282,7 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
             RtlFreeUnicodeString(&ccb->query_string);
         
         // FIXME - use refcounts for fileref
-        ExFreePool(ccb->fileref);
+        fileref = ccb->fileref;
         
         ExFreePool(ccb);
     }
@@ -2267,7 +2290,12 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     CcUninitializeCacheMap(FileObject, NULL, NULL);
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    free_fcb(fcb);
+    
+    if (fileref)
+        free_fileref(fileref);
+    else
+        free_fcb(fcb);
+    
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
     return STATUS_SUCCESS;
@@ -2756,6 +2784,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
     init_tree_holder(&r->treeholder);
+    InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
     if (!r->nonpaged) {
@@ -3607,6 +3636,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fileref->fcb = Vcb->root_fcb;
     Vcb->root_fcb->refcount++;
+    InsertTailList(&Vcb->root_fcb->subvol->fcbs, &Vcb->root_fcb->list_entry_subvol);
 
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
