@@ -2180,9 +2180,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         return;
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
-
-    if (fcb->filepart.Buffer)
-        RtlFreeUnicodeString(&fcb->filepart);
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);

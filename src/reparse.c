@@ -681,6 +681,8 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     DWORD buflen = IrpSp->Parameters.DeviceIoControl.InputBufferLength;
     NTSTATUS Status;
     fcb* fcb;
+    ccb* ccb;
+    file_ref* fileref;
     LIST_ENTRY rollback;
     
     // FIXME - send notification if this succeeds? The attributes will have changed.
@@ -696,8 +698,15 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+    fileref = ccb ? ccb->fileref : NULL;
     
     TRACE("%S\n", file_desc(FileObject));
+    
+    if (!fileref) {
+        ERR("fileref was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
     
     if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer)) {
         ERR("buffer was too short\n");
@@ -744,7 +753,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
-        defda = get_file_attributes(fcb->Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fcb->filepart.Length > 0 && fcb->filepart.Buffer[0] == '.', TRUE);
+        defda = get_file_attributes(fcb->Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
         
         if (defda != fcb->atts) {
             char val[64];
@@ -785,7 +794,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
-        defda = get_file_attributes(fcb->Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fcb->filepart.Length > 0 && fcb->filepart.Buffer[0] == '.', TRUE);
+        defda = get_file_attributes(fcb->Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
         defda |= FILE_ATTRIBUTE_DIRECTORY;
         
         if (defda != fcb->atts) {

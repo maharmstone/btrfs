@@ -101,7 +101,6 @@ typedef struct _fcb {
     struct _fcb_nonpaged* nonpaged;
     LONG refcount;
     LONG open_count;
-    UNICODE_STRING filepart;
     ANSI_STRING utf8;
     struct _device_extension* Vcb;
     struct _fcb* par;

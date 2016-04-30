@@ -22,6 +22,8 @@ static NTSTATUS STDCALL move_subvol(device_extension* Vcb, fcb* fcb, root* dests
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
     ULONG defda;
     BOOL inode_item_changed = FALSE;
     NTSTATUS Status;
@@ -47,7 +49,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         LARGE_INTEGER time;
         BTRFS_TIME now;
         
-        defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fcb->filepart.Length > 0 && fcb->filepart.Buffer[0] == '.', TRUE);
+        defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
         
         if (fcb->type == BTRFS_TYPE_DIRECTORY)
             fbi->FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
@@ -1695,24 +1697,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 
     // FIXME - change full_filename and name_offset of open children
     
-    if (fnlen != fcb->filepart.Length / sizeof(WCHAR) || RtlCompareMemory(fn, fcb->filepart.Buffer, fcb->filepart.Length) != fcb->filepart.Length) {
-        RtlFreeUnicodeString(&fcb->filepart);
-        fcb->filepart.Length = fcb->filepart.MaximumLength = (USHORT)(fnlen * sizeof(WCHAR));
-        fcb->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->filepart.MaximumLength, ALLOC_TAG);
-        
-        if (!fcb->filepart.Buffer) {
-            ERR("out of memory\n");
-            
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(fcb->filepart.Buffer, fn, fcb->filepart.Length);
-        
+    if (fnlen != fileref->filepart.Length / sizeof(WCHAR) || RtlCompareMemory(fn, fileref->filepart.Buffer, fileref->filepart.Length) != fileref->filepart.Length) {
         ExFreePool(fileref->filepart.Buffer);
-        
-        fileref->filepart.Length = fcb->filepart.Length;
-        fileref->filepart.MaximumLength = fcb->filepart.MaximumLength;
+        fileref->filepart.Length = fileref->filepart.MaximumLength = (USHORT)(fnlen * sizeof(WCHAR));
         fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.MaximumLength, ALLOC_TAG);
         
         if (!fileref->filepart.Buffer) {
@@ -1763,7 +1750,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     // change fcb->full_filename
     
-    fcb->full_filename.MaximumLength = fcb->par->full_filename.Length + fcb->filepart.Length;
+    fcb->full_filename.MaximumLength = fcb->par->full_filename.Length + fileref->filepart.Length;
     if (fcb->par->par) fcb->full_filename.MaximumLength += sizeof(WCHAR);
     ExFreePool(fcb->full_filename.Buffer);
     
@@ -1784,7 +1771,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     fcb->name_offset = fcb->full_filename.Length / sizeof(WCHAR);
     
-    RtlAppendUnicodeStringToString(&fcb->full_filename, &fcb->filepart);
+    RtlAppendUnicodeStringToString(&fcb->full_filename, &fileref->filepart);
     
     send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                               across_directories ? FILE_ACTION_ADDED : FILE_ACTION_RENAMED_NEW_NAME);
