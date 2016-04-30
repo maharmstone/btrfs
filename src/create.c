@@ -679,7 +679,9 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
 static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
     LIST_ENTRY* le;
     fcb *c, *deleted = NULL;
+#ifdef DEBUG_FCB_REFCOUNTS
     ULONG rc;
+#endif
     
     le = dir->children.Flink;
     while (le != &dir->children) {
@@ -689,9 +691,11 @@ static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
             if (c->deleted) {
                 deleted = c;
             } else {
-                rc = InterlockedIncrement(&c->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+                rc = InterlockedIncrement(&c->refcount);
                 WARN("fcb %p: refcount now %i (%.*S)\n", c, rc, c->full_filename.Length / sizeof(WCHAR), c->full_filename.Buffer);
+#else
+                InterlockedIncrement(&c->refcount);
 #endif
                 return c;
             }
@@ -701,9 +705,11 @@ static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
     }
     
     if (deleted) {
-        rc = InterlockedIncrement(&deleted->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+        rc = InterlockedIncrement(&deleted->refcount);
         WARN("fcb %p: refcount now %i (%.*S)\n", deleted, rc, deleted->full_filename.Length / sizeof(WCHAR), deleted->full_filename.Buffer);
+#else
+        InterlockedIncrement(&deleted->refcount);
 #endif
     }
     
@@ -725,7 +731,9 @@ static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
 static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     LIST_ENTRY* le;
     file_ref *c, *deleted = NULL;
+#ifdef DEBUG_FCB_REFCOUNTS
     ULONG rc;
+#endif
     
     le = dir->children.Flink;
     while (le != &dir->children) {
@@ -735,9 +743,11 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
 //             if (c->deleted) {
 //                 deleted = c;
 //             } else {
-                rc = InterlockedIncrement(&c->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+                rc = InterlockedIncrement(&c->refcount);
                 WARN("fileref %p: refcount now %i (%S)\n", c, rc, file_desc(c));
+#else
+                InterlockedIncrement(&c->refcount);
 #endif
                 return c;
 //             }
@@ -770,10 +780,12 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
             fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_subvol);
             
             if (fcb->inode == inode) {
+#ifdef DEBUG_FCB_REFCOUNTS
                 LONG rc = InterlockedIncrement(&fcb->refcount);
                 
-#ifdef DEBUG_FCB_REFCOUNTS
                 WARN("fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+#else
+                InterlockedIncrement(&fcb->refcount);
 #endif
 
                 *pfcb = fcb;
@@ -967,13 +979,13 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
-            LONG rc;
-            
-            *pfr = Vcb->root_fileref;
-            rc = InterlockedIncrement(&Vcb->root_fileref->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+            LONG rc = InterlockedIncrement(&Vcb->root_fileref->refcount);
             WARN("fileref %p: refcount now %i (root)\n", Vcb->root_fileref, rc);
+#else
+            InterlockedIncrement(&Vcb->root_fileref->refcount);
 #endif
+            *pfr = Vcb->root_fileref;
             return STATUS_SUCCESS;
         }
         
@@ -1253,13 +1265,13 @@ NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* r
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
-            LONG rc;
-            
-            *pfcb = Vcb->root_fcb;
-            rc = InterlockedIncrement(&Vcb->root_fcb->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+            LONG rc = InterlockedIncrement(&Vcb->root_fcb->refcount);
             WARN("fcb %p: refcount now %i (root)\n", Vcb->root_fcb, rc);
+#else
+            InterlockedIncrement(&Vcb->root_fcb->refcount);
 #endif
+            *pfcb = Vcb->root_fcb;
             return STATUS_SUCCESS;
         }
         
@@ -1602,7 +1614,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     ANSI_STRING utf8as;
     ULONG defda;
+#ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
+#endif
     
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status))
@@ -1811,9 +1825,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->atts = IrpSp->Parameters.Create.FileAttributes;
     
     fcb->par = parfcb;
-    rc = InterlockedIncrement(&parfcb->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+    rc = InterlockedIncrement(&parfcb->refcount);
     WARN("fcb %p: refcount now %i (%.*S)\n", parfcb, rc, parfcb->full_filename.Length / sizeof(WCHAR), parfcb->full_filename.Buffer);
+#else
+    InterlockedIncrement(&parfcb->refcount);
 #endif
     fcb->subvol = parfcb->subvol;
     fcb->inode = inode;
@@ -1890,10 +1906,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb* ccb;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
-    LONG oc;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     ULONG access;
     PACCESS_STATE access_state = IrpSp->Parameters.Create.SecurityContext->AccessState;
+#ifdef DEBUG_FCB_REFCOUNTS
+    LONG oc;
+#endif
             
     TRACE("(%p, %p, %p, %.*S, %x, %x)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
     
@@ -1981,7 +1999,9 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         KEY searchkey;
         traverse_ptr tp;
         INODE_ITEM* ii;
+#ifdef DEBUG_FCB_REFCOUNTS
         LONG rc;
+#endif
         
         TRACE("fpus = %.*S\n", fpus.Length / sizeof(WCHAR), fpus.Buffer);
         TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
@@ -2061,9 +2081,11 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fcb->Header.ValidDataLength.QuadPart = 0;
         
         fcb->par = parfcb;
-        rc = InterlockedIncrement(&parfcb->refcount);
 #ifdef DEBUG_FCB_REFCOUNTS
+        rc = InterlockedIncrement(&parfcb->refcount);
         WARN("fcb %p: refcount now %i (%.*S)\n", parfcb, rc, parfcb->full_filename.Length / sizeof(WCHAR), parfcb->full_filename.Buffer);
+#else
+        InterlockedIncrement(&parfcb->refcount);
 #endif
         fcb->subvol = parfcb->subvol;
         fcb->inode = parfcb->inode;
@@ -2236,9 +2258,11 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     
     ccb->fileref->fcb = fcb;
     
-    oc = InterlockedIncrement(&fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
+    oc = InterlockedIncrement(&fcb->open_count);
     ERR("fcb %p: open_count now %i\n", fcb, oc);
+#else
+    InterlockedIncrement(&fcb->open_count);
 #endif
     
     FileObject->FsContext2 = ccb;
@@ -2581,9 +2605,11 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     ULONG access;
     PACCESS_STATE access_state = Stack->Parameters.Create.SecurityContext->AccessState;
-    LONG oc;
     USHORT unparsed;
     file_ref *related, *fileref;
+#ifdef DEBUG_FCB_REFCOUNTS
+    LONG oc;
+#endif
     
     Irp->IoStatus.Information = 0;
     
@@ -2959,9 +2985,11 @@ static NTSTATUS STDCALL create_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_
             }
         }
         
-        oc = InterlockedIncrement(&fileref->fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
+        oc = InterlockedIncrement(&fileref->fcb->open_count);
         ERR("fcb %p: open_count now %i\n", fileref->fcb, oc);
+#else
+        InterlockedIncrement(&fileref->fcb->open_count);
 #endif
     } else {
         Status = STATUS_NOT_IMPLEMENTED; // FIXME
@@ -3064,7 +3092,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (IrpSp->FileObject->FileName.Length == 0 && !IrpSp->FileObject->RelatedFileObject) {
         ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
         ULONG RequestedOptions = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
+#ifdef DEBUG_FCB_REFCOUNTS
         LONG rc, oc;
+#endif
         
         TRACE("open operation for volume\n");
 
@@ -3081,11 +3111,14 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             goto exit;
         }
 
+#ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
         oc = InterlockedIncrement(&Vcb->volume_fcb->open_count);
-#ifdef DEBUG_FCB_REFCOUNTS
         WARN("fcb %p: refcount now %i (volume)\n", Vcb->volume_fcb, rc);
         WARN("fcb %p: open_count now %i (volume)\n", Vcb->volume_fcb, oc);
+#else
+        InterlockedIncrement(&Vcb->volume_fcb->refcount);
+        InterlockedIncrement(&Vcb->volume_fcb->open_count);
 #endif
         attach_fcb_to_fileobject(Vcb, Vcb->volume_fcb, IrpSp->FileObject);
 // //         NtfsAttachFCBToFileObject(DeviceExt, DeviceExt->VolumeFcb, FileObject);
