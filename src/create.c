@@ -970,9 +970,9 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
         return STATUS_SUCCESS;
     }
     
-//     if (relatedfcb) {
-//         dir = relatedfcb;
-//     } else {
+    if (related) {
+        dir = related;
+    } else {
         if (fnus2.Buffer[0] != '\\') {
             ERR("error - filename %.*S did not begin with \\\n", fnus2.Length / sizeof(WCHAR), fnus2.Buffer);
             return STATUS_OBJECT_PATH_NOT_FOUND;
@@ -994,13 +994,13 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
         fnus2.Buffer++;
         fnus2.Length -= sizeof(WCHAR);
         fnus2.MaximumLength -= sizeof(WCHAR);
-//     }
+    }
     
-//     if (dir->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
-//         WARN("passed relatedfcb which isn't a directory (%.*S) (fnus = %.*S)\n",
-//              relatedfcb->full_filename.Length / sizeof(WCHAR), relatedfcb->full_filename.Buffer, fnus->Length / sizeof(WCHAR), fnus->Buffer);
-//         return STATUS_OBJECT_PATH_NOT_FOUND;
-//     }
+    if (dir->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
+        WARN("passed related fileref which isn't a directory (%S) (fnus = %.*S)\n",
+             file_desc_fileref(related), fnus->Length / sizeof(WCHAR), fnus->Buffer);
+        return STATUS_OBJECT_PATH_NOT_FOUND;
+    }
     
     if (fnus->Length == 0) {
         num_parts = 0;
