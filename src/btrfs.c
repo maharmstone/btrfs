@@ -1824,7 +1824,7 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
                                 NULL, NULL, filter_match, action, NULL);
 }
 
-NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
+NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     ULONG bytecount;
     NTSTATUS Status;
     char* utf8 = NULL;
@@ -1837,6 +1837,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY changed_sector_list;
+    fcb* fcb = fileref->fcb;
 #ifdef _DEBUG
     LARGE_INTEGER freq, time1, time2;
 #endif
@@ -1929,7 +1930,7 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         goto success;
     }
     
-    Status = RtlUnicodeToUTF8N(NULL, 0, &bytecount, fcb->filepart.Buffer, fcb->filepart.Length);
+    Status = RtlUnicodeToUTF8N(NULL, 0, &bytecount, fileref->filepart.Buffer, fileref->filepart.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         return Status;
@@ -1941,13 +1942,14 @@ NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlUnicodeToUTF8N(utf8, bytecount, &bytecount, fcb->filepart.Buffer, fcb->filepart.Length);
+    RtlUnicodeToUTF8N(utf8, bytecount, &bytecount, fileref->filepart.Buffer, fileref->filepart.Length);
     utf8[bytecount] = 0;
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, bytecount);
 
-    TRACE("deleting %.*S\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+    TRACE("deleting %.*S\n", file_desc_fileref(fileref));
     
+    // FIXME - get these from fileref rather than fcb
     if (fcb->par->subvol == fcb->subvol)
         parinode = fcb->par->inode;
     else
@@ -2396,9 +2398,11 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     if (FileObject && FileObject->FsContext) {
         LONG oc;
         ccb* ccb;
+        file_ref* fileref;
         
         fcb = FileObject->FsContext;
         ccb = FileObject->FsContext2;
+        fileref = ccb ? ccb->fileref : NULL;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
@@ -2410,20 +2414,20 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         ERR("fcb %p: open_count now %i\n", fcb, oc);
 #endif
         
-        if (ccb && ccb->options & FILE_DELETE_ON_CLOSE)
-            fcb->delete_on_close = TRUE;
+        if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
+            fileref->delete_on_close = TRUE;
         
-        if (fcb->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
-            fcb->delete_on_close = FALSE;
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
+            fileref->delete_on_close = FALSE;
         
         if (oc == 0) {
-            if (fcb->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
+            if (fileref && fileref->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
                 LIST_ENTRY rollback;
                 InitializeListHead(&rollback);
                 
                 acquire_tree_lock(fcb->Vcb, TRUE);
                 
-                Status = delete_fcb(fcb, FileObject, &rollback);
+                Status = delete_fileref(fileref, FileObject, &rollback);
                 
                 if (NT_SUCCESS(Status)) {
                     LARGE_INTEGER newlength;

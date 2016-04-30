@@ -130,7 +130,11 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
 static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_DISPOSITION_INFORMATION* fdi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
     ULONG atts;
+    
+    if (!ccb->fileref)
+        return STATUS_INVALID_PARAMETER;
     
     TRACE("changing delete_on_close to %s for %S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
     
@@ -149,7 +153,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
         return STATUS_CANNOT_DELETE;
     }
     
-    fcb->delete_on_close = fdi->DeleteFile;
+    ccb->fileref->delete_on_close = fdi->DeleteFile;
     
     FileObject->DeletePending = fdi->DeleteFile;
     
@@ -2523,7 +2527,7 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi, fcb* fcb, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi, fcb* fcb, file_ref* fileref, LONG* length) {
     RtlZeroMemory(fsi, sizeof(FILE_STANDARD_INFORMATION));
     
     *length -= sizeof(FILE_STANDARD_INFORMATION);
@@ -2541,7 +2545,7 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
     
     TRACE("length = %llu\n", fsi->EndOfFile.QuadPart);
     
-    fsi->DeletePending = fcb->delete_on_close;
+    fsi->DeletePending = fileref ? fileref->delete_on_close : FALSE;
     
     return STATUS_SUCCESS;
 }
@@ -2902,14 +2906,14 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORMATION* fsli, fcb* fcb, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORMATION* fsli, fcb* fcb, file_ref* fileref, LONG* length) {
     TRACE("FileStandardLinkInformation\n");
     
     // FIXME - NumberOfAccessibleLinks should subtract open links which have been marked as delete_on_close
     
     fsli->NumberOfAccessibleLinks = fcb->inode_item.st_nlink;
     fsli->TotalNumberOfLinks = fcb->inode_item.st_nlink;
-    fsli->DeletePending = fcb->delete_on_close;
+    fsli->DeletePending = fileref ? fileref->delete_on_close : FALSE;
     fsli->Directory = fcb->type == BTRFS_TYPE_DIRECTORY ? TRUE : FALSE;
     
     *length -= sizeof(FILE_STANDARD_LINK_INFORMATION);
@@ -3414,7 +3418,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 fill_in_file_basic_information(&fai->BasicInformation, ii, &length, fcb);
             
             if (length > 0)
-                fill_in_file_standard_information(&fai->StandardInformation, fcb, &length);
+                fill_in_file_standard_information(&fai->StandardInformation, fcb, ccb->fileref, &length);
             
             if (length > 0)
                 fill_in_file_internal_information(&fai->InternalInformation, fcb->inode, &length);
@@ -3547,7 +3551,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 goto exit;
             }
             
-            Status = fill_in_file_standard_information(fsi, fcb, &length);
+            Status = fill_in_file_standard_information(fsi, fcb, ccb->fileref, &length);
             
             break;
         }
@@ -3591,7 +3595,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileStandardLinkInformation\n");
             
-            Status = fill_in_file_standard_link_information(fsli, fcb, &length);
+            Status = fill_in_file_standard_link_information(fsli, fcb, ccb->fileref, &length);
             
             break;
         }

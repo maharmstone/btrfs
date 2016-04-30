@@ -109,7 +109,6 @@ typedef struct _fcb {
     LIST_ENTRY children;
     UINT64 inode;
     UINT8 type;
-    BOOL delete_on_close;
     INODE_ITEM inode_item;
     UNICODE_STRING full_filename;
     ULONG name_offset;
@@ -136,6 +135,7 @@ typedef struct {
 //     UNICODE_STRING full_filename;
     fcb* fcb;
     UNICODE_STRING filepart;
+    BOOL delete_on_close;
     LIST_ENTRY children;
     LONG refcount;
     struct _file_ref* parent;
@@ -448,7 +448,7 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback);
 UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback);
-NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
+NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 fcb* create_fcb();
 file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
