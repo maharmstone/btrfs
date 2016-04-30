@@ -132,6 +132,11 @@ typedef struct _fcb {
 typedef struct {
 //     UNICODE_STRING full_filename;
     fcb* fcb;
+    UNICODE_STRING filepart;
+    LIST_ENTRY children;
+    LONG refcount;
+    
+    LIST_ENTRY list_entry;
 } file_ref;
 
 typedef struct _ccb {
@@ -300,6 +305,7 @@ typedef struct _device_extension {
     BOOL removing;
     fcb* volume_fcb;
     fcb* root_fcb;
+    file_ref* root_fileref;
     ERESOURCE DirResource;
     KSPIN_LOCK FcbListLock;
     ERESOURCE fcb_lock;
@@ -438,6 +444,7 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback);
 NTSTATUS delete_fcb(fcb* fcb, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 fcb* create_fcb();
+file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, LIST_ENTRY* rollback);

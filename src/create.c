@@ -320,6 +320,24 @@ fcb* create_fcb() {
     return fcb;
 }
 
+file_ref* create_fileref() {
+    file_ref* fr;
+    
+    fr = ExAllocatePoolWithTag(PagedPool, sizeof(file_ref), ALLOC_TAG);
+    if (!fr) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
+    RtlZeroMemory(fr, sizeof(file_ref));
+    
+    fr->refcount = 1;
+    
+    InitializeListHead(&fr->children);
+    
+    return fr;
+}
+
 static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, root* r,
                                      UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, PANSI_STRING utf8) {
     char* fn;

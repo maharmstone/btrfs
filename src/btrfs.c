@@ -2212,6 +2212,28 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 #endif
 }
 
+static void free_fileref(file_ref* fr) {
+    LONG rc;
+
+    rc = InterlockedDecrement(&fr->refcount);
+    
+    if (rc > 0)
+        return;
+    
+    // FIXME - do we need a file_ref lock?
+    
+    // FIXME - do delete if needed
+    // FIXME - free filepart
+    // FIXME - throw error if children not empty
+    
+    free_fcb(fr->fcb);
+    
+    if (fr->list_entry.Flink)
+        RemoveEntryList(&fr->list_entry);
+    
+    ExFreePool(fr);
+}
+
 static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject) {
     fcb* fcb;
     ccb* ccb;
@@ -2301,6 +2323,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     free_fcb(Vcb->volume_fcb);
     free_fcb(Vcb->root_fcb);
+    free_fileref(Vcb->root_fileref);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         while (!IsListEmpty(&Vcb->devices[i].disk_holes)) {
@@ -3574,7 +3597,17 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fcb->atts = get_file_attributes(Vcb, &Vcb->root_fcb->inode_item, Vcb->root_fcb->subvol, Vcb->root_fcb->inode, Vcb->root_fcb->type,
                                               FALSE, FALSE);
-      
+    
+    Vcb->root_fileref = create_fileref();
+    if (!Vcb->root_fileref) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
+    Vcb->root_fileref->fcb = Vcb->root_fcb;
+    Vcb->root_fcb->refcount++;
+
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
         if (!NT_SUCCESS(Status)) {
