@@ -676,46 +676,6 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
     return STATUS_SUCCESS;
 }
 
-static fcb* search_fcb_children(fcb* dir, PUNICODE_STRING name) {
-    LIST_ENTRY* le;
-    fcb *c, *deleted = NULL;
-#ifdef DEBUG_FCB_REFCOUNTS
-    ULONG rc;
-#endif
-    
-    le = dir->children.Flink;
-    while (le != &dir->children) {
-        c = CONTAINING_RECORD(le, fcb, list_entry);
-        
-        if (c->refcount > 0 && FsRtlAreNamesEqual(&c->filepart, name, TRUE, NULL)) {
-            if (c->deleted) {
-                deleted = c;
-            } else {
-#ifdef DEBUG_FCB_REFCOUNTS
-                rc = InterlockedIncrement(&c->refcount);
-                WARN("fcb %p: refcount now %i (%.*S)\n", c, rc, c->full_filename.Length / sizeof(WCHAR), c->full_filename.Buffer);
-#else
-                InterlockedIncrement(&c->refcount);
-#endif
-                return c;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (deleted) {
-#ifdef DEBUG_FCB_REFCOUNTS
-        rc = InterlockedIncrement(&deleted->refcount);
-        WARN("fcb %p: refcount now %i (%.*S)\n", deleted, rc, deleted->full_filename.Length / sizeof(WCHAR), deleted->full_filename.Buffer);
-#else
-        InterlockedIncrement(&deleted->refcount);
-#endif
-    }
-    
-    return deleted;
-}
-
 // #ifdef DEBUG_FCB_REFCOUNTS
 // static void print_fcbs(device_extension* Vcb) {
 //     fcb* fcb = Vcb->fcbs;
@@ -940,7 +900,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed) {
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     ULONG i, num_parts;
@@ -1175,6 +1135,7 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
                     sf2->filepart.MaximumLength = fcb->filepart.MaximumLength;
                     RtlCopyMemory(sf2->filepart.Buffer, fcb->filepart.Buffer, sf2->filepart.Length);
                     
+                    sf2->parent = (struct _file_ref*)sf;
                     InsertTailList(&sf->children, &sf2->list_entry);
                     InterlockedIncrement(&sf->refcount);
                 }
@@ -1228,6 +1189,7 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
                     sf2->filepart.MaximumLength = fcb->filepart.MaximumLength;
                     RtlCopyMemory(sf2->filepart.Buffer, fcb->filepart.Buffer, sf2->filepart.Length);
                     
+                    sf2->parent = (struct _file_ref*)sf;
                     InsertTailList(&sf->children, &sf2->list_entry);
                     InterlockedIncrement(&sf->refcount);
                 }
@@ -1260,367 +1222,6 @@ end:
 end2:
     if (parts)
         ExFreePool(parts);
-    
-    TRACE("returning %08x\n", Status);
-    
-    return Status;
-}
-
-NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* relatedfcb, BOOL parent, USHORT* unparsed) {
-    fcb *dir, *sf, *sf2;
-    ULONG i, num_parts;
-    UNICODE_STRING fnus2;
-    UNICODE_STRING* parts = NULL;
-    BOOL has_stream;
-    NTSTATUS Status;
-    
-    TRACE("(%p, %p, %.*S, %p, %s)\n", Vcb, pfcb, fnus->Length / sizeof(WCHAR), fnus->Buffer, relatedfcb, parent ? "TRUE" : "FALSE");
-    
-// #ifdef DEBUG_FCB_REFCOUNTS
-//     print_fcbs(Vcb);
-// #endif
-    
-    if (Vcb->removing)
-        return STATUS_ACCESS_DENIED;
-    
-    fnus2 = *fnus;
-    
-    if (fnus2.Length < sizeof(WCHAR) && !relatedfcb) {
-        ERR("error - fnus was too short\n");
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (relatedfcb && fnus->Length == 0) {
-        relatedfcb->refcount++;
-        *pfcb = relatedfcb;
-        return STATUS_SUCCESS;
-    }
-    
-    if (relatedfcb) {
-        dir = relatedfcb;
-    } else {
-        if (fnus2.Buffer[0] != '\\') {
-            ERR("error - filename %.*S did not begin with \\\n", fnus2.Length / sizeof(WCHAR), fnus2.Buffer);
-            return STATUS_OBJECT_PATH_NOT_FOUND;
-        }
-        
-        if (fnus2.Length == sizeof(WCHAR)) {
-#ifdef DEBUG_FCB_REFCOUNTS
-            LONG rc = InterlockedIncrement(&Vcb->root_fcb->refcount);
-            WARN("fcb %p: refcount now %i (root)\n", Vcb->root_fcb, rc);
-#else
-            InterlockedIncrement(&Vcb->root_fcb->refcount);
-#endif
-            *pfcb = Vcb->root_fcb;
-            return STATUS_SUCCESS;
-        }
-        
-        dir = Vcb->root_fcb;
-        
-        fnus2.Buffer++;
-        fnus2.Length -= sizeof(WCHAR);
-        fnus2.MaximumLength -= sizeof(WCHAR);
-    }
-    
-    if (dir->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
-        WARN("passed relatedfcb which isn't a directory (%.*S) (fnus = %.*S)\n",
-             relatedfcb->full_filename.Length / sizeof(WCHAR), relatedfcb->full_filename.Buffer, fnus->Length / sizeof(WCHAR), fnus->Buffer);
-        return STATUS_OBJECT_PATH_NOT_FOUND;
-    }
-    
-    if (fnus->Length == 0) {
-        num_parts = 0;
-    } else {
-        Status = split_path(&fnus2, &parts, &num_parts, &has_stream);
-        if (!NT_SUCCESS(Status)) {
-            ERR("split_path returned %08x\n", Status);
-            return Status;
-        }
-    }
-    
-    // FIXME - handle refcounts(?)
-    sf = dir;
-    dir->refcount++;
-#ifdef DEBUG_FCB_REFCOUNTS
-    WARN("fcb %p: refcount now %i (%.*S)\n", dir, dir->refcount, dir->full_filename.Length / sizeof(WCHAR), dir->full_filename.Buffer);
-#endif
-    
-    if (parent) {
-        num_parts--;
-        
-        if (has_stream && num_parts > 0) {
-            num_parts--;
-            has_stream = FALSE;
-        }
-    }
-    
-    if (num_parts == 0) {
-        Status = STATUS_SUCCESS;
-        *pfcb = dir;
-        goto end2;
-    }
-    
-    for (i = 0; i < num_parts; i++) {
-        BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
-        
-        sf2 = search_fcb_children(sf, &parts[i]);
-        
-        if (sf2 && sf2->type != BTRFS_TYPE_DIRECTORY && !lastpart) {
-            WARN("passed path including file as subdirectory\n");
-            
-            Status = STATUS_OBJECT_PATH_NOT_FOUND;
-            goto end;
-        }
-        
-        if (!sf2) {
-            if (has_stream && i == num_parts - 1) {
-                UNICODE_STRING streamname;
-                ANSI_STRING xattr;
-                UINT32 streamsize, streamhash;
-                
-                streamname.Buffer = NULL;
-                streamname.Length = streamname.MaximumLength = 0;
-                xattr.Buffer = NULL;
-                xattr.Length = xattr.MaximumLength = 0;
-                
-                if (!find_stream(Vcb, sf, &parts[i], &streamname, &streamsize, &streamhash, &xattr)) {
-                    TRACE("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
-                    
-                    Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                    goto end;
-                } else {
-                    ULONG fnlen;
-                    
-                    if (streamhash == EA_DOSATTRIB_HASH && xattr.Length == strlen(EA_DOSATTRIB) &&
-                        RtlCompareMemory(xattr.Buffer, EA_DOSATTRIB, xattr.Length) == xattr.Length) {
-                        WARN("not allowing user.DOSATTRIB to be opened as stream\n");
-                    
-                        Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                        goto end;
-                    }
-                    
-                    sf2 = create_fcb();
-                    if (!sf2) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-        
-                    sf2->Vcb = Vcb;
-        
-                    if (streamname.Buffer) // case has changed
-                        sf2->filepart = streamname;
-                    else {
-                        sf2->filepart.MaximumLength = sf2->filepart.Length = parts[i].Length;
-                        sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
-                        if (!sf2->filepart.Buffer) {
-                            ERR("out of memory\n");
-                            free_fcb(sf2);
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }   
-                        
-                        RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
-                    }
-                    
-                    sf2->par = sf;
-                    
-                    sf->refcount++;
-#ifdef DEBUG_FCB_REFCOUNTS
-                    WARN("fcb %p: refcount now %i (%.*S)\n", sf, sf->refcount, sf->full_filename.Length / sizeof(WCHAR), sf->full_filename.Buffer);
-#endif
-                    
-                    sf2->subvol = sf->subvol;
-                    sf2->inode = sf->inode;
-                    sf2->type = sf->type;
-                    sf2->ads = TRUE;
-                    sf2->adssize = streamsize;
-                    sf2->adshash = streamhash;
-                    sf2->adsxattr = xattr;
-                    
-                    TRACE("stream found: size = %x, hash = %08x\n", sf2->adssize, sf2->adshash);
-                    
-                    sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
-                    
-                    if (sf != Vcb->root_fcb)
-                        sf2->name_offset++;
-                    
-                    fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
-                    
-                    sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-                    if (!sf2->full_filename.Buffer) {
-                        ERR("out of memory\n");
-                        free_fcb(sf2);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
-                    RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
-                    
-                    sf2->full_filename.Buffer[sf->full_filename.Length / sizeof(WCHAR)] = ':';
-                    
-                    RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
-                    
-                    // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
-
-                    TRACE("found stream %.*S (subvol = %p)\n", sf2->full_filename.Length / sizeof(WCHAR), sf2->full_filename.Buffer, sf->subvol);
-                    
-                    InsertTailList(&sf->children, &sf2->list_entry);
-                    InsertTailList(&sf2->subvol->fcbs, &sf2->list_entry_subvol);
-                }
-            } else {
-                root* subvol;
-                UINT64 inode;
-                UINT8 type;
-                ANSI_STRING utf8;
-                KEY searchkey;
-                traverse_ptr tp;
-                
-                if (!find_file_in_dir(Vcb, &parts[i], sf->subvol, sf->inode, &subvol, &inode, &type, &utf8)) {
-                    TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
-
-                    Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
-                    goto end;
-                } else if (type != BTRFS_TYPE_DIRECTORY && !lastpart) {
-                    WARN("passed path including file as subdirectory\n");
-                    
-                    Status = STATUS_OBJECT_PATH_NOT_FOUND;
-                    goto end;
-                } else {
-                    ULONG fnlen, strlen;
-                    
-                    sf2 = create_fcb();
-                    if (!sf2) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->Vcb = Vcb;
-
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        free_fcb(sf2);
-                        goto end;
-                    } else {
-                        sf2->filepart.MaximumLength = sf2->filepart.Length = strlen;
-                        sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
-                        if (!sf2->filepart.Buffer) {
-                            ERR("out of memory\n");
-                            free_fcb(sf2);
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        Status = RtlUTF8ToUnicodeN(sf2->filepart.Buffer, strlen, &strlen, utf8.Buffer, utf8.Length);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            free_fcb(sf2);
-                            goto end;
-                        }
-                    }
-                    
-                    sf2->par = sf;
-                    
-                    sf->refcount++;
-#ifdef DEBUG_FCB_REFCOUNTS
-                    WARN("fcb %p: refcount now %i (%.*S)\n", sf, sf->refcount, sf->full_filename.Length / sizeof(WCHAR), sf->full_filename.Buffer);
-#endif
-                    
-                    sf2->subvol = subvol;
-                    sf2->inode = inode;
-                    sf2->type = type;
-                    
-                    sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
-                    
-                    if (sf != Vcb->root_fcb)
-                        sf2->name_offset++;
-                    
-                    fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
-                    
-                    sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-                    if (!sf2->full_filename.Buffer) {
-                        ERR("out of memory\n");
-                        free_fcb(sf2);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
-                    RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
-                    
-                    if (sf != Vcb->root_fcb)
-                        sf2->full_filename.Buffer[sf->full_filename.Length / sizeof(WCHAR)] = '\\';
-                    
-                    RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
-                    
-                    sf2->utf8 = utf8;
-                    
-                    searchkey.obj_id = sf2->inode;
-                    searchkey.obj_type = TYPE_INODE_ITEM;
-                    searchkey.offset = 0xffffffffffffffff;
-                    
-                    Status = find_item(sf2->Vcb, sf2->subvol, &tp, &searchkey, FALSE);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("error - find_item returned %08x\n", Status);
-                        free_fcb(sf2);
-                        goto end;
-                    }
-                    
-                    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                        ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", sf2->inode, sf2->subvol->id);
-                        Status = STATUS_INTERNAL_ERROR;
-                        free_fcb(sf2);
-                        goto end;
-                    }
-                    
-                    if (tp.item->size > 0)
-                        RtlCopyMemory(&sf2->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-                    
-                    sf2->atts = get_file_attributes(Vcb, &sf2->inode_item, sf2->subvol, sf2->inode, sf2->type, sf2->filepart.Buffer[0] == '.', FALSE);
-                    
-                    fcb_get_sd(sf2);
-                    
-                    TRACE("found %.*S (subvol = %p)\n", sf2->full_filename.Length / sizeof(WCHAR), sf2->full_filename.Buffer, subvol);
-                    
-                    InsertTailList(&sf->children, &sf2->list_entry);
-                }
-            }
-        }
-        
-        if (i == num_parts - 1)
-            break;
-        
-        if (sf2->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-            Status = STATUS_REPARSE;
-            
-            if (unparsed)
-                *unparsed = fnus->Length - ((parts[i+1].Buffer - fnus->Buffer - 1) * sizeof(WCHAR));
-            
-            break;
-        }
-        
-        free_fcb(sf);
-        sf = sf2;
-    }
-    
-    if (Status != STATUS_REPARSE)
-        Status = STATUS_SUCCESS;
-    *pfcb = sf2;
-    
-end:
-    free_fcb(sf);
-    
-end2:
-    if (parts)
-        ExFreePool(parts);
-    
-// #ifdef DEBUG_FCB_REFCOUNTS
-//     print_fcbs(Vcb);
-// #endif
     
     TRACE("returning %08x\n", Status);
     
@@ -1939,6 +1540,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->filepart.MaximumLength = fcb->filepart.MaximumLength;
     RtlCopyMemory(fileref->filepart.Buffer, fcb->filepart.Buffer, fileref->filepart.Length);
     
+    fileref->parent = (struct _file_ref*)parfileref;
     InsertTailList(&parfileref->children, &fileref->list_entry);
     InterlockedIncrement(&parfileref->refcount);
  
@@ -1985,7 +1587,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         related = NULL;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-//     Status = get_fcb(Vcb, &parfcb, fnus, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, TRUE, NULL);
     Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL);
     ExReleaseResourceLite(&Vcb->fcb_lock);
     if (!NT_SUCCESS(Status))
@@ -2073,7 +1674,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-//         Status = get_fcb(Vcb, &newpar, &fpus, parfcb, FALSE, NULL);
         Status = open_fileref(Vcb, &newpar, &fpus, parfileref, FALSE, NULL);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
@@ -2300,6 +1900,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fileref->filepart.MaximumLength = fcb->filepart.MaximumLength;
         RtlCopyMemory(fileref->filepart.Buffer, fcb->filepart.Buffer, fileref->filepart.Length);
         
+        fileref->parent = (struct _file_ref*)parfileref;
         InsertTailList(&parfileref->children, &fileref->list_entry);
         InterlockedIncrement(&parfileref->refcount);
         
@@ -2772,7 +2373,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         related = NULL;
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-//     Status = get_fcb(Vcb, &fcb, &FileObject->FileName, FileObject->RelatedFileObject ? FileObject->RelatedFileObject->FsContext : NULL, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
     Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
     ExReleaseResourceLite(&Vcb->fcb_lock);
     

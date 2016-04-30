@@ -130,12 +130,15 @@ typedef struct _fcb {
     LIST_ENTRY list_entry_subvol;
 } fcb;
 
+struct _file_ref;
+
 typedef struct {
 //     UNICODE_STRING full_filename;
     fcb* fcb;
     UNICODE_STRING filepart;
     LIST_ENTRY children;
     LONG refcount;
+    struct _file_ref* parent;
     
     LIST_ENTRY list_entry;
 } file_ref;
@@ -598,10 +601,10 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in create.c
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-NTSTATUS get_fcb(device_extension* Vcb, fcb** pfcb, PUNICODE_STRING fnus, fcb* relatedfcb, BOOL parent, USHORT* unparsed);
 BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r, UINT64 parinode, root** subvol,
                                          UINT64* inode, UINT8* type, PANSI_STRING utf8);
 NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, LIST_ENTRY* rollback);
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);

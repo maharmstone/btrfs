@@ -2253,6 +2253,9 @@ void free_fileref(file_ref* fr) {
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
     
+    if (fr->parent)
+        free_fileref((file_ref*)fr->parent);
+    
     ExFreePool(fr);
 }
 
