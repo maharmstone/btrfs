@@ -779,7 +779,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
         while (le != &subvol->fcbs) {
             fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_subvol);
             
-            if (fcb->inode == inode) {
+            if (fcb->inode == inode && !fcb->ads) {
 #ifdef DEBUG_FCB_REFCOUNTS
                 LONG rc = InterlockedIncrement(&fcb->refcount);
                 
@@ -893,11 +893,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     
-    /*if (fcb->ads) {
-        fcb->Header.AllocationSize.QuadPart = fcb->adssize;
-        fcb->Header.FileSize.QuadPart = fcb->adssize;
-        fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
-    } else */if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
+    if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
         fcb->Header.AllocationSize.QuadPart = 0;
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
@@ -1119,6 +1115,11 @@ static NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STR
                     fcb->adssize = streamsize;
                     fcb->adshash = streamhash;
                     fcb->adsxattr = xattr;
+                    
+                    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+                    fcb->Header.AllocationSize.QuadPart = fcb->adssize;
+                    fcb->Header.FileSize.QuadPart = fcb->adssize;
+                    fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
                     
                     TRACE("stream found: size = %x, hash = %08x\n", fcb->adssize, fcb->adshash);
                     
