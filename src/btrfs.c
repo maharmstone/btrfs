@@ -1642,7 +1642,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
+static NTSTATUS delete_subvol(file_ref* fileref, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 index;
     KEY searchkey;
@@ -1650,10 +1650,11 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     UINT32 crc32;
     ROOT_ITEM* ri;
     BOOL no_ref = FALSE;
+    fcb* fcb = fileref->fcb;
     
     // delete ROOT_REF in root tree
     
-    Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fcb->par->subvol->id, fcb->par->inode, &fcb->utf8, &index, rollback);
+    Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fcb->par->subvol->id, fcb->par->inode, &fileref->utf8, &index, rollback);
     
     // A bug in Linux means that if you create a snapshot of a subvol containing another subvol,
     // the ROOT_REF and ROOT_BACKREF items won't be created, nor will num_references of ROOT_ITEM
@@ -1679,8 +1680,8 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
     
     // delete DIR_ITEM in parent
     
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)fcb->utf8.Buffer, fcb->utf8.Length);
-    Status = delete_dir_item(fcb->Vcb, fcb->par->subvol, fcb->par->inode, crc32, &fcb->utf8, rollback);
+    crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+    Status = delete_dir_item(fcb->Vcb, fcb->par->subvol, fcb->par->inode, crc32, &fileref->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
         return Status;
@@ -1723,8 +1724,8 @@ static NTSTATUS delete_subvol(fcb* fcb, LIST_ENTRY* rollback) {
             if (tp.item->key.obj_type == TYPE_DIR_INDEX && tp.item->size >= sizeof(DIR_ITEM)) {
                 DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
                 
-                if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fcb->utf8.Length &&
-                    tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fcb->utf8.Buffer, di->name, di->n) == di->n) {
+                if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fileref->utf8.Length &&
+                    tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fileref->utf8.Buffer, di->name, di->n) == di->n) {
                     delete_tree_item(fcb->Vcb, &tp, rollback);
                     break;
                 }
@@ -1853,14 +1854,14 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     }
     
     if (fcb->inode == SUBVOL_ROOT_INODE) {
-        Status = delete_subvol(fcb, rollback);
+        Status = delete_subvol(fileref, rollback);
         
         if (!NT_SUCCESS(Status))
             goto exit;
         else {
             parinode = fcb->par->inode;
             parsubvol = fcb->par->subvol;
-            bytecount = fcb->utf8.Length;
+            bytecount = fileref->utf8.Length;
             goto success2;
         }
     }
@@ -1959,7 +1960,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     // delete DIR_ITEM (0x54)
     
-    Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fcb->utf8, rollback);
+    Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fileref->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_dir_item returned %08x\n", Status);
         return Status;
@@ -1969,7 +1970,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     index = 0;
     
-    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fcb->utf8, &index, rollback);
+    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fileref->utf8, &index, rollback);
     
     // delete DIR_INDEX (0x60)
     
@@ -2203,9 +2204,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->adsxattr.Buffer)
         ExFreePool(fcb->adsxattr.Buffer);
     
-    if (fcb->utf8.Buffer)
-        ExFreePool(fcb->utf8.Buffer);
-    
     if (fcb->debug_desc)
         ExFreePool(fcb->debug_desc);
     
@@ -2230,7 +2228,7 @@ void free_fileref(file_ref* fr) {
     
 #ifdef _DEBUG
     if (rc < 0) {
-        ERR("refcount now %i\n", rc);
+        ERR("fileref %p: refcount now %i\n", fr, rc);
         int3;
     }
 #endif
@@ -2244,6 +2242,9 @@ void free_fileref(file_ref* fr) {
     
     if (fr->filepart.Buffer)
         ExFreePool(fr->filepart.Buffer);
+    
+    if (fr->utf8.Buffer)
+        ExFreePool(fr->utf8.Buffer);
     
     // FIXME - throw error if children not empty
     

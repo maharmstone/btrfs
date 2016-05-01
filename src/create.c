@@ -779,8 +779,6 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     if (parent != Vcb->root_fcb)
         fcb->name_offset++;
     
-    fcb->utf8 = *utf8;
-    
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
@@ -1123,6 +1121,8 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->fcb = fcb;
                     
+                    sf2->utf8 = utf8;
+                    
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
@@ -1442,9 +1442,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->inode = inode;
     fcb->type = type;
     
-    fcb->utf8.MaximumLength = fcb->utf8.Length = utf8len;
-    fcb->utf8.Buffer = utf8;
-    
     Status = fcb_get_new_sd(fcb, IrpSp->Parameters.Create.SecurityContext->AccessState);
     
     if (!NT_SUCCESS(Status)) {
@@ -1462,6 +1459,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fileref->fcb = fcb;
 
+    fileref->utf8.MaximumLength = fileref->utf8.Length = utf8len;
+    fileref->utf8.Buffer = utf8;
+    
     fileref->filepart = *fpus;
         
     Status = set_xattr(Vcb, parfileref->fcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);

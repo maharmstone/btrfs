@@ -101,7 +101,6 @@ typedef struct _fcb {
     struct _fcb_nonpaged* nonpaged;
     LONG refcount;
     LONG open_count;
-    ANSI_STRING utf8;
     struct _device_extension* Vcb;
     struct _fcb* par;
     struct _root* subvol;
@@ -134,6 +133,7 @@ typedef struct {
 //     UNICODE_STRING full_filename;
     fcb* fcb;
     UNICODE_STRING filepart;
+    ANSI_STRING utf8;
     BOOL delete_on_close;
     LIST_ENTRY children;
     LONG refcount;

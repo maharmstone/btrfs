@@ -604,12 +604,6 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     // FIXME - fail if we already have the attribute FILE_ATTRIBUTE_REPARSE_POINT
     
-    if (!fcb->utf8.Buffer) {
-        ERR("error - utf8 on FCB not set\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
     // FIXME - die if not file or directory
     // FIXME - die if ADS
     
