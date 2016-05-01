@@ -1315,7 +1315,7 @@ BOOL has_open_children(fcb* fcb) {
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists, LIST_ENTRY* rollback) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *oldparfcb/*, *oldfcb*/;
-    file_ref *fileref, *oldfileref, *related;
+    file_ref *fileref, *oldfileref = NULL, *related;
     ccb* ccb = FileObject->FsContext2;
     root* parsubvol;
     UINT64 parinode, dirpos;
