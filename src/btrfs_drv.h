@@ -124,7 +124,6 @@ typedef struct _fcb {
     ANSI_STRING adsxattr;
     
     LIST_ENTRY list_entry;
-    LIST_ENTRY list_entry_subvol;
 } fcb;
 
 struct _file_ref;

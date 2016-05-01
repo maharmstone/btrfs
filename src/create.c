@@ -738,7 +738,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
         LIST_ENTRY* le = subvol->fcbs.Flink;
                                 
         while (le != &subvol->fcbs) {
-            fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_subvol);
+            fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
             
             if (fcb->inode == inode && !fcb->ads) {
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -805,7 +805,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     
     TRACE("found %.*S (subvol = %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, subvol);
     
-    InsertTailList(&subvol->fcbs, &fcb->list_entry_subvol);
+    InsertTailList(&subvol->fcbs, &fcb->list_entry);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     
@@ -1080,7 +1080,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
 
                     TRACE("found stream %.*S (subvol = %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, sf->fcb->subvol);
                     
-                    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);                    
+                    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
 
                     sf2->parent = (struct _file_ref*)sf;
                     InsertTailList(&sf->children, &sf2->list_entry);
@@ -1535,7 +1535,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     InterlockedIncrement(&parfileref->refcount);
 #endif
  
-    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);
+    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     
     *pfr = fileref;
     
@@ -1832,7 +1832,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             goto end;
         }
         
-        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);
+        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
         
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);

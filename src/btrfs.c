@@ -2185,8 +2185,8 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExFreePool(fcb->nonpaged);
     
-    if (fcb->list_entry_subvol.Flink)
-        RemoveEntryList(&fcb->list_entry_subvol);
+    if (fcb->list_entry.Flink)
+        RemoveEntryList(&fcb->list_entry);
     
     if (fcb->full_filename.Buffer)
         ExFreePool(fcb->full_filename.Buffer);
@@ -3642,7 +3642,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fileref->fcb = Vcb->root_fcb;
     Vcb->root_fcb->refcount++;
-    InsertTailList(&Vcb->root_fcb->subvol->fcbs, &Vcb->root_fcb->list_entry_subvol);
+    InsertTailList(&Vcb->root_fcb->subvol->fcbs, &Vcb->root_fcb->list_entry);
 
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
