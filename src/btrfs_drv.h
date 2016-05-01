@@ -102,9 +102,9 @@ typedef struct _fcb {
     LONG refcount;
     LONG open_count;
     struct _device_extension* Vcb;
-    struct _fcb* par;
+//     struct _fcb* par;
     struct _root* subvol;
-    LIST_ENTRY children;
+//     LIST_ENTRY children;
     UINT64 inode;
     UINT8 type;
     INODE_ITEM inode_item;
@@ -129,7 +129,7 @@ typedef struct _fcb {
 
 struct _file_ref;
 
-typedef struct {
+typedef struct _file_ref {
 //     UNICODE_STRING full_filename;
     fcb* fcb;
     UNICODE_STRING filepart;
@@ -556,7 +556,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback);
 NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, LIST_ENTRY* rollback);
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
-NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
+NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
 NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
@@ -579,11 +579,11 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void fcb_get_sd(fcb* fcb);
+void fcb_get_sd(fcb* fcb, struct _fcb* parent);
 // UINT32 STDCALL get_uid();
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 UINT32 sid_to_uid(PSID sid);
-NTSTATUS fcb_get_new_sd(fcb* fcb, ACCESS_STATE* as);
+NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* fileref, ACCESS_STATE* as);
 
 // in fileinfo.c
 NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -591,8 +591,8 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, LIST_ENTRY* rollback);
 NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback);
 NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback);
-BOOL has_open_children(fcb* fcb);
-NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback);
+BOOL has_open_children(file_ref* fileref);
+NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback);
 
 // in reparse.c
 NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen);

@@ -5612,7 +5612,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) {
+NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) {
     UINT64 oldalloc, newalloc;
     KEY searchkey;
     traverse_ptr tp;
@@ -5622,7 +5622,7 @@ NTSTATUS extend_file(fcb* fcb, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) 
     TRACE("(%p, %x, %p)\n", fcb, end, rollback);
 
     if (fcb->ads)
-        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, NULL, FALSE, rollback) ;
+        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE, rollback) ;
     else {
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_EXTENT_DATA;
@@ -6750,6 +6750,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     LARGE_INTEGER time;
     BTRFS_TIME now;
     fcb* fcb;
+    ccb* ccb;
+    file_ref* fileref;
     BOOL paging_lock = FALSE;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
@@ -6765,6 +6767,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+    fileref = ccb ? ccb->fileref : NULL;
     
     if (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK) {
         WARN("tried to write to something other than a file or symlink (inode %llx, type %u, %p, %p)\n", fcb->inode, fcb->type, &fcb->type, fcb);
@@ -6840,7 +6844,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (changed_length) {
         if (newlength > fcb->Header.AllocationSize.QuadPart) {
-            Status = extend_file(fcb, newlength, FALSE, rollback);
+            Status = extend_file(fcb, fileref, newlength, FALSE, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("extend_file returned %08x\n", Status);
                 goto end;
@@ -7096,9 +7100,15 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 //         }
 //     }
     
-    if (fcb->ads)
-        origii = &fcb->par->inode_item;
-    else
+    if (fcb->ads) {
+        if (fileref && fileref->parent)
+            origii = &fileref->parent->fcb->inode_item;
+        else {
+            ERR("no parent fcb found for stream\n");
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+    } else
         origii = &fcb->inode_item;
     
     origii->transid = Vcb->superblock.generation;

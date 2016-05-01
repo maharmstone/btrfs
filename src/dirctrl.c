@@ -83,7 +83,7 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     return tag;
 }
 
-static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
+static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     UINT32 needed;
     UINT64 inode;
@@ -128,17 +128,19 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
                 LIST_ENTRY* le;
                 BOOL found = FALSE;
                 
-                le = fcb->children.Flink;
-                while (le != &fcb->children) {
-                    struct _fcb* c = CONTAINING_RECORD(le, struct _fcb, list_entry);
-                    
-                    if (c->subvol == r && c->inode == inode) {
-                        ii = c->inode_item;
-                        found = TRUE;
-                        break;
+                if (fileref) {
+                    le = fileref->children.Flink;
+                    while (le != &fileref->children) {
+                        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
+                        
+                        if (c->fcb->subvol == r && c->fcb->inode == inode && !c->fcb->ads) {
+                            ii = c->fcb->inode_item;
+                            found = TRUE;
+                            break;
+                        }
+                        
+                        le = le->Flink;
                     }
-                    
-                    le = le->Flink;
                 }
                 
                 if (!found) {
@@ -176,9 +178,14 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
                 break;
                 
             case DirEntryType_Parent:
-                ii = fcb->par->inode_item;
-                r = fcb->par->subvol;
-                inode = fcb->par->inode;
+                if (fileref && fileref->parent) {
+                    ii = fileref->parent->fcb->inode_item;
+                    r = fileref->parent->fcb->subvol;
+                    inode = fileref->parent->fcb->inode;
+                } else {
+                    ERR("no fileref\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
                 break;
         }
     }
@@ -408,13 +415,13 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, void* buf, LONG* len, PIRP Irp,
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, traverse_ptr* tp) {
+static NTSTATUS STDCALL next_dir_entry(fcb* fcb, file_ref* fileref, UINT64* offset, dir_entry* de, traverse_ptr* tp) {
     KEY searchkey;
     traverse_ptr next_tp;
     DIR_ITEM* di;
     NTSTATUS Status;
     
-    if (fcb->par) { // don't return . and .. if root directory
+    if (fileref && fileref->parent) { // don't return . and .. if root directory
         if (*offset == 0) {
             de->key.obj_id = fcb->inode;
             de->key.obj_type = TYPE_INODE_ITEM;
@@ -428,7 +435,7 @@ static NTSTATUS STDCALL next_dir_entry(fcb* fcb, UINT64* offset, dir_entry* de, 
             
             return STATUS_SUCCESS;
         } else if (*offset == 1) {
-            de->key.obj_id = fcb->par->inode;
+            de->key.obj_id = fileref->parent->fcb->inode;
             de->key.obj_type = TYPE_INODE_ITEM;
             de->key.offset = 0;
             de->dir_entry_type = DirEntryType_Parent;
@@ -520,6 +527,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NTSTATUS Status, status2;
     fcb* fcb;
     ccb* ccb;
+    file_ref* fileref;
     void* buf;
     UINT8 *curitem, *lastitem;
     LONG length;
@@ -538,6 +546,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     fcb = IrpSp->FileObject->FsContext;
     ccb = IrpSp->FileObject->FsContext2;
+    fileref = ccb ? ccb->fileref : NULL;
     
     acquire_tree_lock(fcb->Vcb, FALSE);
     
@@ -631,7 +640,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     tp.tree = NULL;
-    Status = next_dir_entry(fcb, &ccb->query_dir_offset, &de, &tp);
+    Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
     
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_NO_MORE_FILES && initial)
@@ -696,7 +705,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         di_uni_fn.Buffer = uni_fn;
         
         while (!FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, TRUE, NULL)) {
-            Status = next_dir_entry(fcb, &ccb->query_dir_offset, &de, &tp);
+            Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
             
             ExFreePool(uni_fn);
             if (NT_SUCCESS(Status)) {
@@ -737,7 +746,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("file(0) = %.*s\n", de.namelen, de.name);
     TRACE("offset = %u\n", ccb->query_dir_offset - 1);
 
-    Status = query_dir_item(fcb, buf, &length, Irp, &de, fcb->subvol);
+    Status = query_dir_item(fcb, fileref, buf, &length, Irp, &de, fcb->subvol);
     
     count = 0;
     if (NT_SUCCESS(Status) && !(IrpSp->Flags & SL_RETURN_SINGLE_ENTRY) && !specific_file) {
@@ -765,7 +774,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 WCHAR* uni_fn = NULL;
                 UNICODE_STRING di_uni_fn;
                 
-                Status = next_dir_entry(fcb, &ccb->query_dir_offset, &de, &tp);
+                Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
                 if (NT_SUCCESS(Status)) {
                     if (has_wildcard) {
                         ULONG stringlen;
@@ -802,7 +811,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         TRACE("file(%u) %u = %.*s\n", count, curitem - (UINT8*)buf, de.namelen, de.name);
                         TRACE("offset = %u\n", ccb->query_dir_offset - 1);
                         
-                        status2 = query_dir_item(fcb, curitem, &length, Irp, &de, fcb->subvol);
+                        status2 = query_dir_item(fcb, fileref, curitem, &length, Irp, &de, fcb->subvol);
                         
                         if (NT_SUCCESS(status2)) {
                             ULONG* lastoffset = (ULONG*)lastitem;

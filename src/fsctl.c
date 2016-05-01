@@ -218,27 +218,20 @@ end:
     return Status;
 }
 
-static void flush_children(fcb* fcb) {
-    LIST_ENTRY* le;
+static void flush_subvol_fcbs(root* subvol) {
+    LIST_ENTRY* le = subvol->fcbs.Flink;
     
-    // FIXME - recursion is bad. Add list of fcbs to each volume instead
+    if (IsListEmpty(&subvol->fcbs))
+        return;
     
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        if (!IsListEmpty(&fcb->children)) {
-            le = fcb->children.Flink;
-            
-            while (le != &fcb->children) {
-                struct _fcb* child = CONTAINING_RECORD(le, struct _fcb, list_entry);
-                
-                flush_children(child);
-                
-                le = le->Flink;
-            }
-        }
-    } else if (!fcb->deleted) {
+    while (le != &subvol->fcbs) {
+        struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
         IO_STATUS_BLOCK iosb;
         
-        CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+        if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
+            CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+        
+        le = le->Flink;
     }
 }
 
@@ -264,7 +257,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // flush open files on this subvol
     
-    flush_children(subvol_fcb);
+    flush_subvol_fcbs(subvol);
 
     // flush metadata
     

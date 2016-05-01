@@ -315,8 +315,6 @@ fcb* create_fcb() {
     
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     
-    InitializeListHead(&fcb->children);
-    
     return fcb;
 }
 
@@ -767,8 +765,6 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     
     fcb->Vcb = Vcb;
     
-    fcb->par = parent;
-    
     parent->refcount++;
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("fcb %p: refcount now %i (%.*S)\n", parent, parent->refcount, parent->full_filename.Length / sizeof(WCHAR), parent->full_filename.Buffer);
@@ -805,11 +801,10 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     
     fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8->Buffer[0] == '.', FALSE);
     
-    fcb_get_sd(fcb);
+    fcb_get_sd(fcb, parent);
     
     TRACE("found %.*S (subvol = %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, subvol);
     
-    InsertTailList(&parent->children, &fcb->list_entry);
     InsertTailList(&subvol->fcbs, &fcb->list_entry_subvol);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
@@ -1037,8 +1032,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
                     }
                     
-                    fcb->par = sf->fcb;
-                    
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->fcb->refcount);
                     WARN("fcb %p: refcount now %i (%S)\n", sf->fcb, rc, file_desc_fileref(sf));
@@ -1087,7 +1080,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
 
                     TRACE("found stream %.*S (subvol = %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, sf->fcb->subvol);
                     
-                    InsertTailList(&sf->fcb->children, &fcb->list_entry);
                     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);                    
 
                     sf2->parent = (struct _file_ref*)sf;
@@ -1456,7 +1448,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fcb->atts = IrpSp->Parameters.Create.FileAttributes;
     
-    fcb->par = parfileref->fcb;
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->fcb->refcount);
     WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
@@ -1467,7 +1458,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->inode = inode;
     fcb->type = type;
     
-    Status = fcb_get_new_sd(fcb, IrpSp->Parameters.Create.SecurityContext->AccessState);
+    Status = fcb_get_new_sd(fcb, parfileref, IrpSp->Parameters.Create.SecurityContext->AccessState);
     
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_new_sd returned %08x\n", Status);
@@ -1521,7 +1512,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-        Status = extend_file(fcb, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+        Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
@@ -1535,7 +1526,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
     
-    fileref->parent = (struct _file_ref*)parfileref;
+    fileref->parent = parfileref;
     InsertTailList(&parfileref->children, &fileref->list_entry);
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->refcount);
@@ -1544,7 +1535,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     InterlockedIncrement(&parfileref->refcount);
 #endif
  
-    InsertTailList(&fcb->par->children, &fcb->list_entry);
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);
     
     *pfr = fileref;
@@ -1747,7 +1737,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
         
-        fcb->par = parfileref->fcb;
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&parfileref->fcb->refcount);
         WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
@@ -1843,7 +1832,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             goto end;
         }
         
-        InsertTailList(&fcb->par->children, &fcb->list_entry);
         InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry_subvol);
         
         KeQuerySystemTime(&time);
@@ -2489,7 +2477,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (!SeAccessCheck(fileref->fcb->ads ? fileref->fcb->par->sd : fileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+        if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
             IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
         

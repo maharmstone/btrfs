@@ -134,7 +134,7 @@ device_extension* Vcb = DeviceObject->DeviceExtension;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
-    if (Vcb->root_fcb && (Vcb->root_fcb->open_count > 0 || has_open_children(Vcb->root_fcb))) {
+    if (Vcb->root_fcb && (Vcb->root_fcb->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -159,7 +159,7 @@ static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
-    if (Vcb->root_fcb && (Vcb->root_fcb->open_count > 0 || has_open_children(Vcb->root_fcb))) {
+    if (Vcb->root_fcb && (Vcb->root_fcb->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
