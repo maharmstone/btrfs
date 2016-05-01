@@ -2980,7 +2980,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, root* subvol) {
     
     // FIXME - add subvol->parent field
     
-    if (subvol == Vcb->root_fcb->subvol) {
+    if (subvol == Vcb->root_fileref->fcb->subvol) {
         subvol->path.Length = subvol->path.MaximumLength = sizeof(WCHAR);
         subvol->path.Buffer = ExAllocatePoolWithTag(PagedPool, subvol->path.Length, ALLOC_TAG);
         subvol->path.Buffer[0] = '\\';

@@ -2354,7 +2354,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     }
     
     free_fcb(Vcb->volume_fcb);
-    free_fcb(Vcb->root_fcb);
     free_fileref(Vcb->root_fileref);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
@@ -2420,7 +2419,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             fileref->delete_on_close = FALSE;
         
         if (oc == 0) {
-            if (fileref && fileref->delete_on_close && fcb != fcb->Vcb->root_fcb && fcb != fcb->Vcb->volume_fcb) {
+            if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
                 LIST_ENTRY rollback;
                 InitializeListHead(&rollback);
                 
@@ -3334,6 +3333,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     LIST_ENTRY* le;
     KEY searchkey;
     traverse_ptr tp;
+    fcb* root_fcb = NULL;
     
     TRACE("mount_vol called\n");
     
@@ -3574,46 +3574,46 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
     
-    Vcb->root_fcb = create_fcb();
-    if (!Vcb->root_fcb) {
+    root_fcb = create_fcb();
+    if (!root_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto exit;
     }
     
-    Vcb->root_fcb->Vcb = Vcb;
-    Vcb->root_fcb->inode = SUBVOL_ROOT_INODE;
-    Vcb->root_fcb->type = BTRFS_TYPE_DIRECTORY;
+    root_fcb->Vcb = Vcb;
+    root_fcb->inode = SUBVOL_ROOT_INODE;
+    root_fcb->type = BTRFS_TYPE_DIRECTORY;
     
-    Vcb->root_fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
+    root_fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
     
-    if (!Vcb->root_fcb->full_filename.Buffer) {
+    if (!root_fcb->full_filename.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto exit;
     }
     
-    Vcb->root_fcb->full_filename.Buffer[0] = '\\';
-    Vcb->root_fcb->full_filename.Length = Vcb->root_fcb->full_filename.MaximumLength = sizeof(WCHAR);
+    root_fcb->full_filename.Buffer[0] = '\\';
+    root_fcb->full_filename.Length = root_fcb->full_filename.MaximumLength = sizeof(WCHAR);
     
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("volume FCB = %p\n", Vcb->volume_fcb);
-    WARN("root FCB = %p\n", Vcb->root_fcb);
+    WARN("root FCB = %p\n", root_fcb);
 #endif
     
-    Vcb->root_fcb->subvol = find_default_subvol(Vcb);
+    root_fcb->subvol = find_default_subvol(Vcb);
 
-    if (!Vcb->root_fcb->subvol) {
+    if (!root_fcb->subvol) {
         ERR("could not find top subvol\n");
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
     
-    searchkey.obj_id = Vcb->root_fcb->inode;
+    searchkey.obj_id = root_fcb->inode;
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->root_fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, root_fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         goto exit;
@@ -3626,12 +3626,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (tp.item->size > 0)
-        RtlCopyMemory(&Vcb->root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+        RtlCopyMemory(&root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
     
-    fcb_get_sd(Vcb->root_fcb, NULL);
+    fcb_get_sd(root_fcb, NULL);
     
-    Vcb->root_fcb->atts = get_file_attributes(Vcb, &Vcb->root_fcb->inode_item, Vcb->root_fcb->subvol, Vcb->root_fcb->inode, Vcb->root_fcb->type,
-                                              FALSE, FALSE);
+    root_fcb->atts = get_file_attributes(Vcb, &root_fcb->inode_item, root_fcb->subvol, root_fcb->inode, root_fcb->type, FALSE, FALSE);
     
     Vcb->root_fileref = create_fileref();
     if (!Vcb->root_fileref) {
@@ -3640,9 +3639,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    Vcb->root_fileref->fcb = Vcb->root_fcb;
-    Vcb->root_fcb->refcount++;
-    InsertTailList(&Vcb->root_fcb->subvol->fcbs, &Vcb->root_fcb->list_entry);
+    Vcb->root_fileref->fcb = root_fcb;
+    InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
 
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
@@ -3754,8 +3752,10 @@ exit:
 
     if (!NT_SUCCESS(Status)) {
         if (Vcb) {
-            if (Vcb->root_fcb)
-                free_fcb(Vcb->root_fcb);
+            if (Vcb->root_fileref)
+                free_fileref(Vcb->root_fileref);
+            else if (root_fcb)
+                free_fcb(root_fcb);
 
             if (Vcb->volume_fcb)
                 free_fcb(Vcb->volume_fcb);

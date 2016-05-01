@@ -776,7 +776,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     
     fcb->name_offset = parent->full_filename.Length / sizeof(WCHAR);
     
-    if (parent != Vcb->root_fcb)
+    if (parent != Vcb->root_fileref->fcb)
         fcb->name_offset++;
     
     searchkey.obj_id = inode;

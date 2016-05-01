@@ -307,7 +307,6 @@ typedef struct _device_extension {
     BOOL readonly;
     BOOL removing;
     fcb* volume_fcb;
-    fcb* root_fcb;
     file_ref* root_fileref;
     ERESOURCE DirResource;
     KSPIN_LOCK FcbListLock;

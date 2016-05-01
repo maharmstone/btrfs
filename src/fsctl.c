@@ -44,7 +44,7 @@ static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) 
     
     bgfi->subvol = fcb->subvol->id;
     bgfi->inode = fcb->inode;
-    bgfi->top = fcb->Vcb->root_fcb == fcb ? TRUE : FALSE;
+    bgfi->top = fcb->Vcb->root_fileref->fcb == fcb ? TRUE : FALSE;
     
     return STATUS_SUCCESS;
 }
@@ -657,7 +657,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         // FIXME - use fileref for this
         
         ffn.Length = fcb->full_filename.Length + bcs->namelen;
-        if (fcb != fcb->Vcb->root_fcb)
+        if (fcb != fcb->Vcb->root_fileref->fcb)
             ffn.Length += sizeof(WCHAR);
         
         ffn.MaximumLength = ffn.Length;
@@ -669,7 +669,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
             RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
             i = fcb->full_filename.Length;
             
-            if (fcb != fcb->Vcb->root_fcb) {
+            if (fcb != fcb->Vcb->root_fileref->fcb) {
                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';
                 i += sizeof(WCHAR);
             }
@@ -1091,7 +1091,7 @@ end:
         // FIXME - use fileref for this
         
         ffn.Length = fcb->full_filename.Length + length;
-        if (fcb != fcb->Vcb->root_fcb)
+        if (fcb != fcb->Vcb->root_fileref->fcb)
             ffn.Length += sizeof(WCHAR);
         
         ffn.MaximumLength = ffn.Length;
@@ -1103,7 +1103,7 @@ end:
             RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
             i = fcb->full_filename.Length;
             
-            if (fcb != fcb->Vcb->root_fcb) {
+            if (fcb != fcb->Vcb->root_fileref->fcb) {
                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';
                 i += sizeof(WCHAR);
             }
