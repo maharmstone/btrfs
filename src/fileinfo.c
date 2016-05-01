@@ -359,7 +359,7 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, file_ref** pfr, fil
     
     parent->refcount++;
 #ifdef DEBUG_FCB_REFCOUNTS
-    WARN("fcb %p: refcount now %i (%.*S)\n", parent, parent->refcount, parent->full_filename.Length / sizeof(WCHAR), parent->full_filename.Buffer);
+    WARN("fileref %p: refcount now %i (%S)\n", parent, parent->refcount, file_desc_fileref(parent));
 #endif
     
     if (di->key.obj_type == TYPE_ROOT_ITEM) {

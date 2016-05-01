@@ -441,7 +441,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
 NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback);
 BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
-void free_fileref(file_ref* fr);
+void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line);
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r);
 NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, LIST_ENTRY* rollback);
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback);
@@ -469,6 +469,7 @@ WCHAR* file_desc_fileref(file_ref* fileref);
 
 // FIXME - we probably shouldn't be moving funcname etc. around if we're not printing debug messages
 #define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
+#define free_fileref(fileref) _free_fileref(fileref, funcname, __FILE__, __LINE__)
 
 #ifdef _DEBUG
 
