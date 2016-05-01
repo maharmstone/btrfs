@@ -553,6 +553,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     UINT32 crc32;
     fcb* fcb;
     ccb* ccb;
+    file_ref* fileref;
     
     if (length < offsetof(btrfs_create_snapshot, name))
         return STATUS_INVALID_PARAMETER;
@@ -571,6 +572,8 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     if (!fcb || !ccb || fcb->type != BTRFS_TYPE_DIRECTORY)
         return STATUS_INVALID_PARAMETER;
+    
+    fileref = ccb->fileref;
     
     if (!(ccb->access & FILE_ADD_SUBDIRECTORY)) {
         WARN("insufficient privileges\n");
@@ -654,9 +657,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
         
-        // FIXME - use fileref for this
-        
-        ffn.Length = fcb->full_filename.Length + bcs->namelen;
+        ffn.Length = fileref->full_filename.Length + bcs->namelen;
         if (fcb != fcb->Vcb->root_fileref->fcb)
             ffn.Length += sizeof(WCHAR);
         
@@ -666,8 +667,8 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         if (ffn.Buffer) {
             ULONG i;
             
-            RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
-            i = fcb->full_filename.Length;
+            RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+            i = fileref->full_filename.Length;
             
             if (fcb != fcb->Vcb->root_fileref->fcb) {
                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';
@@ -698,6 +699,7 @@ end2:
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length) {
     fcb* fcb;
     ccb* ccb;
+    file_ref* fileref;
     NTSTATUS Status;
     LIST_ENTRY rollback;
     UINT64 id;
@@ -732,6 +734,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         ERR("error - ccb was NULL\n");
         return STATUS_INTERNAL_ERROR;
     }
+    
+    fileref = ccb->fileref;
     
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
         ERR("parent FCB was not a directory\n");
@@ -1088,9 +1092,7 @@ end:
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
         
-        // FIXME - use fileref for this
-        
-        ffn.Length = fcb->full_filename.Length + length;
+        ffn.Length = fileref->full_filename.Length + length;
         if (fcb != fcb->Vcb->root_fileref->fcb)
             ffn.Length += sizeof(WCHAR);
         
@@ -1100,8 +1102,8 @@ end:
         if (ffn.Buffer) {
             ULONG i;
             
-            RtlCopyMemory(ffn.Buffer, fcb->full_filename.Buffer, fcb->full_filename.Length);
-            i = fcb->full_filename.Length;
+            RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+            i = fileref->full_filename.Length;
             
             if (fcb != fcb->Vcb->root_fileref->fcb) {
                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';

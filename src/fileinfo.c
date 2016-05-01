@@ -318,7 +318,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, file_ref** pfr, file_ref* parent, root* subvol, DIR_ITEM* di) {
+static NTSTATUS get_fileref_from_dir_item(device_extension* Vcb, file_ref** pfr, file_ref* parent, root* subvol, DIR_ITEM* di) {
     LIST_ENTRY* le;
     file_ref* fileref;
     fcb* sf2;
@@ -400,10 +400,10 @@ static NTSTATUS get_fcb_from_dir_item(device_extension* Vcb, file_ref** pfr, fil
     
     sf2->type = di->type;
     
-    sf2->name_offset = parent->fcb->full_filename.Length / sizeof(WCHAR);
+    fileref->name_offset = parent->full_filename.Length / sizeof(WCHAR);
    
     if (parent != Vcb->root_fileref)
-        sf2->name_offset++;
+        fileref->name_offset++;
     
     InsertTailList(&parent->children, &fileref->list_entry);
     
@@ -814,9 +814,9 @@ static NTSTATUS add_to_dir_list(file_ref* fileref, UINT8 level, LIST_ENTRY* dl, 
                         
                         *empty = FALSE;
                         
-                        Status = get_fcb_from_dir_item(fileref->fcb->Vcb, &child, fileref, fileref->fcb->subvol, di);
+                        Status = get_fileref_from_dir_item(fileref->fcb->Vcb, &child, fileref, fileref->fcb->subvol, di);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("get_fcb_from_dir_item returned %08x\n", Status);
+                            ERR("get_fileref_from_dir_item returned %08x\n", Status);
                             return Status;
                         }
                         
@@ -1767,30 +1767,30 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fileref->utf8 = utf8;
     utf8.Buffer = NULL;
     
-    // change fcb->full_filename
+    // change fileref->full_filename
     
-    fcb->full_filename.MaximumLength = fileref->parent->fcb->full_filename.Length + fileref->filepart.Length;
-    if (fileref->parent->parent) fcb->full_filename.MaximumLength += sizeof(WCHAR);
-    ExFreePool(fcb->full_filename.Buffer);
+    fileref->full_filename.MaximumLength = fileref->parent->full_filename.Length + fileref->filepart.Length;
+    if (fileref->parent->parent) fileref->full_filename.MaximumLength += sizeof(WCHAR);
+    ExFreePool(fileref->full_filename.Buffer);
     
-    fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.MaximumLength, ALLOC_TAG);
-    if (!fcb->full_filename.Buffer) {
+    fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.MaximumLength, ALLOC_TAG);
+    if (!fileref->full_filename.Buffer) {
         ERR("out of memory\n");
         
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    RtlCopyMemory(fcb->full_filename.Buffer, fileref->parent->fcb->full_filename.Buffer, fileref->parent->fcb->full_filename.Length);
-    fcb->full_filename.Length = fileref->parent->fcb->full_filename.Length;
+    RtlCopyMemory(fileref->full_filename.Buffer, fileref->parent->full_filename.Buffer, fileref->parent->full_filename.Length);
+    fileref->full_filename.Length = fileref->parent->full_filename.Length;
     
     if (fileref->parent->parent) {
-        fcb->full_filename.Buffer[fcb->full_filename.Length / sizeof(WCHAR)] = '\\';
-        fcb->full_filename.Length += sizeof(WCHAR);
+        fileref->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
+        fileref->full_filename.Length += sizeof(WCHAR);
     }
-    fcb->name_offset = fcb->full_filename.Length / sizeof(WCHAR);
+    fileref->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
     
-    RtlAppendUnicodeStringToString(&fcb->full_filename, &fileref->filepart);
+    RtlAppendUnicodeStringToString(&fileref->full_filename, &fileref->filepart);
     
     send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                               across_directories ? FILE_ACTION_ADDED : FILE_ACTION_RENAMED_NEW_NAME);
@@ -2651,12 +2651,17 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, file_ref* fileref, LONG* length) {
 #ifdef _DEBUG
     ULONG retlen = 0;
 #endif
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     ULONG datasuflen = wcslen(datasuf) * sizeof(WCHAR);
+    
+    if (!fileref) {
+        ERR("called without fileref\n");
+        return STATUS_INVALID_PARAMETER;
+    }
     
     RtlZeroMemory(fni, sizeof(FILE_NAME_INFORMATION));
     
@@ -2667,15 +2672,15 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     fni->FileName[0] = 0;
     
-    if (*length >= (LONG)fcb->full_filename.Length) {
-        RtlCopyMemory(fni->FileName, fcb->full_filename.Buffer, fcb->full_filename.Length);
+    if (*length >= (LONG)fileref->full_filename.Length) {
+        RtlCopyMemory(fni->FileName, fileref->full_filename.Buffer, fileref->full_filename.Length);
 #ifdef _DEBUG
-        retlen = fcb->full_filename.Length;
+        retlen = fileref->full_filename.Length;
 #endif
-        *length -= fcb->full_filename.Length;
+        *length -= fileref->full_filename.Length;
     } else {
         if (*length > 0) {
-            RtlCopyMemory(fni->FileName, fcb->full_filename.Buffer, *length);
+            RtlCopyMemory(fni->FileName, fileref->full_filename.Buffer, *length);
 #ifdef _DEBUG
             retlen = *length;
 #endif
@@ -2683,18 +2688,18 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
         *length = -1;
     }
     
-    fni->FileNameLength = fcb->full_filename.Length;
+    fni->FileNameLength = fileref->full_filename.Length;
     
     if (fcb->ads) {
         if (*length >= (LONG)datasuflen) {
-            RtlCopyMemory(&fni->FileName[fcb->full_filename.Length / sizeof(WCHAR)], datasuf, datasuflen);
+            RtlCopyMemory(&fni->FileName[fileref->full_filename.Length / sizeof(WCHAR)], datasuf, datasuflen);
 #ifdef _DEBUG
             retlen += datasuflen;
 #endif
             *length -= datasuflen;
         } else {
             if (*length > 0) {
-                RtlCopyMemory(&fni->FileName[fcb->full_filename.Length / sizeof(WCHAR)], datasuf, *length);
+                RtlCopyMemory(&fni->FileName[fileref->full_filename.Length / sizeof(WCHAR)], datasuf, *length);
 #ifdef _DEBUG
                 retlen += *length;
 #endif
@@ -3485,7 +3490,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 fill_in_file_alignment_information(&fai->AlignmentInformation, Vcb, &length);
             
             if (length > 0)
-                fill_in_file_name_information(&fai->NameInformation, fcb, &length);
+                fill_in_file_name_information(&fai->NameInformation, fcb, fileref, &length);
             
             Status = STATUS_SUCCESS;
 
@@ -3564,7 +3569,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileNameInformation\n");
             
-            Status = fill_in_file_name_information(fni, fcb, &length);
+            Status = fill_in_file_name_information(fni, fcb, fileref, &length);
             
             break;
         }
@@ -3636,7 +3641,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileNormalizedNameInformation\n");
             
-            Status = fill_in_file_name_information(fni, fcb, &length);
+            Status = fill_in_file_name_information(fni, fcb, fileref, &length);
             
             break;
         }

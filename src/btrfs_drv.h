@@ -102,14 +102,10 @@ typedef struct _fcb {
     LONG refcount;
     LONG open_count;
     struct _device_extension* Vcb;
-//     struct _fcb* par;
     struct _root* subvol;
-//     LIST_ENTRY children;
     UINT64 inode;
     UINT8 type;
     INODE_ITEM inode_item;
-    UNICODE_STRING full_filename;
-    ULONG name_offset;
     SECURITY_DESCRIPTOR* sd;
     FILE_LOCK lock;
     BOOL deleted;
@@ -129,14 +125,16 @@ typedef struct _fcb {
 struct _file_ref;
 
 typedef struct _file_ref {
-//     UNICODE_STRING full_filename;
     fcb* fcb;
     UNICODE_STRING filepart;
     ANSI_STRING utf8;
+    UNICODE_STRING full_filename;
+    ULONG name_offset;
     BOOL delete_on_close;
     LIST_ENTRY children;
     LONG refcount;
     struct _file_ref* parent;
+    WCHAR* debug_desc;
     
     LIST_ENTRY list_entry;
 } file_ref;

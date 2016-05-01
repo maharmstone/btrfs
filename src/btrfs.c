@@ -1796,32 +1796,45 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     if (fcb->debug_desc)
         return fcb->debug_desc;
     
-    fcb->debug_desc = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.Length + sizeof(WCHAR), ALLOC_TAG);
+    fcb->debug_desc = ExAllocatePoolWithTag(PagedPool, 60 * sizeof(WCHAR), ALLOC_TAG);
     if (!fcb->debug_desc)
         return L"(memory error)";
     
-    RtlCopyMemory(fcb->debug_desc, fcb->full_filename.Buffer, fcb->full_filename.Length);
-    fcb->debug_desc[fcb->full_filename.Length / sizeof(WCHAR)] = 0;
+    // FIXME
+//     swprintf(fcb->debug_desc, L"subvol %llx, inode %llx", fcb->subvol->id, fcb->inode);
     
     return fcb->debug_desc;
 }
 
 WCHAR* file_desc_fileref(file_ref* fileref) {
-    return file_desc_fcb(fileref->fcb);
+    if (fileref->debug_desc)
+        return fileref->debug_desc;
+    
+    fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.Length + sizeof(WCHAR), ALLOC_TAG);
+    if (!fileref->debug_desc)
+        return L"(memory error)";
+    
+    RtlCopyMemory(fileref->debug_desc, fileref->full_filename.Buffer, fileref->full_filename.Length);
+    fileref->debug_desc[fileref->full_filename.Length / sizeof(WCHAR)] = 0;
+    
+    return fileref->debug_desc;
 }
 
 WCHAR* file_desc(PFILE_OBJECT FileObject) {
     fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
     
-    // FIXME - store in fileref
-    
-    return file_desc_fcb(fcb);
+    if (fileref)
+        return file_desc_fileref(fileref);
+    else
+        return file_desc_fcb(fcb);
 }
 
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
     fcb* fcb = fileref->fcb;
     
-    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fcb->full_filename, fcb->name_offset * sizeof(WCHAR),
+    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fileref->full_filename, fileref->name_offset * sizeof(WCHAR),
                                 NULL, NULL, filter_match, action, NULL);
 }
 
@@ -2188,9 +2201,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
     
-    if (fcb->full_filename.Buffer)
-        ExFreePool(fcb->full_filename.Buffer);
-    
     if (fcb->sd)
         ExFreePool(fcb->sd);
     
@@ -2247,6 +2257,12 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->utf8.Buffer)
         ExFreePool(fr->utf8.Buffer);
     
+    if (fr->full_filename.Buffer)
+        ExFreePool(fr->full_filename.Buffer);
+    
+    if (fr->debug_desc)
+        ExFreePool(fr->debug_desc);
+    
     // FIXME - throw error if children not empty
     
     free_fcb(fr->fcb);
@@ -2275,7 +2291,7 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     ccb = FileObject->FsContext2;
     
-    TRACE("close called for %.*S (fcb == %p)\n", fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb);
+    TRACE("close called for %S (fcb == %p)\n", file_desc(FileObject), fcb);
     
     FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);
     
@@ -2403,7 +2419,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         fileref = ccb ? ccb->fileref : NULL;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
-        TRACE("fcb %p (%.*S), refcount = %u, open_count = %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount, fcb->open_count);
+        TRACE("fcb %p (%S), refcount = %u, open_count = %u\n", fcb, file_desc(FileObject), fcb->refcount, fcb->open_count);
         
         IoRemoveShareAccess(FileObject, &fcb->share_access);
         
@@ -3585,17 +3601,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     root_fcb->inode = SUBVOL_ROOT_INODE;
     root_fcb->type = BTRFS_TYPE_DIRECTORY;
     
-    root_fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
-    
-    if (!root_fcb->full_filename.Buffer) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit;
-    }
-    
-    root_fcb->full_filename.Buffer[0] = '\\';
-    root_fcb->full_filename.Length = root_fcb->full_filename.MaximumLength = sizeof(WCHAR);
-    
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("volume FCB = %p\n", Vcb->volume_fcb);
     WARN("root FCB = %p\n", root_fcb);
@@ -3641,6 +3646,17 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
+    
+    Vcb->root_fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
+    
+    if (!Vcb->root_fileref->full_filename.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
+    Vcb->root_fileref->full_filename.Buffer[0] = '\\';
+    Vcb->root_fileref->full_filename.Length = Vcb->root_fileref->full_filename.MaximumLength = sizeof(WCHAR);
 
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);

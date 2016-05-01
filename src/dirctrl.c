@@ -856,10 +856,17 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb->fileref;
     NTSTATUS Status;
 //     WCHAR fn[MAX_PATH];
     
     TRACE("IRP_MN_NOTIFY_CHANGE_DIRECTORY\n");
+    
+    if (!fileref) {
+        ERR("no fileref\n");
+        return STATUS_INVALID_PARAMETER;
+    }
     
     acquire_tree_lock(fcb->Vcb, FALSE);
     
@@ -872,7 +879,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     
     TRACE("%S\n", file_desc(FileObject));
     
-    FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&fcb->full_filename,
+    FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&fileref->full_filename,
         IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp, NULL, NULL);
     
     Status = STATUS_PENDING;
