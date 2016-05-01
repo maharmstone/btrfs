@@ -1483,7 +1483,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     Status = set_xattr(Vcb, parfileref->fcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("set_xattr returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fileref(fileref);
         return Status;
     }
     
@@ -1492,7 +1492,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->full_filename.Length, ALLOC_TAG);
     if (!fcb->full_filename.Buffer) {
         ERR("out of memory\n");
-        free_fcb(fcb);
+        free_fileref(fileref);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -1507,7 +1507,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
-        free_fcb(fcb);
+        free_fileref(fileref);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -1516,6 +1516,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
+            free_fileref(fileref);
             return Status;
         }
     }
@@ -1752,7 +1753,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream.Buffer, stream.Length);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
+            ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
             free_fcb(fcb);
             goto end;
         }
@@ -1771,6 +1772,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream.Buffer, stream.Length);
         if (!NT_SUCCESS(Status)) {
+            ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
             free_fcb(fcb);
             goto end;
         }
