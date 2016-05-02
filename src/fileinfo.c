@@ -2180,22 +2180,22 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     if (NT_SUCCESS(Status)) {
         WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
-//         if (fcb != oldfcb && !(oldfcb->open_count == 0 && oldfcb->deleted)) {
-//             if (!fli->ReplaceIfExists) {
+        if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->deleted)) {
+            if (!fli->ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-//             } else if (oldfcb->open_count >= 1 && !oldfcb->deleted) {
-//                 WARN("trying to overwrite open file\n");
-//                 Status = STATUS_ACCESS_DENIED;
-//                 goto end;
-//             }
-//             
-//             if (oldfcb->type == BTRFS_TYPE_DIRECTORY) {
-//                 WARN("trying to overwrite directory\n");
-//                 Status = STATUS_ACCESS_DENIED;
-//                 goto end;
-//             }
-//         }
+            } else if (oldfileref->fcb->open_count >= 1 && !oldfileref->deleted) {
+                WARN("trying to overwrite open file\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            }
+            
+            if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+                WARN("trying to overwrite directory\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            }
+        }
     }
     
     if (fcb->subvol != parsubvol) {
@@ -2204,13 +2204,15 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         goto end;
     }
     
-//     if (oldfcb) {
-//         Status = delete_fcb(oldfcb, NULL, rollback);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("delete_fcb returned %08x\n", Status);
-//             goto end;
-//         }
-//     }
+    if (oldfileref) {
+        // FIXME - check we have permissions for this
+        
+        Status = delete_fileref(oldfileref, NULL, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_fcb returned %08x\n", Status);
+            goto end;
+        }
+    }
     
     // add DIR_ITEM
     
