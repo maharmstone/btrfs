@@ -1,4 +1,4 @@
-WinBtrfs v0.3
+WinBtrfs v0.4
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -35,8 +35,11 @@ Features
 * Supported incompat flags: `mixed_backref`, `default_subvol`, `big_metadata`,
   `extended_iref`, `skinny_metadata`.
 * Mappings from Linux users to Windows ones (see below)
-* Symlinks
-* Shell extension to identify subvolumes
+* Symlinks and other reparse points
+* Shell extension to identify and create subvolumes, including snapshots
+* Hard links
+* Free-space cache
+* Preallocation
 
 Todo
 ----
@@ -45,16 +48,9 @@ Todo
 * RAID5 and RAID6 (incompat flag `raid56`)
 * zlib compression
 * LZO compression (incompat flag `compress_lzo`)
-* Old free space cache
 * New (Linux 4.5) free space cache (compat_ro flag free_space_cache)
-* Preallocation
 * Misc incompat flags: `mixed_groups`, `no_holes`
-* Add creation of new subvolumes, etc. to userspace helper
 * Asynchronous reading and writing
-* Actually obeying security (add ACCESS_MASK checks)
-* Get all of Wine's ntdll tests to pass
-* Allow creation of hard links
-* Arbitrary reparse points
 * Probably a bunch of other bugs
 
 Installation
@@ -142,6 +138,17 @@ prevents UAC from working. Thanks Microsoft!
 
 Changelog
 ---------
+
+v0.4 (2016-05-02):
+* Subvolume creation and deletion
+* Snapshots
+* Preallocation
+* Reparse points
+* Hard links
+* Plug and play
+* Free-space cache
+* Fix problems preventing volume from being shared over the network
+* Miscellaneous bug fixes
 
 v0.3 (2016-03-25):
 
