@@ -2407,7 +2407,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     }
     
     if (NT_SUCCESS(Status)) { // file already exists
-//         struct _fcb* sf;
+        file_ref* sf;
         
         if (Vcb->readonly && RequestedDisposition == FILE_OVERWRITE_IF) {
             Status = STATUS_MEDIA_WRITE_PROTECTED;
@@ -2424,19 +2424,19 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         
         TRACE("deleted = %s\n", fileref->fcb->deleted ? "TRUE" : "FALSE");
         
-//         sf = fcb;
-//         while (sf) {
-//             if (sf->delete_on_close) {
-//                 WARN("could not open as deletion pending\n");
-//                 Status = STATUS_DELETE_PENDING;
-//                 
-//                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-//                 free_fcb(fcb);
-//                 ExReleaseResourceLite(&Vcb->fcb_lock);
-//                 goto exit;
-//             }
-//             sf = sf->par;
-//         }
+        sf = fileref;
+        while (sf) {
+            if (sf->delete_on_close) {
+                WARN("could not open as deletion pending\n");
+                Status = STATUS_DELETE_PENDING;
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+                goto exit;
+            }
+            sf = sf->parent;
+        }
         
         if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF)) {
             Status = STATUS_ACCESS_DENIED;
