@@ -129,6 +129,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                 BOOL found = FALSE;
                 
                 if (fileref) {
+                    ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
+                    
                     le = fileref->children.Flink;
                     while (le != &fileref->children) {
                         file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
@@ -141,6 +143,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                         
                         le = le->Flink;
                     }
+                    
+                    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                 }
                 
                 if (!found) {
