@@ -1443,22 +1443,22 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (NT_SUCCESS(Status)) {
         WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
-//         if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->fcb->deleted)) {
-//             if (!ReplaceIfExists) {
+        if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->deleted)) {
+            if (!ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-//             } else if (oldfileref->fcb->open_count >= 1 && !oldfileref->fcb->deleted) {
-//                 WARN("trying to overwrite open file\n");
-//                 Status = STATUS_ACCESS_DENIED;
-//                 goto end;
-//             }
-//             
-//             if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
-//                 WARN("trying to overwrite directory\n");
-//                 Status = STATUS_ACCESS_DENIED;
-//                 goto end;
-//             }
-//         }
+            } else if (oldfileref->fcb->open_count >= 1 && !oldfileref->deleted) {
+                WARN("trying to overwrite open file\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            }
+            
+            if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+                WARN("trying to overwrite directory\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            }
+        }
     }
     
     if (has_open_children(fileref)) {
@@ -1467,13 +1467,14 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-//     if (oldfileref) {
-//         Status = delete_fcb(oldfcb, NULL, rollback);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("delete_fcb returned %08x\n", Status);
-//             goto end;
-//         }
-//     }
+    if (oldfileref) {
+        // FIXME - check we have permission to delete oldfileref
+        Status = delete_fileref(oldfileref, NULL, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_fileref returned %08x\n", Status);
+            goto end;
+        }
+    }
     
     if (fcb->inode == SUBVOL_ROOT_INODE) {
         Status = move_subvol(Vcb, fileref, tfofcb->subvol, tfofcb->inode, &utf8, crc32, oldcrc32, &now, ReplaceIfExists, rollback);
