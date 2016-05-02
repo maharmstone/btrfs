@@ -1793,6 +1793,10 @@ static NTSTATUS delete_subvol(file_ref* fileref, LIST_ENTRY* rollback) {
 }
 
 static WCHAR* file_desc_fcb(fcb* fcb) {
+    char s[60];
+    UNICODE_STRING us;
+    ANSI_STRING as;
+    
     if (fcb->debug_desc)
         return fcb->debug_desc;
     
@@ -1800,8 +1804,22 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     if (!fcb->debug_desc)
         return L"(memory error)";
     
-    // FIXME
-//     swprintf(fcb->debug_desc, L"subvol %llx, inode %llx", fcb->subvol->id, fcb->inode);
+    // I know this is pretty hackish...
+    // GCC doesn't like %llx in sprintf, and MSVC won't let us use swprintf
+    // without the CRT, which breaks drivers.
+    
+    sprintf(s, "subvol %x, inode %x", (UINT32)fcb->subvol->id, (UINT32)fcb->inode);
+    
+    as.Buffer = s;
+    as.Length = as.MaximumLength = strlen(s);
+    
+    us.Buffer = fcb->debug_desc;
+    us.MaximumLength = 60 * sizeof(WCHAR);
+    us.Length = 0;
+    
+    RtlAnsiStringToUnicodeString(&us, &as, FALSE);
+    
+    us.Buffer[us.Length / sizeof(WCHAR)] = 0;
     
     return fcb->debug_desc;
 }
