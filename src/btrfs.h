@@ -389,7 +389,7 @@ typedef struct {
     UINT64 root;
     UINT64 gen;
     UINT64 objid;
-    UINT64 count;
+    UINT32 count;
 } EXTENT_REF_V0;
 
 typedef struct {
