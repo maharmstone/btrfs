@@ -1257,6 +1257,8 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
+    *new_address = address;
+    
     return TRUE;
 }
 
