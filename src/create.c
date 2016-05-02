@@ -702,9 +702,9 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
         c = CONTAINING_RECORD(le, file_ref, list_entry);
         
         if (c->refcount > 0 && FsRtlAreNamesEqual(&c->filepart, name, TRUE, NULL)) {
-//             if (c->deleted) {
-//                 deleted = c;
-//             } else {
+            if (c->deleted) {
+                deleted = c;
+            } else {
 #ifdef DEBUG_FCB_REFCOUNTS
                 rc = InterlockedIncrement(&c->refcount);
                 WARN("fileref %p: refcount now %i (%S)\n", c, rc, file_desc_fileref(c));
@@ -712,18 +712,20 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
                 InterlockedIncrement(&c->refcount);
 #endif
                 return c;
-//             }
+            }
         }
         
         le = le->Flink;
     }
     
-//     if (deleted) {
-//         rc = InterlockedIncrement(&deleted->refcount);
-// #ifdef DEBUG_FCB_REFCOUNTS
-//         WARN("fcb %p: refcount now %i (%.*S)\n", deleted, rc, deleted->full_filename.Length / sizeof(WCHAR), deleted->full_filename.Buffer);
-// #endif
-//     }
+    if (deleted) {
+#ifdef DEBUG_FCB_REFCOUNTS
+        rc = InterlockedIncrement(&deleted->refcount);
+        WARN("fileref %p: refcount now %i (%S)\n", deleted, rc, file_desc_fileref(deleted));
+#else
+        InterlockedIncrement(&deleted->refcount);
+#endif
+    }
     
     return deleted;
 }
@@ -841,6 +843,64 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     }
     
     *pfcb = fcb;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr,
+                                UINT32 streamsize, UINT32 streamhash, fcb* parent, fcb** pfcb) {
+    fcb* fcb;
+    
+    if (!IsListEmpty(&subvol->fcbs)) {
+        LIST_ENTRY* le = subvol->fcbs.Flink;
+                                
+        while (le != &subvol->fcbs) {
+            fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
+            
+            if (fcb->inode == inode && fcb->ads && fcb->adsxattr.Length == xattr->Length &&
+                RtlCompareMemory(fcb->adsxattr.Buffer, xattr->Buffer, fcb->adsxattr.Length) == fcb->adsxattr.Length) {
+#ifdef DEBUG_FCB_REFCOUNTS
+                LONG rc = InterlockedIncrement(&fcb->refcount);
+                
+                WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
+#else
+                InterlockedIncrement(&fcb->refcount);
+#endif
+
+                *pfcb = fcb;
+                return STATUS_SUCCESS;
+            }
+                            
+            le = le->Flink;
+        }
+    }
+    
+    fcb = create_fcb();
+    if (!fcb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    fcb->Vcb = Vcb;
+    
+    fcb->subvol = parent->subvol;
+    fcb->inode = parent->inode;
+    fcb->type = parent->type;
+    fcb->ads = TRUE;
+    fcb->adssize = streamsize;
+    fcb->adshash = streamhash;
+    fcb->adsxattr = *xattr;
+    
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize.QuadPart = fcb->adssize;
+    fcb->Header.FileSize.QuadPart = fcb->adssize;
+    fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
+    
+    TRACE("stream found: size = %x, hash = %08x\n", fcb->adssize, fcb->adshash);
+    
+    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    
+    *pfcb = fcb;
+    
     return STATUS_SUCCESS;
 }
 
@@ -986,14 +1046,11 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         goto end;
                     }
                     
-                    fcb = create_fcb();
-                    if (!fcb) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamsize, streamhash, sf->fcb, &fcb);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("open_fcb_stream returned %08x\n", Status);
                         goto end;
                     }
-        
-                    fcb->Vcb = Vcb;
                     
                     sf2 = create_fileref();
                     if (!sf2) {
@@ -1020,28 +1077,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
                     }
                     
-#ifdef DEBUG_FCB_REFCOUNTS
-                    rc = InterlockedIncrement(&sf->fcb->refcount);
-                    WARN("fcb %p: refcount now %i (%S)\n", sf->fcb, rc, file_desc_fileref(sf));
-#else
-                    InterlockedIncrement(&sf->fcb->refcount);
-#endif
-                    
-                    fcb->subvol = sf->fcb->subvol;
-                    fcb->inode = sf->fcb->inode;
-                    fcb->type = sf->fcb->type;
-                    fcb->ads = TRUE;
-                    fcb->adssize = streamsize;
-                    fcb->adshash = streamhash;
-                    fcb->adsxattr = xattr;
-                    
-                    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-                    fcb->Header.AllocationSize.QuadPart = fcb->adssize;
-                    fcb->Header.FileSize.QuadPart = fcb->adssize;
-                    fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
-                    
-                    TRACE("stream found: size = %x, hash = %08x\n", fcb->adssize, fcb->adshash);
-                    
                     sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
                     
                     if (sf != Vcb->root_fileref)
@@ -1065,8 +1100,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
                     
                     // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
-                    
-                    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
 
                     sf2->parent = (struct _file_ref*)sf;
                     InsertTailList(&sf->children, &sf2->list_entry);
