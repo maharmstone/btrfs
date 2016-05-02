@@ -864,6 +864,12 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, file_ref* fil
     NTSTATUS Status;
     LIST_ENTRY dl;
     
+    if (fileref->fcb->inode_item.st_nlink > 1 && fileref->fcb->open_count > 1) {
+        WARN("not moving hard-linked inode across subvols when open more than once\n");
+        // FIXME - don't do this if only one fileref?
+        return STATUS_ACCESS_DENIED;
+    }
+    
     if (destsubvol->lastinode == 0)
         get_last_inode(Vcb, destsubvol);
     
@@ -959,13 +965,19 @@ static NTSTATUS STDCALL move_across_subvols(device_extension* Vcb, file_ref* fil
         }
     }
     
-    // FIXME - create new fcb on new subvol, and free old if no hardlink
-    
     fileref->fcb->inode = inode;
     fileref->fcb->subvol = destsubvol;
       
     fileref->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fileref->fcb->subvol->root_item.ctime = *now;
+    
+    RemoveEntryList(&fileref->fcb->list_entry);
+    InsertTailList(&fileref->fcb->subvol->fcbs, &fileref->fcb->list_entry);
+    
+    if (fileref->fcb->debug_desc) {
+        ExFreePool(fileref->fcb->debug_desc);
+        fileref->fcb->debug_desc = NULL;
+    }
     
     return STATUS_SUCCESS;
 }
