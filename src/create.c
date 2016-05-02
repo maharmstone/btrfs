@@ -2374,7 +2374,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         goto exit;
     }
     
-    if (NT_SUCCESS(Status) && fileref->fcb->deleted) {
+    if (NT_SUCCESS(Status) && fileref->deleted) {
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fileref);
         ExReleaseResourceLite(&Vcb->fcb_lock);
@@ -2416,7 +2416,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        TRACE("deleted = %s\n", fileref->fcb->deleted ? "TRUE" : "FALSE");
+        TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");
         
         sf = fileref;
         while (sf) {

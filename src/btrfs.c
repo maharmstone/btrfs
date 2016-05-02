@@ -1856,7 +1856,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     LARGE_INTEGER freq, time1, time2;
 #endif
     
-    if (fcb->deleted) {
+    if (fileref->deleted || fcb->deleted) {
         WARN("trying to delete already-deleted file\n");
         return STATUS_SUCCESS;
     }
@@ -2060,6 +2060,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     delete_tree_item(fcb->Vcb, &tp, rollback);
     TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     
+    fcb->deleted = TRUE;
+    
     // delete XATTR_ITEM (0x18)
     
     while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
@@ -2135,7 +2137,7 @@ success2:
 success:
     consider_write(fcb->Vcb);
     
-    fcb->deleted = TRUE;
+    fileref->deleted = TRUE;
     
     fcb->Header.AllocationSize.QuadPart = 0;
     fcb->Header.FileSize.QuadPart = 0;

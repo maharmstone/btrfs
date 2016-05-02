@@ -742,8 +742,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         return STATUS_NOT_A_DIRECTORY;
     }
     
-    if (fcb->deleted) {
-        ERR("parent FCB has been deleted\n");
+    if (fileref->deleted || fcb->deleted) {
+        ERR("parent has been deleted\n");
         return STATUS_FILE_DELETED;
     }
     

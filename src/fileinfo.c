@@ -1970,7 +1970,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     INODE_ITEM* ii;
     CC_FILE_SIZES ccfs;
     
-    if (fcb->deleted)
+    if (fileref ? fileref->deleted : fcb->deleted)
         return STATUS_FILE_CLOSED;
     
     if (fcb->ads)

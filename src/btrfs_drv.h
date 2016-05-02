@@ -131,6 +131,7 @@ typedef struct _file_ref {
     UNICODE_STRING full_filename;
     ULONG name_offset;
     BOOL delete_on_close;
+    BOOL deleted;
     LIST_ENTRY children;
     LONG refcount;
     struct _file_ref* parent;
