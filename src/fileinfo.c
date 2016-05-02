@@ -2071,102 +2071,114 @@ static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp
 }
 
 static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, LIST_ENTRY* rollback) {
-//     FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
-//     fcb *fcb = FileObject->FsContext, *tfofcb, *oldfcb = NULL;
-//     root* parsubvol;
-//     UINT64 parinode, dirpos;
-//     WCHAR* fn;
-//     ULONG fnlen, utf8len, disize;
-//     UNICODE_STRING fnus;
-//     ANSI_STRING utf8;
-//     NTSTATUS Status;
-//     UINT32 crc32;
-//     DIR_ITEM *di, *di2;
-//     LARGE_INTEGER time;
-//     BTRFS_TIME now;
-//     KEY searchkey;
-//     traverse_ptr tp;
-//     INODE_ITEM *ii, *fcbii;
+    FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
+    fcb *fcb = FileObject->FsContext, *tfofcb;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related;
+    root* parsubvol;
+    UINT64 parinode, dirpos;
+    WCHAR* fn;
+    ULONG fnlen, utf8len, disize;
+    UNICODE_STRING fnus;
+    ANSI_STRING utf8;
+    NTSTATUS Status;
+    UINT32 crc32;
+    DIR_ITEM *di, *di2;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    KEY searchkey;
+    traverse_ptr tp;
+    INODE_ITEM *ii, *fcbii;
     
-    return STATUS_NOT_SUPPORTED;
+    // FIXME - check fli length
+    // FIXME - don't ignore fli->RootDirectory
     
-//     // FIXME - check fli length
-//     // FIXME - don't ignore fli->RootDirectory
-//     
-//     TRACE("ReplaceIfExists = %x\n", fli->ReplaceIfExists);
-//     TRACE("RootDirectory = %p\n", fli->RootDirectory);
-//     TRACE("FileNameLength = %x\n", fli->FileNameLength);
-//     TRACE("FileName = %.*S\n", fli->FileNameLength / sizeof(WCHAR), fli->FileName);
-//     
-//     fn = fli->FileName;
-//     fnlen = fli->FileNameLength / sizeof(WCHAR);
-//     
-//     if (!tfo) {
-//         parsubvol = fcb->par->subvol;
-//         parinode = fcb->par->inode;
-//         tfofcb = NULL;
-//     } else {
-//         LONG i;
-//         
-//         tfofcb = tfo->FsContext;
-//         parsubvol = tfofcb->subvol;
-//         parinode = tfofcb->inode;
-//         
-//         for (i = fnlen - 1; i >= 0; i--) {
-//             if (fli->FileName[i] == '\\' || fli->FileName[i] == '/') {
-//                 fn = &fli->FileName[i+1];
-//                 fnlen = (fli->FileNameLength / sizeof(WCHAR)) - i - 1;
-//                 break;
-//             }
-//         }
-//     }
-//     
-//     utf8.Buffer = NULL;
-//     
-//     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-//         WARN("tried to create hard link on directory\n");
-//         Status = STATUS_FILE_IS_A_DIRECTORY;
-//         goto end;
-//     }
-//     
-//     if (fcb->ads) {
-//         WARN("tried to create hard link on stream\n");
-//         Status = STATUS_INVALID_PARAMETER;
-//         goto end;
-//     }
-//     
-//     fnus.Buffer = fn;
-//     fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
-//     
-//     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
-//     
-//     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
-//     if (!NT_SUCCESS(Status))
-//         goto end;
-//     
-//     utf8.MaximumLength = utf8.Length = utf8len;
-//     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
-//     if (!utf8.Buffer) {
-//         ERR("out of memory\n");
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         goto end;
-//     }
-//     
-//     Status = RtlUnicodeToUTF8N(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
-//     if (!NT_SUCCESS(Status))
-//         goto end;
-//     
-//     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, (ULONG)utf8.Length);
-// 
-//     Status = get_fcb(Vcb, &oldfcb, &fnus, tfo ? tfo->FsContext : NULL, FALSE, NULL);
-// 
-//     if (NT_SUCCESS(Status)) {
-//         WARN("destination file %.*S already exists\n", oldfcb->full_filename.Length / sizeof(WCHAR), oldfcb->full_filename.Buffer);
-//         
+    TRACE("ReplaceIfExists = %x\n", fli->ReplaceIfExists);
+    TRACE("RootDirectory = %p\n", fli->RootDirectory);
+    TRACE("FileNameLength = %x\n", fli->FileNameLength);
+    TRACE("FileName = %.*S\n", fli->FileNameLength / sizeof(WCHAR), fli->FileName);
+    
+    fn = fli->FileName;
+    fnlen = fli->FileNameLength / sizeof(WCHAR);
+    
+    if (!tfo) {
+        if (!fileref || !fileref->parent) {
+            ERR("no fileref set and no directory given\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        parsubvol = fileref->parent->fcb->subvol;
+        parinode = fileref->parent->fcb->inode;
+        tfofcb = NULL;
+    } else {
+        LONG i;
+        
+        tfofcb = tfo->FsContext;
+        parsubvol = tfofcb->subvol;
+        parinode = tfofcb->inode;
+        
+        for (i = fnlen - 1; i >= 0; i--) {
+            if (fli->FileName[i] == '\\' || fli->FileName[i] == '/') {
+                fn = &fli->FileName[i+1];
+                fnlen = (fli->FileNameLength / sizeof(WCHAR)) - i - 1;
+                break;
+            }
+        }
+    }
+    
+    utf8.Buffer = NULL;
+    
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        WARN("tried to create hard link on directory\n");
+        Status = STATUS_FILE_IS_A_DIRECTORY;
+        goto end;
+    }
+    
+    if (fcb->ads) {
+        WARN("tried to create hard link on stream\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    fnus.Buffer = fn;
+    fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
+    
+    TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+    
+    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+        goto end;
+    
+    utf8.MaximumLength = utf8.Length = utf8len;
+    utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
+    if (!utf8.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    Status = RtlUnicodeToUTF8N(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+        goto end;
+    
+    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, (ULONG)utf8.Length);
+    
+    if (tfo && tfo->FsContext2) {
+        struct _ccb* relatedccb = tfo->FsContext2;
+        
+        related = relatedccb->fileref;
+    } else
+        related = NULL;
+
+    Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
+
+    if (NT_SUCCESS(Status)) {
+        WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
+        
 //         if (fcb != oldfcb && !(oldfcb->open_count == 0 && oldfcb->deleted)) {
 //             if (!fli->ReplaceIfExists) {
-//                 Status = STATUS_OBJECT_NAME_COLLISION;
-//                 goto end;
+                Status = STATUS_OBJECT_NAME_COLLISION;
+                goto end;
 //             } else if (oldfcb->open_count >= 1 && !oldfcb->deleted) {
 //                 WARN("trying to overwrite open file\n");
 //                 Status = STATUS_ACCESS_DENIED;
@@ -2179,20 +2191,14 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
 //                 goto end;
 //             }
 //         }
-//     }
-//     
-//     if (has_open_children(fcb)) {
-//         WARN("trying to rename file with open children\n");
-//         Status = STATUS_ACCESS_DENIED;
-//         goto end;
-//     }
-//     
-//     if (fcb->subvol != parsubvol) {
-//         WARN("can't create hard link over subvolume boundary\n");
-//         Status = STATUS_INVALID_PARAMETER;
-//         goto end;
-//     }
-//     
+    }
+    
+    if (fcb->subvol != parsubvol) {
+        WARN("can't create hard link over subvolume boundary\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
 //     if (oldfcb) {
 //         Status = delete_fcb(oldfcb, NULL, rollback);
 //         if (!NT_SUCCESS(Status)) {
@@ -2200,183 +2206,183 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
 //             goto end;
 //         }
 //     }
-//     
-//     // add DIR_ITEM
-//     
-//     disize = sizeof(DIR_ITEM) - 1 + utf8len;
-//     
-//     di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-//     if (!di) {
-//         ERR("out of memory\n");
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         goto end;
-//     }
-//     
-//     di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-//     if (!di2) {
-//         ERR("out of memory\n");
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         ExFreePool(di);
-//         goto end;
-//     }
-//     
-//     di->key.obj_id = fcb->inode;
-//     di->key.obj_type = TYPE_INODE_ITEM;
-//     di->key.offset = 0;
-//     di->transid = Vcb->superblock.generation;
-//     di->m = 0;
-//     di->n = utf8len;
-//     di->type = fcb->type;
-//     RtlCopyMemory(di->name, utf8.Buffer, di->n);
-//     RtlCopyMemory(di2, di, disize);
-//     
-//     Status = add_dir_item(Vcb, fcb->subvol, parinode, crc32, di, disize, rollback);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("add_dir_item returned %08x\n", Status);
-//         ExFreePool(di);
-//         ExFreePool(di2);
-//         goto end;
-//     }
-//     
-//     // add DIR_INDEX
-//     
-//     dirpos = find_next_dir_index(Vcb, fcb->subvol, parinode);
-//     if (dirpos == 0) {
-//         ERR("find_next_dir_index failed\n");
-//         Status = STATUS_INTERNAL_ERROR;
-//         ExFreePool(di2);
-//         goto end;
-//     }
-//     
-//     if (!insert_tree_item(Vcb, fcb->subvol, parinode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, rollback)) {
-//         ERR("insert_tree_item failed\n");
-//         Status = STATUS_INTERNAL_ERROR;
-//         ExFreePool(di2);
-//         goto end;
-//     }
-//     
-//     // add INODE_REF
-//     
-//     Status = add_inode_ref(Vcb, fcb->subvol, fcb->inode, parinode, dirpos, &utf8, rollback);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("add_inode_ref returned %08x\n", Status);
-//         goto end;
-//     }
-//     
-//     // update inode's INODE_ITEM
-//     
-//     KeQuerySystemTime(&time);
-//     win_time_to_unix(time, &now);
-//     
-//     fcb->inode_item.transid = Vcb->superblock.generation;
-//     fcb->inode_item.sequence++;
-//     fcb->inode_item.st_nlink++;
-//     fcb->inode_item.st_ctime = now;
-//     
-//     searchkey.obj_id = fcb->inode;
-//     searchkey.obj_type = TYPE_INODE_ITEM;
-//     searchkey.offset = 0xffffffffffffffff;
-//     
-//     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         goto end;
-//     }
-//     
-//     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//         delete_tree_item(Vcb, &tp, rollback);
-//         searchkey.offset = tp.item->key.offset;
-//     } else
-//         searchkey.offset = 0;
-//     
-//     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-//     if (!ii) {
-//         ERR("out of memory\n");
-//         goto end;
-//     }
-//     
-//     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-//     
-//     if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
-//         ERR("insert_tree_item failed\n");
-//         Status = STATUS_INTERNAL_ERROR;
-//         goto end;
-//     }
-//     
-//     // update parent's INODE_ITEM
-//     
-//     searchkey.obj_id = parinode;
-//     searchkey.obj_type = TYPE_INODE_ITEM;
-//     searchkey.offset = 0xffffffffffffffff;
-//     
-//     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         goto end;
-//     }
-//     
-//     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//         delete_tree_item(Vcb, &tp, rollback);
-//         searchkey.offset = tp.item->key.offset;
-//     } else {
-//         ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", parinode, fcb->subvol->id);
-//         Status = STATUS_INTERNAL_ERROR;
-//         goto end;
-//     }
-//     
-//     if (tfofcb)
-//         fcbii = &tfofcb->inode_item;
-//     else {
-//         if (tp.item->size < sizeof(INODE_ITEM)) {
-//             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-//             Status = STATUS_INTERNAL_ERROR;
-//             goto end;
-//         }
-//         
-//         fcbii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-//         if (!fcbii) {
-//             ERR("out of memory\n");
-//             goto end;
-//         }
-//         
-//         RtlCopyMemory(fcbii, tp.item->data, sizeof(INODE_ITEM));
-//     }
-//     
-//     fcbii->transid = Vcb->superblock.generation;
-//     fcbii->st_size += 2 * utf8len;
-//     fcbii->sequence++;
-//     fcbii->st_ctime = now;
-//     
-//     if (tfofcb) {
-//         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-//         if (!ii) {
-//             ERR("out of memory\n");
-//             goto end;
-//         }
-//         
-//         RtlCopyMemory(ii, fcbii, sizeof(INODE_ITEM));
-//     } else
-//         ii = fcbii;
-//     
-//     if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
-//         ERR("insert_tree_item failed\n");
-//         Status = STATUS_INTERNAL_ERROR;
-//         ExFreePool(ii);
-//         goto end;
-//     }
-//     
-//     // FIXME - notification
-// 
-//     Status = STATUS_SUCCESS;
-//     
-// end:
-//     if (utf8.Buffer)
-//         ExFreePool(utf8.Buffer);
-//     
-//     if (oldfcb)
-//         free_fcb(oldfcb);
-//     
-//     return Status;
+    
+    // add DIR_ITEM
+    
+    disize = sizeof(DIR_ITEM) - 1 + utf8len;
+    
+    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+    if (!di2) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(di);
+        goto end;
+    }
+    
+    di->key.obj_id = fcb->inode;
+    di->key.obj_type = TYPE_INODE_ITEM;
+    di->key.offset = 0;
+    di->transid = Vcb->superblock.generation;
+    di->m = 0;
+    di->n = utf8len;
+    di->type = fcb->type;
+    RtlCopyMemory(di->name, utf8.Buffer, di->n);
+    RtlCopyMemory(di2, di, disize);
+    
+    Status = add_dir_item(Vcb, fcb->subvol, parinode, crc32, di, disize, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_dir_item returned %08x\n", Status);
+        ExFreePool(di);
+        ExFreePool(di2);
+        goto end;
+    }
+    
+    // add DIR_INDEX
+    
+    dirpos = find_next_dir_index(Vcb, fcb->subvol, parinode);
+    if (dirpos == 0) {
+        ERR("find_next_dir_index failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        ExFreePool(di2);
+        goto end;
+    }
+    
+    if (!insert_tree_item(Vcb, fcb->subvol, parinode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        ExFreePool(di2);
+        goto end;
+    }
+    
+    // add INODE_REF
+    
+    Status = add_inode_ref(Vcb, fcb->subvol, fcb->inode, parinode, dirpos, &utf8, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_inode_ref returned %08x\n", Status);
+        goto end;
+    }
+    
+    // update inode's INODE_ITEM
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
+    fcb->inode_item.st_nlink++;
+    fcb->inode_item.st_ctime = now;
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        delete_tree_item(Vcb, &tp, rollback);
+        searchkey.offset = tp.item->key.offset;
+    } else
+        searchkey.offset = 0;
+    
+    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!ii) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
+    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
+    
+    if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    // update parent's INODE_ITEM
+    
+    searchkey.obj_id = parinode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        delete_tree_item(Vcb, &tp, rollback);
+        searchkey.offset = tp.item->key.offset;
+    } else {
+        ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", parinode, fcb->subvol->id);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    if (tfofcb)
+        fcbii = &tfofcb->inode_item;
+    else {
+        if (tp.item->size < sizeof(INODE_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        fcbii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!fcbii) {
+            ERR("out of memory\n");
+            goto end;
+        }
+        
+        RtlCopyMemory(fcbii, tp.item->data, sizeof(INODE_ITEM));
+    }
+    
+    fcbii->transid = Vcb->superblock.generation;
+    fcbii->st_size += 2 * utf8len;
+    fcbii->sequence++;
+    fcbii->st_ctime = now;
+    
+    if (tfofcb) {
+        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!ii) {
+            ERR("out of memory\n");
+            goto end;
+        }
+        
+        RtlCopyMemory(ii, fcbii, sizeof(INODE_ITEM));
+    } else
+        ii = fcbii;
+    
+    if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        ExFreePool(ii);
+        goto end;
+    }
+    
+    // FIXME - notification
+
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (utf8.Buffer)
+        ExFreePool(utf8.Buffer);
+    
+    if (oldfileref)
+        free_fileref(oldfileref);
+    
+    return Status;
 }
 
 NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
