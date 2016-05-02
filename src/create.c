@@ -744,7 +744,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
 #ifdef DEBUG_FCB_REFCOUNTS
                 LONG rc = InterlockedIncrement(&fcb->refcount);
                 
-                WARN("fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
+                WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
 #else
                 InterlockedIncrement(&fcb->refcount);
 #endif
@@ -764,11 +764,6 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     }
     
     fcb->Vcb = Vcb;
-    
-    parent->refcount++;
-#ifdef DEBUG_FCB_REFCOUNTS
-    WARN("fcb %p: refcount now %i (%.*S)\n", parent, parent->refcount, parent->full_filename.Length / sizeof(WCHAR), parent->full_filename.Buffer);
-#endif
     
     fcb->subvol = subvol;
     fcb->inode = inode;
