@@ -1797,6 +1797,11 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     RtlAppendUnicodeStringToString(&fileref->full_filename, &fileref->filepart);
     
+    if (fileref->debug_desc) {
+        ExFreePool(fileref->debug_desc);
+        fileref->debug_desc = NULL;
+    }
+    
     send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                               across_directories ? FILE_ACTION_ADDED : FILE_ACTION_RENAMED_NEW_NAME);
     
