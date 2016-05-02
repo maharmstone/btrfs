@@ -196,6 +196,18 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
             return STATUS_INTERNAL_ERROR;
         }
         
+        if (secttype == TYPE_SHARED_DATA_REF) {
+            TRACE("found shared data extent at %llx, converting\n", tp.item->key.obj_id);
+            
+            Status = convert_shared_data_extent(Vcb, address, size, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("convert_shared_data_extent returned %08x\n", Status);
+                return Status;
+            }
+            
+            return increase_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
+        }
+        
         // If inline extent already present, increase refcount and return
         
         if (secttype == type) {
