@@ -1751,6 +1751,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 #ifdef DEBUG_FCB_REFCOUNTS
         LONG rc;
 #endif
+        
+        RemoveEntryList(&fileref->list_entry);
       
         fileref->parent = (struct _file_ref*)related;
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1759,6 +1761,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 #else
         InterlockedIncrement(&related->refcount);
 #endif
+        
+        InsertTailList(&related->children, &fileref->list_entry);
         
         free_fileref(oldpar);
     }
