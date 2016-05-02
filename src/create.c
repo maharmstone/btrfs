@@ -2269,7 +2269,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     ULONG RequestedDisposition;
     ULONG options;
     NTSTATUS Status;
-//     fcb* fcb;
     ccb* ccb;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
@@ -2511,80 +2510,82 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
-//         if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
-//             ULONG defda;
-//             
-//             if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && fcb->atts & FILE_ATTRIBUTE_READONLY) {
-//                 WARN("cannot overwrite readonly file\n");
+        if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
+            ULONG defda;
+            
+            if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+                WARN("cannot overwrite readonly file\n");
+                Status = STATUS_ACCESS_DENIED;
+                free_fileref(fileref);
+                goto exit;
+            }
+    
+            // FIXME - where did we get this from?
+//             if (fcb->refcount > 1) {
+//                 WARN("cannot overwrite open file (fcb = %p, refcount = %u)\n", fcb, fcb->refcount);
 //                 Status = STATUS_ACCESS_DENIED;
 //                 free_fcb(fcb);
 //                 goto exit;
 //             }
-//     
-//             // FIXME - where did we get this from?
-// //             if (fcb->refcount > 1) {
-// //                 WARN("cannot overwrite open file (fcb = %p, refcount = %u)\n", fcb, fcb->refcount);
-// //                 Status = STATUS_ACCESS_DENIED;
-// //                 free_fcb(fcb);
-// //                 goto exit;
-// //             }
-//             
-//             // FIXME - make sure not ADS!
-//             Status = truncate_file(fcb, fcb->inode_item.st_size, rollback);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("truncate_file returned %08x\n", Status);
-//                 free_fcb(fcb);
-//                 goto exit;
-//             }
-//             
-//             if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-//                 Status = extend_file(fcb, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
-//                 
-//                 if (!NT_SUCCESS(Status)) {
-//                     ERR("extend_file returned %08x\n", Status);
-//                     return Status;
-//                 }
-//             }
-//             
-//             Status = update_inode_item(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, rollback);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("update_inode_item returned %08x\n", Status);
-//                 free_fcb(fcb);
-//                 goto exit;
-//             }
-//             
-//             defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fcb->filepart.Length > 0 && fcb->filepart.Buffer[0] == '.', TRUE);
-//             
-//             if (RequestedDisposition == FILE_SUPERSEDE)
-//                 fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
-//             else
-//                 fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
-//             
-//             if (Stack->Parameters.Create.FileAttributes != defda) {
-//                 char val[64];
-//             
-//                 sprintf(val, "0x%x", Stack->Parameters.Create.FileAttributes);
-//             
-//                 Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
-//                 if (!NT_SUCCESS(Status)) {
-//                     ERR("set_xattr returned %08x\n", Status);
-//                     free_fcb(fcb);
-//                     goto exit;
-//                 }
-//             } else
-//                 delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
-//             
-//             // FIXME - truncate streams
-//             // FIXME - do we need to alter parent directory's times?
-//             // FIXME - send notifications
-//             
-//             Status = consider_write(fcb->Vcb);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("consider_write returned %08x\n", Status);
-//                 free_fcb(fcb);
-//                 goto exit;
-//             }
-//         }
+            
+            // FIXME - make sure not ADS!
+            Status = truncate_file(fileref->fcb, fileref->fcb->inode_item.st_size, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("truncate_file returned %08x\n", Status);
+                free_fileref(fileref);
+                goto exit;
+            }
+            
+            if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+                Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("extend_file returned %08x\n", Status);
+                    free_fileref(fileref);
+                    goto exit;
+                }
+            }
+            
+            Status = update_inode_item(Vcb, fileref->fcb->subvol, fileref->fcb->inode, &fileref->fcb->inode_item, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_inode_item returned %08x\n", Status);
+                free_fileref(fileref);
+                goto exit;
+            }
+            
+            defda = get_file_attributes(Vcb, &fileref->fcb->inode_item, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
+                                        fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
+            
+            if (RequestedDisposition == FILE_SUPERSEDE)
+                fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+            else
+                fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+            
+            if (Stack->Parameters.Create.FileAttributes != defda) {
+                char val[64];
+            
+                sprintf(val, "0x%x", Stack->Parameters.Create.FileAttributes);
+            
+                Status = set_xattr(Vcb, fileref->fcb->subvol, fileref->fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("set_xattr returned %08x\n", Status);
+                    free_fileref(fileref);
+                    goto exit;
+                }
+            } else
+                delete_xattr(Vcb, fileref->fcb->subvol, fileref->fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
+            
+            // FIXME - truncate streams
+            // FIXME - do we need to alter parent directory's times?
+            // FIXME - send notifications
+            
+            Status = consider_write(Vcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("consider_write returned %08x\n", Status);
+                free_fileref(fileref);
+                goto exit;
+            }
+        }
     
         if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
