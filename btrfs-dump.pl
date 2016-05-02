@@ -353,40 +353,46 @@ sub dump_item {
 		printf("%s id=%x seq=%x n=%x name=%s", $type==0x90?"root_backref":"root_ref", $b[0], $b[1], $b[2], $name);
 	} elsif ($type == 0xa8 || $type == 0xa9) { # EXTENT_ITEM_KEY or METADATA_ITEM_KEY
 		# FIXME - TREE_BLOCK is out by one byte (why?)
-		@b=unpack("QQQ",$s);
-		printf("%s refcount=%x gen=%x flags=%x ",$type == 0xa9 ? "metadata_item_key" : "extent_item_key",$b[0],$b[1],$b[2]);
-		
-		$s=substr($s,24);
-		
-		my $refcount=$b[0];
-		if ($b[2]&2 && $type != 0xa9) {
-			@b=unpack("QCQC",$s);
-			printf("key=%x,%x,%x level=%u ",$b[0],$b[1],$b[2],$b[3]);
-			$s=substr($s,18);
-		}
-		
-		while (length($s)>0) {
-			my $irt=unpack("C",$s);
-			$s = substr($s,1);
+		if (length($s)==4) {
+			@b=unpack("L",$s);
+			$s=substr($s,4);
+			printf("extent_item_v0 refcount=%x",$b[0]);
+		} else {
+			@b=unpack("QQQ",$s);
+			printf("%s refcount=%x gen=%x flags=%x ",$type == 0xa9 ? "metadata_item_key" : "extent_item_key",$b[0],$b[1],$b[2]);
 			
-			if ($irt == 0xb0) {
-				@b=unpack("Q",$s);
-				$s=substr($s,8);
-				printf("tree_block_ref root=%x ",$b[0]);
-			} elsif ($irt == 0xb2) {
-				@b=unpack("QQQv",$s);
-				$s=substr($s,28);
-				printf("extent_data_ref root=%x objid=%x offset=%x count=%x ",@b);
-				$refcount-=$b[3]-1;
-			} elsif ($irt == 0xb8) {
-				@b=unpack("Qv",$s);
-				$s=substr($s,12);
-				printf("shared_data_ref offset=%x count=%x ",@b);
-				$refcount-=$b[1]-1;
-			} else {
-				printf("unknown %x (length %u)", $irt, length($s));
+			$s=substr($s,24);
+			
+			my $refcount=$b[0];
+			if ($b[2]&2 && $type != 0xa9) {
+				@b=unpack("QCQC",$s);
+				printf("key=%x,%x,%x level=%u ",$b[0],$b[1],$b[2],$b[3]);
+				$s=substr($s,18);
 			}
-			# FIXME - SHARED_BLOCK_REF
+			
+			while (length($s)>0) {
+				my $irt=unpack("C",$s);
+				$s = substr($s,1);
+				
+				if ($irt == 0xb0) {
+					@b=unpack("Q",$s);
+					$s=substr($s,8);
+					printf("tree_block_ref root=%x ",$b[0]);
+				} elsif ($irt == 0xb2) {
+					@b=unpack("QQQv",$s);
+					$s=substr($s,28);
+					printf("extent_data_ref root=%x objid=%x offset=%x count=%x ",@b);
+					$refcount-=$b[3]-1;
+				} elsif ($irt == 0xb8) {
+					@b=unpack("Qv",$s);
+					$s=substr($s,12);
+					printf("shared_data_ref offset=%x count=%x ",@b);
+					$refcount-=$b[1]-1;
+				} else {
+					printf("unknown %x (length %u)", $irt, length($s));
+				}
+				# FIXME - SHARED_BLOCK_REF
+			}
 		}
 	} elsif ($type == 0xb2) {
 		@b=unpack("QQQv",$s);
