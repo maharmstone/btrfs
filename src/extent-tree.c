@@ -964,7 +964,7 @@ NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT6
     LIST_ENTRY extent_refs;
     LIST_ENTRY *le, *next_le;
     EXTENT_ITEM* ei;
-    UINT64 eiflags;
+    UINT64 eiflags, inline_rc;
     UINT8* siptr;
     ULONG len;
     NTSTATUS Status;
@@ -995,6 +995,7 @@ NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT6
     
     InitializeListHead(&extent_refs);
     
+    inline_rc = 0;
     siptr = (UINT8*)&ei[1];
     
     do {
@@ -1037,11 +1038,57 @@ NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT6
         
         siptr += extlen;
         len -= extlen + 1;
+        
+        inline_rc += get_extent_data_refcount(er->type, er->data);
     } while (len > 0);
     
     delete_tree_item(Vcb, &tp, rollback);
     
-    // FIXME - also fetch and delete non-inline refs
+    if (inline_rc < ei->refcount) {
+        BOOL b;
+        traverse_ptr next_tp;
+        
+        do {
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+            
+            if (tp.item->key.obj_id == address) {
+                ULONG extlen;
+                
+                extlen = get_extent_data_len(tp.item->key.obj_type);
+                
+                if (extlen != 0 && tp.item->size >= extlen) {
+                    extent_ref* er = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
+                    if (!er) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    er->type = tp.item->key.obj_type;
+                    
+                    er->data = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
+                    if (!er->data) {
+                        ERR("out of memory\n");
+                        ExFreePool(er);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    RtlCopyMemory(er->data, siptr+1, extlen);
+                    er->allocated = TRUE;
+                    
+                    InsertTailList(&extent_refs, &er->list_entry);
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                }
+            }
+            
+            if (b) {
+                tp = next_tp;
+                
+                if (tp.item->key.obj_id > address)
+                    break;
+            }
+        } while (b);
+    }
     
     le = extent_refs.Flink;
     while (le != &extent_refs) {
