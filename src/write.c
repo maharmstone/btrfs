@@ -6324,7 +6324,15 @@ failure:
 // }
 #endif
 
-NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, LIST_ENTRY* rollback) {
+static void STDCALL deferred_write_callback(void* context1, void* context2) {
+    PIRP Irp = context1;
+    device_extension* Vcb = context2;
+    
+    add_thread_job(Vcb, Irp);
+}
+
+NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
+                     BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     KEY searchkey;
@@ -6372,6 +6380,15 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
+    
+    if (!no_cache && !CcCanIWrite(FileObject, *length, wait, deferred_write)) {
+        CcDeferWrite(FileObject, (PCC_POST_DEFERRED_WRITE)deferred_write_callback, Irp, Vcb, *length, deferred_write);
+
+        return STATUS_PENDING;
+    }
+    
+    if (!wait && no_cache)
+        return STATUS_PENDING;
     
     if (no_cache && !paging_io && FileObject->SectionObjectPointer->DataSectionObject) {
         IO_STATUS_BLOCK iosb;
@@ -6777,9 +6794,8 @@ end:
     return Status;
 }
 
-NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    device_extension* Vcb = DeviceObject->DeviceExtension;
     void* buf;
     NTSTATUS Status;
     LARGE_INTEGER offset = IrpSp->Parameters.Write.ByteOffset;
@@ -6831,10 +6847,13 @@ NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
 //     ERR("Irp->Flags = %x\n", Irp->Flags);
-    Status = write_file2(Vcb, Irp, offset, buf, &IrpSp->Parameters.Write.Length, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE, &rollback);
-    if (!NT_SUCCESS(Status)) {
-        if (Status != STATUS_PENDING)
-            ERR("write_file2 returned %08x\n", Status);
+    Status = write_file2(Vcb, Irp, offset, buf, &IrpSp->Parameters.Write.Length, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE,
+                         wait, deferred_write, &rollback);
+    
+    if (Status == STATUS_PENDING)
+        goto exit;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("write_file2 returned %08x\n", Status);
         goto exit;
     }
     
@@ -6887,7 +6906,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Irp->MdlAddress = NULL;
             Irp->IoStatus.Status = STATUS_SUCCESS;
         } else {
-            Status = write_file(DeviceObject, Irp);
+            Status = write_file(DeviceObject->DeviceExtension, Irp, IoIsOperationSynchronous(Irp), FALSE);
         }
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
@@ -6899,6 +6918,10 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     if (Status != STATUS_PENDING)
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    else {
+        IoMarkIrpPending(Irp);
+        add_thread_job(DeviceObject->DeviceExtension, Irp);
+    }
     
     if (top_level) 
         IoSetTopLevelIrp(NULL);

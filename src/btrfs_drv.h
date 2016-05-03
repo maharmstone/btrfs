@@ -572,8 +572,9 @@ extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 // in write.c
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback);
-NTSTATUS write_file(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache, LIST_ENTRY* rollback);
+NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write);
+NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
+                     BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback);
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
 NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);

@@ -11,9 +11,9 @@ static void do_read_job(PIRP Irp) {
 
     Irp->IoStatus.Status = Status;
     
-    // fastfat doesn't do this, but the Wine ntdll file test seems to think we ought to
-    if (Irp->UserIosb)
-        *Irp->UserIosb = Irp->IoStatus;
+//     // fastfat doesn't do this, but the Wine ntdll file test seems to think we ought to
+//     if (Irp->UserIosb)
+//         *Irp->UserIosb = Irp->IoStatus;
     
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
@@ -25,12 +25,36 @@ static void do_read_job(PIRP Irp) {
         IoSetTopLevelIrp(NULL);
 }
 
-static void do_job(LIST_ENTRY* le) {
+static void do_write_job(device_extension* Vcb, PIRP Irp) {
+    BOOL top_level = is_top_level(Irp);
+    NTSTATUS Status;
+    
+    try {
+        Status = write_file(Vcb, Irp, TRUE, TRUE);
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        Status = GetExceptionCode();
+    }
+    
+    Irp->IoStatus.Status = Status;
+
+    TRACE("wrote %u bytes\n", Irp->IoStatus.Information);
+    
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
+    if (top_level) 
+        IoSetTopLevelIrp(NULL);
+    
+    TRACE("returning %08x\n", Status);
+}
+
+static void do_job(drv_thread* thread, LIST_ENTRY* le) {
     thread_job* tj = CONTAINING_RECORD(le, thread_job, list_entry);
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(tj->Irp);
     
     if (IrpSp->MajorFunction == IRP_MJ_READ) {
         do_read_job(tj->Irp);
+    } else if (IrpSp->MajorFunction == IRP_MJ_WRITE) {
+        do_write_job(thread->DeviceObject->DeviceExtension, tj->Irp);
     } else {
         ERR("unsupported major function %x\n", IrpSp->MajorFunction);
         tj->Irp->IoStatus.Status = STATUS_INTERNAL_ERROR;
@@ -70,7 +94,7 @@ void STDCALL worker_thread(void* context) {
             
             KeReleaseSpinLock(&thread->spin_lock, irql);
             
-            do_job(le);
+            do_job(thread, le);
         }
 
         FsRtlExitFileSystem();
