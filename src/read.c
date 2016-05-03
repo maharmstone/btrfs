@@ -515,13 +515,135 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS do_read(PDEVICE_OBJECT DeviceObject, PIRP Irp, BOOL wait, ULONG* bytes_read) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    UINT8* data;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
-    UINT64 start;
-    ULONG length, bytes_read;
+    UINT8* data;
+    ULONG length;
+    UINT64 start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
+    length = IrpSp->Parameters.Read.Length;
+    *bytes_read = 0;
+    
+    if (!fcb || !fcb->Vcb || !fcb->subvol)
+        return STATUS_INTERNAL_ERROR;
+    
+    TRACE("file = %S (fcb = %p)\n", file_desc(FileObject), fcb);
+    TRACE("offset = %llx, length = %x\n", start, length);
+    TRACE("paging_io = %s, no cache = %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE", Irp->Flags & IRP_NOCACHE ? "TRUE" : "FALSE");
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY)
+        return STATUS_INVALID_DEVICE_REQUEST;
+    
+    if (!(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForReadAccess(&fcb->lock, Irp)) {
+        WARN("tried to read locked region\n");
+        return STATUS_FILE_LOCK_CONFLICT;
+    }
+    
+    if (length == 0) {
+        TRACE("tried to read zero bytes\n");
+        return STATUS_SUCCESS;
+    }
+    
+    if (start >= fcb->Header.FileSize.QuadPart) {
+        TRACE("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
+        return STATUS_END_OF_FILE;
+    }
+    
+    TRACE("FileObject %p fcb %p FileSize = %llx st_size = %llx (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
+//     int3;
+    
+    if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
+        data = map_user_buffer(Irp);
+        
+        if (Irp->MdlAddress && !data) {
+            ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        if (length + start > fcb->Header.ValidDataLength.QuadPart) {
+            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
+            length = fcb->Header.ValidDataLength.QuadPart - start;
+        }
+    }
+        
+    if (!(Irp->Flags & IRP_NOCACHE)) {
+        NTSTATUS Status = STATUS_SUCCESS;
+        
+        try {
+            if (!FileObject->PrivateCacheMap) {
+                CC_FILE_SIZES ccfs;
+                
+                ccfs.AllocationSize = fcb->Header.AllocationSize;
+                ccfs.FileSize = fcb->Header.FileSize;
+                ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+                
+                TRACE("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
+                            ccfs.AllocationSize.QuadPart, ccfs.FileSize.QuadPart, ccfs.ValidDataLength.QuadPart);
+                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, FileObject);
+
+                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+            }
+            
+            if (IrpSp->MinorFunction & IRP_MN_MDL) {
+                CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
+            } else {
+                TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+                TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
+                    TRACE("CcCopyRead could not wait\n");
+                    
+                    IoMarkIrpPending(Irp);
+                    return STATUS_PENDING;
+                }
+                TRACE("CcCopyRead finished\n");
+            }
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+        
+        if (NT_SUCCESS(Status)) {
+            Status = Irp->IoStatus.Status;
+            *bytes_read = Irp->IoStatus.Information;
+        } else
+            ERR("EXCEPTION - %08x\n", Status);
+        
+        return Status;
+    } else {
+        NTSTATUS Status;
+        
+        if (!(Irp->Flags & IRP_PAGING_IO) && FileObject->SectionObjectPointer->DataSectionObject) {
+            IO_STATUS_BLOCK iosb;
+            
+            CcFlushCache(FileObject->SectionObjectPointer, &IrpSp->Parameters.Read.ByteOffset, length, &iosb);
+            
+            if (!NT_SUCCESS(iosb.Status)) {
+                ERR("CcFlushCache returned %08x\n", iosb.Status);
+                return iosb.Status;
+            }
+        }
+        
+        acquire_tree_lock(fcb->Vcb, FALSE);
+    
+        if (fcb->ads)
+            Status = read_stream(fcb, data, start, length, bytes_read);
+        else
+            Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, bytes_read);
+        
+        release_tree_lock(fcb->Vcb, FALSE);
+        
+        TRACE("read %u bytes\n", *bytes_read);
+        
+        Irp->IoStatus.Information = *bytes_read;
+        
+        return Status;
+    }
+}
+
+NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    ULONG bytes_read;
     NTSTATUS Status;
     BOOL top_level;
     
@@ -543,139 +665,16 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
-    length = IrpSp->Parameters.Read.Length;
-    bytes_read = 0;
+    // FIXME - uncomment this when async is working
+//     wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
     
-    if (!fcb || !fcb->Vcb || !fcb->subvol) {
-        Status = STATUS_INTERNAL_ERROR; // FIXME - invalid param error?
-        goto exit;
-    }
-    
-    TRACE("file = %S (fcb = %p)\n", file_desc(FileObject), fcb);
-    TRACE("offset = %llx, length = %x\n", start, length);
-    TRACE("paging_io = %s, no cache = %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE", Irp->Flags & IRP_NOCACHE ? "TRUE" : "FALSE");
-
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        Status = STATUS_INVALID_DEVICE_REQUEST;
-        goto exit;
-    }
-    
-    if (!(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForReadAccess(&fcb->lock, Irp)) {
-        WARN("tried to read locked region\n");
-        Status = STATUS_FILE_LOCK_CONFLICT;
-        goto exit;
-    }
-    
-    if (length == 0) {
-        WARN("tried to read zero bytes\n");
-        Status = STATUS_SUCCESS;
-        goto exit;
-    }
-    
-    if (start >= fcb->Header.FileSize.QuadPart) {
-        TRACE("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
-        Status = STATUS_END_OF_FILE;
-        goto exit;
-    }
-    
-    TRACE("FileObject %p fcb %p FileSize = %llx st_size = %llx (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
-//     int3;
-    
-    if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
-        data = map_user_buffer(Irp);
-        
-        if (Irp->MdlAddress && !data) {
-            ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        if (length + start > fcb->Header.ValidDataLength.QuadPart) {
-            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
-            length = fcb->Header.ValidDataLength.QuadPart - start;
-        }
-    }
-        
-    if (!(Irp->Flags & IRP_NOCACHE)) {
-        BOOL wait;
-        
-        Status = STATUS_SUCCESS;
-        
-        try {
-            if (!FileObject->PrivateCacheMap) {
-                CC_FILE_SIZES ccfs;
-                
-                ccfs.AllocationSize = fcb->Header.AllocationSize;
-                ccfs.FileSize = fcb->Header.FileSize;
-                ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-                
-                TRACE("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
-                            ccfs.AllocationSize.QuadPart, ccfs.FileSize.QuadPart, ccfs.ValidDataLength.QuadPart);
-                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, FileObject);
-
-                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
-            }
-            
-            // FIXME - uncomment this when async is working
-    //         wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
-            wait = TRUE;
-            
-            if (IrpSp->MinorFunction & IRP_MN_MDL) {
-                CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
-            } else {
-                TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
-                TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
-                if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
-                    TRACE("CcCopyRead failed\n");
-                    
-                    IoMarkIrpPending(Irp);
-                    Status = STATUS_PENDING;
-                    goto exit;
-                }
-                TRACE("CcCopyRead finished\n");
-            }
-        } except (EXCEPTION_EXECUTE_HANDLER) {
-            Status = GetExceptionCode();
-        }
-        
-        if (NT_SUCCESS(Status)) {
-            Status = Irp->IoStatus.Status;
-            bytes_read = Irp->IoStatus.Information;
-        } else
-            ERR("EXCEPTION - %08x\n", Status);
-    } else {
-        if (!(Irp->Flags & IRP_PAGING_IO) && FileObject->SectionObjectPointer->DataSectionObject) {
-            IO_STATUS_BLOCK iosb;
-            
-            CcFlushCache(FileObject->SectionObjectPointer, &IrpSp->Parameters.Read.ByteOffset, length, &iosb);
-            
-            if (!NT_SUCCESS(iosb.Status)) {
-                ERR("CcFlushCache returned %08x\n", iosb.Status);
-                Status = iosb.Status;
-                goto exit;
-            }
-        }
-        
-        acquire_tree_lock(fcb->Vcb, FALSE);
-    
-        if (fcb->ads)
-            Status = read_stream(fcb, data, start, length, &bytes_read);
-        else
-            Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, &bytes_read);
-        
-        release_tree_lock(fcb->Vcb, FALSE);
-        
-        TRACE("read %u bytes\n", bytes_read);
-        
-        Irp->IoStatus.Information = bytes_read;
-    }
+    Status = do_read(DeviceObject, Irp, TRUE, &bytes_read);
     
 exit:
     Irp->IoStatus.Status = Status;
     
     if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
-        FileObject->CurrentByteOffset.QuadPart = start + (NT_SUCCESS(Status) ? bytes_read : 0);
+        FileObject->CurrentByteOffset.QuadPart = IrpSp->Parameters.Read.ByteOffset.QuadPart + (NT_SUCCESS(Status) ? bytes_read : 0);
     
     // fastfat doesn't do this, but the Wine ntdll file test seems to think we ought to
     if (Irp->UserIosb)
