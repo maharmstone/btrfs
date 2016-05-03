@@ -3381,7 +3381,7 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
         InitializeListHead(&Vcb->threads.threads[i].jobs);
         KeInitializeSpinLock(&Vcb->threads.threads[i].spin_lock);
         
-        Status = PsCreateSystemThread(&Vcb->threads.threads[i].handle, 0, NULL, NULL, NULL, flush_thread, &Vcb->threads.threads[i]);
+        Status = PsCreateSystemThread(&Vcb->threads.threads[i].handle, 0, NULL, NULL, NULL, worker_thread, &Vcb->threads.threads[i]);
         if (!NT_SUCCESS(Status)) {
             ULONG j;
             
@@ -3397,6 +3397,26 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
     }
     
     return STATUS_SUCCESS;
+}
+
+void add_thread_job(device_extension* Vcb, PIRP Irp) {
+    ULONG threadnum;
+    thread_job* tj;
+    
+    threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
+    
+    tj = ExAllocatePoolWithTag(NonPagedPool, sizeof(thread_job), ALLOC_TAG);
+    if (!tj) {
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        Irp->IoStatus.Information = 0;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        return;
+    }
+    
+    tj->Irp = Irp;
+    
+    ExInterlockedInsertTailList(&Vcb->threads.threads[threadnum].jobs, &tj->list_entry, &Vcb->threads.threads[threadnum].spin_lock);
+    KeSetEvent(&Vcb->threads.threads[threadnum].event, 0, FALSE);
 }
 
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {

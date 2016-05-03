@@ -515,7 +515,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS do_read(PDEVICE_OBJECT DeviceObject, PIRP Irp, BOOL wait, ULONG* bytes_read) {
+NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
@@ -612,6 +612,11 @@ static NTSTATUS do_read(PDEVICE_OBJECT DeviceObject, PIRP Irp, BOOL wait, ULONG*
     } else {
         NTSTATUS Status;
         
+        if (!wait) {
+            IoMarkIrpPending(Irp);
+            return STATUS_PENDING;
+        }
+        
         if (!(Irp->Flags & IRP_PAGING_IO) && FileObject->SectionObjectPointer->DataSectionObject) {
             IO_STATUS_BLOCK iosb;
             
@@ -641,6 +646,7 @@ static NTSTATUS do_read(PDEVICE_OBJECT DeviceObject, PIRP Irp, BOOL wait, ULONG*
 }
 
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     ULONG bytes_read;
@@ -665,10 +671,9 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    // FIXME - uncomment this when async is working
-//     wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
-    
-    Status = do_read(DeviceObject, Irp, TRUE, &bytes_read);
+    Status = do_read(Irp, IoIsOperationSynchronous(Irp), &bytes_read);
+    if (Status == STATUS_PENDING)
+        add_thread_job(Vcb, Irp);
     
 exit:
     Irp->IoStatus.Status = Status;

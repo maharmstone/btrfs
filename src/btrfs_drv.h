@@ -313,7 +313,7 @@ typedef struct {
 
 typedef struct {
     ULONG num_threads;
-    ULONG next_thread;
+    LONG next_thread;
     drv_thread* threads;
 } drv_threads;
 
@@ -478,6 +478,7 @@ BOOL is_file_name_valid(PUNICODE_STRING us);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
+void add_thread_job(device_extension* Vcb, PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -633,6 +634,7 @@ void STDCALL flush_thread(void* context);
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr);
+NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
 
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
