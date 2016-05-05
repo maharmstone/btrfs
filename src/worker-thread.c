@@ -74,9 +74,6 @@ void STDCALL worker_thread(void* context) {
     while (TRUE) {
         KeWaitForSingleObject(&thread->event, Executive, KernelMode, FALSE, NULL);
         
-        if (thread->quit)
-            break;
-        
         FsRtlEnterFileSystem();
         
         while (TRUE) {
@@ -96,6 +93,9 @@ void STDCALL worker_thread(void* context) {
             
             do_job(thread, le);
         }
+        
+        if (thread->quit)
+            break;
 
         FsRtlExitFileSystem();
     }
