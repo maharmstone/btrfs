@@ -478,7 +478,7 @@ BOOL is_file_name_valid(PUNICODE_STRING us);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
-void add_thread_job(device_extension* Vcb, PIRP Irp);
+BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -656,6 +656,8 @@ NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 s
 
 // in worker-thread.c
 void STDCALL worker_thread(void* context);
+void do_read_job(PIRP Irp);
+void do_write_job(device_extension* Vcb, PIRP Irp);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

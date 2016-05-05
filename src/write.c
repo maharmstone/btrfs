@@ -6328,7 +6328,8 @@ static void STDCALL deferred_write_callback(void* context1, void* context2) {
     PIRP Irp = context1;
     device_extension* Vcb = context2;
     
-    add_thread_job(Vcb, Irp);
+    if (!add_thread_job(Vcb, Irp))
+        do_write_job(Vcb, Irp);
 }
 
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
@@ -6920,7 +6921,9 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     else {
         IoMarkIrpPending(Irp);
-        add_thread_job(DeviceObject->DeviceExtension, Irp);
+        
+        if (!add_thread_job(DeviceObject->DeviceExtension, Irp))
+            do_write_job(DeviceObject->DeviceExtension, Irp);
     }
     
     if (top_level) 

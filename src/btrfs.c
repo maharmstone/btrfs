@@ -3358,24 +3358,29 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
     return STATUS_SUCCESS;
 }
 
-void add_thread_job(device_extension* Vcb, PIRP Irp) {
+BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     ULONG threadnum;
     thread_job* tj;
     
     threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
+    
+    if (Vcb->threads.threads[threadnum].quit)
+        return FALSE;
     
     tj = ExAllocatePoolWithTag(NonPagedPool, sizeof(thread_job), ALLOC_TAG);
     if (!tj) {
         Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
         Irp->IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return;
+        return FALSE;
     }
     
     tj->Irp = Irp;
     
     ExInterlockedInsertTailList(&Vcb->threads.threads[threadnum].jobs, &tj->list_entry, &Vcb->threads.threads[threadnum].spin_lock);
     KeSetEvent(&Vcb->threads.threads[threadnum].event, 0, FALSE);
+    
+    return TRUE;
 }
 
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {

@@ -672,8 +672,10 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     Status = do_read(Irp, IoIsOperationSynchronous(Irp), &bytes_read);
-    if (Status == STATUS_PENDING)
-        add_thread_job(Vcb, Irp);
+    if (Status == STATUS_PENDING) {
+        if (!add_thread_job(Vcb, Irp))
+            do_read_job(Irp);
+    }
     
 exit:
     Irp->IoStatus.Status = Status;

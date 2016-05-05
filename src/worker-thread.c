@@ -1,6 +1,6 @@
 #include "btrfs_drv.h"
 
-static void do_read_job(PIRP Irp) {
+void do_read_job(PIRP Irp) {
     NTSTATUS Status;
     ULONG bytes_read;
     BOOL top_level = is_top_level(Irp);
@@ -25,7 +25,7 @@ static void do_read_job(PIRP Irp) {
         IoSetTopLevelIrp(NULL);
 }
 
-static void do_write_job(device_extension* Vcb, PIRP Irp) {
+void do_write_job(device_extension* Vcb, PIRP Irp) {
     BOOL top_level = is_top_level(Irp);
     NTSTATUS Status;
     
