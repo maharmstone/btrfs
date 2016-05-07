@@ -27,6 +27,7 @@
 #endif
 #include "btrfs.h"
 #include <winioctl.h>
+#include <mountdev.h>
 
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
@@ -3940,10 +3941,47 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
 static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     part0_device_extension* p0de = DeviceObject->DeviceExtension;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    
+    TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+    
+    if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_MOUNTDEV_QUERY_UNIQUE_ID) {
+        MOUNTDEV_UNIQUE_ID* mduid;
+
+        if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID)) {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            Irp->IoStatus.Status = Status;
+            Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return Status;
+        }
+
+        mduid = Irp->AssociatedIrp.SystemBuffer;
+        mduid->UniqueIdLength = sizeof(BTRFS_UUID);
+
+        if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID) - 1 + mduid->UniqueIdLength) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            Irp->IoStatus.Status = Status;
+            Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return Status;
+        }
+
+        RtlCopyMemory(mduid->UniqueId, &p0de->uuid, sizeof(BTRFS_UUID));
+
+        Status = STATUS_SUCCESS;
+        Irp->IoStatus.Status = Status;
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID) - 1 + mduid->UniqueIdLength;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        
+        return Status;
+    }
     
     IoSkipCurrentIrpStackLocation(Irp);
     
     Status = IoCallDriver(p0de->devobj, Irp);
+    
+    TRACE("returning %08x\n", Status);
     
     return Status;
 }

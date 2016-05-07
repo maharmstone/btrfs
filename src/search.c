@@ -47,7 +47,8 @@ VOID WINAPI IopNotifyPlugPlayNotification(
 
 static const WCHAR devpath[] = {'\\','D','e','v','i','c','e',0};
 
-static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pardir, PUNICODE_STRING nameus, PDEVICE_OBJECT* NewDeviceObject) {
+static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pardir, PUNICODE_STRING nameus,
+                             BTRFS_UUID* uuid, PDEVICE_OBJECT* NewDeviceObject) {
     PDEVICE_OBJECT newdevobj;
     UNICODE_STRING name;
     NTSTATUS Status;
@@ -75,6 +76,7 @@ static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceO
     p0de = newdevobj->DeviceExtension;
     p0de->type = VCB_TYPE_PARTITION0;
     p0de->devobj = DeviceObject;
+    RtlCopyMemory(&p0de->uuid, uuid, sizeof(BTRFS_UUID));
     
     ObReferenceObject(DeviceObject);
     
@@ -268,7 +270,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         if (part0) {
             UNICODE_STRING us3;
             
-            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &DeviceObject);
+            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &sb->dev_item.device_uuid, &DeviceObject);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("create_part0 returned %08x\n", Status);

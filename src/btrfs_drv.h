@@ -367,6 +367,7 @@ typedef struct _device_extension {
 typedef struct {
     UINT32 type;
     PDEVICE_OBJECT devobj;
+    BTRFS_UUID uuid;
 } part0_device_extension;
 
 typedef struct {
