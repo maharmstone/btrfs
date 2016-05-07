@@ -659,6 +659,11 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("read\n");
     
+    if (Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit2;
+    }
+    
     Irp->IoStatus.Information = 0;
     
     if (IrpSp->MinorFunction & IRP_MN_COMPLETE) {
@@ -694,6 +699,7 @@ exit:
     if (Status != STATUS_PENDING)
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+exit2:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

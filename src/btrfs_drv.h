@@ -491,6 +491,7 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
 WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
+NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

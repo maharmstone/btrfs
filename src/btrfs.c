@@ -3938,13 +3938,23 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     return Status;
 }
 
+NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    part0_device_extension* p0de = DeviceObject->DeviceExtension;
+    
+    IoSkipCurrentIrpStackLocation(Irp);
+    
+    Status = IoCallDriver(p0de->devobj, Irp);
+    
+    return Status;
+}
+
 static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     part0_device_extension* p0de = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
     TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
-    int3;
     
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
         case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:

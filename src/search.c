@@ -95,6 +95,8 @@ static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceO
     ObReferenceObject(DeviceObject);
     
     newdevobj->StackSize = DeviceObject->StackSize + 1;
+    
+    newdevobj->Flags |= DO_DIRECT_IO;
     newdevobj->Flags &= ~DO_DEVICE_INITIALIZING;
     
     *NewDeviceObject = newdevobj;
