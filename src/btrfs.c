@@ -718,6 +718,7 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
 static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
     TRACE("close\n");
@@ -726,7 +727,7 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
-    if (DeviceObject == devobj) {
+    if (DeviceObject == devobj || (Vcb && Vcb->type == VCB_TYPE_PARTITION0)) {
         TRACE("Closing file system\n");
         Status = STATUS_SUCCESS;
         goto exit;
@@ -758,10 +759,16 @@ exit:
 static NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
 
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     FIXME("STUB: query ea\n");
     Status = STATUS_NOT_IMPLEMENTED;
@@ -770,7 +777,8 @@ static NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     Irp->IoStatus.Information = 0;
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
-    
+
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -788,6 +796,11 @@ static NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) 
 
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
     FIXME("STUB: set ea\n");
     Status = STATUS_NOT_IMPLEMENTED;
     
@@ -801,6 +814,7 @@ static NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) 
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -814,6 +828,7 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation( Irp );
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
     TRACE("flush buffers\n");
@@ -821,6 +836,11 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     Status = STATUS_SUCCESS;
     Irp->IoStatus.Status = Status;
@@ -839,6 +859,7 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -866,6 +887,11 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     
     FsRtlEnterFileSystem();
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }    
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -1037,6 +1063,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     
     IoCompleteRequest( Irp, IO_DISK_INCREMENT );
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -1311,6 +1338,11 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
 
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
     Status = STATUS_NOT_IMPLEMENTED;
     
     if (Vcb->readonly) {
@@ -1349,6 +1381,7 @@ end:
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -2374,6 +2407,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     fcb* fcb;
     BOOL top_level;
 
@@ -2382,6 +2416,11 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit2;
+    }
     
     if (DeviceObject == devobj) {
         TRACE("closing file system\n");
@@ -2472,6 +2511,7 @@ exit:
     
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+exit2:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -3853,7 +3893,8 @@ exit:
 
 static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
-    NTSTATUS status;
+    NTSTATUS Status;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
     TRACE("file system control\n");
@@ -3862,7 +3903,12 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
 
     top_level = is_top_level(Irp);
     
-    status = STATUS_NOT_IMPLEMENTED;
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
+    Status = STATUS_NOT_IMPLEMENTED;
 
     IrpSp = IoGetCurrentIrpStackLocation( Irp );
     
@@ -3873,7 +3919,7 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             TRACE("IRP_MN_MOUNT_VOLUME\n");
             
 //             Irp->IoStatus.Status = STATUS_SUCCESS;
-            status = mount_vol(DeviceObject, Irp);
+            Status = mount_vol(DeviceObject, Irp);
 //             IrpSp->Parameters.MountVolume.DeviceObject = 0x0badc0de;
 //             IrpSp->Parameters.MountVolume.Vpb = 0xdeadbeef;
             
@@ -3885,13 +3931,13 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
         case IRP_MN_KERNEL_CALL:
             TRACE("IRP_MN_KERNEL_CALL\n");
             
-            status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, FALSE);
+            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, FALSE);
             break;
             
         case IRP_MN_USER_FS_REQUEST:
             TRACE("IRP_MN_USER_FS_REQUEST\n");
             
-            status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, TRUE);
+            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, TRUE);
             break;
             
         case IRP_MN_VERIFY_VOLUME:
@@ -3902,27 +3948,34 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             break;
     }
 
-    Irp->IoStatus.Status = status;
+    Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
     FsRtlExitFileSystem();
 
-    return status;
+    return Status;
 }
 
 static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     fcb* fcb = IrpSp->FileObject->FsContext;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     TRACE("lock control\n");
     
@@ -3930,6 +3983,7 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
 
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4049,7 +4103,7 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
     
     Irp->IoStatus.Information = 0;
     
-    if (Vcb->type == VCB_TYPE_PARTITION0) {
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_device_control(DeviceObject, Irp);
         goto end2;
     }
@@ -4110,6 +4164,7 @@ end2:
 static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
 
     ERR("shutdown\n");
     
@@ -4117,11 +4172,16 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }    
+    
     Status = STATUS_SUCCESS;
 
     while (!IsListEmpty(&VcbList)) {
         LIST_ENTRY* le = RemoveHeadList(&VcbList);
-        device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
         
         TRACE("shutting down Vcb %p\n", Vcb);
         
@@ -4132,7 +4192,8 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     Irp->IoStatus.Information = 0;
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
-    
+
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

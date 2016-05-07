@@ -229,6 +229,11 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto end;
+    }
+    
     Status = STATUS_NOT_IMPLEMENTED;
     
     switch (IrpSp->MinorFunction) {

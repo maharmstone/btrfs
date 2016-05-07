@@ -787,6 +787,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     NTSTATUS Status;
     SECURITY_DESCRIPTOR* sd;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG buflen;
     BOOL top_level;
 
@@ -795,6 +796,11 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     Status = STATUS_SUCCESS;
     
@@ -825,7 +831,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     buflen = IrpSp->Parameters.QuerySecurity.Length;
     
-    Status = get_file_security(DeviceObject->DeviceExtension, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
+    Status = get_file_security(Vcb, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
     
     if (NT_SUCCESS(Status))
         Irp->IoStatus.Information = IrpSp->Parameters.QuerySecurity.Length;
@@ -841,6 +847,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);    
     
@@ -979,6 +986,7 @@ end:
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
     TRACE("set security\n");
@@ -986,6 +994,11 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     Status = STATUS_SUCCESS;
     
@@ -1014,7 +1027,8 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         IoSetTopLevelIrp(NULL);
 
     TRACE("returning %08x\n", Status);
-    
+
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
 

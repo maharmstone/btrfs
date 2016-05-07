@@ -7189,10 +7189,16 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    device_extension* Vcb = DeviceObject->DeviceExtension;
 
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
 //     ERR("recursive = %s\n", Irp != IoGetTopLevelIrp() ? "TRUE" : "FALSE");
     
@@ -7203,7 +7209,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Irp->MdlAddress = NULL;
             Irp->IoStatus.Status = STATUS_SUCCESS;
         } else {
-            Status = write_file(DeviceObject->DeviceExtension, Irp, IoIsOperationSynchronous(Irp), FALSE);
+            Status = write_file(Vcb, Irp, IoIsOperationSynchronous(Irp), FALSE);
         }
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
@@ -7218,10 +7224,11 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     else {
         IoMarkIrpPending(Irp);
         
-        if (!add_thread_job(DeviceObject->DeviceExtension, Irp))
-            do_write_job(DeviceObject->DeviceExtension, Irp);
+        if (!add_thread_job(Vcb, Irp))
+            do_write_job(Vcb, Irp);
     }
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

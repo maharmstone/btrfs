@@ -899,12 +899,18 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     NTSTATUS Status;
     ULONG func;
     BOOL top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
 
     TRACE("directory control\n");
     
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -914,7 +920,7 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     switch (func) {
         case IRP_MN_NOTIFY_CHANGE_DIRECTORY:
-            Status = notify_change_directory(DeviceObject->DeviceExtension, Irp);
+            Status = notify_change_directory(Vcb, Irp);
             break;
             
         case IRP_MN_QUERY_DIRECTORY:
@@ -937,6 +943,7 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
         IoCompleteRequest( Irp, IO_DISK_INCREMENT );
     }
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

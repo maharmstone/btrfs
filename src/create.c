@@ -2727,7 +2727,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     top_level = is_top_level(Irp);
     
     /* return success if just called for FS device object */
-    if (DeviceObject == devobj || Vcb->type == VCB_TYPE_PARTITION0)  {
+    if (DeviceObject == devobj || (Vcb && Vcb->type == VCB_TYPE_PARTITION0))  {
         TRACE("create called for FS device object\n");
         
         Irp->IoStatus.Information = FILE_OPENED;

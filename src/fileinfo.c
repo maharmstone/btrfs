@@ -2423,6 +2423,11 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
     if (Vcb->readonly) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
         goto end;
@@ -2513,6 +2518,7 @@ end:
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -3722,6 +3728,11 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     top_level = is_top_level(Irp);
     
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
     Irp->IoStatus.Information = 0;
     
     TRACE("query information\n");
@@ -3744,6 +3755,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     release_tree_lock(Vcb, FALSE);
     
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
