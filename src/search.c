@@ -47,6 +47,46 @@ VOID WINAPI IopNotifyPlugPlayNotification(
 
 static const WCHAR devpath[] = {'\\','D','e','v','i','c','e',0};
 
+static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pardir, PUNICODE_STRING nameus, PDEVICE_OBJECT* NewDeviceObject) {
+    PDEVICE_OBJECT newdevobj;
+    UNICODE_STRING name;
+    NTSTATUS Status;
+    part0_device_extension* p0de;
+    
+    static const WCHAR btrfs_partition[] = L"\\BtrfsPartition";
+    
+    name.Length = name.MaximumLength = pardir->Length + (wcslen(btrfs_partition) * sizeof(WCHAR));
+    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
+    if (!name.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(name.Buffer, pardir->Buffer, pardir->Length);
+    RtlCopyMemory(&name.Buffer[pardir->Length / sizeof(WCHAR)], btrfs_partition, wcslen(btrfs_partition) * sizeof(WCHAR));
+    
+    Status = IoCreateDevice(DriverObject, sizeof(part0_device_extension), &name, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &newdevobj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoCreateDevice returned %08x\n", Status);
+        ExFreePool(name.Buffer);
+        return Status;
+    }
+    
+    p0de = newdevobj->DeviceExtension;
+    p0de->type = VCB_TYPE_PARTITION0;
+    p0de->devobj = DeviceObject;
+    
+    ObReferenceObject(DeviceObject);
+    
+    newdevobj->StackSize = DeviceObject->StackSize + 1;
+    newdevobj->Flags &= ~DO_DEVICE_INITIALIZING;
+    
+    *NewDeviceObject = newdevobj;
+    *nameus = name;
+    
+    return STATUS_SUCCESS;
+}
+
 static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ULONG tnsize;
     MOUNTMGR_TARGET_NAME* tn;
@@ -128,7 +168,7 @@ static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ExFreePool(mmdlt);
 }
 
-static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING pardir, PUNICODE_STRING us, LIST_ENTRY* volumes) {
+static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING pardir, PUNICODE_STRING us, BOOL part0, LIST_ENTRY* volumes) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -225,6 +265,20 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PUNICODE_STRING pardir, PU
             goto deref;
         }
         
+        if (part0) {
+            UNICODE_STRING us3;
+            
+            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &DeviceObject);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("create_part0 returned %08x\n", Status);
+                goto deref;
+            }
+            
+            ExFreePool(us2.Buffer);
+            us2 = us3;
+        }
+        
         v->devobj = DeviceObject;
         RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
         RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
@@ -254,7 +308,7 @@ exit:
         ExFreePool(us2.Buffer);
 }
 
-static NTSTATUS look_in_harddisk_dir(PDEVICE_OBJECT mountmgr, PUNICODE_STRING name, LIST_ENTRY* volumes) {
+static NTSTATUS look_in_harddisk_dir(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING name, LIST_ENTRY* volumes) {
     UNICODE_STRING path;
     OBJECT_ATTRIBUTES attr;
     NTSTATUS Status;
@@ -323,7 +377,7 @@ static NTSTATUS look_in_harddisk_dir(PDEVICE_OBJECT mountmgr, PUNICODE_STRING na
                     } else {
                         has_parts = TRUE;
                         
-                        test_vol(mountmgr, &path, &odi2->Name, volumes);
+                        test_vol(DriverObject, mountmgr, &path, &odi2->Name, FALSE, volumes);
                     }
                 }
                 
@@ -339,7 +393,7 @@ static NTSTATUS look_in_harddisk_dir(PDEVICE_OBJECT mountmgr, PUNICODE_STRING na
         part0us.Buffer = partition0;
         part0us.Length = part0us.MaximumLength = wcslen(partition0) * sizeof(WCHAR);
         
-        test_vol(mountmgr, &path, &part0us, volumes);
+        test_vol(DriverObject, mountmgr, &path, &part0us, TRUE, volumes);
     }
     
     ZwClose(h);
@@ -354,7 +408,7 @@ end:
     return Status;
 }
 
-void STDCALL look_for_vols(LIST_ENTRY* volumes) {
+void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
     PFILE_OBJECT FileObject;
     PDEVICE_OBJECT mountmgr;
     OBJECT_ATTRIBUTES attr;
@@ -417,7 +471,7 @@ void STDCALL look_for_vols(LIST_ENTRY* volumes) {
                     RtlCompareMemory(odi2->TypeName.Buffer, directory, odi2->TypeName.Length) == odi2->TypeName.Length &&
                     odi2->Name.Length > wcslen(harddisk) * sizeof(WCHAR) &&
                     RtlCompareMemory(odi2->Name.Buffer, harddisk, wcslen(harddisk) * sizeof(WCHAR)) == wcslen(harddisk) * sizeof(WCHAR)) {
-                        look_in_harddisk_dir(mountmgr, &odi2->Name, volumes);
+                        look_in_harddisk_dir(DriverObject, mountmgr, &odi2->Name, volumes);
                 }
                 
                 odi2 = &odi2[1];

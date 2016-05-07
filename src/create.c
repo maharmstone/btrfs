@@ -2714,8 +2714,8 @@ exit:
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
-    device_extension* Vcb = NULL;
-    BOOL top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    BOOL top_level, locked = FALSE;
     LIST_ENTRY rollback;
     
     TRACE("create (flags = %x)\n", Irp->Flags);
@@ -2727,7 +2727,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     top_level = is_top_level(Irp);
     
     /* return success if just called for FS device object */
-    if (DeviceObject == devobj)  {
+    if (DeviceObject == devobj || Vcb->type == VCB_TYPE_PARTITION0)  {
         TRACE("create called for FS device object\n");
         
         Irp->IoStatus.Information = FILE_OPENED;
@@ -2738,6 +2738,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     Vcb = DeviceObject->DeviceExtension;
     ExAcquireResourceSharedLite(&Vcb->load_lock, TRUE);
+    locked = TRUE;
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -2864,7 +2865,8 @@ exit:
     
     TRACE("create returning %08x\n", Status);
     
-    ExReleaseResourceLite(&Vcb->load_lock);
+    if (locked)
+        ExReleaseResourceLite(&Vcb->load_lock);
     
     if (top_level) 
         IoSetTopLevelIrp(NULL);

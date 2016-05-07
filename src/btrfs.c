@@ -3440,6 +3440,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Flags |= DO_DIRECT_IO;
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
+    Vcb->type = VCB_TYPE_VOLUME;
     
     ExInitializeResourceLite(&Vcb->tree_lock);
     Vcb->tree_lock_counter = 0;
@@ -3936,6 +3937,17 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     return Status;
 }
 
+static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    part0_device_extension* p0de = DeviceObject->DeviceExtension;
+    
+    IoSkipCurrentIrpStackLocation(Irp);
+    
+    Status = IoCallDriver(p0de->devobj, Irp);
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -3952,13 +3964,17 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
     
     Irp->IoStatus.Information = 0;
     
+    if (Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_device_control(DeviceObject, Irp);
+        goto end2;
+    }
+    
     WARN("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
     
     if (!FileObject) {
         ERR("FileObject was NULL\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
-        
     }
     
     fcb = FileObject->FsContext;
@@ -3994,8 +4010,10 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
 end:
     Irp->IoStatus.Status = Status;
 
-    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    if (Status != STATUS_PENDING)
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
+end2:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4467,7 +4485,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     dosdevice_nameW.Buffer = dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = (USHORT)wcslen(dosdevice_name) * sizeof(WCHAR);
 
-    Status = IoCreateDevice(DriverObject, 0, &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM, 0, FALSE, &DeviceObject);
+    Status = IoCreateDevice(DriverObject, 0, &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM, FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         return Status;
@@ -4490,7 +4508,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     }
 
     InitializeListHead(&volumes);
-    look_for_vols(&volumes);
+    look_for_vols(DriverObject, &volumes);
     
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);

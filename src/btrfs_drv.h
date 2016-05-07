@@ -317,7 +317,11 @@ typedef struct {
     drv_thread* threads;
 } drv_threads;
 
+#define VCB_TYPE_VOLUME     1
+#define VCB_TYPE_PARTITION0 2
+
 typedef struct _device_extension {
+    UINT32 type;
     device* devices;
 //     DISK_GEOMETRY geometry;
     UINT64 length;
@@ -359,6 +363,11 @@ typedef struct _device_extension {
     drv_threads threads;
     LIST_ENTRY list_entry;
 } device_extension;
+
+typedef struct {
+    UINT32 type;
+    PDEVICE_OBJECT devobj;
+} part0_device_extension;
 
 typedef struct {
     LIST_ENTRY listentry;
@@ -564,7 +573,7 @@ NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf);
 #define do_load_tree(Vcb, th, r, t, td, loaded) _do_load_tree(Vcb, th, r, t, td, loaded, funcname, __FILE__, __LINE__)  
 
 // in search.c
-void STDCALL look_for_vols(LIST_ENTRY* volumes);
+void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes);
 
 // in cache.c
 NTSTATUS STDCALL init_cache();
