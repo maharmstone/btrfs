@@ -78,6 +78,20 @@ static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceO
     p0de->devobj = DeviceObject;
     RtlCopyMemory(&p0de->uuid, uuid, sizeof(BTRFS_UUID));
     
+    p0de->name.Length = name.Length;
+    p0de->name.MaximumLength = name.MaximumLength;
+    p0de->name.Buffer = ExAllocatePoolWithTag(PagedPool, p0de->name.MaximumLength, ALLOC_TAG);
+    
+    if (!p0de->name.Buffer) {
+        ERR("out of memory\b");
+        ExFreePool(name.Buffer);
+        ExFreePool(p0de->name.Buffer);
+        IoDeleteDevice(newdevobj);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(p0de->name.Buffer, name.Buffer, name.Length);
+    
     ObReferenceObject(DeviceObject);
     
     newdevobj->StackSize = DeviceObject->StackSize + 1;

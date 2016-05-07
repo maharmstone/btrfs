@@ -368,6 +368,7 @@ typedef struct {
     UINT32 type;
     PDEVICE_OBJECT devobj;
     BTRFS_UUID uuid;
+    UNICODE_STRING name;
 } part0_device_extension;
 
 typedef struct {
