@@ -3431,7 +3431,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PDEVICE_OBJECT DeviceToMount;
     NTSTATUS Status;
     device_extension* Vcb = NULL;
-    PARTITION_INFORMATION_EX piex;
+    GET_LENGTH_INFORMATION gli;
     UINT64 i;
     LIST_ENTRY* le;
     KEY searchkey;
@@ -3455,10 +3455,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //         goto ByeBye;
 //     }
 
-    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
-                       &piex, sizeof(piex), TRUE, NULL);
+    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                       &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("error reading partition information: %08x\n", Status);
+        ERR("error reading length information: %08x\n", Status);
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
@@ -3520,8 +3520,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //                       Vcb->geometry.SectorsPerTrack, Vcb->geometry.BytesPerSector);
 //     }
     
-    Vcb->length = piex.PartitionLength.QuadPart;
-    TRACE("partition length = %u\n", piex.PartitionLength);
+    Vcb->length = gli.Length.QuadPart;
+    TRACE("partition length = %llx\n", gli.Length.QuadPart);
 
     Status = read_superblock(Vcb, DeviceToMount);
     if (!NT_SUCCESS(Status)) {
