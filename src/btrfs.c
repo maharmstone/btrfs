@@ -4095,8 +4095,6 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
     fcb* fcb;
     BOOL top_level;
 
-    FIXME("STUB: device control\n");
-    
     FsRtlEnterFileSystem();
 
     top_level = is_top_level(Irp);
@@ -4107,6 +4105,8 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         Status = part0_device_control(DeviceObject, Irp);
         goto end2;
     }
+    
+    FIXME("STUB: device control\n");
     
     WARN("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
     
