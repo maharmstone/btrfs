@@ -3372,6 +3372,87 @@ static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
+    FIXME("FIXME - drop chunk\n");
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY *le = Vcb->chunks_changed.Flink, *le2;
+    NTSTATUS Status;
+    UINT64 used_minus_cache;
+    
+    while (le != &Vcb->chunks_changed) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+        
+        le2 = le->Flink;
+        
+        used_minus_cache = c->used;
+        
+        // subtract self-hosted cache
+        if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache_size == c->used && c->cache_inode != 0) {
+            KEY searchkey;
+            traverse_ptr tp, next_tp;
+            BOOL b;
+            
+            searchkey.obj_id = c->cache_inode;
+            searchkey.obj_type = TYPE_EXTENT_DATA;
+            searchkey.offset = 0;
+            
+            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            do {
+                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                    EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+                    
+                    if (tp.item->size < sizeof(EXTENT_DATA)) {
+                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                        break;
+                    }
+                    
+                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                        
+                        if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size,
+                                sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                            break;
+                        }
+                        
+                        if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
+                            used_minus_cache -= ed2->size;
+                    }
+                }
+                
+                b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+                if (b) {
+                    tp = next_tp;
+                    
+                    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                        break;
+                }
+            } while (b);
+        }
+        
+        if (used_minus_cache == 0) {
+            Status = drop_chunk(Vcb, c, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("drop_chunk returned %08x\n", Status);
+                return Status;
+            }
+        }
+
+        le = le2;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -3384,6 +3465,15 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         if (!NT_SUCCESS(Status)) {
             ERR("drop_roots returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    if (!IsListEmpty(&Vcb->chunks_changed)) {
+        Status = drop_chunks(Vcb, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("drop_chunks returned %08x\n", Status);
             return Status;
         }
     }
