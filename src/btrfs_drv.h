@@ -647,6 +647,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
 NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
+NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback);
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);

@@ -3372,8 +3372,217 @@ static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS add_new_disk_hole(device* dev, UINT64 addr, UINT64 length) {
+//     LIST_ENTRY* le = dev->disk_holes.Flink;
+// //     disk_hole* dh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
+// //     
+// //     if (!dh) {
+// //         ERR("out of memory\n");
+// //         return STATUS_INSUFFICIENT_RESOURCES;
+// //     }
+// //     
+// //     dh->address = address;
+// //     dh->size = size;
+// //     dh->provisional = FALSE;
+// //     
+// //     InsertTailList(disk_holes, &dh->listentry);
+// //     
+// //     return STATUS_SUCCESS;
+//     
+//     // FIXME
+//     
+//     while (le != &dev->disk_holes) {
+//         disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
+//         
+//         if (addr + length < dh->address) {
+//             disk_hole* dh2 = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
+//             
+//             if (!dh2) {
+//                 ERR("out of memory\n");
+//                 return STATUS_INSUFFICIENT_RESOURCES;
+//             }
+//             
+//             dh2->address = addr;
+//             dh2->size = length;
+//             dh2->provisional = FALSE;
+//             
+//             InsertHeadList(dh->listentry.Blink, &dh2->listentry);
+//             
+//             return STATUS_SUCCESS;
+//         }
+//         
+//         if (addr >= dh->address && addr + length <= dh->address + dh->size)
+//             return STATUS_SUCCESS; // completely inside existing entry, ignore
+//         
+//         // FIXME
+//         
+//         le = le->Flink;
+//     }
+    
+    FIXME("(%p, %llx, %llx)\n", dev, addr, length);
+    
+    // FIXME
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
-    FIXME("FIXME - drop chunk\n");
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 i;
+    CHUNK_ITEM_STRIPE* cis;
+    
+    TRACE("dropping chunk %llx\n", c->offset);
+    
+    // remove free space cache
+    if (c->cache_inode != 0) {
+        searchkey.obj_id = c->cache_inode;
+        searchkey.obj_type = TYPE_INODE_ITEM;
+        searchkey.offset = 0;
+
+        Status = remove_free_space_inode(Vcb, &searchkey, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("remove_free_space_inode returned %08x\n", Status);
+            return Status;
+        }
+        
+        searchkey.obj_id = FREE_SPACE_CACHE_ID;
+        searchkey.obj_type = 0;
+        searchkey.offset = c->offset;
+        
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+
+        if (!keycmp(&tp.item->key, &searchkey)) {
+            delete_tree_item(Vcb, &tp, rollback);
+        }
+    }
+    
+    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        // remove DEV_EXTENTs from tree 4
+        searchkey.obj_id = cis[i].dev_id;
+        searchkey.obj_type = TYPE_DEV_EXTENT;
+        searchkey.offset = cis[i].offset;
+        
+        Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&tp.item->key, &searchkey)) {
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (tp.item->size >= sizeof(DEV_EXTENT)) {
+                DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+                
+                c->devices[i]->devitem.bytes_used -= de->length;
+                
+                add_new_disk_hole(c->devices[i], cis[i].offset, de->length);
+            }
+        } else
+            WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+    }
+    
+    // modify DEV_ITEMs in chunk tree
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (c->devices[i]) {
+            UINT64 j;
+            DEV_ITEM* di;
+            
+            searchkey.obj_id = 1;
+            searchkey.obj_type = TYPE_DEV_ITEM;
+            searchkey.offset = c->devices[i]->devitem.dev_id;
+            
+            Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (keycmp(&tp.item->key, &searchkey)) {
+                ERR("error - could not find DEV_ITEM for device %llx\n", searchkey.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+            if (!di) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
+            
+            if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            for (j = i + 1; j < c->chunk_item->num_stripes; j++) {
+                if (c->devices[j] == c->devices[i])
+                    c->devices[j] = NULL;
+            }
+        }
+    }
+    
+    // remove CHUNK_ITEM from chunk tree
+    searchkey.obj_id = 0x100;
+    searchkey.obj_type = TYPE_CHUNK_ITEM;
+    searchkey.offset = c->offset;
+    
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey))
+        delete_tree_item(Vcb, &tp, rollback);
+    else
+        WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
+    
+    // FIXME - if SYSTEM, remove from bootstrap
+    
+    // remove BLOCK_GROUP_ITEM from extent tree
+    searchkey.obj_id = c->offset;
+    searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+        delete_tree_item(Vcb, &tp, rollback);
+    else
+        WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
+    
+    RemoveEntryList(&c->list_entry);
+    
+    if (c->list_entry_changed.Flink)
+        RemoveEntryList(&c->list_entry_changed);
+    
+    ExFreePool(c->chunk_item);
+    ExFreePool(c->devices);
+    
+    while (!IsListEmpty(&c->space)) {
+        space* s = CONTAINING_RECORD(c->space.Flink, space, list_entry);
+        
+        RemoveEntryList(&s->list_entry);
+        ExFreePool(s);
+    }
+
+    ExFreePool(c);
     
     return STATUS_SUCCESS;
 }
