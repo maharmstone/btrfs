@@ -3017,7 +3017,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
-                c->space_changed = FALSE;
                 c->cache_inode = 0;
                 c->cache_size = 0;
                 
@@ -3050,6 +3049,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 InitializeListHead(&c->space);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
+                
+                c->list_entry_changed.Flink = NULL;
             }
         }
     
@@ -3083,7 +3084,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                 off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
                 off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
                 
-                add_to_space_list(c, c->offset + off_start, off_end - off_start, SPACE_TYPE_USED);
+                add_to_space_list(Vcb, c, c->offset + off_start, off_end - off_start, SPACE_TYPE_USED);
             }
         }
         
@@ -3583,6 +3584,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     InitializeListHead(&Vcb->chunks);
+    InitializeListHead(&Vcb->chunks_changed);
     InitializeListHead(&Vcb->trees);
     
     InitializeListHead(&Vcb->DirNotifyList);

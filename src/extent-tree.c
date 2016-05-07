@@ -461,7 +461,7 @@ static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size
     if (c) {
         decrease_chunk_usage(c, size);
         
-        add_to_space_list(c, address, size, SPACE_TYPE_DELETING);
+        add_to_space_list(Vcb, c, address, size, SPACE_TYPE_DELETING);
     }
     
     return STATUS_SUCCESS;

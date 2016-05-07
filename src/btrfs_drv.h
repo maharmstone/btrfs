@@ -282,12 +282,12 @@ typedef struct {
     UINT64 offset;
     UINT64 used;
     UINT32 oldused;
-    BOOL space_changed;
     device** devices;
     UINT64 cache_size;
     UINT64 cache_inode;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_changed;
 } chunk;
 
 typedef struct {
@@ -353,6 +353,7 @@ typedef struct _device_extension {
     UINT32 max_inline;
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
+    LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
     HANDLE flush_thread_handle;
     drv_threads threads;
@@ -582,7 +583,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
-void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type);
+void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type);
 NTSTATUS consider_write(device_extension* Vcb);
 BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
                                UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);

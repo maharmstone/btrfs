@@ -810,27 +810,23 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 }
 
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks.Flink;
+    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
     NTSTATUS Status;
-    chunk* c;
 
     *changed = FALSE;
     
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+    while (le != &Vcb->chunks_changed) {
+        BOOL b;
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+            
+        Status = allocate_cache_chunk(Vcb, c, &b, rollback);
         
-        if (c->space_changed) {
-            BOOL b;
-            
-            Status = allocate_cache_chunk(Vcb, c, &b, rollback);
-            
-            if (b)
-                *changed = TRUE;
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
-                return Status;
-            }
+        if (b)
+            *changed = TRUE;
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+            return Status;
         }
         
         le = le->Flink;
@@ -1060,7 +1056,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 }
 
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks.Flink;
+    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
     NTSTATUS Status;
     chunk* c;
     LARGE_INTEGER time;
@@ -1069,17 +1065,14 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+    while (le != &Vcb->chunks_changed) {
+        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
-        if (c->space_changed) {
-            Status = update_chunk_cache(Vcb, c, &now, rollback);
+        Status = update_chunk_cache(Vcb, c, &now, rollback);
 
-            if (!NT_SUCCESS(Status)) {
-                ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
-                return Status;
-            }
-            
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
+            return Status;
         }
         
         le = le->Flink;

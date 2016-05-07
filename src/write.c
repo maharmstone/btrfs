@@ -211,7 +211,7 @@ static BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length
     return FALSE;
 }
 
-void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
+void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
     LIST_ENTRY *le = c->space.Flink, *nextle, *insbef;
     space *s, *s2, *s3;
 #ifdef DEBUG_PARANOID
@@ -232,7 +232,8 @@ void add_to_space_list(chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
     }
 #endif
     
-    c->space_changed = TRUE;
+    if (!c->list_entry_changed.Flink)
+        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
     le = c->space.Flink;
     insbef = &c->space;
@@ -823,7 +824,6 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->size = cisize;
     c->offset = logaddr;
     c->used = c->oldused = 0;
-    c->space_changed = FALSE;
     c->cache_size = 0;
     c->cache_inode = 0;
     InitializeListHead(&c->space);
@@ -918,8 +918,10 @@ end:
         
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
-    } else
+    } else {
         InsertTailList(&Vcb->chunks, &c->list_entry);
+        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+    }
 
     return success ? c : NULL;
 }
@@ -1030,21 +1032,16 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
 }
 
 static void clean_space_cache(device_extension* Vcb) {
-    LIST_ENTRY* le;
     chunk* c;
     
     TRACE("(%p)\n", Vcb);
     
-    le = Vcb->chunks.Flink;
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+    while (!IsListEmpty(&Vcb->chunks_changed)) {
+        c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
         
-        if (c->space_changed) {
-            clean_space_cache_chunk(Vcb, c);
-            c->space_changed = FALSE;
-        }
-        
-        le = le->Flink;
+        clean_space_cache_chunk(Vcb, c);
+        RemoveEntryList(&c->list_entry_changed);
+        c->list_entry_changed.Flink = NULL;
     }
 }
 
@@ -1199,7 +1196,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
         return FALSE;
     }
     
-    add_to_space_list(c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
+    add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
@@ -1253,7 +1250,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
         return FALSE;
     }
     
-    add_to_space_list(c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
+    add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
@@ -1389,7 +1386,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     if (c) {
         decrease_chunk_usage(c, Vcb->superblock.node_size);
         
-        add_to_space_list(c, address, Vcb->superblock.node_size, SPACE_TYPE_DELETING);
+        add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_DELETING);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -1665,7 +1662,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     if (c) {
         decrease_chunk_usage(c, tp.item->key.offset);
         
-        add_to_space_list(c, address, tp.item->key.offset, SPACE_TYPE_DELETING);
+        add_to_space_list(Vcb, c, address, tp.item->key.offset, SPACE_TYPE_DELETING);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -4496,7 +4493,7 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
     }
     
     increase_chunk_usage(c, length);
-    add_to_space_list(c, address, length, SPACE_TYPE_WRITING);
+    add_to_space_list(Vcb, c, address, length, SPACE_TYPE_WRITING);
     
     if (inode_item) {
         inode_item->st_blocks += length;
@@ -4600,7 +4597,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     if (c) {
         increase_chunk_usage(c, length);
         
-        add_to_space_list(c, eitp->item->key.obj_id + eitp->item->key.offset, length, SPACE_TYPE_WRITING);
+        add_to_space_list(Vcb, c, eitp->item->key.obj_id + eitp->item->key.offset, length, SPACE_TYPE_WRITING);
     }
     
     fcb->inode_item.st_blocks += length;
