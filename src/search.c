@@ -426,6 +426,91 @@ end:
     return Status;
 }
 
+static void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
+    NTSTATUS Status;
+    KEVENT Event;
+    PIRP Irp;
+    MOUNTMGR_MOUNT_POINT* mmp;
+    ULONG mmpsize;
+    MOUNTMGR_MOUNT_POINTS mmps1, *mmps2;
+    IO_STATUS_BLOCK IoStatusBlock;
+    
+    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + v->devpath.Length;
+    
+    mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
+    if (!mmp) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlZeroMemory(mmp, mmpsize);
+    
+    mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
+    mmp->DeviceNameLength = v->devpath.Length;
+    RtlCopyMemory(&mmp[1], v->devpath.Buffer, v->devpath.Length);
+    
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_DELETE_POINTS,
+                                        mountmgr, mmp, mmpsize, 
+                                        &mmps1, sizeof(MOUNTMGR_MOUNT_POINTS), FALSE, &Event, &IoStatusBlock);
+    if (!Irp) {
+        ERR("%.*S: IoBuildDeviceIoControlRequest 1 failed\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer);
+        ExFreePool(mmp);
+        return;
+    }
+
+    Status = IoCallDriver(mountmgr, Irp);
+    if (Status == STATUS_PENDING) {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("%.*S: IoCallDriver 1  returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+        ExFreePool(mmp);
+        return;
+    }
+    
+    if (Status != STATUS_BUFFER_OVERFLOW || mmps1.Size == 0) {
+        ExFreePool(mmp);
+        return;
+    }
+    
+    mmps2 = ExAllocatePoolWithTag(PagedPool, mmps1.Size, ALLOC_TAG);
+    if (!mmps2) {
+        ERR("out of memory\n");
+        ExFreePool(mmp);
+        return;
+    }
+    
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_DELETE_POINTS,
+                                        mountmgr, mmp, mmpsize, 
+                                        mmps2, mmps1.Size, FALSE, &Event, &IoStatusBlock);
+    if (!Irp) {
+        ERR("%.*S: IoBuildDeviceIoControlRequest 2 failed\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer);
+        ExFreePool(mmps2);
+        ExFreePool(mmp);
+        return;
+    }
+
+    Status = IoCallDriver(mountmgr, Irp);
+    if (Status == STATUS_PENDING) {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = IoStatusBlock.Status;
+    }
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("%.*S: IoCallDriver 2 returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+        ExFreePool(mmps2);
+        ExFreePool(mmp);
+        return;
+    }
+    
+    ExFreePool(mmps2);
+    ExFreePool(mmp);
+}
+
 void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
     PFILE_OBJECT FileObject;
     PDEVICE_OBJECT mountmgr;
@@ -500,8 +585,6 @@ void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
     ExFreePool(odi);
     ZwClose(h);
     
-    // FIXME - if Windows has already added the second device of a filesystem itself, delete it
-    
     le = volumes->Flink;
     while (le != volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -516,8 +599,10 @@ void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
                 if (RtlCompareMemory(&v2->fsuuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                     v2->processed = TRUE;
                     
-                    if (v2->devnum < mountvol->devnum)
+                    if (v2->devnum < mountvol->devnum) {
+                        remove_drive_letter(mountmgr, mountvol);
                         mountvol = v2;
+                    }
                 }
                 
                 le2 = le2->Flink;
