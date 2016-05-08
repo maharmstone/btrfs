@@ -27,6 +27,8 @@ typedef struct {
     UINT32 buflen;
     UINT64 num_stripes;
     UINT64 type;
+    UINT32 sector_size;
+    UINT32* csum;
     read_data_stripe* stripes;
 } read_data_context;
 
@@ -36,6 +38,8 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     UINT64 i;
     BOOL complete;
     
+    // FIXME - we definitely need a per-stripe lock here
+    
     if (stripe->status == ReadDataStatus_Cancelling) {
         stripe->status = ReadDataStatus_Cancelled;
         goto end;
@@ -44,7 +48,16 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     stripe->iosb = Irp->IoStatus;
     
     if (NT_SUCCESS(Irp->IoStatus.Status)) {
-        // FIXME - calculate and compare checksum
+        if (context->csum) {
+            for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
+                
+                if (crc32 != context->csum[i]) {
+                    stripe->status = ReadDataStatus_CRCError;
+                    goto end;
+                }
+            }
+        }
         
         stripe->status = ReadDataStatus_Success;
             
@@ -76,7 +89,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT8* buf) {
+static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, UINT8* buf) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -141,6 +154,8 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     
     context->buflen = length;
     context->num_stripes = ci->num_stripes;
+    context->sector_size = Vcb->superblock.sector_size;
+    context->csum = csum;
 //     context->type = type;
     
     // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
@@ -220,14 +235,14 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     
     // if not, see if we got a checksum error
     
-//     for (i = 0; i < ci->num_stripes; i++) {
-//         if (context->stripes[i].status == ReadDataStatus_CRCError) {
-//             WARN("stripe %llu had a checksum error\n", i);
-//             
-//             Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
-//             goto exit;
-//         }
-//     }
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_CRCError) {
+            WARN("stripe %llu had a checksum error\n", i);
+            
+            Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+            goto exit;
+        }
+    }
     
     // failing that, return the first error we encountered
     
@@ -307,7 +322,74 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
+static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum) {
+    UINT32* csum;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    UINT64 i, j;
+    BOOL b;
+    
+    if (length == 0) {
+        *pcsum = NULL;
+        return STATUS_SUCCESS;
+    }
+    
+    csum = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * length, ALLOC_TAG);
+    
+    searchkey.obj_id = EXTENT_CSUM_ID;
+    searchkey.obj_type = TYPE_EXTENT_CSUM;
+    searchkey.offset = start;
+    
+    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    i = 0;
+    do {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            ULONG readlen;
+            
+            j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
+            
+            if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
+                ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            readlen = min((tp.item->size / sizeof(UINT32)) - j, length - i);
+            RtlCopyMemory(&csum[i], tp.item->data + (j * sizeof(UINT32)), readlen * sizeof(UINT32));
+            i += readlen;
+            
+            if (i == length)
+                break;
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        
+        if (b)
+            tp = next_tp;
+    } while (b);
+    
+    if (i < length) {
+        ERR("could not read checksums: offset %llx, length %llx sectors\n", start, length);
+        Status = STATUS_INTERNAL_ERROR;
+    } else    
+        Status = STATUS_SUCCESS;
+    
+end:
+    if (NT_SUCCESS(Status))
+        *pcsum = csum;
+    else
+        ExFreePool(csum);
+
+    return Status;
+}
+
+NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, BOOL check_csum, ULONG* pbr) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, next_tp;
@@ -437,6 +519,8 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                 if (ed2->address == 0) {
                     RtlZeroMemory(data + bytes_read, read);
                 } else {
+                    UINT32* csum;
+                    
                     to_read = sector_align(read, Vcb->superblock.sector_size);
                     
                     buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
@@ -447,9 +531,18 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                         goto exit;
                     }
                     
-                    // FIXME - load checksums
+                    if (check_csum) {
+                        Status = load_csum(Vcb, ed2->address + ed2->offset + off, to_read / Vcb->superblock.sector_size, &csum);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("load_csum returned %08x\n", Status);
+                            ExFreePool(buf);
+                            goto exit;
+                        }
+                    } else
+                        csum = NULL;
                     
-                    Status = read_data(Vcb, ed2->address + ed2->offset + off, to_read, buf);
+                    Status = read_data(Vcb, ed2->address + ed2->offset + off, to_read, csum, buf);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         ExFreePool(buf);
@@ -459,6 +552,9 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     RtlCopyMemory(data + bytes_read, buf, read);
                     
                     ExFreePool(buf);
+                    
+                    if (csum)
+                        ExFreePool(csum);
                 }
                 
                 bytes_read += read;
@@ -513,6 +609,10 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
     
 exit:
     return Status;
+}
+
+NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
+    return read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM), pbr);
 }
 
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
@@ -633,7 +733,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
-            Status = read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, bytes_read);
+            Status = read_file_fcb(fcb, data, start, length, bytes_read);
         
         release_tree_lock(fcb->Vcb, FALSE);
         

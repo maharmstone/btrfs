@@ -69,7 +69,7 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     } else {
         // FIXME - see if file loaded and cached, and do CcCopyRead if it is
 
-        Status = read_file(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), &br);
+        Status = read_file(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), FALSE, &br);
         
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
