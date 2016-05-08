@@ -2522,12 +2522,8 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
                 FIXME("RAID0 not yet supported\n");
                 ExFreePool(bgi);
                 return STATUS_INTERNAL_ERROR;
-            } else if (c->chunk_item->type & BLOCK_FLAG_RAID1) {
-                FIXME("RAID1 not yet supported\n");
-                ExFreePool(bgi);
-                return STATUS_INTERNAL_ERROR;
-            } else if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
-                Vcb->superblock.bytes_used = Vcb->superblock.bytes_used + (2 * (c->used - c->oldused));
+            } else if (c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
+                Vcb->superblock.bytes_used += 2 * (c->used - c->oldused);
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
                 FIXME("RAID10 not yet supported\n");
                 ExFreePool(bgi);
@@ -2541,7 +2537,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
                 ExFreePool(bgi);
                 return STATUS_INTERNAL_ERROR;
             } else { // SINGLE
-                Vcb->superblock.bytes_used = Vcb->superblock.bytes_used + c->used - c->oldused;
+                Vcb->superblock.bytes_used += c->used - c->oldused;
             }
             
             TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
