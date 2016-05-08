@@ -284,7 +284,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     generation = (UINT64*)(data + (num_sectors * sizeof(UINT32)));
     
     if (*generation != fsi->generation) {
-        WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, generation, fsi->generation);
+        WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
         ExFreePool(data);
         return STATUS_NOT_FOUND;
     }
