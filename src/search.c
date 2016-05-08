@@ -297,7 +297,6 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
             us2 = us3;
         }
         
-        v->devobj = DeviceObject;
         RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
         RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
         v->devnum = sb->dev_item.dev_id;

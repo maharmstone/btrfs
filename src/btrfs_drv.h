@@ -78,7 +78,6 @@
 struct device_extension;
 
 typedef struct {
-    PDEVICE_OBJECT devobj;
     BTRFS_UUID fsuuid;
     BTRFS_UUID devuuid;
     UINT64 devnum;

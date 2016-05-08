@@ -3025,7 +3025,22 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
             if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
                 RtlCompareMemory(uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
             ) {
-                Vcb->devices[Vcb->devices_loaded].devobj = v->devobj;
+                NTSTATUS Status;
+                PFILE_OBJECT FileObject;
+                PDEVICE_OBJECT DeviceObject;
+                
+                Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_DATA | FILE_WRITE_DATA, &FileObject, &DeviceObject);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+                    return NULL;
+                }
+                
+                DeviceObject = FileObject->DeviceObject;
+                
+                ObReferenceObject(DeviceObject);
+                ObDereferenceObject(FileObject);
+                
+                Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                 Vcb->devices[Vcb->devices_loaded].devitem.device_uuid = *uuid;
                 Vcb->devices_loaded++;
                 
@@ -3132,7 +3147,21 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                             if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
                                 RtlCompareMemory(&di->device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
                             ) {
-                                Vcb->devices[Vcb->devices_loaded].devobj = v->devobj;
+                                PFILE_OBJECT FileObject;
+                                PDEVICE_OBJECT DeviceObject;
+                                
+                                Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_DATA | FILE_WRITE_DATA, &FileObject, &DeviceObject);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+                                    return Status;
+                                }
+                                
+                                DeviceObject = FileObject->DeviceObject;
+                                
+                                ObReferenceObject(DeviceObject);
+                                ObDereferenceObject(FileObject);
+                                
+                                Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 init_device(Vcb, &Vcb->devices[i]);
                                 Vcb->devices_loaded++;
