@@ -412,6 +412,7 @@ typedef struct {
 typedef struct {
     KEVENT Event;
     LIST_ENTRY stripes;
+    BOOL tree;
 } write_tree_context;
 
 // #pragma pack(pop)

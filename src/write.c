@@ -45,13 +45,9 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
 
-typedef struct {
-    CHUNK_ITEM ci;
-    CHUNK_ITEM_STRIPE stripes[1];
-} CHUNK_ITEM2;
-
 static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data);
+static NTSTATUS STDCALL write_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -926,59 +922,144 @@ end:
 }
 
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length) {
-    KEY searchkey;
-    traverse_ptr tp;
-    CHUNK_ITEM2* ci;
     NTSTATUS Status;
     UINT32 i;
+    chunk* c;
+    CHUNK_ITEM_STRIPE* cis;
+    write_tree_context* wtc;
+    write_tree_stripe* stripe;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
-    // FIXME - use version cached in Vcb
-    
-    searchkey.obj_id = 0x100; // fixed?
-    searchkey.obj_type = TYPE_CHUNK_ITEM;
-    searchkey.offset = address;
-    
-    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
+    c = get_chunk_from_address(Vcb, address);
+    if (!c) {
+        ERR("could not get chunk for address %llx\n", address);
+        return STATUS_INTERNAL_ERROR;
     }
     
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("error - unexpected item in chunk tree\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
+    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
+//         type = BLOCK_FLAG_DUPLICATE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+        FIXME("RAID0 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1) {
+//         type = BLOCK_FLAG_DUPLICATE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+        FIXME("RAID10 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        FIXME("RAID5 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        FIXME("RAID6 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+//     } else { // SINGLE
+//         type = 0;
     }
     
-    if (tp.item->size < sizeof(CHUNK_ITEM2)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM2));
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
+    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_context), ALLOC_TAG);
+    if (!wtc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
+    InitializeListHead(&wtc->stripes);
+    wtc->tree = FALSE;
     
-    ci = (CHUNK_ITEM2*)tp.item->data;
-    
-    if (tp.item->key.offset > address || tp.item->key.offset + ci->ci.size < address) {
-        ERR("error - address %llx was out of chunk bounds\n", address);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    // FIXME - only do this for chunks marked DUPLICATE?
-    // FIXME - for multiple writes, if PENDING do waits at the end
-    // FIXME - work with RAID
-    for (i = 0; i < ci->ci.num_stripes; i++) {
-        Status = write_data_phys(Vcb->devices[0].devobj, address - tp.item->key.offset + ci->stripes[i].offset, data, length);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - write_data_phys failed\n");
-            goto end;
+    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        PIO_STACK_LOCATION IrpSp;
+        
+        // FIXME - handle missing devices
+        
+        stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_stripe), ALLOC_TAG);
+        if (!stripe) {
+            ERR("out of memory\n");
+            free_write_tree_stripes(wtc);
+            ExFreePool(wtc);
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
+        
+        stripe->context = (struct write_tree_context*)wtc;
+        stripe->buf = data;
+        stripe->device = c->devices[i];
+        RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
+        stripe->status = WriteTreeStatus_Pending;
+        
+        stripe->Irp = IoAllocateIrp(stripe->device->devobj->StackSize, FALSE);
+    
+        if (!stripe->Irp) {
+            ERR("IoAllocateIrp failed\n");
+            free_write_tree_stripes(wtc);
+            ExFreePool(wtc);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+        IrpSp->MajorFunction = IRP_MJ_WRITE;
+        
+        if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
+            stripe->Irp->AssociatedIrp.SystemBuffer = data;
+
+            stripe->Irp->Flags = IRP_BUFFERED_IO;
+        } else if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
+            stripe->Irp->MdlAddress = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
+            if (!stripe->Irp->MdlAddress) {
+                ERR("IoAllocateMdl failed\n");
+                free_write_tree_stripes(wtc);
+                ExFreePool(wtc);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            MmProbeAndLockPages(stripe->Irp->MdlAddress, KernelMode, IoWriteAccess);
+        } else {
+            stripe->Irp->UserBuffer = data;
+        }
+
+        IrpSp->Parameters.Write.Length = length;
+        IrpSp->Parameters.Write.ByteOffset.QuadPart = address - c->offset + cis[i].offset;
+        
+        stripe->Irp->UserIosb = &stripe->iosb;
+
+        IoSetCompletionRoutine(stripe->Irp, write_tree_completion, stripe, TRUE, TRUE, TRUE);
+
+        InsertTailList(&wtc->stripes, &stripe->list_entry);
     }
     
-end:
+    Status = STATUS_SUCCESS;
     
+    if (wtc->stripes.Flink != &wtc->stripes) {
+        // launch writes and wait
+        LIST_ENTRY* le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            
+            IoCallDriver(stripe->device->devobj, stripe->Irp);
+            
+            le = le->Flink;
+        }
+        
+        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
+        
+        le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            
+            if (!NT_SUCCESS(stripe->iosb.Status)) {
+                Status = stripe->iosb.Status;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        free_write_tree_stripes(wtc);
+    }
+
+    ExFreePool(wtc);
+
     return Status;
 }
 
@@ -1953,7 +2034,7 @@ void free_write_tree_stripes(write_tree_context* wtc) {
         
         nextle = le->Flink;
 
-        if (stripe->buf) {
+        if (stripe->buf && wtc->tree) {
             ExFreePool(stripe->buf);
             
             le2 = le->Flink;
@@ -2094,6 +2175,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
     
     KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc->stripes);
+    wtc->tree = TRUE;
     
     le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
