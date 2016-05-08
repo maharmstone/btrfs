@@ -323,6 +323,7 @@ typedef struct {
 typedef struct _device_extension {
     UINT32 type;
     device* devices;
+    UINT64 devices_loaded;
 //     DISK_GEOMETRY geometry;
     UINT64 length;
     superblock superblock;

@@ -3005,7 +3005,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
     UINT64 i;
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+    for (i = 0; i < Vcb->devices_loaded; i++) {
         TRACE("device %llx, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", i,
             Vcb->devices[i].devitem.device_uuid.uuid[0], Vcb->devices[i].devitem.device_uuid.uuid[1], Vcb->devices[i].devitem.device_uuid.uuid[2], Vcb->devices[i].devitem.device_uuid.uuid[3], Vcb->devices[i].devitem.device_uuid.uuid[4], Vcb->devices[i].devitem.device_uuid.uuid[5], Vcb->devices[i].devitem.device_uuid.uuid[6], Vcb->devices[i].devitem.device_uuid.uuid[7],
             Vcb->devices[i].devitem.device_uuid.uuid[8], Vcb->devices[i].devitem.device_uuid.uuid[9], Vcb->devices[i].devitem.device_uuid.uuid[10], Vcb->devices[i].devitem.device_uuid.uuid[11], Vcb->devices[i].devitem.device_uuid.uuid[12], Vcb->devices[i].devitem.device_uuid.uuid[13], Vcb->devices[i].devitem.device_uuid.uuid[14], Vcb->devices[i].devitem.device_uuid.uuid[15]);
@@ -3016,11 +3016,70 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
         }
     }
     
+    if (Vcb->devices_loaded < Vcb->superblock.num_devices && !IsListEmpty(&volumes)) {
+        LIST_ENTRY* le = volumes.Flink;
+        
+        while (le != &volumes) {
+            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+            
+            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
+                RtlCompareMemory(uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
+            ) {
+                Vcb->devices[Vcb->devices_loaded].devobj = v->devobj;
+                Vcb->devices[Vcb->devices_loaded].devitem.device_uuid = *uuid;
+                Vcb->devices_loaded++;
+                
+                return &Vcb->devices[Vcb->devices_loaded - 1];
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
     WARN("could not find device with uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
          uuid->uuid[0], uuid->uuid[1], uuid->uuid[2], uuid->uuid[3], uuid->uuid[4], uuid->uuid[5], uuid->uuid[6], uuid->uuid[7],
          uuid->uuid[8], uuid->uuid[9], uuid->uuid[10], uuid->uuid[11], uuid->uuid[12], uuid->uuid[13], uuid->uuid[14], uuid->uuid[15]);
     
     return NULL;
+}
+
+static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    STORAGE_HOTPLUG_INFO shi;
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi, sizeof(STORAGE_HOTPLUG_INFO), TRUE, NULL);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    return shi.MediaRemovable != 0 ? TRUE : FALSE;
+}
+
+static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    ULONG cc;
+    IO_STATUS_BLOCK iosb;
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (iosb.Information < sizeof(ULONG)) {
+        ERR("iosb.Information was too short\n");
+        return 0;
+    }
+    
+    return cc;
+}
+
+static void init_device(device_extension* Vcb, device* dev) {
+    dev->removable = is_device_removable(dev->devobj);
+    dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
 }
 
 static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
@@ -3044,10 +3103,56 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     do {
         TRACE("(%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         
-        if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM && tp.item->key.offset == 1) {
-            // FIXME - this is a hack; make this work with multiple devices!
-            if (tp.item->size > 0)
-                RtlCopyMemory(&Vcb->devices[0].devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
+        if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM) {
+            if (tp.item->size < sizeof(DEV_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
+            } else {
+                DEV_ITEM* di = (DEV_ITEM*)tp.item->data;
+                BOOL done = FALSE;
+                
+                for (i = 0; i < Vcb->devices_loaded; i++) {
+                    if (Vcb->devices[i].devobj && RtlCompareMemory(&Vcb->devices[i].devitem.device_uuid, &di->device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                        RtlCopyMemory(&Vcb->devices[i].devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
+                        
+                        if (i > 0)
+                            init_device(Vcb, &Vcb->devices[i]);
+                        
+                        done = TRUE;
+                        break;
+                    }
+                }
+                
+                if (!done) {
+                    if (!IsListEmpty(&volumes) && Vcb->devices_loaded < Vcb->superblock.num_devices) {
+                        LIST_ENTRY* le = volumes.Flink;
+                        
+                        while (le != &volumes) {
+                            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+            
+                            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
+                                RtlCompareMemory(&di->device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
+                            ) {
+                                Vcb->devices[Vcb->devices_loaded].devobj = v->devobj;
+                                RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
+                                init_device(Vcb, &Vcb->devices[i]);
+                                Vcb->devices_loaded++;
+
+                                done = TRUE;
+                                break;
+                            }
+                            
+                            le = le->Flink;
+                        }
+                        
+                        if (!done) {
+                            ERR("volume not found: device %llx, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
+                            Vcb->devices[i].devitem.device_uuid.uuid[0], Vcb->devices[i].devitem.device_uuid.uuid[1], Vcb->devices[i].devitem.device_uuid.uuid[2], Vcb->devices[i].devitem.device_uuid.uuid[3], Vcb->devices[i].devitem.device_uuid.uuid[4], Vcb->devices[i].devitem.device_uuid.uuid[5], Vcb->devices[i].devitem.device_uuid.uuid[6], Vcb->devices[i].devitem.device_uuid.uuid[7],
+                            Vcb->devices[i].devitem.device_uuid.uuid[8], Vcb->devices[i].devitem.device_uuid.uuid[9], Vcb->devices[i].devitem.device_uuid.uuid[10], Vcb->devices[i].devitem.device_uuid.uuid[11], Vcb->devices[i].devitem.device_uuid.uuid[12], Vcb->devices[i].devitem.device_uuid.uuid[13], Vcb->devices[i].devitem.device_uuid.uuid[14], Vcb->devices[i].devitem.device_uuid.uuid[15]);
+                        }
+                    } else
+                        ERR("unexpected device %llx found\n", tp.item->key.offset);
+                }
+            }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
@@ -3329,40 +3434,6 @@ static root* find_default_subvol(device_extension* Vcb) {
     return NULL;
 }
 
-static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
-    NTSTATUS Status;
-    STORAGE_HOTPLUG_INFO shi;
-    
-    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi, sizeof(STORAGE_HOTPLUG_INFO), TRUE, NULL);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("dev_ioctl returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    return shi.MediaRemovable != 0 ? TRUE : FALSE;
-}
-
-static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
-    NTSTATUS Status;
-    ULONG cc;
-    IO_STATUS_BLOCK iosb;
-    
-    Status = dev_ioctl(devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("dev_ioctl returned %08x\n", Status);
-        return 0;
-    }
-    
-    if (iosb.Information < sizeof(ULONG)) {
-        ERR("iosb.Information was too short\n");
-        return 0;
-    }
-    
-    return cc;
-}
-
 static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG i;
@@ -3553,19 +3624,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && v->devnum < Vcb->superblock.dev_item.dev_id) {
             // skipping over device in RAID which isn't the first one
-            // FIXME - hide this in My Computer
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit;
         }
         
         le = le->Flink;
-    }
-    
-    // FIXME - remove this when we can
-    if (Vcb->superblock.num_devices > 1) {
-        WARN("not mounting - multiple devices not yet implemented\n");
-        Status = STATUS_UNRECOGNIZED_VOLUME;
-        goto exit;
     }
     
     Vcb->readonly = FALSE;
@@ -3586,11 +3649,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
-    Vcb->devices[0].removable = is_device_removable(Vcb->devices[0].devobj);
-    Vcb->devices[0].change_count = Vcb->devices[0].removable ? get_device_change_count(Vcb->devices[0].devobj) : 0;
+    init_device(Vcb, &Vcb->devices[0]);
     
     if (Vcb->superblock.num_devices > 1)
         RtlZeroMemory(&Vcb->devices[1], sizeof(DEV_ITEM) * (Vcb->superblock.num_devices - 1));
+    
+    Vcb->devices_loaded = 1;
     
     // FIXME - find other devices, if there are any
     
@@ -3621,7 +3685,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
-    
+       
     InitializeListHead(&Vcb->sys_chunks);
     Status = load_sys_chunks(Vcb);
     if (!NT_SUCCESS(Status)) {
@@ -3641,6 +3705,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (!NT_SUCCESS(Status)) {
         ERR("load_chunk_root returned %08x\n", Status);
         goto exit;
+    }
+    
+    if (Vcb->superblock.num_devices > 1) {
+        Vcb->readonly = TRUE; // FIXME
+        // FIXME - check generations are okay
+        // FIXME - check nothing missing
     }
     
     add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, NULL);
