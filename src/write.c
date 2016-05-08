@@ -154,14 +154,13 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
     unsigned int i = 0;
     UINT32 crc32;
     
-    // FIXME - work with RAID
+    RtlCopyMemory(&Vcb->superblock.dev_item, &device->devitem, sizeof(DEV_ITEM));
     
     // FIXME - only write one superblock if on SSD (?)
     while (superblock_addrs[i] > 0 && Vcb->length >= superblock_addrs[i] + sizeof(superblock)) {
         TRACE("writing superblock %u\n", i);
         
         Vcb->superblock.sb_phys_addr = superblock_addrs[i];
-        RtlCopyMemory(&Vcb->superblock.dev_item, &device->devitem, sizeof(DEV_ITEM));
         
         crc32 = calc_crc32c(0xffffffff, (UINT8*)&Vcb->superblock.uuid, (ULONG)sizeof(superblock) - sizeof(Vcb->superblock.checksum));
         crc32 = ~crc32;

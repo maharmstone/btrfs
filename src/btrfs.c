@@ -3737,7 +3737,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (Vcb->superblock.num_devices > 1) {
-        Vcb->readonly = TRUE; // FIXME
         // FIXME - check generations are okay
         // FIXME - check nothing missing
     }
