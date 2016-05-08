@@ -4208,9 +4208,7 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         goto end2;
     }
     
-    FIXME("STUB: device control\n");
-    
-    WARN("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+    TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
     
     if (!FileObject) {
         ERR("FileObject was NULL\n");
@@ -4226,27 +4224,16 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         goto end;
     }
     
-    if (fcb == Vcb->volume_fcb) {
-        FIXME("FIXME - pass through\n");
+    if (fcb != Vcb->volume_fcb) {
         Status = STATUS_NOT_IMPLEMENTED;
-    } else {
-        TRACE("filename = %S\n", file_desc(FileObject));
-        
-        switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
-            case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:
-                TRACE("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME\n");
-                Status = STATUS_INVALID_PARAMETER;
-                break;
-
-            default:
-                WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
-                                        IrpSp->Parameters.DeviceIoControl.IoControlCode, (IrpSp->Parameters.DeviceIoControl.IoControlCode & 0xff0000) >> 16,
-                                        (IrpSp->Parameters.DeviceIoControl.IoControlCode & 0xc000) >> 14, (IrpSp->Parameters.DeviceIoControl.IoControlCode & 0x3ffc) >> 2,
-                                        IrpSp->Parameters.DeviceIoControl.IoControlCode & 0x3);
-                Status = STATUS_INVALID_PARAMETER;
-                break;
-        }
+        goto end;
     }
+    
+    IoSkipCurrentIrpStackLocation(Irp);
+    
+    Status = IoCallDriver(Vcb->devices[0].devobj, Irp);
+    
+    goto end2;
     
 end:
     Irp->IoStatus.Status = Status;
