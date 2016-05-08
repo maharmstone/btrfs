@@ -112,26 +112,26 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
         devices = c->devices;
     }
     
-//     if (ci->type & BLOCK_FLAG_DUPLICATE) {
+    if (ci->type & BLOCK_FLAG_DUPLICATE) {
 //         type = BLOCK_FLAG_DUPLICATE;
-//     } else if (ci->type & BLOCK_FLAG_RAID0) {
-//         FIXME("RAID0 not yet supported\n");
-//         return STATUS_NOT_IMPLEMENTED;
-//     } else if (ci->type & BLOCK_FLAG_RAID1) {
+    } else if (ci->type & BLOCK_FLAG_RAID0) {
+        FIXME("RAID0 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (ci->type & BLOCK_FLAG_RAID1) {
 //         FIXME("RAID1 not yet supported\n");
 //         return STATUS_NOT_IMPLEMENTED;
-//     } else if (ci->type & BLOCK_FLAG_RAID10) {
-//         FIXME("RAID10 not yet supported\n");
-//         return STATUS_NOT_IMPLEMENTED;
-//     } else if (ci->type & BLOCK_FLAG_RAID5) {
-//         FIXME("RAID5 not yet supported\n");
-//         return STATUS_NOT_IMPLEMENTED;
-//     } else if (ci->type & BLOCK_FLAG_RAID6) {
-//         FIXME("RAID6 not yet supported\n");
-//         return STATUS_NOT_IMPLEMENTED;
+    } else if (ci->type & BLOCK_FLAG_RAID10) {
+        FIXME("RAID10 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (ci->type & BLOCK_FLAG_RAID5) {
+        FIXME("RAID5 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (ci->type & BLOCK_FLAG_RAID6) {
+        FIXME("RAID6 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
 //     } else { // SINGLE
 //         type = 0;
-//     }
+    }
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
