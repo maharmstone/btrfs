@@ -113,8 +113,6 @@ NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf) {
     NTSTATUS Status;
     device** devices;
     
-    // FIXME - make this work with RAID
-    
     if (Vcb->log_to_phys_loaded) {
         chunk* c = get_chunk_from_address(Vcb, addr);
         
@@ -171,8 +169,7 @@ NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf) {
         FIXME("RAID0 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
     } else if (ci->type & BLOCK_FLAG_RAID1) {
-        FIXME("RAID1 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
+//         type = BLOCK_FLAG_DUPLICATE;
     } else if (ci->type & BLOCK_FLAG_RAID10) {
         FIXME("RAID10 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;

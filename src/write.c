@@ -1852,6 +1852,26 @@ NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_
         return STATUS_INTERNAL_ERROR;
     }
     
+    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
+//         type = BLOCK_FLAG_DUPLICATE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+        FIXME("RAID0 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1) {
+//         type = BLOCK_FLAG_DUPLICATE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+        FIXME("RAID10 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        FIXME("RAID5 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        FIXME("RAID6 not yet supported\n");
+        return STATUS_NOT_IMPLEMENTED;
+//     } else { // SINGLE
+//         type = 0;
+    }
+    
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     // FIXME - make this work with RAID
