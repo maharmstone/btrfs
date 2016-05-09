@@ -519,9 +519,17 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                 if (ed2->address == 0) {
                     RtlZeroMemory(data + bytes_read, read);
                 } else {
-                    UINT32* csum;
+                    UINT32 *csum, bumpoff = 0;
+                    UINT64 addr;
                     
+                    addr = ed2->address + ed2->offset + off;
                     to_read = sector_align(read, Vcb->superblock.sector_size);
+                    
+                    if (addr % Vcb->superblock.sector_size > 0) {
+                        bumpoff = addr % Vcb->superblock.sector_size;
+                        addr -= bumpoff;
+                        to_read = sector_align(read + bumpoff, Vcb->superblock.sector_size);
+                    }
                     
                     buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
                     
@@ -532,7 +540,7 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     }
                     
                     if (check_csum) {
-                        Status = load_csum(Vcb, ed2->address + ed2->offset + off, to_read / Vcb->superblock.sector_size, &csum);
+                        Status = load_csum(Vcb, addr, to_read / Vcb->superblock.sector_size, &csum);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("load_csum returned %08x\n", Status);
@@ -542,14 +550,14 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     } else
                         csum = NULL;
                     
-                    Status = read_data(Vcb, ed2->address + ed2->offset + off, to_read, csum, buf);
+                    Status = read_data(Vcb, addr, to_read, csum, buf);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         ExFreePool(buf);
                         goto exit;
                     }
                     
-                    RtlCopyMemory(data + bytes_read, buf, read);
+                    RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
                     
                     ExFreePool(buf);
                     
