@@ -352,7 +352,10 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             ULONG readlen;
             
-            j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
+            if (start < tp.item->key.offset)
+                j = 0;
+            else
+                j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
             
             if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
                 ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
