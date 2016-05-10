@@ -567,7 +567,6 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
-NTSTATUS STDCALL read_tree(device_extension* Vcb, UINT64 addr, UINT8* buf);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
@@ -649,6 +648,7 @@ void STDCALL flush_thread(void* context);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf);
 NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, BOOL check_csum, ULONG* pbr);
 NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);

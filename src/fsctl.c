@@ -85,9 +85,9 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_tree(Vcb, addr, buf);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf);
     if (!NT_SUCCESS(Status)) {
-        ERR("read_tree returned %08x\n", Status);
+        ERR("read_data returned %08x\n", Status);
         goto end;
     }
     

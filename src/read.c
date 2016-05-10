@@ -26,9 +26,11 @@ typedef struct {
     chunk* c;
     UINT32 buflen;
     UINT64 num_stripes;
+    LONG stripes_left;
     UINT64 type;
     UINT32 sector_size;
     UINT32* csum;
+    BOOL tree;
     read_data_stripe* stripes;
 } read_data_context;
 
@@ -36,8 +38,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
     UINT64 i;
-    BOOL complete;
-    
+
     // FIXME - we definitely need a per-stripe lock here
     
     if (stripe->status == ReadDataStatus_Cancelling) {
@@ -48,7 +49,15 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     stripe->iosb = Irp->IoStatus;
     
     if (NT_SUCCESS(Irp->IoStatus.Status)) {
-        if (context->csum) {
+        if (context->tree) {
+            tree_header* th = (tree_header*)stripe->buf;
+            UINT32 crc32;
+            
+            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum))
+                stripe->status = ReadDataStatus_CRCError;
+        } else if (context->csum) {
             for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
                 
@@ -74,30 +83,19 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     }
     
 end:
-    complete = TRUE;
-        
-    for (i = 0; i < context->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Pending || context->stripes[i].status == ReadDataStatus_Cancelling) {
-            complete = FALSE;
-            break;
-        }
-    }
-    
-    if (complete)
+    if (InterlockedDecrement(&context->stripes_left) == 0)
         KeSetEvent(&context->Event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, UINT8* buf) {
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
     UINT64 i/*, type*/, offset;
     NTSTATUS Status;
     device** devices;
-    
-    // FIXME - make this work with RAID
     
     if (Vcb->log_to_phys_loaded) {
         chunk* c = get_chunk_from_address(Vcb, addr);
@@ -110,6 +108,43 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
         ci = c->chunk_item;
         offset = c->offset;
         devices = c->devices;
+    } else {
+        LIST_ENTRY* le = Vcb->sys_chunks.Flink;
+        
+        ci = NULL;
+        
+        while (le != &Vcb->sys_chunks) {
+            sys_chunk* sc = CONTAINING_RECORD(le, sys_chunk, list_entry);
+            
+            if (sc->key.obj_id == 0x100 && sc->key.obj_type == TYPE_CHUNK_ITEM && sc->key.offset <= addr) {
+                CHUNK_ITEM* chunk_item = sc->data;
+                
+                if ((addr - sc->key.offset) < chunk_item->size && chunk_item->num_stripes > 0) {
+                    ci = chunk_item;
+                    offset = sc->key.offset;
+                    cis = (CHUNK_ITEM_STRIPE*)&chunk_item[1];
+                    
+                    devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
+                    if (!devices) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    for (i = 0; i < ci->num_stripes; i++) {
+                        devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
+                    }
+                    
+                    break;
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!ci) {
+            ERR("could not find chunk for %llx in bootstrap\n", addr);
+            return STATUS_INTERNAL_ERROR;
+        }
     }
     
     if (ci->type & BLOCK_FLAG_DUPLICATE) {
@@ -147,6 +182,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
     if (!context->stripes) {
         ERR("out of memory\n");
+        ExFreePool(context);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -154,8 +190,10 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     
     context->buflen = length;
     context->num_stripes = ci->num_stripes;
+    context->stripes_left = context->num_stripes;
     context->sector_size = Vcb->superblock.sector_size;
     context->csum = csum;
+    context->tree = is_tree;
 //     context->type = type;
     
     // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
@@ -166,6 +204,7 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
         if (!devices[i]) {
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
+            context->stripes_left--;
         } else {
             context->stripes[i].context = (struct read_data_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
@@ -223,6 +262,17 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     
     // FIXME - if checksum error, write good data over bad
     
+    // check if any of the devices return a "user-induced" error
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Error && IoIsErrorUserInduced(context->stripes[i].iosb.Status)) {
+            IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
+            
+            Status = context->stripes[i].iosb.Status;
+            goto exit;
+        }
+    }
+    
     // check if any of the stripes succeeded
     
     for (i = 0; i < ci->num_stripes; i++) {
@@ -237,7 +287,16 @@ static NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 len
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_CRCError) {
+#ifdef _DEBUG
             WARN("stripe %llu had a checksum error\n", i);
+            
+            if (context->tree) {
+                tree_header* th = (tree_header*)context->stripes[i].buf;
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+            }
+#endif
             
             Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
             goto exit;
@@ -274,6 +333,9 @@ exit:
 
     ExFreePool(context->stripes);
     ExFreePool(context);
+    
+    if (!Vcb->log_to_phys_loaded)
+        ExFreePool(devices);
         
     return Status;
 }
@@ -553,7 +615,7 @@ NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UI
                     } else
                         csum = NULL;
                     
-                    Status = read_data(Vcb, addr, to_read, csum, buf);
+                    Status = read_data(Vcb, addr, to_read, csum, FALSE, buf);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         ExFreePool(buf);
