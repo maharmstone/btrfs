@@ -461,6 +461,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\worker-thread.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\write.c"
 				>
 			</File>

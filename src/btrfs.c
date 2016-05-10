@@ -3358,6 +3358,47 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
+static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    ULONG i;
+    NTSTATUS Status;
+    
+    Vcb->threads.num_threads = 3; // FIXME - number of processors?
+    
+    Vcb->threads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_thread) * Vcb->threads.num_threads, ALLOC_TAG);
+    if (!Vcb->threads.threads) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    // FIXME - free Vcb->threads.threads etc. in uninit
+    
+    RtlZeroMemory(Vcb->threads.threads, sizeof(drv_thread) * Vcb->threads.num_threads);
+    
+    for (i = 0; i < Vcb->threads.num_threads; i++) {
+        Vcb->threads.threads[i].DeviceObject = DeviceObject;
+        KeInitializeEvent(&Vcb->threads.threads[i].event, SynchronizationEvent, FALSE);
+        InitializeListHead(&Vcb->threads.threads[i].jobs);
+        KeInitializeSpinLock(&Vcb->threads.threads[i].spin_lock);
+        
+        Status = PsCreateSystemThread(&Vcb->threads.threads[i].handle, 0, NULL, NULL, NULL, flush_thread, &Vcb->threads.threads[i]);
+        if (!NT_SUCCESS(Status)) {
+            ULONG j;
+            
+            ERR("PsCreateSystemThread returned %08x\n", Status);
+            
+            for (j = 0; j < i; j++) {
+                Vcb->threads.threads[i].quit = TRUE;
+                KeSetEvent(&Vcb->threads.threads[i].event, 0, FALSE);
+            }
+            
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION Stack;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3760,6 +3801,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
+        goto exit;
+    }
+    
+    Status = create_worker_threads(NewDeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("create_worker_threads returned %08x\n", Status);
         goto exit;
     }
     

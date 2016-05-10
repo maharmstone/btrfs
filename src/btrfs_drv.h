@@ -297,6 +297,26 @@ typedef struct {
     LIST_ENTRY list_entry;
 } sys_chunk;
 
+typedef struct {
+    PIRP Irp;
+    LIST_ENTRY list_entry;
+} thread_job;
+
+typedef struct {
+    PDEVICE_OBJECT DeviceObject;
+    HANDLE handle;
+    KEVENT event;
+    BOOL quit;
+    LIST_ENTRY jobs;
+    KSPIN_LOCK spin_lock;
+} drv_thread;
+
+typedef struct {
+    ULONG num_threads;
+    ULONG next_thread;
+    drv_thread* threads;
+} drv_threads;
+
 typedef struct _device_extension {
     device* devices;
 //     DISK_GEOMETRY geometry;
@@ -335,6 +355,7 @@ typedef struct _device_extension {
     LIST_ENTRY chunks;
     LIST_ENTRY trees;
     HANDLE flush_thread_handle;
+    drv_threads threads;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -628,6 +649,9 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
+
+// in worker-thread.c
+void STDCALL worker_thread(void* context);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
