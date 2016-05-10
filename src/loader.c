@@ -77,7 +77,6 @@ int main(void)
 {
  HANDLE hSCManager;
  HANDLE hService;
- SERVICE_STATUS ss;
  int retval = 0;
  BOOL amd64;
 
@@ -179,7 +178,7 @@ int main(void)
 //         printf("okay.\n");
 //     }
    
-   printf("\n >>> Press Enter to unload the driver! <<<\n");
+   printf("\n >>> Press Enter to continue <<<\n");
    getchar();
    
 //    printf("Unmounting volume... ");
@@ -190,15 +189,6 @@ int main(void)
 //     } else {
 //         printf("okay.\n");
 //     }
-
-   printf("Going to stop the service... ");
-   if (ControlService(hService, SERVICE_CONTROL_STOP, &ss) == 0) /* error */
-   {
-      printf("Uh oh:\n");
-      process_error();
-      retval = -4;
-   }
-   else printf("okay.\n");
 
 err_out3:
 
