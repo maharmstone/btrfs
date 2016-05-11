@@ -78,9 +78,8 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 }
             }
         } else if (context->type == BLOCK_FLAG_RAID0) {
+            // no point checking the checksum here, as there's nothing we can do
             stripe->status = ReadDataStatus_Success;
-            
-            // FIXME - check checksum
         }
             
         goto end;
@@ -329,11 +328,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT8 stripe;
         
         for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_CRCError) {
-                WARN("stripe %llu had a checksum error\n", i);
-                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
-                goto exit;
-            } else if (context->stripes[i].status == ReadDataStatus_Error) {
+            if (context->stripes[i].status == ReadDataStatus_Error) {
                 WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
                 Status = context->stripes[i].iosb.Status;
                 goto exit;
@@ -359,6 +354,29 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
             
             stripe = (stripe + 1) % 2;
+        }
+        
+        // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
+        
+        if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
+            tree_header* th = (tree_header*)buf;
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum)) {
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                goto exit;
+            }
+        } else if (csum) {
+            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                
+                if (crc32 != csum[i]) {
+                    WARN("checksum error\n");
+                    Status = ReadDataStatus_CRCError;
+                    goto exit;
+                }
+            }
         }
         
         Status = STATUS_SUCCESS;
