@@ -49,32 +49,38 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     stripe->iosb = Irp->IoStatus;
     
     if (NT_SUCCESS(Irp->IoStatus.Status)) {
-        if (context->tree) {
-            tree_header* th = (tree_header*)stripe->buf;
-            UINT32 crc32;
-            
-            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-            
-            if (crc32 != *((UINT32*)th->csum))
-                stripe->status = ReadDataStatus_CRCError;
-        } else if (context->csum) {
-            for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
+        if (context->type == BLOCK_FLAG_DUPLICATE) {
+            if (context->tree) {
+                tree_header* th = (tree_header*)stripe->buf;
+                UINT32 crc32;
                 
-                if (crc32 != context->csum[i]) {
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                
+                if (crc32 != *((UINT32*)th->csum))
                     stripe->status = ReadDataStatus_CRCError;
-                    goto end;
+            } else if (context->csum) {
+                for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
+                    
+                    if (crc32 != context->csum[i]) {
+                        stripe->status = ReadDataStatus_CRCError;
+                        goto end;
+                    }
                 }
             }
-        }
-        
-        stripe->status = ReadDataStatus_Success;
             
-        for (i = 0; i < context->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Pending) {
-                context->stripes[i].status = ReadDataStatus_Cancelling;
-                IoCancelIrp(context->stripes[i].Irp);
+            stripe->status = ReadDataStatus_Success;
+                
+            for (i = 0; i < context->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Pending) {
+                    context->stripes[i].status = ReadDataStatus_Cancelling;
+                    IoCancelIrp(context->stripes[i].Irp);
+                }
             }
+        } else if (context->type == BLOCK_FLAG_RAID0) {
+            stripe->status = ReadDataStatus_Success;
+            
+            // FIXME - check checksum
         }
             
         goto end;
@@ -89,13 +95,30 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+static void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT64* stripeoff, UINT8* stripe) {
+    UINT64 initoff, startoff;
+    
+    startoff = off % (2 * stripe_length);
+    initoff = (off / (2 * stripe_length)) * stripe_length;
+    
+    if (startoff >= stripe_length) {
+        *stripeoff = initoff + startoff - stripe_length;
+        *stripe = 1;
+    } else {
+        *stripeoff = initoff + startoff;
+        *stripe = 0;
+    }
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
-    UINT64 i/*, type*/, offset;
+    UINT64 i, type, offset;
     NTSTATUS Status;
     device** devices;
+    UINT64 stripestart[2], stripeend[2];
+    UINT8 startoffstripe;
     
     if (Vcb->log_to_phys_loaded) {
         chunk* c = get_chunk_from_address(Vcb, addr);
@@ -148,13 +171,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (ci->type & BLOCK_FLAG_DUPLICATE) {
-//         type = BLOCK_FLAG_DUPLICATE;
+        type = BLOCK_FLAG_DUPLICATE;
     } else if (ci->type & BLOCK_FLAG_RAID0) {
-        FIXME("RAID0 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
+        type = BLOCK_FLAG_RAID0;
     } else if (ci->type & BLOCK_FLAG_RAID1) {
-//         FIXME("RAID1 not yet supported\n");
-//         return STATUS_NOT_IMPLEMENTED;
+        type = BLOCK_FLAG_DUPLICATE;
     } else if (ci->type & BLOCK_FLAG_RAID10) {
         FIXME("RAID10 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
@@ -164,8 +185,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     } else if (ci->type & BLOCK_FLAG_RAID6) {
         FIXME("RAID6 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
-//     } else { // SINGLE
-//         type = 0;
+    } else { // SINGLE
+        type = BLOCK_FLAG_DUPLICATE;
     }
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
@@ -194,14 +215,44 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context->sector_size = Vcb->superblock.sector_size;
     context->csum = csum;
     context->tree = is_tree;
-//     context->type = type;
+    context->type = type;
+    
+    if (type == BLOCK_FLAG_RAID0) {
+        UINT64 startoff, endoff;
+        UINT8 endoffstripe;
+        
+        get_raid0_offset(addr - offset, ci->stripe_length, &startoff, &startoffstripe);
+        get_raid0_offset(addr + length - offset - 1, ci->stripe_length, &endoff, &endoffstripe);
+        
+        if (startoffstripe == 0) {
+            stripestart[0] = startoff;
+            stripestart[1] = startoff - (startoff % ci->stripe_length);
+        } else {
+            stripestart[1] = startoff;
+            stripestart[0] = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+        }
+        
+        if (endoffstripe == 0) {
+            stripeend[0] = endoff + 1;
+            stripeend[1] = endoff - (endoff % ci->stripe_length);
+        } else {
+            stripeend[1] = endoff + 1;
+            stripeend[0] = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
+        }
+        
+        if (stripestart[0] == stripeend[0] || stripestart[1] == stripeend[1])
+            type = BLOCK_FLAG_DUPLICATE;
+    } else if (type == BLOCK_FLAG_DUPLICATE) {
+        stripestart[0] = stripestart[1] = addr - offset;
+        stripeend[0] = stripeend[1] = stripestart[0] + length;
+    }
     
     // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
     
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        if (!devices[i]) {
+        if (!devices[i] || stripestart[i % 2] == stripeend[i % 2]) {
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
             context->stripes_left--;
@@ -241,8 +292,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
             }
 
-            IrpSp->Parameters.Read.Length = length;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = addr - offset + cis[i].offset;
+            IrpSp->Parameters.Read.Length = stripeend[i % 2] - stripestart[i % 2];
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i % 2] + cis[i].offset;
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             
@@ -273,48 +324,88 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
     }
     
-    // check if any of the stripes succeeded
-    
-    for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Success) {
-            RtlCopyMemory(buf, context->stripes[i].buf, length);
-            Status = STATUS_SUCCESS;
-            goto exit;
-        }
-    }
-    
-    // if not, see if we got a checksum error
-    
-    for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_CRCError) {
-#ifdef _DEBUG
-            WARN("stripe %llu had a checksum error\n", i);
-            
-            if (context->tree) {
-                tree_header* th = (tree_header*)context->stripes[i].buf;
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+    if (type == BLOCK_FLAG_RAID0) {
+        UINT32 pos, stripeoff[2];
+        UINT8 stripe;
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_CRCError) {
+                WARN("stripe %llu had a checksum error\n", i);
+                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                goto exit;
+            } else if (context->stripes[i].status == ReadDataStatus_Error) {
+                WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
+                Status = context->stripes[i].iosb.Status;
+                goto exit;
             }
-#endif
+        }
+        
+        pos = 0;
+        stripeoff[0] = stripeoff[1] = 0;
+        
+        stripe = startoffstripe;
+        while (pos < length) {
+            if (pos == 0) {
+                RtlCopyMemory(buf, context->stripes[stripe].buf, ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
+                stripeoff[stripe] += ci->stripe_length - (stripestart[stripe] % ci->stripe_length);
+                pos += ci->stripe_length - (stripestart[stripe] % ci->stripe_length);
+            } else if (length - pos < ci->stripe_length) {
+                RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], length - pos);
+                pos = length;
+            } else {
+                RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], ci->stripe_length);
+                stripeoff[stripe] += ci->stripe_length;
+                pos += ci->stripe_length;
+            }
             
-            Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
-            goto exit;
+            stripe = (stripe + 1) % 2;
         }
-    }
-    
-    // failing that, return the first error we encountered
-    
-    for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Error) {
-            Status = context->stripes[i].iosb.Status;
-            goto exit;
+        
+        Status = STATUS_SUCCESS;
+    } else if (type == BLOCK_FLAG_DUPLICATE) {
+        // check if any of the stripes succeeded
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Success) {
+                RtlCopyMemory(buf, context->stripes[i].buf, length);
+                Status = STATUS_SUCCESS;
+                goto exit;
+            }
         }
+        
+        // if not, see if we got a checksum error
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_CRCError) {
+#ifdef _DEBUG
+                WARN("stripe %llu had a checksum error\n", i);
+                
+                if (context->tree) {
+                    tree_header* th = (tree_header*)context->stripes[i].buf;
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                    
+                    WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                }
+#endif
+                
+                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                goto exit;
+            }
+        }
+        
+        // failing that, return the first error we encountered
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Error) {
+                Status = context->stripes[i].iosb.Status;
+                goto exit;
+            }
+        }
+        
+        // if we somehow get here, return STATUS_INTERNAL_ERROR
+        
+        Status = STATUS_INTERNAL_ERROR;
     }
-    
-    // if we somehow get here, return STATUS_INTERNAL_ERROR
-    
-    Status = STATUS_INTERNAL_ERROR;
 
 exit:
 
