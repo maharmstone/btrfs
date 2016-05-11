@@ -926,6 +926,9 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     CHUNK_ITEM_STRIPE* cis;
     write_tree_context* wtc;
     write_tree_stripe* stripe;
+    UINT64 stripestart[2], stripeend[2];
+    UINT8* stripedata[2];
+    BOOL need_free;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
@@ -938,8 +941,8 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
 //         type = BLOCK_FLAG_DUPLICATE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
-        FIXME("RAID0 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
+//         FIXME("RAID0 not yet supported\n");
+//         return STATUS_NOT_IMPLEMENTED;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID1) {
 //         type = BLOCK_FLAG_DUPLICATE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
@@ -966,6 +969,70 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     wtc->tree = FALSE;
     
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+        UINT64 startoff, endoff;
+        UINT8 startoffstripe, endoffstripe, stripenum;
+        UINT64 pos, stripeoff[2];
+        
+        get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, &startoff, &startoffstripe);
+        get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, &endoff, &endoffstripe);
+        
+        if (startoffstripe == 0) {
+            stripestart[0] = startoff;
+            stripestart[1] = startoff - (startoff % c->chunk_item->stripe_length);
+        } else {
+            stripestart[1] = startoff;
+            stripestart[0] = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        }
+        
+        if (endoffstripe == 0) {
+            stripeend[0] = endoff + 1;
+            stripeend[1] = endoff - (endoff % c->chunk_item->stripe_length);
+        } else {
+            stripeend[1] = endoff + 1;
+            stripeend[0] = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        }
+        
+        for (i = 0; i < 2; i++) {
+            if (stripestart[i] != stripeend[i]) {
+                stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                
+                if (!stripedata[i]) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+            }
+        }
+        
+        pos = 0;
+        stripeoff[0] = stripeoff[1] = 0;
+        
+        stripenum = startoffstripe;
+        while (pos < length) {
+            if (pos == 0) {
+                RtlCopyMemory(stripedata[stripenum], data, c->chunk_item->stripe_length - (stripestart[stripenum] % c->chunk_item->stripe_length));
+                stripeoff[stripenum] += c->chunk_item->stripe_length - (stripestart[stripenum] % c->chunk_item->stripe_length);
+                pos += c->chunk_item->stripe_length - (stripestart[stripenum] % c->chunk_item->stripe_length);
+            } else if (length - pos < c->chunk_item->stripe_length) {
+                RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
+                break;
+            } else {
+                RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
+                stripeoff[stripenum] += c->chunk_item->stripe_length;
+                pos += c->chunk_item->stripe_length;
+            }
+            
+            stripenum = (stripenum + 1) % 2;
+        }
+
+        need_free = TRUE;
+    } else {
+        stripestart[0] = stripestart[1] = address - c->offset;
+        stripeend[0] = stripeend[1] = stripestart[0] + length;
+        stripedata[0] = stripedata[1] = data;
+        need_free = FALSE;
+    }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
@@ -980,48 +1047,53 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        stripe->context = (struct write_tree_context*)wtc;
-        stripe->buf = data;
-        stripe->device = c->devices[i];
-        RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
-        stripe->status = WriteTreeStatus_Pending;
+        if (stripestart[i] == stripeend[i]) {
+            stripe->status = WriteTreeStatus_Ignore;
+        } else {
+            stripe->context = (struct write_tree_context*)wtc;
+            stripe->buf = stripedata[i];
+            stripe->need_free = need_free;
+            stripe->device = c->devices[i];
+            RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
+            stripe->status = WriteTreeStatus_Pending;
+            
+            stripe->Irp = IoAllocateIrp(stripe->device->devobj->StackSize, FALSE);
         
-        stripe->Irp = IoAllocateIrp(stripe->device->devobj->StackSize, FALSE);
-    
-        if (!stripe->Irp) {
-            ERR("IoAllocateIrp failed\n");
-            free_write_tree_stripes(wtc);
-            ExFreePool(wtc);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
-        IrpSp->MajorFunction = IRP_MJ_WRITE;
-        
-        if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
-            stripe->Irp->AssociatedIrp.SystemBuffer = data;
-
-            stripe->Irp->Flags = IRP_BUFFERED_IO;
-        } else if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
-            stripe->Irp->MdlAddress = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
-            if (!stripe->Irp->MdlAddress) {
-                ERR("IoAllocateMdl failed\n");
+            if (!stripe->Irp) {
+                ERR("IoAllocateIrp failed\n");
                 free_write_tree_stripes(wtc);
                 ExFreePool(wtc);
                 return STATUS_INTERNAL_ERROR;
             }
             
-            MmProbeAndLockPages(stripe->Irp->MdlAddress, KernelMode, IoWriteAccess);
-        } else {
-            stripe->Irp->UserBuffer = data;
+            IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+            IrpSp->MajorFunction = IRP_MJ_WRITE;
+            
+            if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
+                stripe->Irp->AssociatedIrp.SystemBuffer = stripedata[i];
+
+                stripe->Irp->Flags = IRP_BUFFERED_IO;
+            } else if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
+                stripe->Irp->MdlAddress = IoAllocateMdl(stripedata[i], stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
+                if (!stripe->Irp->MdlAddress) {
+                    ERR("IoAllocateMdl failed\n");
+                    free_write_tree_stripes(wtc);
+                    ExFreePool(wtc);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                MmProbeAndLockPages(stripe->Irp->MdlAddress, KernelMode, IoWriteAccess);
+            } else {
+                stripe->Irp->UserBuffer = stripedata[i];
+            }
+
+            IrpSp->Parameters.Write.Length = stripeend[i] - stripestart[i];
+            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
+            
+            stripe->Irp->UserIosb = &stripe->iosb;
+
+            IoSetCompletionRoutine(stripe->Irp, write_tree_completion, stripe, TRUE, TRUE, TRUE);
         }
-
-        IrpSp->Parameters.Write.Length = length;
-        IrpSp->Parameters.Write.ByteOffset.QuadPart = address - c->offset + cis[i].offset;
-        
-        stripe->Irp->UserIosb = &stripe->iosb;
-
-        IoSetCompletionRoutine(stripe->Irp, write_tree_completion, stripe, TRUE, TRUE, TRUE);
 
         InsertTailList(&wtc->stripes, &stripe->list_entry);
     }
@@ -1034,7 +1106,8 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         while (le != &wtc->stripes) {
             write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
             
-            IoCallDriver(stripe->device->devobj, stripe->Irp);
+            if (stripe->status != WriteTreeStatus_Ignore)
+                IoCallDriver(stripe->device->devobj, stripe->Irp);
             
             le = le->Flink;
         }
@@ -1045,7 +1118,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         while (le != &wtc->stripes) {
             write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
             
-            if (!NT_SUCCESS(stripe->iosb.Status)) {
+            if (stripe->status != WriteTreeStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
                 break;
             }
@@ -1871,6 +1944,8 @@ static NTSTATUS STDCALL write_tree_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     LIST_ENTRY* le;
     BOOL complete;
     
+    // FIXME - we need a lock here
+    
     if (stripe->status == WriteTreeStatus_Cancelling) {
         stripe->status = WriteTreeStatus_Cancelled;
         goto end;
@@ -1904,7 +1979,7 @@ end:
     while (le != &context->stripes) {
         write_tree_stripe* s2 = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
         
-        if (s2->status == WriteTreeStatus_Pending || s2->status == WriteTreeStatus_Cancelling) {
+        if (s2->status == WriteTreeStatus_Pending || s2->status == WriteTreeStatus_Cancelling || s2->status == WriteTreeStatus_Ignore) {
             complete = FALSE;
             break;
         }
@@ -1968,6 +2043,7 @@ NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_
         
         stripe->context = (struct write_tree_context*)wtc;
         stripe->buf = data;
+        stripe->need_free = TRUE;
         stripe->device = c->devices[i];
         RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
         stripe->status = WriteTreeStatus_Pending;
@@ -2032,7 +2108,7 @@ void free_write_tree_stripes(write_tree_context* wtc) {
         
         nextle = le->Flink;
 
-        if (stripe->buf && wtc->tree) {
+        if (stripe->buf && stripe->need_free) {
             ExFreePool(stripe->buf);
             
             le2 = le->Flink;
@@ -2517,9 +2593,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             TRACE("chunk_item type = %llx\n", c->chunk_item->type);
             
             if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
-                FIXME("RAID0 not yet supported\n");
-                ExFreePool(bgi);
-                return STATUS_INTERNAL_ERROR;
+                Vcb->superblock.bytes_used += c->used - c->oldused;
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_DUPLICATE) {
                 Vcb->superblock.bytes_used += 2 * (c->used - c->oldused);
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
@@ -5177,8 +5251,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     chunk* c;
     UINT64 flags;
     
-    // FIXME - how do we know which RAID level to put this to?
-    flags = BLOCK_FLAG_DATA; // SINGLE
+    flags = fcb->Vcb->data_flags;
     
     // FIXME - if length is more than max chunk size, loop through and
     // create the new chunks first
@@ -5327,8 +5400,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         }
     }
     
-    // FIXME - how do we know which RAID level to put this to?
-    flags = BLOCK_FLAG_DATA; // SINGLE
+    flags = Vcb->data_flags;
     
 //     if (!chunk_test) { // TESTING
 //         if ((c = alloc_chunk(Vcb, flags, NULL))) {

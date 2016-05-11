@@ -3760,6 +3760,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         ERR("find_chunk_usage returned %08x\n", Status);
         goto exit;
     }
+    
+    Vcb->data_flags = BLOCK_FLAG_DATA | BLOCK_FLAG_RAID0; // FIXME
         
     // We've already increased the generation by one
     if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) {

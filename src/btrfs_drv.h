@@ -344,6 +344,7 @@ typedef struct _device_extension {
 //     ERESOURCE LogToPhysLock;
 //     UINT64 chunk_root_phys_addr;
     UINT64 root_tree_phys_addr;
+    UINT64 data_flags;
 //     log_to_phys* log_to_phys;
     LIST_ENTRY roots;
     LIST_ENTRY drop_roots;
@@ -394,7 +395,8 @@ enum write_tree_status {
     WriteTreeStatus_Success,
     WriteTreeStatus_Error,
     WriteTreeStatus_Cancelling,
-    WriteTreeStatus_Cancelled
+    WriteTreeStatus_Cancelled,
+    WriteTreeStatus_Ignore
 };
 
 struct write_tree_context;
@@ -402,6 +404,7 @@ struct write_tree_context;
 typedef struct {
     struct write_tree_context* context;
     UINT8* buf;
+    BOOL need_free;
     device* device;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
@@ -461,6 +464,21 @@ static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* in
     }
     
     InsertTailList(list, &ins->list_entry);
+}
+
+static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT64* stripeoff, UINT8* stripe) {
+    UINT64 initoff, startoff;
+    
+    startoff = off % (2 * stripe_length);
+    initoff = (off / (2 * stripe_length)) * stripe_length;
+    
+    if (startoff >= stripe_length) {
+        *stripeoff = initoff + startoff - stripe_length;
+        *stripe = 1;
+    } else {
+        *stripeoff = initoff + startoff;
+        *stripe = 0;
+    }
 }
 
 // in btrfs.c

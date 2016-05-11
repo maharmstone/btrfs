@@ -527,8 +527,7 @@ static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 
     chunk* c;
     UINT64 flags;
     
-    // FIXME - how do we know which RAID level to put this to?
-    flags = BLOCK_FLAG_DATA; // SINGLE
+    flags = Vcb->data_flags;
     
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);

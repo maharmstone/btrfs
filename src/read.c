@@ -94,21 +94,6 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT64* stripeoff, UINT8* stripe) {
-    UINT64 initoff, startoff;
-    
-    startoff = off % (2 * stripe_length);
-    initoff = (off / (2 * stripe_length)) * stripe_length;
-    
-    if (startoff >= stripe_length) {
-        *stripeoff = initoff + startoff - stripe_length;
-        *stripe = 1;
-    } else {
-        *stripeoff = initoff + startoff;
-        *stripe = 0;
-    }
-}
-
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
