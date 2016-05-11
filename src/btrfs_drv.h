@@ -390,33 +390,33 @@ typedef struct {
     BOOL deleted;
 } changed_sector;
 
-enum write_tree_status {
-    WriteTreeStatus_Pending,
-    WriteTreeStatus_Success,
-    WriteTreeStatus_Error,
-    WriteTreeStatus_Cancelling,
-    WriteTreeStatus_Cancelled,
-    WriteTreeStatus_Ignore
+enum write_data_status {
+    WriteDataStatus_Pending,
+    WriteDataStatus_Success,
+    WriteDataStatus_Error,
+    WriteDataStatus_Cancelling,
+    WriteDataStatus_Cancelled,
+    WriteDataStatus_Ignore
 };
 
-struct write_tree_context;
+struct write_data_context;
 
 typedef struct {
-    struct write_tree_context* context;
+    struct write_data_context* context;
     UINT8* buf;
     BOOL need_free;
     device* device;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
-    enum write_tree_status status;
+    enum write_data_status status;
     LIST_ENTRY list_entry;
-} write_tree_stripe;
+} write_data_stripe;
 
 typedef struct {
     KEVENT Event;
     LIST_ENTRY stripes;
     BOOL tree;
-} write_tree_context;
+} write_data_context;
 
 // #pragma pack(pop)
 
@@ -618,9 +618,9 @@ NTSTATUS consider_write(device_extension* Vcb);
 BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
                                UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length);
-NTSTATUS write_tree(device_extension* Vcb, UINT64 addr, UINT8* data, write_tree_context* wtc);
-void free_write_tree_stripes(write_tree_context* wtc);
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc);
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length);
+void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 

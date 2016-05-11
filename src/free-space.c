@@ -1033,7 +1033,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
                 return STATUS_INTERNAL_ERROR;
             }
             
-            Status = write_data(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
+            Status = write_data_complete(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
                 return Status;

@@ -66,7 +66,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
 static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64 dupflags, UINT64* newaddr, LIST_ENTRY* rollback) {
     UINT8* buf;
     NTSTATUS Status;
-    write_tree_context* wtc;
+    write_data_context* wtc;
     LIST_ENTRY* le;
     tree t;
     tree_header* th;
@@ -78,7 +78,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_tree_context), ALLOC_TAG);
+    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
     if (!wtc) {
         ERR("out of memory\n");
         ExFreePool(buf);
@@ -172,9 +172,9 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     InitializeListHead(&wtc->stripes);
     wtc->tree = TRUE;
     
-    Status = write_tree(Vcb, t.new_address, buf, wtc);
+    Status = write_data(Vcb, t.new_address, buf, Vcb->superblock.node_size, wtc);
     if (!NT_SUCCESS(Status)) {
-        ERR("write_tree returned %08x\n", Status);
+        ERR("write_data returned %08x\n", Status);
         goto end;
     }
     
@@ -182,9 +182,10 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         // launch writes and wait
         le = wtc->stripes.Flink;
         while (le != &wtc->stripes) {
-            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
-            IoCallDriver(stripe->device->devobj, stripe->Irp);
+            if (stripe->status != WriteDataStatus_Ignore)
+                IoCallDriver(stripe->device->devobj, stripe->Irp);
             
             le = le->Flink;
         }
@@ -193,9 +194,9 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         
         le = wtc->stripes.Flink;
         while (le != &wtc->stripes) {
-            write_tree_stripe* stripe = CONTAINING_RECORD(le, write_tree_stripe, list_entry);
+            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
-            if (!NT_SUCCESS(stripe->iosb.Status)) {
+            if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
                 break;
             }
@@ -203,7 +204,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
             le = le->Flink;
         }
         
-        free_write_tree_stripes(wtc);
+        free_write_data_stripes(wtc);
         buf = NULL;
     }
     
