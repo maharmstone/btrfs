@@ -3109,6 +3109,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     searchkey.obj_type = 0;
     searchkey.offset = 0;
     
+    Vcb->data_flags = 0;
+    
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
@@ -3208,6 +3210,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
             
                 RtlCopyMemory(c->chunk_item, tp.item->data, tp.item->size);
                 
+                if (c->chunk_item->type & BLOCK_FLAG_DATA && c->chunk_item->type > Vcb->data_flags)
+                    Vcb->data_flags = c->chunk_item->type;
+                
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     
@@ -3240,6 +3245,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
     } while (b);
     
     Vcb->log_to_phys_loaded = TRUE;
+    
+    if (Vcb->data_flags == 0)
+        Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID0 : 0);
     
     return STATUS_SUCCESS;
 }
@@ -3761,8 +3769,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    Vcb->data_flags = BLOCK_FLAG_DATA | BLOCK_FLAG_RAID0; // FIXME
-        
     // We've already increased the generation by one
     if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) {
         WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
