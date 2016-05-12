@@ -376,7 +376,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             if (crc32 != *((UINT32*)th->csum)) {
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                Status = STATUS_CRC_ERROR;
                 goto exit;
             }
         } else if (csum) {
@@ -385,7 +385,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 
                 if (crc32 != csum[i]) {
                     WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
-                    Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                    Status = STATUS_CRC_ERROR;
                     goto exit;
                 }
             }
@@ -418,7 +418,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 }
 #endif
                 
-                Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
+                Status = STATUS_CRC_ERROR;
                 goto exit;
             }
         }
