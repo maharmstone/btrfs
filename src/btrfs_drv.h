@@ -466,19 +466,14 @@ static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* in
     InsertTailList(list, &ins->list_entry);
 }
 
-static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT64* stripeoff, UINT8* stripe) {
+static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 num_stripes, UINT64* stripeoff, UINT16* stripe) {
     UINT64 initoff, startoff;
     
-    startoff = off % (2 * stripe_length);
-    initoff = (off / (2 * stripe_length)) * stripe_length;
+    startoff = off % (num_stripes * stripe_length);
+    initoff = (off / (num_stripes * stripe_length)) * stripe_length;
     
-    if (startoff >= stripe_length) {
-        *stripeoff = initoff + startoff - stripe_length;
-        *stripe = 1;
-    } else {
-        *stripeoff = initoff + startoff;
-        *stripe = 0;
-    }
+    *stripe = startoff / stripe_length;
+    *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
 
 // in btrfs.c

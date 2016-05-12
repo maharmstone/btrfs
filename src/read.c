@@ -101,8 +101,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     UINT64 i, type, offset;
     NTSTATUS Status;
     device** devices;
-    UINT64 stripestart[2], stripeend[2];
-    UINT8 startoffstripe;
+    UINT64 *stripestart = NULL, *stripeend = NULL;
+    UINT16 startoffstripe;
     
     if (Vcb->log_to_phys_loaded) {
         chunk* c = get_chunk_from_address(Vcb, addr);
@@ -201,34 +201,50 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context->tree = is_tree;
     context->type = type;
     
+    stripestart = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
+    if (!stripestart) {
+        ERR("out of memory\n");
+        ExFreePool(context);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    stripeend = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
+    if (!stripeend) {
+        ERR("out of memory\n");
+        ExFreePool(stripestart);
+        ExFreePool(context);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     if (type == BLOCK_FLAG_RAID0) {
         UINT64 startoff, endoff;
-        UINT8 endoffstripe;
+        UINT16 endoffstripe;
         
-        get_raid0_offset(addr - offset, ci->stripe_length, &startoff, &startoffstripe);
-        get_raid0_offset(addr + length - offset - 1, ci->stripe_length, &endoff, &endoffstripe);
+        get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes, &startoff, &startoffstripe);
+        get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes, &endoff, &endoffstripe);
         
-        if (startoffstripe == 0) {
-            stripestart[0] = startoff;
-            stripestart[1] = startoff - (startoff % ci->stripe_length);
-        } else {
-            stripestart[1] = startoff;
-            stripestart[0] = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (startoffstripe > i) {
+                stripestart[i] = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+            } else if (startoffstripe == i) {
+                stripestart[i] = startoff;
+            } else {
+                stripestart[i] = startoff - (startoff % ci->stripe_length);
+            }
+            
+            if (endoffstripe > i) {
+                stripeend[i] = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
+            } else if (endoffstripe == i) {
+                stripeend[i] = endoff + 1;
+            } else {
+                stripeend[i] = endoff - (endoff % ci->stripe_length);
+            }
         }
-        
-        if (endoffstripe == 0) {
-            stripeend[0] = endoff + 1;
-            stripeend[1] = endoff - (endoff % ci->stripe_length);
-        } else {
-            stripeend[1] = endoff + 1;
-            stripeend[0] = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
-        }
-        
-        if (stripestart[0] == stripeend[0] || stripestart[1] == stripeend[1])
-            type = BLOCK_FLAG_DUPLICATE;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        stripestart[0] = stripestart[1] = addr - offset;
-        stripeend[0] = stripeend[1] = stripestart[0] + length;
+        for (i = 0; i < ci->num_stripes; i++) {
+            stripestart[i] = addr - offset;
+            stripeend[i] = stripestart[i] + length;
+        }
     }
     
     // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
@@ -236,13 +252,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        if (!devices[i] || stripestart[i % 2] == stripeend[i % 2]) {
+        if (!devices[i] || stripestart[i] == stripeend[i]) {
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
             context->stripes_left--;
         } else {
             context->stripes[i].context = (struct read_data_context*)context;
-            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
             
             if (!context->stripes[i].buf) {
                 ERR("out of memory\n");
@@ -264,7 +280,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
                 FIXME("FIXME - buffered IO\n");
             } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, length, FALSE, FALSE, NULL);
+                context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
                 if (!context->stripes[i].Irp->MdlAddress) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -276,8 +292,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
             }
 
-            IrpSp->Parameters.Read.Length = stripeend[i % 2] - stripestart[i % 2];
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i % 2] + cis[i].offset;
+            IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             
@@ -309,7 +325,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        UINT32 pos, stripeoff[2];
+        UINT32 pos, *stripeoff;
         UINT8 stripe;
         
         for (i = 0; i < ci->num_stripes; i++) {
@@ -321,14 +337,23 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
         
         pos = 0;
-        stripeoff[0] = stripeoff[1] = 0;
+        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
+        if (!stripeoff) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
         
         stripe = startoffstripe;
         while (pos < length) {
             if (pos == 0) {
-                RtlCopyMemory(buf, context->stripes[stripe].buf, ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
-                stripeoff[stripe] += ci->stripe_length - (stripestart[stripe] % ci->stripe_length);
-                pos += ci->stripe_length - (stripestart[stripe] % ci->stripe_length);
+                UINT32 readlen = min(stripeend[stripe] - stripestart[stripe], ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
+                
+                RtlCopyMemory(buf, context->stripes[stripe].buf, readlen);
+                stripeoff[stripe] += readlen;
+                pos += readlen;
             } else if (length - pos < ci->stripe_length) {
                 RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], length - pos);
                 pos = length;
@@ -338,8 +363,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 pos += ci->stripe_length;
             }
             
-            stripe = (stripe + 1) % 2;
+            stripe = (stripe + 1) % ci->num_stripes;
         }
+        
+        ExFreePool(stripeoff);
         
         // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
         
@@ -357,8 +384,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 
                 if (crc32 != csum[i]) {
-                    WARN("checksum error\n");
-                    Status = ReadDataStatus_CRCError;
+                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
+                    Status = STATUS_IMAGE_CHECKSUM_MISMATCH;
                     goto exit;
                 }
             }
@@ -411,6 +438,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
 
 exit:
+    if (stripestart) ExFreePool(stripestart);
+    if (stripeend) ExFreePool(stripeend);
 
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].Irp) {
