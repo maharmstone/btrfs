@@ -2819,6 +2819,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         
         IrpSp->FileObject->SectionObjectPointer = &Vcb->volume_fcb->nonpaged->segment_object;
 
+        if (!IrpSp->FileObject->Vpb)
+            IrpSp->FileObject->Vpb = DeviceObject->Vpb;
+
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;
     } else {
