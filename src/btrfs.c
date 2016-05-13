@@ -1793,6 +1793,9 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     if (fcb->debug_desc)
         return fcb->debug_desc;
     
+    if (fcb == fcb->Vcb->volume_fcb)
+        return L"volume FCB";
+    
     fcb->debug_desc = ExAllocatePoolWithTag(PagedPool, 60 * sizeof(WCHAR), ALLOC_TAG);
     if (!fcb->debug_desc)
         return L"(memory error)";
