@@ -92,6 +92,12 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         leaf_node* ln = (leaf_node*)(buf + sizeof(tree_header));
         unsigned int i;
         
+        if ((t->header.num_items * sizeof(leaf_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
+            ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
+            ExFreePool(buf);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         for (i = 0; i < t->header.num_items; i++) {
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
             if (!td) {
@@ -128,6 +134,12 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     } else {
         internal_node* in = (internal_node*)(buf + sizeof(tree_header));
         unsigned int i;
+        
+        if ((t->header.num_items * sizeof(internal_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
+            ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
+            ExFreePool(buf);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         
         for (i = 0; i < t->header.num_items; i++) {
             td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
