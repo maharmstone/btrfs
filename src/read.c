@@ -15,6 +15,7 @@ struct read_data_context;
 typedef struct {
     struct read_data_context* context;
     UINT8* buf;
+    UINT16 stripenum;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_data_status status;
@@ -29,6 +30,7 @@ typedef struct {
     LONG stripes_left;
     UINT64 type;
     UINT32 sector_size;
+    UINT16 firstoff, startoffstripe, sectors_per_stripe;
     UINT32* csum;
     BOOL tree;
     read_data_stripe* stripes;
@@ -81,8 +83,58 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
             // no point checking the checksum here, as there's nothing we can do
             stripe->status = ReadDataStatus_Success;
         } else if (context->type == BLOCK_FLAG_RAID10) {
-            // FIXME - do RAID10 checksum checking
+            if (context->csum) {
+                UINT16 start, left;
+                UINT32 j;
+                
+                if (context->startoffstripe == stripe->stripenum) {
+                    start = 0;
+                    left = context->sectors_per_stripe - context->firstoff;
+                } else {
+                    UINT16 ns;
+                    
+                    if (context->startoffstripe > stripe->stripenum) {
+                        ns = stripe->stripenum + (context->num_stripes / 2) - context->startoffstripe;
+                    } else {
+                        ns = stripe->stripenum - context->startoffstripe;
+                    }
+                    
+                    if (context->firstoff == 0)
+                        start = context->sectors_per_stripe * ns;
+                    else
+                        start = (context->sectors_per_stripe - context->firstoff) + (context->sectors_per_stripe * (ns - 1));
+                    
+                    left = context->sectors_per_stripe;
+                }
+                
+                j = start;
+                for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
+                    
+                    if (crc32 != context->csum[j]) {
+                        int3;
+                        stripe->status = ReadDataStatus_CRCError;
+                        goto end;
+                    }
+                    
+                    j++;
+                    left--;
+                    
+                    if (left == 0) {
+                        j += context->sectors_per_stripe;
+                        left = context->sectors_per_stripe;
+                    }
+                }
+            }
+            
             stripe->status = ReadDataStatus_Success;
+            
+            for (i = 0; i < context->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Pending && context->stripes[i].stripenum == stripe->stripenum) {
+                    context->stripes[i].status = ReadDataStatus_Cancelling;
+                    IoCancelIrp(context->stripes[i].Irp);
+                }
+            }
         }
             
         goto end;
@@ -255,6 +307,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
         
+        context->firstoff = (startoff % ci->stripe_length) / Vcb->superblock.sector_size;
+        context->startoffstripe = startoffstripe;
+        context->sectors_per_stripe = ci->stripe_length / Vcb->superblock.sector_size;
+        
         startoffstripe *= ci->sub_stripes;
         endoffstripe *= ci->sub_stripes;
         
@@ -304,6 +360,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
+            }
+            
+            if (type == BLOCK_FLAG_RAID10) {
+                context->stripes[i].stripenum = i / ci->sub_stripes;
             }
 
             context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
@@ -510,7 +570,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
         
-        if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
+        if (is_tree) {
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
@@ -518,16 +578,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
                 Status = STATUS_CRC_ERROR;
                 goto exit;
-            }
-        } else if (csum) {
-            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                
-                if (crc32 != csum[i]) {
-                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
-                    Status = STATUS_CRC_ERROR;
-                    goto exit;
-                }
             }
         }
         
