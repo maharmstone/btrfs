@@ -2952,7 +2952,6 @@ static NTSTATUS add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 siz
     
     dh->address = address;
     dh->size = size;
-//     dh->provisional = FALSE;
     
     InsertTailList(disk_holes, &dh->listentry);
     

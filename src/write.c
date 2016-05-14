@@ -373,48 +373,6 @@ typedef struct {
     device* device;
 } stripe;
 
-// static void add_provisional_disk_hole(device_extension* Vcb, stripe* s, UINT64 max_stripe_size) {
-// //     LIST_ENTRY* le = s->device->disk_holes.Flink;
-// //     disk_hole* dh;
-// 
-// //     ERR("old holes:\n");
-// //     while (le != &s->device->disk_holes) {
-// //         dh = CONTAINING_RECORD(le, disk_hole, listentry);
-// //         
-// //         ERR("address %llx, size %llx, provisional %u\n", dh->address, dh->size, dh->provisional);
-// //         
-// //         le = le->Flink;
-// //     }
-//     
-//     if (s->dh->size <= max_stripe_size) {
-//         s->dh->provisional = TRUE;
-//     } else {
-//         disk_hole* newdh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
-//         if (!newdh) {
-//             ERR("out of memory\n");
-//             return;
-//         }
-//         
-//         newdh->address = s->dh->address + max_stripe_size;
-//         newdh->size = s->dh->size - max_stripe_size;
-//         newdh->provisional = FALSE;
-//         InsertTailList(&s->device->disk_holes, &newdh->listentry);
-//         
-//         s->dh->size = max_stripe_size;
-//         s->dh->provisional = TRUE;
-//     }
-//     
-// //     ERR("new holes:\n");
-// //     le = s->device->disk_holes.Flink;
-// //     while (le != &s->device->disk_holes) {
-// //         dh = CONTAINING_RECORD(le, disk_hole, listentry);
-// //         
-// //         ERR("address %llx, size %llx, provisional %u\n", dh->address, dh->size, dh->provisional);
-// //         
-// //         le = le->Flink;
-// //     }
-// }
-
 static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -501,74 +459,6 @@ static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64
     return TRUE;
 }
 
-// static void reset_disk_holes(device* device, BOOL commit) {
-//     LIST_ENTRY* le = device->disk_holes.Flink;
-//     disk_hole* dh;
-// 
-// //     ERR("old holes:\n");
-// //     while (le != &device->disk_holes) {
-// //         dh = CONTAINING_RECORD(le, disk_hole, listentry);
-// //         
-// //         ERR("address %llx, size %llx, provisional %u\n", dh->address, dh->size, dh->provisional);
-// //         
-// //         le = le->Flink;
-// //     }
-//     
-//     le = device->disk_holes.Flink;
-//     while (le != &device->disk_holes) {
-//         LIST_ENTRY* le2 = le->Flink;
-//         
-//         dh = CONTAINING_RECORD(le, disk_hole, listentry);
-//         
-//         if (dh->provisional) {
-//             if (commit) {
-//                 RemoveEntryList(le);
-//                 ExFreePool(dh);
-//             } else {
-//                 dh->provisional = FALSE;
-//             }
-//         }
-//         
-//         le = le2;
-//     }
-//     
-//     if (!commit) {
-//         le = device->disk_holes.Flink;
-//         while (le != &device->disk_holes) {
-//             LIST_ENTRY* le2 = le->Flink;
-//             
-//             dh = CONTAINING_RECORD(le, disk_hole, listentry);
-//             
-//             while (le2 != &device->disk_holes) {
-//                 disk_hole* dh2 = CONTAINING_RECORD(le2, disk_hole, listentry);
-//                 
-//                 if (dh2->address == dh->address + dh->size) {
-//                     LIST_ENTRY* le3 = le2->Flink;
-//                     dh->size += dh2->size;
-//                     
-//                     RemoveEntryList(le2);
-//                     ExFreePool(dh2);
-//                     
-//                     le2 = le3;
-//                 } else
-//                     break;
-//             }
-//             
-//             le = le->Flink;
-//         }
-//     }
-//         
-// //     ERR("new holes:\n");
-// //     le = device->disk_holes.Flink;
-// //     while (le != &device->disk_holes) {
-// //         dh = CONTAINING_RECORD(le, disk_hole, listentry);
-// //         
-// //         ERR("address %llx, size %llx, provisional %u\n", dh->address, dh->size, dh->provisional);
-// //         
-// //         le = le->Flink;
-// //     }
-// }
-
 static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, ULONG size) {
     sys_chunk *sc, *sc2;
     LIST_ENTRY* le;
@@ -641,7 +531,6 @@ static NTSTATUS add_new_disk_hole(device* dev, UINT64 addr, UINT64 length) {
 // //     
 // //     dh->address = address;
 // //     dh->size = size;
-// //     dh->provisional = FALSE;
 // //     
 // //     InsertTailList(disk_holes, &dh->listentry);
 // //     
@@ -662,7 +551,6 @@ static NTSTATUS add_new_disk_hole(device* dev, UINT64 addr, UINT64 length) {
 //             
 //             dh2->address = addr;
 //             dh2->size = length;
-//             dh2->provisional = FALSE;
 //             
 //             InsertHeadList(dh->listentry.Blink, &dh2->listentry);
 //             
@@ -703,12 +591,10 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
                 while (le != &Vcb->devices[j].disk_holes) {
                     disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
                     
-//                     if (!dh->provisional) {
-                        if (dh->size >= max_stripe_size && (!dh1 || dh->size < dh1->size)) {
-                            dh2 = dh1;
-                            dh1 = dh;
-                        }
-//                     }
+                    if (dh->size >= max_stripe_size && (!dh1 || dh->size < dh1->size)) {
+                        dh2 = dh1;
+                        dh1 = dh;
+                    }
 
                     le = le->Flink;
                 }
@@ -764,15 +650,13 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
                     while (le != &Vcb->devices[j].disk_holes) {
                         disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
                         
-//                         if (!dh->provisional) {
-                            if ((devnum != j && dh->size >= max_stripe_size) ||
-                                (devnum == j && dh->size >= max_stripe_size && dh->size < devdh->size)
-                            ) {
-                                devdh = dh;
-                                devnum = j;
-                                devusage = usage;
-                            }
-//                         }
+                        if ((devnum != j && dh->size >= max_stripe_size) ||
+                            (devnum == j && dh->size >= max_stripe_size && dh->size < devdh->size)
+                        ) {
+                            devdh = dh;
+                            devnum = j;
+                            devusage = usage;
+                        }
 
                         le = le->Flink;
                     }
@@ -1078,34 +962,12 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
         }
     }
     
-//     for (i = 0; i < num_stripes; i++) {
-//         BOOL b = FALSE;
-//         for (j = 0; j < i; j++) {
-//             if (stripes[j].device == stripes[i].device)
-//                 b = TRUE;
-//         }
-//         
-//         if (!b)
-//             reset_disk_holes(stripes[i].device, TRUE);
-//     }
-    
     success = TRUE;
     
 end:
     ExFreePool(stripes);
     
     if (!success) {
-//         for (i = 0; i < num_stripes; i++) {
-//             BOOL b = FALSE;
-//             for (j = 0; j < i; j++) {
-//                 if (stripes[j].device == stripes[i].device)
-//                     b = TRUE;
-//             }
-//             
-//             if (!b)
-//                 reset_disk_holes(stripes[i].device, FALSE);
-//         }
-        
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
     } else {
