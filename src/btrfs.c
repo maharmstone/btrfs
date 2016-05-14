@@ -3180,8 +3180,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                         
                         if (!done) {
                             ERR("volume not found: device %llx, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
-                            Vcb->devices[i].devitem.device_uuid.uuid[0], Vcb->devices[i].devitem.device_uuid.uuid[1], Vcb->devices[i].devitem.device_uuid.uuid[2], Vcb->devices[i].devitem.device_uuid.uuid[3], Vcb->devices[i].devitem.device_uuid.uuid[4], Vcb->devices[i].devitem.device_uuid.uuid[5], Vcb->devices[i].devitem.device_uuid.uuid[6], Vcb->devices[i].devitem.device_uuid.uuid[7],
-                            Vcb->devices[i].devitem.device_uuid.uuid[8], Vcb->devices[i].devitem.device_uuid.uuid[9], Vcb->devices[i].devitem.device_uuid.uuid[10], Vcb->devices[i].devitem.device_uuid.uuid[11], Vcb->devices[i].devitem.device_uuid.uuid[12], Vcb->devices[i].devitem.device_uuid.uuid[13], Vcb->devices[i].devitem.device_uuid.uuid[14], Vcb->devices[i].devitem.device_uuid.uuid[15]);
+                            di->device_uuid.uuid[0], di->device_uuid.uuid[1], di->device_uuid.uuid[2], di->device_uuid.uuid[3], di->device_uuid.uuid[4], di->device_uuid.uuid[5], di->device_uuid.uuid[6], di->device_uuid.uuid[7],
+                            di->device_uuid.uuid[8], di->device_uuid.uuid[9], di->device_uuid.uuid[10], di->device_uuid.uuid[11], di->device_uuid.uuid[12], di->device_uuid.uuid[13], di->device_uuid.uuid[14], di->device_uuid.uuid[15]);
                         }
                     } else
                         ERR("unexpected device %llx found\n", tp.item->key.offset);
