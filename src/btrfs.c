@@ -1044,7 +1044,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 
         default:
             Status = STATUS_INVALID_PARAMETER;
-            WARN("unknown FsInformatClass %u\n", IrpSp->Parameters.QueryVolume.FsInformationClass);
+            WARN("unknown FsInformationClass %u\n", IrpSp->Parameters.QueryVolume.FsInformationClass);
             break;
     }
     
