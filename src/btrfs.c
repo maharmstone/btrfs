@@ -1282,6 +1282,21 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     }
 // }
 
+// static void test_alloc_chunk(device_extension* Vcb) {
+//     LIST_ENTRY rollback;
+//     chunk* c;
+//     
+//     InitializeListHead(&rollback);
+//     
+//     c = alloc_chunk(Vcb, BLOCK_FLAG_DATA | BLOCK_FLAG_RAID10, &rollback);
+//     if (!c) {
+//         ERR("alloc_chunk failed\n");
+//         do_rollback(Vcb, &rollback);
+//     } else {
+//         clear_rollback(&rollback);
+//     }
+// }
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
@@ -1314,6 +1329,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_tree_splitting(Vcb);
 //     test_dropping_tree(Vcb);
 //     test_creating_root(Vcb);
+//     test_alloc_chunk(Vcb);
     
     Status = consider_write(Vcb);
     
@@ -2936,7 +2952,7 @@ static NTSTATUS add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 siz
     
     dh->address = address;
     dh->size = size;
-    dh->provisional = FALSE;
+//     dh->provisional = FALSE;
     
     InsertTailList(disk_holes, &dh->listentry);
     

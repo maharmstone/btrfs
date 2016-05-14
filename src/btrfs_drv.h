@@ -263,7 +263,7 @@ typedef struct {
 typedef struct {
     UINT64 address;
     UINT64 size;
-    BOOL provisional;
+//     BOOL provisional;
     LIST_ENTRY listentry;
 } disk_hole;
 
