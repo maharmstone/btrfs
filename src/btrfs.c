@@ -3749,7 +3749,15 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (Vcb->superblock.num_devices > 1) {
         // FIXME - check generations are okay
-        // FIXME - check nothing missing
+        
+        if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
+            ERR("could not mount as %u device(s) missing\n", Vcb->superblock.num_devices - Vcb->devices_loaded);
+            
+            IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
+
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
     }
     
     add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, NULL);
