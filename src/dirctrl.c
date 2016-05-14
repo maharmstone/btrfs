@@ -220,7 +220,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             needed = sizeof(FILE_BOTH_DIR_INFORMATION) - sizeof(WCHAR) + stringlen;
             
             if (needed > *len) {
-                WARN("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
            
@@ -259,7 +259,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             needed = sizeof(FILE_DIRECTORY_INFORMATION) - sizeof(WCHAR) + stringlen;
             
             if (needed > *len) {
-                WARN("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
            
@@ -295,7 +295,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             needed = sizeof(FILE_FULL_DIR_INFORMATION) - sizeof(WCHAR) + stringlen;
             
             if (needed > *len) {
-                WARN("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
            
@@ -332,7 +332,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             needed = sizeof(FILE_ID_BOTH_DIR_INFORMATION) - sizeof(WCHAR) + stringlen;
             
             if (needed > *len) {
-                WARN("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
             
@@ -379,7 +379,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             needed = sizeof(FILE_NAMES_INFORMATION) - sizeof(WCHAR) + stringlen;
             
             if (needed > *len) {
-                WARN("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
             
