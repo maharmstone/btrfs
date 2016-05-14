@@ -80,6 +80,9 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID0) {
             // no point checking the checksum here, as there's nothing we can do
             stripe->status = ReadDataStatus_Success;
+        } else if (context->type == BLOCK_FLAG_RAID10) {
+            // FIXME - do RAID10 checksum checking
+            stripe->status = ReadDataStatus_Success;
         }
             
         goto end;
@@ -161,8 +164,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     } else if (ci->type & BLOCK_FLAG_RAID1) {
         type = BLOCK_FLAG_DUPLICATE;
     } else if (ci->type & BLOCK_FLAG_RAID10) {
-        FIXME("RAID10 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
+        type = BLOCK_FLAG_RAID10;
     } else if (ci->type & BLOCK_FLAG_RAID5) {
         FIXME("RAID5 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
@@ -238,6 +240,44 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 stripeend[i] = endoff + 1;
             } else {
                 stripeend[i] = endoff - (endoff % ci->stripe_length);
+            }
+        }
+    } else if (type == BLOCK_FLAG_RAID10) {
+        UINT64 startoff, endoff;
+        UINT16 endoffstripe, j;
+        
+        get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &startoff, &startoffstripe);
+        get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &endoff, &endoffstripe);
+        
+        if ((ci->num_stripes % ci->sub_stripes) != 0) {
+            ERR("chunk %llx: num_stripes %x was not a multiple of sub_stripes %x!\n", offset, ci->num_stripes, ci->sub_stripes);
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        startoffstripe *= ci->sub_stripes;
+        endoffstripe *= ci->sub_stripes;
+        
+        for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
+            if (startoffstripe > i) {
+                stripestart[i] = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+            } else if (startoffstripe == i) {
+                stripestart[i] = startoff;
+            } else {
+                stripestart[i] = startoff - (startoff % ci->stripe_length);
+            }
+            
+            if (endoffstripe > i) {
+                stripeend[i] = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
+            } else if (endoffstripe == i) {
+                stripeend[i] = endoff + 1;
+            } else {
+                stripeend[i] = endoff - (endoff % ci->stripe_length);
+            }
+            
+            for (j = 1; j < ci->sub_stripes; j++) {
+                stripestart[i+j] = stripestart[i];
+                stripeend[i+j] = stripeend[i];
             }
         }
     } else if (type == BLOCK_FLAG_DUPLICATE) {
@@ -366,6 +406,106 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripe = (stripe + 1) % ci->num_stripes;
         }
         
+        ExFreePool(stripeoff);
+        
+        // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
+        
+        if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
+            tree_header* th = (tree_header*)buf;
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum)) {
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                Status = STATUS_CRC_ERROR;
+                goto exit;
+            }
+        } else if (csum) {
+            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                
+                if (crc32 != csum[i]) {
+                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
+            }
+        }
+        
+        Status = STATUS_SUCCESS;
+    } else if (type == BLOCK_FLAG_RAID10) {
+        UINT32 pos, *stripeoff;
+        UINT8 stripe;
+        read_data_stripe** stripes;
+        
+        stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
+        if (!stripes) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        RtlZeroMemory(stripes, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes);
+        
+        for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
+            UINT16 j;
+            
+            for (j = 0; j < ci->sub_stripes; j++) {
+                if (context->stripes[i+j].status == ReadDataStatus_Success) {
+                    stripes[i / ci->sub_stripes] = &context->stripes[i+j];
+                    break;
+                }
+            }
+            
+            if (!stripes[i / ci->sub_stripes]) {
+                for (j = 0; j < ci->sub_stripes; j++) {
+                    if (context->stripes[i+j].status == ReadDataStatus_CRCError) {
+                        WARN("stripe %llu had a checksum error\n", i+j);
+                        Status = STATUS_CRC_ERROR;
+                        goto exit;
+                    }
+                }
+                
+                for (j = 0; j < ci->sub_stripes; j++) {
+                    if (context->stripes[i+j].status == ReadDataStatus_Error) {
+                        WARN("stripe %llu returned error %08x\n", i+j, context->stripes[i+j].iosb.Status);
+                        Status = context->stripes[i].iosb.Status;
+                        goto exit;
+                    }
+                }
+            }
+        }
+        
+        pos = 0;
+        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
+        if (!stripeoff) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes);
+        
+        stripe = startoffstripe / ci->sub_stripes;
+        while (pos < length) {
+            if (pos == 0) {
+                UINT32 readlen = min(stripeend[stripe * ci->sub_stripes] - stripestart[stripe * ci->sub_stripes], ci->stripe_length - (stripestart[stripe * ci->sub_stripes] % ci->stripe_length));
+                
+                RtlCopyMemory(buf, stripes[stripe]->buf, readlen);
+                stripeoff[stripe] += readlen;
+                pos += readlen;
+            } else if (length - pos < ci->stripe_length) {
+                RtlCopyMemory(buf + pos, &stripes[stripe]->buf[stripeoff[stripe]], length - pos);
+                pos = length;
+            } else {
+                RtlCopyMemory(buf + pos, &stripes[stripe]->buf[stripeoff[stripe]], ci->stripe_length);
+                stripeoff[stripe] += ci->stripe_length;
+                pos += ci->stripe_length;
+            }
+            
+            stripe = (stripe + 1) % (ci->num_stripes / ci->sub_stripes);
+        }
+        
+        ExFreePool(stripes);
         ExFreePool(stripeoff);
         
         // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
