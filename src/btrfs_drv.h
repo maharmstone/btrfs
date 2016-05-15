@@ -252,7 +252,7 @@ typedef struct {
     UINT64 address;
     UINT64 size;
     LIST_ENTRY list_entry;
-} space2;
+} space;
 
 typedef struct {
     UINT64 address;
@@ -277,7 +277,7 @@ typedef struct {
     device** devices;
     UINT64 cache_size;
     UINT64 cache_inode;
-    LIST_ENTRY space2;
+    LIST_ENTRY space;
     LIST_ENTRY deleting;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

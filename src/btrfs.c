@@ -1343,15 +1343,15 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     
 //     i = 0;
 //     while (tests[i].length > 0) {
-//         InitializeListHead(&c->space2);
+//         InitializeListHead(&c->space);
 //         ERR("test %u\n", i);
 //         
 //         j = 0;
 //         while (entries[j].length > 0) {
-//             space2* s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+//             space* s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 //             s->address = entries[j].address;
 //             s->size = entries[j].length;
-//             InsertTailList(&c->space2, &s->list_entry);
+//             InsertTailList(&c->space, &s->list_entry);
 //             j++;
 //         }
 //         
@@ -1360,9 +1360,9 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //         else
 //             space_list_subtract(Vcb, c, FALSE, tests[i].address, tests[i].length, NULL);
 //         
-//         le = c->space2.Flink;
-//         while (le != &c->space2) {
-//             space2* s = CONTAINING_RECORD(le, space2, list_entry);
+//         le = c->space.Flink;
+//         while (le != &c->space) {
+//             space* s = CONTAINING_RECORD(le, space, list_entry);
 //             
 //             ERR("(%llx,%llx)\n", s->address, s->size);
 //             
@@ -2434,7 +2434,7 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
 
 void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     chunk* c;
-    space2* s;
+    space* s;
     UINT64 i;
     LIST_ENTRY rollback;
     
@@ -2473,16 +2473,16 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        while (!IsListEmpty(&c->space2)) {
-            LIST_ENTRY* le2 = RemoveHeadList(&c->space2);
-            s = CONTAINING_RECORD(le2, space2, list_entry);
+        while (!IsListEmpty(&c->space)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&c->space);
+            s = CONTAINING_RECORD(le2, space, list_entry);
             
             ExFreePool(s);
         }
         
         while (!IsListEmpty(&c->deleting)) {
             LIST_ENTRY* le2 = RemoveHeadList(&c->deleting);
-            s = CONTAINING_RECORD(le2, space2, list_entry);
+            s = CONTAINING_RECORD(le2, space, list_entry);
             
             ExFreePool(s);
         }
@@ -3334,7 +3334,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 } else
                     c->devices = NULL;
                 
-                InitializeListHead(&c->space2);
+                InitializeListHead(&c->space);
                 InitializeListHead(&c->deleting);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);

@@ -115,9 +115,9 @@ end:
 }
 
 static NTSTATUS add_space_entry(chunk* c, UINT64 offset, UINT64 size) {
-    space2* s;
+    space* s;
     
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
     if (!s) {
         ERR("out of memory\n");
@@ -127,19 +127,19 @@ static NTSTATUS add_space_entry(chunk* c, UINT64 offset, UINT64 size) {
     s->address = offset;
     s->size = size;
     
-    if (IsListEmpty(&c->space2))
-        InsertTailList(&c->space2, &s->list_entry);
+    if (IsListEmpty(&c->space))
+        InsertTailList(&c->space, &s->list_entry);
     else {
-        space2* s2 = CONTAINING_RECORD(c->space2.Blink, space2, list_entry);
+        space* s2 = CONTAINING_RECORD(c->space.Blink, space, list_entry);
         
         if (s2->address < offset)
-            InsertTailList(&c->space2, &s->list_entry);
+            InsertTailList(&c->space, &s->list_entry);
         else {
             LIST_ENTRY* le;
             
-            le = c->space2.Flink;
-            while (le != &c->space2) {
-                s2 = CONTAINING_RECORD(le, space2, list_entry);
+            le = c->space.Flink;
+            while (le != &c->space) {
+                s2 = CONTAINING_RECORD(le, space, list_entry);
                 
                 if (s2->address > offset) {
                     InsertTailList(le, &s->list_entry);
@@ -358,13 +358,13 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         }
     }
     
-    le = c->space2.Flink;
-    while (le != &c->space2) {
-        space2* s = CONTAINING_RECORD(le, space2, list_entry);
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
         LIST_ENTRY* le2 = le->Flink;
         
-        if (le2 != &c->space2) {
-            space2* s2 = CONTAINING_RECORD(le2, space2, list_entry);
+        if (le2 != &c->space) {
+            space* s2 = CONTAINING_RECORD(le2, space, list_entry);
             
             if (s2->address == s->address + s->size) {
                 s->size += s2->size;
@@ -389,7 +389,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
     UINT64 lastaddr;
     BOOL b;
-    space2* s;
+    space* s;
     NTSTATUS Status;
     
     if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
@@ -423,7 +423,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             
             if (tp.item->key.obj_id >= c->offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
                 if (tp.item->key.obj_id > lastaddr) {
-                    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+                    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
                     
                     if (!s) {
                         ERR("out of memory\n");
@@ -432,7 +432,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
                     
                     s->address = lastaddr;
                     s->size = tp.item->key.obj_id - lastaddr;
-                    InsertTailList(&c->space2, &s->list_entry);
+                    InsertTailList(&c->space, &s->list_entry);
                     
                     TRACE("(%llx,%llx)\n", s->address, s->size);
                 }
@@ -449,7 +449,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         } while (b);
         
         if (lastaddr < c->offset + c->chunk_item->size) {
-            s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+            s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
             
             if (!s) {
                 ERR("out of memory\n");
@@ -458,7 +458,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             
             s->address = lastaddr;
             s->size = c->offset + c->chunk_item->size - lastaddr;
-            InsertTailList(&c->space2, &s->list_entry);
+            InsertTailList(&c->space, &s->list_entry);
             
             TRACE("(%llx,%llx)\n", s->address, s->size);
         }
@@ -510,12 +510,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     num_entries = 0;
     
-    // num_entries is the number of entries in c->space2 and c->deleting - it might
+    // num_entries is the number of entries in c->space and c->deleting - it might
     // be slightly higher then what we end up writing, but doing it this way is much
     // quicker and simpler.
-    if (!IsListEmpty(&c->space2)) {
-        le = c->space2.Flink;
-        while (le != &c->space2) {
+    if (!IsListEmpty(&c->space)) {
+        le = c->space.Flink;
+        while (le != &c->space) {
             num_entries++;
 
             le = le->Flink;
@@ -780,10 +780,10 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
 
 static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
-    space2 *s, *s2;
+    space *s, *s2;
     
     if (IsListEmpty(list)) {
-        s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+        s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
         if (!s) {
             ERR("out of memory\n");
@@ -801,7 +801,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
     
     le = list->Flink;
     while (le != list) {
-        s2 = CONTAINING_RECORD(le, space2, list_entry);
+        s2 = CONTAINING_RECORD(le, space, list_entry);
         
         // old entry envelops new one completely
         if (s2->address <= address && s2->address + s2->size >= address + length)
@@ -815,7 +815,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
                 // FIXME - insert rollback
                 
                 while (s2->list_entry.Blink != list) {
-                    space2* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space2, list_entry);
+                    space* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
                     
                     if (s3->address + s3->size == s2->address) {
                         s2->address = s3->address;
@@ -833,7 +833,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
                 // FIXME - insert rollback
                 
                 while (s2->list_entry.Flink != list) {
-                    space2* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space2, list_entry);
+                    space* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
                     
                     if (s3->address <= s2->address + s2->size) {
                         s2->size = max(s2->size, s3->address + s3->size - s2->address);
@@ -855,7 +855,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
             // FIXME - insert rollback
             
             while (s2->list_entry.Blink != list) {
-                space2* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space2, list_entry);
+                space* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
                 
                 if (s3->address + s3->size == s2->address) {
                     s2->address = s3->address;
@@ -875,7 +875,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
             // FIXME - insert rollback
             
             while (s2->list_entry.Flink != list) {
-                space2* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space2, list_entry);
+                space* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
                 
                 if (s3->address <= s2->address + s2->size) {
                     s2->size = max(s2->size, s3->address + s3->size - s2->address);
@@ -890,7 +890,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
         
         // add completely separate entry
         if (s2->address > address + length) {
-            s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+            s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
             if (!s) {
                 ERR("out of memory\n");
@@ -915,7 +915,7 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
     }
     
     // otherwise, insert at end
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
     if (!s) {
         ERR("out of memory\n");
@@ -928,15 +928,15 @@ static void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIS
     // FIXME - insert rollback
 }
 
-static void space_list_merge(LIST_ENTRY* space, LIST_ENTRY* deleting) {
+static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* deleting) {
     LIST_ENTRY* le;
     
     if (!IsListEmpty(deleting)) {
         le = deleting->Flink;
         while (le != deleting) {
-            space2* s = CONTAINING_RECORD(le, space2, list_entry);
+            space* s = CONTAINING_RECORD(le, space, list_entry);
             
-            space_list_add2(space, s->address, s->size, NULL);
+            space_list_add2(spacelist, s->address, s->size, NULL);
             
             le = le->Flink;
         }
@@ -956,7 +956,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     LIST_ENTRY* le;
     BOOL b;
     
-    space_list_merge(&c->space2, &c->deleting);
+    space_list_merge(&c->space, &c->deleting);
     
     data = ExAllocatePoolWithTag(NonPagedPool, c->cache_size, ALLOC_TAG);
     if (!data) {
@@ -970,9 +970,9 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     num_sectors = c->cache_size / Vcb->superblock.sector_size;
     off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
     
-    le = c->space2.Flink;
-    while (le != &c->space2) {
-        space2* s = CONTAINING_RECORD(le, space2, list_entry);
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
             off = sector_align(off, Vcb->superblock.sector_size);
@@ -1158,8 +1158,6 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
     while (le != &Vcb->chunks_changed) {
         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
-        // FIXME - merge deleting into space2
-        
         Status = update_chunk_cache(Vcb, c, &now, rollback);
 
         if (!NT_SUCCESS(Status)) {
@@ -1178,7 +1176,7 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
     
     TRACE("(%p, %p, %u, %llx, %llx, %p)\n", Vcb, c, deleting, address, length, rollback);
     
-    list = deleting ? &c->deleting : &c->space2;
+    list = deleting ? &c->deleting : &c->space;
     
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
@@ -1188,9 +1186,9 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
 
 void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY *list, *le, *le2;
-    space2 *s, *s2;
+    space *s, *s2;
     
-    list = deleting ? &c->deleting : &c->space2;
+    list = deleting ? &c->deleting : &c->space;
     
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
@@ -1200,7 +1198,7 @@ void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 
     
     le = list->Flink;
     while (le != list) {
-        s2 = CONTAINING_RECORD(le, space2, list_entry);
+        s2 = CONTAINING_RECORD(le, space, list_entry);
         le2 = le->Flink;
         
         if (s2->address >= address + length)
@@ -1214,7 +1212,7 @@ void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 
             if (address > s2->address) { // cut out hole
                 // FIXME - insert rollback
                 
-                s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+                s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
                 if (!s) {
                     ERR("out of memory\n");

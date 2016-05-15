@@ -176,13 +176,13 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
 
 static BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
     LIST_ENTRY* le;
-    space2 *s, *bestfit = NULL;
+    space *s, *bestfit = NULL;
     
     TRACE("(%p, %llx, %llx, %p)\n", Vcb, c->offset, length, address);
     
-    le = c->space2.Flink;
-    while (le != &c->space2) {
-        s = CONTAINING_RECORD(le, space2, list_entry);
+    le = c->space.Flink;
+    while (le != &c->space) {
+        s = CONTAINING_RECORD(le, space, list_entry);
         
         if (s->size == length) {
             *address = s->address;
@@ -538,7 +538,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
-    space2* s = NULL;
+    space* s = NULL;
     BOOL success = FALSE;
     BLOCK_GROUP_ITEM* bgi;
     
@@ -742,10 +742,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->used = c->oldused = 0;
     c->cache_size = 0;
     c->cache_inode = 0;
-    InitializeListHead(&c->space2);
+    InitializeListHead(&c->space);
     InitializeListHead(&c->deleting);
     
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
         goto end;
@@ -753,7 +753,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     
     s->address = c->offset;
     s->size = c->chunk_item->size;
-    InsertTailList(&c->space2, &s->list_entry);
+    InsertTailList(&c->space, &s->list_entry);
     
     protect_superblocks(Vcb, c);
     
@@ -1186,7 +1186,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     // FIXME - loop through c->deleting and do TRIM if device supports it
     
     while (!IsListEmpty(&c->deleting)) {
-        space2* s = CONTAINING_RECORD(c->deleting.Flink, space2, list_entry);
+        space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
         
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
@@ -3603,15 +3603,15 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     ExFreePool(c->chunk_item);
     ExFreePool(c->devices);
     
-    while (!IsListEmpty(&c->space2)) {
-        space2* s = CONTAINING_RECORD(c->space2.Flink, space2, list_entry);
+    while (!IsListEmpty(&c->space)) {
+        space* s = CONTAINING_RECORD(c->space.Flink, space, list_entry);
         
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
     }
     
     while (!IsListEmpty(&c->deleting)) {
-        space2* s = CONTAINING_RECORD(c->deleting.Flink, space2, list_entry);
+        space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
         
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
@@ -4949,7 +4949,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     EXTENT_ITEM* ei;
     chunk* c;
     LIST_ENTRY* le;
-    space2* s;
+    space* s;
     NTSTATUS Status;
     
     searchkey.obj_id = fcb->inode;
@@ -5092,9 +5092,9 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     c = get_chunk_from_address(Vcb, ed2->address);
     
-    le = c->space2.Flink;
-    while (le != &c->space2) {
-        s = CONTAINING_RECORD(le, space2, list_entry);
+    le = c->space.Flink;
+    while (le != &c->space) {
+        s = CONTAINING_RECORD(le, space, list_entry);
         
         if (s->address == ed2->address + ed2->size) {
             if (s->size >= length) {
