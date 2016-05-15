@@ -1105,7 +1105,6 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
         return;
     }
     
-    // FIXME
     le = list->Flink;
     while (le != list) {
         s2 = CONTAINING_RECORD(le, space2, list_entry);
@@ -1236,5 +1235,57 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
 }
 
 void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
-    // FIXME
+    LIST_ENTRY *list, *le, *le2;
+    space2 *s, *s2;
+    
+    list = deleting ? &c->deleting : &c->space2;
+    
+    if (!c->list_entry_changed.Flink)
+        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+    
+    if (IsListEmpty(list))
+        return;
+    
+    le = list->Flink;
+    while (le != list) {
+        s2 = CONTAINING_RECORD(le, space2, list_entry);
+        le2 = le->Flink;
+        
+        if (s2->address >= address + length)
+            return;
+        
+        if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
+            // FIXME - insert rollback
+            RemoveEntryList(&s2->list_entry);
+            ExFreePool(s2);
+        } else if (address + length > s2->address && address + length < s2->address + s2->size) {
+            if (address > s2->address) { // cut out hole
+                // FIXME - insert rollback
+                
+                s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+
+                if (!s) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                s->address = s2->address;
+                s->size = address - s2->address;
+                InsertHeadList(s2->list_entry.Blink, &s->list_entry);
+                
+                s2->size = s2->address + s2->size - address - length;
+                s2->address = address + length;
+                return;
+            } else { // remove start of entry
+                s2->size -= address + length - s2->address;
+                s2->address = address + length;
+                // FIXME - insert rollback
+            }
+        } else if (address > s2->address && address < s2->address + s2->size) { // remove end of entry
+            // FIXME - insert rollback
+            s2->size = address - s2->address;
+        }
+        
+        le = le2;
+    }
 }

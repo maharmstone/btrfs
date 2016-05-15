@@ -1305,6 +1305,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     typedef struct {
 //         UINT64 address;
 //         UINT64 length;
+//         BOOL add;
 //     } space_test;
 //     
 //     static const space_test entries[] = {
@@ -1315,21 +1316,27 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     };
 //     
 //     static const space_test tests[] = {
-//         { 0x0, 0x800 }, 
-//         { 0x1800, 0x400 }, 
-//         { 0x800, 0x2000 }, 
-//         { 0x1000, 0x2000 }, 
-//         { 0x2000, 0x3800 }, 
-//         { 0x800, 0x1000 }, 
-//         { 0x1800, 0x1000 }, 
-//         { 0x5000, 0x800 }, 
-//         { 0x5000, 0x1000 }, 
-//         { 0x7000, 0x1000 }, 
-//         { 0x8000, 0x1000 },
-//         { 0x800, 0x800 }, 
-//         { 0x0, 0x3800 }, 
-//         { 0x1000, 0x2800 },
-//         { 0, 0 }
+//         { 0x0, 0x800, TRUE }, 
+//         { 0x1800, 0x400, TRUE }, 
+//         { 0x800, 0x2000, TRUE }, 
+//         { 0x1000, 0x2000, TRUE }, 
+//         { 0x2000, 0x3800, TRUE }, 
+//         { 0x800, 0x1000, TRUE }, 
+//         { 0x1800, 0x1000, TRUE }, 
+//         { 0x5000, 0x800, TRUE }, 
+//         { 0x5000, 0x1000, TRUE }, 
+//         { 0x7000, 0x1000, TRUE }, 
+//         { 0x8000, 0x1000, TRUE },
+//         { 0x800, 0x800, TRUE }, 
+//         { 0x0, 0x3800, TRUE }, 
+//         { 0x1000, 0x2800, TRUE },
+//         { 0x1000, 0x1000, FALSE },
+//         { 0x800, 0x2000, FALSE },
+//         { 0x0, 0x3800, FALSE },
+//         { 0x2800, 0x1000, FALSE },
+//         { 0x1800, 0x2000, FALSE },
+//         { 0x3800, 0x1000, FALSE },
+//         { 0, 0, FALSE }
 //     };
 //     
 //     c = CONTAINING_RECORD(Vcb->chunks.Flink, chunk, list_entry);
@@ -1348,7 +1355,10 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //             j++;
 //         }
 //         
-//         space_list_add(Vcb, c, FALSE, tests[i].address, tests[i].length, NULL);
+//         if (tests[i].add)
+//             space_list_add(Vcb, c, FALSE, tests[i].address, tests[i].length, NULL);
+//         else
+//             space_list_subtract(Vcb, c, FALSE, tests[i].address, tests[i].length, NULL);
 //         
 //         le = c->space2.Flink;
 //         while (le != &c->space2) {
