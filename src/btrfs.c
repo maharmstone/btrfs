@@ -2495,11 +2495,11 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     }
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        while (!IsListEmpty(&Vcb->devices[i].disk_holes)) {
-            LIST_ENTRY* le = RemoveHeadList(&Vcb->devices[i].disk_holes);
-            disk_hole* dh = CONTAINING_RECORD(le, disk_hole, listentry);
+        while (!IsListEmpty(&Vcb->devices[i].space)) {
+            LIST_ENTRY* le = RemoveHeadList(&Vcb->devices[i].space);
+            space* s = CONTAINING_RECORD(le, space, list_entry);
             
-            ExFreePool(dh);
+            ExFreePool(s);
         }
     }
     
@@ -3028,22 +3028,6 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_disk_hole(LIST_ENTRY* disk_holes, UINT64 address, UINT64 size) {
-    disk_hole* dh = ExAllocatePoolWithTag(PagedPool, sizeof(disk_hole), ALLOC_TAG);
-    
-    if (!dh) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    dh->address = address;
-    dh->size = size;
-    
-    InsertTailList(disk_holes, &dh->listentry);
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -3051,7 +3035,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     UINT64 lastaddr;
     NTSTATUS Status;
     
-    InitializeListHead(&dev->disk_holes);
+    InitializeListHead(&dev->space);
     
     searchkey.obj_id = dev->devitem.dev_id;
     searchkey.obj_type = TYPE_DEV_EXTENT;
@@ -3071,9 +3055,9 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
                 
                 if (tp.item->key.offset > lastaddr) {
-                    Status = add_disk_hole(&dev->disk_holes, lastaddr, tp.item->key.offset - lastaddr);
+                    Status = add_space_entry(&dev->space, lastaddr, tp.item->key.offset - lastaddr);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("add_disk_hole returned %08x\n", Status);
+                        ERR("add_space_entry returned %08x\n", Status);
                         return Status;
                     }
                 }
@@ -3094,14 +3078,12 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     } while (b);
     
     if (lastaddr < dev->devitem.num_bytes) {
-        Status = add_disk_hole(&dev->disk_holes, lastaddr, dev->devitem.num_bytes - lastaddr);
+        Status = add_space_entry(&dev->space, lastaddr, dev->devitem.num_bytes - lastaddr);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_disk_hole returned %08x\n", Status);
+            ERR("add_space_entry returned %08x\n", Status);
             return Status;
         }
     }
-    
-    // FIXME - free disk_holes when unmounting
     
     return STATUS_SUCCESS;
 }

@@ -255,17 +255,11 @@ typedef struct {
 } space;
 
 typedef struct {
-    UINT64 address;
-    UINT64 size;
-    LIST_ENTRY listentry;
-} disk_hole;
-
-typedef struct {
     PDEVICE_OBJECT devobj;
     DEV_ITEM devitem;
     BOOL removable;
     ULONG change_count;
-    LIST_ENTRY disk_holes;
+    LIST_ENTRY space;
 } device;
 
 typedef struct {
@@ -668,8 +662,11 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
 NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback);
+NTSTATUS add_space_entry(LIST_ENTRY* list, UINT64 offset, UINT64 size);
 void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
