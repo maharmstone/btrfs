@@ -1297,6 +1297,74 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     }
 // }
 
+// static void test_space_list(device_extension* Vcb) {
+//     chunk* c;
+//     int i, j;
+//     LIST_ENTRY* le;
+//     
+//     typedef struct {
+//         UINT64 address;
+//         UINT64 length;
+//     } space_test;
+//     
+//     static const space_test entries[] = {
+//         { 0x1000, 0x1000 },
+//         { 0x3000, 0x2000 },
+//         { 0x6000, 0x1000 },
+//         { 0, 0 }
+//     };
+//     
+//     static const space_test tests[] = {
+//         { 0x0, 0x800 }, 
+//         { 0x1800, 0x400 }, 
+//         { 0x800, 0x2000 }, 
+//         { 0x1000, 0x2000 }, 
+//         { 0x2000, 0x3800 }, 
+//         { 0x800, 0x1000 }, 
+//         { 0x1800, 0x1000 }, 
+//         { 0x5000, 0x800 }, 
+//         { 0x5000, 0x1000 }, 
+//         { 0x7000, 0x1000 }, 
+//         { 0x8000, 0x1000 },
+//         { 0x800, 0x800 }, 
+//         { 0x0, 0x3800 }, 
+//         { 0x1000, 0x2800 },
+//         { 0, 0 }
+//     };
+//     
+//     c = CONTAINING_RECORD(Vcb->chunks.Flink, chunk, list_entry);
+//     
+//     i = 0;
+//     while (tests[i].length > 0) {
+//         InitializeListHead(&c->space2);
+//         ERR("test %u\n", i);
+//         
+//         j = 0;
+//         while (entries[j].length > 0) {
+//             space2* s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+//             s->address = entries[j].address;
+//             s->size = entries[j].length;
+//             InsertTailList(&c->space2, &s->list_entry);
+//             j++;
+//         }
+//         
+//         space_list_add(Vcb, c, FALSE, tests[i].address, tests[i].length, NULL);
+//         
+//         le = c->space2.Flink;
+//         while (le != &c->space2) {
+//             space2* s = CONTAINING_RECORD(le, space2, list_entry);
+//             
+//             ERR("(%llx,%llx)\n", s->address, s->size);
+//             
+//             le = le->Flink;
+//         }
+//         
+//         i++;
+//     }
+//     
+//     int3;
+// }
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
@@ -1330,6 +1398,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_dropping_tree(Vcb);
 //     test_creating_root(Vcb);
 //     test_alloc_chunk(Vcb);
+//     test_space_list(Vcb);
     
     Status = consider_write(Vcb);
     
@@ -2355,7 +2424,7 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
 
 void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     chunk* c;
-    space* s;
+    space2* s;
     UINT64 i;
     LIST_ENTRY rollback;
     
@@ -2394,9 +2463,16 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        while (!IsListEmpty(&c->space)) {
-            LIST_ENTRY* le2 = RemoveHeadList(&c->space);
-            s = CONTAINING_RECORD(le2, space, list_entry);
+        while (!IsListEmpty(&c->space2)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&c->space2);
+            s = CONTAINING_RECORD(le2, space2, list_entry);
+            
+            ExFreePool(s);
+        }
+        
+        while (!IsListEmpty(&c->deleting)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&c->deleting);
+            s = CONTAINING_RECORD(le2, space2, list_entry);
             
             ExFreePool(s);
         }
@@ -3248,7 +3324,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 } else
                     c->devices = NULL;
                 
-                InitializeListHead(&c->space);
+                InitializeListHead(&c->space2);
+                InitializeListHead(&c->deleting);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 
@@ -3289,7 +3366,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                 off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
                 off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
                 
-                add_to_space_list(Vcb, c, c->offset + off_start, off_end - off_start, SPACE_TYPE_USED);
+                space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
             }
         }
         

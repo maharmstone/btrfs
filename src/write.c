@@ -176,178 +176,176 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
 
 static BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
     LIST_ENTRY* le;
-    space *s, *bestfit = NULL;
+    space2 *s, *bestfit = NULL;
     
     TRACE("(%p, %llx, %llx, %p)\n", Vcb, c->offset, length, address);
     
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
+    le = c->space2.Flink;
+    while (le != &c->space2) {
+        s = CONTAINING_RECORD(le, space2, list_entry);
         
-        if (s->type == SPACE_TYPE_FREE) {
-            if (s->size == length) {
-                *address = s->offset;
-                TRACE("returning exact fit at %llx\n", s->offset);
-                return TRUE;
-            } else if (s->size > length && (!bestfit || bestfit->size > s->size)) {
-                bestfit = s;
-            }
+        if (s->size == length) {
+            *address = s->address;
+            TRACE("returning exact fit at %llx\n", s->address);
+            return TRUE;
+        } else if (s->size > length && (!bestfit || bestfit->size > s->size)) {
+            bestfit = s;
         }
         
         le = le->Flink;
     }
     
     if (bestfit) {
-        TRACE("returning best fit at %llx\n", bestfit->offset);
-        *address = bestfit->offset;
+        TRACE("returning best fit at %llx\n", bestfit->address);
+        *address = bestfit->address;
         return TRUE;
     }
     
     return FALSE;
 }
 
-void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
-    LIST_ENTRY *le = c->space.Flink, *nextle, *insbef;
-    space *s, *s2, *s3;
-#ifdef DEBUG_PARANOID
-    UINT64 lastaddr;
-#endif
-    
-    TRACE("(%p, %llx, %llx, %x)\n", c, offset, size, type);
-    
-#ifdef DEBUG_PARANOID
-    // TESTING
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        TRACE("%llx,%llx,%x\n", s->offset, s->size, s->type);
-        
-        le = le->Flink;
-    }
-#endif
-    
-    if (!c->list_entry_changed.Flink)
-        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-    
-    le = c->space.Flink;
-    insbef = &c->space;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        nextle = le->Flink;
-        
-        if (s->offset >= offset + size) {
-            insbef = le;
-            break;
-        }
-        
-        if (s->offset >= offset && s->offset + s->size <= offset + size) { // delete entirely
-            if (s->offset + s->size == offset + size) {
-                insbef = s->list_entry.Flink;
-                RemoveEntryList(&s->list_entry);
-                ExFreePool(s);
-                break;
-            }
-            
-            RemoveEntryList(&s->list_entry);
-            ExFreePool(s);
-        } else if (s->offset < offset && s->offset + s->size > offset + size) { // split in two
-            s3 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-            if (!s3) {
-                ERR("out of memory\n");
-                return;
-            }
-            
-            s3->offset = offset + size;
-            s3->size = s->size - size - offset + s->offset;
-            s3->type = s->type;
-            InsertHeadList(&s->list_entry, &s3->list_entry);
-            insbef = &s3->list_entry;
-            
-            s->size = offset - s->offset;
-            break;
-        } else if (s->offset + s->size > offset && s->offset + s->size <= offset + size) { // truncate before
-            s->size = offset - s->offset;
-        } else if (s->offset < offset + size && s->offset + s->size > offset + size) { // truncate after
-            s->size -= offset + size - s->offset;
-            s->offset = offset + size;
-            
-            insbef = le;
-            break;
-        }
-        
-        le = nextle;
-    }
-    
-    s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-    if (!s2) {
-        ERR("out of memory\n");
-        return;
-    }
-    
-    s2->offset = offset;
-    s2->size = size;
-    s2->type = type;
-    InsertTailList(insbef, &s2->list_entry);
-    
-    // merge entries if same type
-   
-    if (s2->list_entry.Blink != &c->space) {
-        s = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
-        
-        if (s->type == type) {
-            s->size += s2->size;
-            
-            RemoveEntryList(&s2->list_entry);
-            ExFreePool(s2);
-            
-            s2 = s;
-        }
-    }
-    
-    if (s2->list_entry.Flink != &c->space) {
-        s = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
-        
-        if (s->type == type) {
-            s2->size += s->size;
-
-            RemoveEntryList(&s->list_entry);
-            ExFreePool(s);
-        }
-    }
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        TRACE("%llx,%llx,%x\n", s->offset, s->size, s->type);
-        
-        le = le->Flink;
-    }
-    
-#ifdef DEBUG_PARANOID
-    // TESTING
-    lastaddr = c->offset;
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        if (s->offset != lastaddr) {
-            ERR("inconsistency detected!\n");
-            int3;
-        }
-        
-        lastaddr = s->offset + s->size;
-        
-        le = le->Flink;
-    }
-    
-    if (lastaddr != c->offset + c->chunk_item->size) {
-        ERR("inconsistency detected - space doesn't run all the way to end of chunk\n");
-        int3;
-    }
-#endif
-}
+// void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type) {
+//     LIST_ENTRY *le = c->space.Flink, *nextle, *insbef;
+//     space *s, *s2, *s3;
+// #ifdef DEBUG_PARANOID
+//     UINT64 lastaddr;
+// #endif
+//     
+//     TRACE("(%p, %llx, %llx, %x)\n", c, offset, size, type);
+//     
+// #ifdef DEBUG_PARANOID
+//     // TESTING
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         TRACE("%llx,%llx,%x\n", s->offset, s->size, s->type);
+//         
+//         le = le->Flink;
+//     }
+// #endif
+//     
+//     if (!c->list_entry_changed.Flink)
+//         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+//     
+//     le = c->space.Flink;
+//     insbef = &c->space;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         nextle = le->Flink;
+//         
+//         if (s->offset >= offset + size) {
+//             insbef = le;
+//             break;
+//         }
+//         
+//         if (s->offset >= offset && s->offset + s->size <= offset + size) { // delete entirely
+//             if (s->offset + s->size == offset + size) {
+//                 insbef = s->list_entry.Flink;
+//                 RemoveEntryList(&s->list_entry);
+//                 ExFreePool(s);
+//                 break;
+//             }
+//             
+//             RemoveEntryList(&s->list_entry);
+//             ExFreePool(s);
+//         } else if (s->offset < offset && s->offset + s->size > offset + size) { // split in two
+//             s3 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+//             if (!s3) {
+//                 ERR("out of memory\n");
+//                 return;
+//             }
+//             
+//             s3->offset = offset + size;
+//             s3->size = s->size - size - offset + s->offset;
+//             s3->type = s->type;
+//             InsertHeadList(&s->list_entry, &s3->list_entry);
+//             insbef = &s3->list_entry;
+//             
+//             s->size = offset - s->offset;
+//             break;
+//         } else if (s->offset + s->size > offset && s->offset + s->size <= offset + size) { // truncate before
+//             s->size = offset - s->offset;
+//         } else if (s->offset < offset + size && s->offset + s->size > offset + size) { // truncate after
+//             s->size -= offset + size - s->offset;
+//             s->offset = offset + size;
+//             
+//             insbef = le;
+//             break;
+//         }
+//         
+//         le = nextle;
+//     }
+//     
+//     s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+//     if (!s2) {
+//         ERR("out of memory\n");
+//         return;
+//     }
+//     
+//     s2->offset = offset;
+//     s2->size = size;
+//     s2->type = type;
+//     InsertTailList(insbef, &s2->list_entry);
+//     
+//     // merge entries if same type
+//    
+//     if (s2->list_entry.Blink != &c->space) {
+//         s = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
+//         
+//         if (s->type == type) {
+//             s->size += s2->size;
+//             
+//             RemoveEntryList(&s2->list_entry);
+//             ExFreePool(s2);
+//             
+//             s2 = s;
+//         }
+//     }
+//     
+//     if (s2->list_entry.Flink != &c->space) {
+//         s = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
+//         
+//         if (s->type == type) {
+//             s2->size += s->size;
+// 
+//             RemoveEntryList(&s->list_entry);
+//             ExFreePool(s);
+//         }
+//     }
+//     
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         TRACE("%llx,%llx,%x\n", s->offset, s->size, s->type);
+//         
+//         le = le->Flink;
+//     }
+//     
+// #ifdef DEBUG_PARANOID
+//     // TESTING
+//     lastaddr = c->offset;
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         if (s->offset != lastaddr) {
+//             ERR("inconsistency detected!\n");
+//             int3;
+//         }
+//         
+//         lastaddr = s->offset + s->size;
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (lastaddr != c->offset + c->chunk_item->size) {
+//         ERR("inconsistency detected - space doesn't run all the way to end of chunk\n");
+//         int3;
+//     }
+// #endif
+// }
 
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address) {
     LIST_ENTRY* le2;
@@ -683,7 +681,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
-    space* s = NULL;
+    space2* s = NULL;
     BOOL success = FALSE;
     BLOCK_GROUP_ITEM* bgi;
     
@@ -887,18 +885,18 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->used = c->oldused = 0;
     c->cache_size = 0;
     c->cache_inode = 0;
-    InitializeListHead(&c->space);
+    InitializeListHead(&c->space2);
+    InitializeListHead(&c->deleting);
     
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
         goto end;
     }
     
-    s->offset = c->offset;
+    s->address = c->offset;
     s->size = c->chunk_item->size;
-    s->type = SPACE_TYPE_FREE;
-    InsertTailList(&c->space, &s->list_entry);
+    InsertTailList(&c->space2, &s->list_entry);
     
     protect_superblocks(Vcb, c);
     
@@ -1327,67 +1325,67 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     return STATUS_SUCCESS;
 }
 
-static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
-    LIST_ENTRY *le, *nextle;
-    space *s, *s2;
-    
-//     // TESTING
+// static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
+//     LIST_ENTRY *le, *nextle;
+//     space *s, *s2;
+//     
+// //     // TESTING
+// //     le = c->space.Flink;
+// //     while (le != &c->space) {
+// //         s = CONTAINING_RECORD(le, space, list_entry);
+// //         
+// //         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
+// //         
+// //         le = le->Flink;
+// //     }
+//     
 //     le = c->space.Flink;
 //     while (le != &c->space) {
 //         s = CONTAINING_RECORD(le, space, list_entry);
+//         nextle = le->Flink;
 //         
-//         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
+//         if (s->type == SPACE_TYPE_DELETING)
+//             s->type = SPACE_TYPE_FREE;
+//         else if (s->type == SPACE_TYPE_WRITING)
+//             s->type = SPACE_TYPE_USED;
 //         
-//         le = le->Flink;
+//         if (le->Blink != &c->space) {
+//             s2 = CONTAINING_RECORD(le->Blink, space, list_entry);
+//             
+//             if (s2->type == s->type) { // do merge
+//                 s2->size += s->size;
+//                 
+//                 RemoveEntryList(&s->list_entry);
+//                 ExFreePool(s);
+//             }
+//         }
+// 
+//         le = nextle;
 //     }
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        nextle = le->Flink;
-        
-        if (s->type == SPACE_TYPE_DELETING)
-            s->type = SPACE_TYPE_FREE;
-        else if (s->type == SPACE_TYPE_WRITING)
-            s->type = SPACE_TYPE_USED;
-        
-        if (le->Blink != &c->space) {
-            s2 = CONTAINING_RECORD(le->Blink, space, list_entry);
-            
-            if (s2->type == s->type) { // do merge
-                s2->size += s->size;
-                
-                RemoveEntryList(&s->list_entry);
-                ExFreePool(s);
-            }
-        }
-
-        le = nextle;
-    }
-    
-//     le = c->space.Flink;
-//     while (le != &c->space) {
-//         s = CONTAINING_RECORD(le, space, list_entry);
+//     
+// //     le = c->space.Flink;
+// //     while (le != &c->space) {
+// //         s = CONTAINING_RECORD(le, space, list_entry);
+// //         
+// //         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
+// //         
+// //         le = le->Flink;
+// //     }
+// }
+// 
+// static void clean_space_cache(device_extension* Vcb) {
+//     chunk* c;
+//     
+//     TRACE("(%p)\n", Vcb);
+//     
+//     while (!IsListEmpty(&Vcb->chunks_changed)) {
+//         c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
 //         
-//         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
-//         
-//         le = le->Flink;
+//         clean_space_cache_chunk(Vcb, c);
+//         RemoveEntryList(&c->list_entry_changed);
+//         c->list_entry_changed.Flink = NULL;
 //     }
-}
-
-static void clean_space_cache(device_extension* Vcb) {
-    chunk* c;
-    
-    TRACE("(%p)\n", Vcb);
-    
-    while (!IsListEmpty(&Vcb->chunks_changed)) {
-        c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
-        
-        clean_space_cache_chunk(Vcb, c);
-        RemoveEntryList(&c->list_entry_changed);
-        c->list_entry_changed.Flink = NULL;
-    }
-}
+// }
 
 static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
     ULONG maxsize = Vcb->superblock.node_size - sizeof(tree_header);
@@ -1540,7 +1538,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
         return FALSE;
     }
     
-    add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
+    space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
@@ -1594,7 +1592,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
         return FALSE;
     }
     
-    add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_WRITING);
+    space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
@@ -1730,7 +1728,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     if (c) {
         decrease_chunk_usage(c, Vcb->superblock.node_size);
         
-        add_to_space_list(Vcb, c, address, Vcb->superblock.node_size, SPACE_TYPE_DELETING);
+        space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -2006,7 +2004,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     if (c) {
         decrease_chunk_usage(c, tp.item->key.offset);
         
-        add_to_space_list(Vcb, c, address, tp.item->key.offset, SPACE_TYPE_DELETING);
+        space_list_add(Vcb, c, TRUE, address, tp.item->key.offset, rollback);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -3785,8 +3783,15 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     ExFreePool(c->chunk_item);
     ExFreePool(c->devices);
     
-    while (!IsListEmpty(&c->space)) {
-        space* s = CONTAINING_RECORD(c->space.Flink, space, list_entry);
+    while (!IsListEmpty(&c->space2)) {
+        space2* s = CONTAINING_RECORD(c->space2.Flink, space2, list_entry);
+        
+        RemoveEntryList(&s->list_entry);
+        ExFreePool(s);
+    }
+    
+    while (!IsListEmpty(&c->deleting)) {
+        space2* s = CONTAINING_RECORD(c->deleting.Flink, space2, list_entry);
         
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
@@ -3875,7 +3880,7 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    BOOL cache_changed;
+    BOOL cache_changed = FALSE;
     
     TRACE("(%p)\n", Vcb);
     
@@ -3944,11 +3949,11 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             goto end;
         }
         
-        Status = allocate_cache(Vcb, &cache_changed, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("allocate_cache returned %08x\n", Status);
-            goto end;
-        }
+//         Status = allocate_cache(Vcb, &cache_changed, rollback);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("allocate_cache returned %08x\n", Status);
+//             goto end;
+//         }
     } while (cache_changed || !trees_consistent(Vcb, rollback));
     
     TRACE("trees consistent\n");
@@ -3973,7 +3978,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         goto end;
     }
     
-    clean_space_cache(Vcb);
+//     clean_space_cache(Vcb);
     
     Vcb->superblock.generation++;
     
@@ -5002,7 +5007,7 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
     }
     
     increase_chunk_usage(c, length);
-    add_to_space_list(Vcb, c, address, length, SPACE_TYPE_WRITING);
+    space_list_subtract(Vcb, c, FALSE, address, length, rollback);
     
     if (inode_item) {
         inode_item->st_blocks += length;
@@ -5106,7 +5111,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     if (c) {
         increase_chunk_usage(c, length);
         
-        add_to_space_list(Vcb, c, eitp->item->key.obj_id + eitp->item->key.offset, length, SPACE_TYPE_WRITING);
+        space_list_subtract(Vcb, c, FALSE, eitp->item->key.obj_id + eitp->item->key.offset, length, rollback);
     }
     
     fcb->inode_item.st_blocks += length;
@@ -5124,7 +5129,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     EXTENT_ITEM* ei;
     chunk* c;
     LIST_ENTRY* le;
-    space* s;
+    space2* s;
     NTSTATUS Status;
     
     searchkey.obj_id = fcb->inode;
@@ -5267,16 +5272,16 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     c = get_chunk_from_address(Vcb, ed2->address);
     
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
+    le = c->space2.Flink;
+    while (le != &c->space2) {
+        s = CONTAINING_RECORD(le, space2, list_entry);
         
-        if (s->offset == ed2->address + ed2->size) {
-            if (s->type == SPACE_TYPE_FREE && s->size >= length) {
+        if (s->address == ed2->address + ed2->size) {
+            if (s->size >= length) {
                 success = extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, &tp, &tp2, rollback);
             }
             break;
-        } else if (s->offset > ed2->address + ed2->size)
+        } else if (s->address > ed2->address + ed2->size)
             break;
         
         le = le->Flink;

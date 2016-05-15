@@ -115,34 +115,33 @@ end:
 }
 
 static NTSTATUS add_space_entry(chunk* c, UINT64 offset, UINT64 size) {
-    space* s;
+    space2* s;
     
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
 
     if (!s) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    s->offset = offset;
+    s->address = offset;
     s->size = size;
-    s->type = SPACE_TYPE_FREE;
     
-    if (IsListEmpty(&c->space))
-        InsertTailList(&c->space, &s->list_entry);
+    if (IsListEmpty(&c->space2))
+        InsertTailList(&c->space2, &s->list_entry);
     else {
-        space* s2 = CONTAINING_RECORD(c->space.Blink, space, list_entry);
+        space2* s2 = CONTAINING_RECORD(c->space2.Blink, space2, list_entry);
         
-        if (s2->offset < offset)
-            InsertTailList(&c->space, &s->list_entry);
+        if (s2->address < offset)
+            InsertTailList(&c->space2, &s->list_entry);
         else {
             LIST_ENTRY* le;
             
-            le = c->space.Flink;
-            while (le != &c->space) {
-                s2 = CONTAINING_RECORD(le, space, list_entry);
+            le = c->space2.Flink;
+            while (le != &c->space2) {
+                s2 = CONTAINING_RECORD(le, space2, list_entry);
                 
-                if (s2->offset > offset) {
+                if (s2->address > offset) {
                     InsertTailList(le, &s->list_entry);
                     return STATUS_SUCCESS;
                 }
@@ -359,15 +358,15 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         }
     }
     
-    le = c->space.Flink;
-    while (le != &c->space) {
-        space* s = CONTAINING_RECORD(le, space, list_entry);
+    le = c->space2.Flink;
+    while (le != &c->space2) {
+        space2* s = CONTAINING_RECORD(le, space2, list_entry);
         LIST_ENTRY* le2 = le->Flink;
         
-        if (le2 != &c->space) {
-            space* s2 = CONTAINING_RECORD(le2, space, list_entry);
+        if (le2 != &c->space2) {
+            space2* s2 = CONTAINING_RECORD(le2, space2, list_entry);
             
-            if (s2->offset == s->offset + s->size) {
+            if (s2->address == s->address + s->size) {
                 s->size += s2->size;
                 
                 RemoveEntryList(&s2->list_entry);
@@ -390,8 +389,8 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
     UINT64 lastaddr;
     BOOL b;
-    space *s, *s2;
-    LIST_ENTRY* le;
+    space2 *s/*, *s2*/;
+//     LIST_ENTRY* le;
     NTSTATUS Status;
     
     if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
@@ -425,19 +424,18 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             
             if (tp.item->key.obj_id >= c->offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
                 if (tp.item->key.obj_id > lastaddr) {
-                    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+                    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
                     
                     if (!s) {
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    s->offset = lastaddr;
+                    s->address = lastaddr;
                     s->size = tp.item->key.obj_id - lastaddr;
-                    s->type = SPACE_TYPE_FREE;
-                    InsertTailList(&c->space, &s->list_entry);
+                    InsertTailList(&c->space2, &s->list_entry);
                     
-                    TRACE("(%llx,%llx)\n", s->offset, s->size);
+                    TRACE("(%llx,%llx)\n", s->address, s->size);
                 }
                 
                 if (tp.item->key.obj_type == TYPE_METADATA_ITEM)
@@ -452,630 +450,791 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         } while (b);
         
         if (lastaddr < c->offset + c->chunk_item->size) {
-            s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+            s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
             
             if (!s) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
-            s->offset = lastaddr;
+            s->address = lastaddr;
             s->size = c->offset + c->chunk_item->size - lastaddr;
-            s->type = SPACE_TYPE_FREE;
-            InsertTailList(&c->space, &s->list_entry);
+            InsertTailList(&c->space2, &s->list_entry);
             
-            TRACE("(%llx,%llx)\n", s->offset, s->size);
+            TRACE("(%llx,%llx)\n", s->address, s->size);
         }
     }
     
-    // add allocated space
-    
-    lastaddr = c->offset;
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        if (s->offset > lastaddr) {
-            s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-            
-            if (!s2) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            s2->offset = lastaddr;
-            s2->size = s->offset - lastaddr;
-            s2->type = SPACE_TYPE_USED;
-            
-            InsertTailList(&s->list_entry, &s2->list_entry);
-        }
-        
-        lastaddr = s->offset + s->size;
-        
-        le = le->Flink;
-    }
-    
-    if (lastaddr < c->offset + c->chunk_item->size) {
-        s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-        
-        if (!s) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        s->offset = lastaddr;
-        s->size = c->offset + c->chunk_item->size - lastaddr;
-        s->type = SPACE_TYPE_USED;
-        InsertTailList(&c->space, &s->list_entry);
-    }
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        TRACE("%llx,%llx,%u\n", s->offset, s->size, s->type);
-        
-        le = le->Flink;
-    }
+//     // add allocated space
+//     
+//     lastaddr = c->offset;
+//     
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         if (s->offset > lastaddr) {
+//             s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+//             
+//             if (!s2) {
+//                 ERR("out of memory\n");
+//                 return STATUS_INSUFFICIENT_RESOURCES;
+//             }
+//             
+//             s2->offset = lastaddr;
+//             s2->size = s->offset - lastaddr;
+//             s2->type = SPACE_TYPE_USED;
+//             
+//             InsertTailList(&s->list_entry, &s2->list_entry);
+//         }
+//         
+//         lastaddr = s->offset + s->size;
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (lastaddr < c->offset + c->chunk_item->size) {
+//         s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+//         
+//         if (!s) {
+//             ERR("out of memory\n");
+//             return STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//         
+//         s->offset = lastaddr;
+//         s->size = c->offset + c->chunk_item->size - lastaddr;
+//         s->type = SPACE_TYPE_USED;
+//         InsertTailList(&c->space, &s->list_entry);
+//     }
+//     
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         TRACE("%llx,%llx,%u\n", s->offset, s->size, s->type);
+//         
+//         le = le->Flink;
+//     }
     
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks.Flink;
-    chunk* c;
-    UINT64 flags;
-    
-    flags = Vcb->data_flags;
-    
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
-        
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
-                return STATUS_SUCCESS;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if ((c = alloc_chunk(Vcb, flags, rollback))) {
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
-                return STATUS_SUCCESS;
-        }
-    }
-    
-    WARN("couldn't find any data chunks with %llx bytes free\n", length);
+// static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+//     LIST_ENTRY* le = Vcb->chunks.Flink;
+//     chunk* c;
+//     UINT64 flags;
+//     
+//     flags = Vcb->data_flags;
+//     
+//     while (le != &Vcb->chunks) {
+//         c = CONTAINING_RECORD(le, chunk, list_entry);
+//         
+//         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+//             if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+//                 return STATUS_SUCCESS;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if ((c = alloc_chunk(Vcb, flags, rollback))) {
+//         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+//             if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+//                 return STATUS_SUCCESS;
+//         }
+//     }
+//     
+//     WARN("couldn't find any data chunks with %llx bytes free\n", length);
+// 
+//     return STATUS_DISK_FULL;
+// }
 
-    return STATUS_DISK_FULL;
-}
+// // static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
+// //     LIST_ENTRY* le;
+// //     NTSTATUS Status;
+// //     UINT64 num_entries, new_cache_size, i;
+// //     UINT64 lastused = c->offset;
+// //     UINT32 num_sectors;
+// //     
+// //     // FIXME - also do bitmaps
+// //     // FIXME - make sure this works when sector_size is not 4096
+// //     
+// //     *changed = FALSE;
+// //     
+// //     num_entries = 0;
+// //     
+// //     le = c->space.Flink;
+// //     while (le != &c->space) {
+// //         space* s = CONTAINING_RECORD(le, space, list_entry);
+// // 
+// //         if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
+// //             if (s->offset > lastused) {
+// // //                 TRACE("free: (%llx,%llx)\n", lastused, s->offset - lastused);
+// //                 num_entries++;
+// //             }
+// //             
+// //             lastused = s->offset + s->size;
+// //         }
+// //         
+// //         le = le->Flink;
+// //     }
+// //     
+// //     if (c->offset + c->chunk_item->size > lastused) {
+// // //         TRACE("free: (%llx,%llx)\n", lastused, c->offset + c->chunk_item->size - lastused);
+// //         num_entries++;
+// //     }
+// //     
+// //     new_cache_size = sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
+// //     
+// //     num_sectors = sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+// //     num_sectors = sector_align(num_sectors, CACHE_INCREMENTS);
+// //     
+// //     // adjust for padding
+// //     // FIXME - there must be a more efficient way of doing this
+// //     new_cache_size = sizeof(UINT64) + (sizeof(UINT32) * num_sectors);
+// //     for (i = 0; i < num_entries; i++) {
+// //         if ((new_cache_size / Vcb->superblock.sector_size) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size))
+// //             new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
+// //         
+// //         new_cache_size += sizeof(FREE_SPACE_ENTRY);
+// //     }
+// //     
+// //     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
+// //     
+// //     TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache_size, new_cache_size);
+// //     
+// //     if (new_cache_size > c->cache_size) {
+// //         if (c->cache_size == 0) {
+// //             INODE_ITEM* ii;
+// //             FREE_SPACE_ITEM* fsi;
+// //             UINT64 inode;
+// //             
+// //             // create new inode
+// //             
+// //             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+// //             if (!ii) {
+// //                 ERR("out of memory\n");
+// //                 return STATUS_INSUFFICIENT_RESOURCES;
+// //             }
+// //             
+// //             RtlZeroMemory(ii, sizeof(INODE_ITEM));
+// //             ii->st_size = new_cache_size;
+// //             ii->st_blocks = new_cache_size;
+// //             ii->st_nlink = 1;
+// //             ii->st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
+// //             ii->flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
+// //             
+// //             if (Vcb->root_root->lastinode == 0)
+// //                 get_last_inode(Vcb, Vcb->root_root);
+// //             
+// //             inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+// // 
+// //             if (!insert_tree_item(Vcb, Vcb->root_root, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+// //                 ERR("insert_tree_item failed\n");
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             // create new free space entry
+// //             
+// //             fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_ITEM), ALLOC_TAG);
+// //             if (!fsi) {
+// //                 ERR("out of memory\n");
+// //                 return STATUS_INSUFFICIENT_RESOURCES;
+// //             }
+// //             
+// //             fsi->key.obj_id = inode;
+// //             fsi->key.obj_type = TYPE_INODE_ITEM;
+// //             fsi->key.offset = 0;
+// //             
+// //             if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, rollback)) {
+// //                 ERR("insert_tree_item failed\n");
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             // allocate space
+// //             
+// //             Status = insert_cache_extent(Vcb, inode, 0, new_cache_size, rollback);
+// //             if (!NT_SUCCESS(Status)) {
+// //                 ERR("insert_cache_extent returned %08x\n", Status);
+// //                 return Status;
+// //             }
+// //             
+// //             Vcb->root_root->lastinode = inode;
+// //             c->cache_inode = inode;
+// //         } else {
+// //             KEY searchkey;
+// //             traverse_ptr tp;
+// //             INODE_ITEM* ii;
+// //             
+// //             ERR("extending existing inode\n");
+// //             
+// //             // FIXME - try to extend existing extent first of all
+// //             // Or ditch all existing extents and replace with one new one?
+// //             
+// //             // add INODE_ITEM to tree cache
+// //             
+// //             searchkey.obj_id = c->cache_inode;
+// //             searchkey.obj_type = TYPE_INODE_ITEM;
+// //             searchkey.offset = 0;
+// //             
+// //             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+// //             if (!NT_SUCCESS(Status)) {
+// //                 ERR("error - find_item returned %08x\n", Status);
+// //                 return Status;
+// //             }
+// //             
+// //             if (keycmp(&searchkey, &tp.item->key)) {
+// //                 ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             if (tp.item->size < sizeof(INODE_ITEM)) {
+// //                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             ii = (INODE_ITEM*)tp.item->data;
+// //             
+// //             if (!tp.tree->write) {
+// //                 tp.tree->write = TRUE;
+// //                 Vcb->write_trees++;
+// //             }
+// // 
+// //             // add free_space entry to tree cache
+// //             
+// //             searchkey.obj_id = FREE_SPACE_CACHE_ID;
+// //             searchkey.obj_type = 0;
+// //             searchkey.offset = c->offset;
+// //             
+// //             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+// //             if (!NT_SUCCESS(Status)) {
+// //                 ERR("error - find_item returned %08x\n", Status);
+// //                 return Status;
+// //             }
+// //             
+// //             if (keycmp(&searchkey, &tp.item->key)) {
+// //                 ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+// //                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+// //                 return STATUS_INTERNAL_ERROR;
+// //             }
+// //             
+// //             if (!tp.tree->write) {
+// //                 tp.tree->write = TRUE;
+// //                 Vcb->write_trees++;
+// //             }
+// // 
+// //             // add new extent
+// //             
+// //             Status = insert_cache_extent(Vcb, c->cache_inode, c->cache_size, new_cache_size - c->cache_size, rollback);
+// //             if (!NT_SUCCESS(Status)) {
+// //                 ERR("insert_cache_extent returned %08x\n", Status);
+// //                 return Status;
+// //             }
+// //             
+// //             // modify INODE_ITEM
+// //             
+// //             ii->st_size = new_cache_size;
+// //             ii->st_blocks = new_cache_size;
+// //         }
+// //         
+// //         c->cache_size = new_cache_size;
+// //         *changed = TRUE;
+// //     } else {
+// //         KEY searchkey;
+// //         traverse_ptr tp;
+// //         
+// //         // add INODE_ITEM and free_space entry to tree cache, for writing later
+// //         
+// //         searchkey.obj_id = c->cache_inode;
+// //         searchkey.obj_type = TYPE_INODE_ITEM;
+// //         searchkey.offset = 0;
+// //         
+// //         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+// //         if (!NT_SUCCESS(Status)) {
+// //             ERR("error - find_item returned %08x\n", Status);
+// //             return Status;
+// //         }
+// //         
+// //         if (keycmp(&searchkey, &tp.item->key)) {
+// //             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+// //             return STATUS_INTERNAL_ERROR;
+// //         }
+// //         
+// //         if (tp.item->size < sizeof(INODE_ITEM)) {
+// //             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+// //             return STATUS_INTERNAL_ERROR;
+// //         }
+// //         
+// //         if (!tp.tree->write) {
+// //             tp.tree->write = TRUE;
+// //             Vcb->write_trees++;
+// //         }
+// // 
+// //         searchkey.obj_id = FREE_SPACE_CACHE_ID;
+// //         searchkey.obj_type = 0;
+// //         searchkey.offset = c->offset;
+// //         
+// //         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+// //         if (!NT_SUCCESS(Status)) {
+// //             ERR("error - find_item returned %08x\n", Status);
+// //             return Status;
+// //         }
+// //         
+// //         if (keycmp(&searchkey, &tp.item->key)) {
+// //             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+// //             return STATUS_INTERNAL_ERROR;
+// //         }
+// //         
+// //         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+// //             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+// //             return STATUS_INTERNAL_ERROR;
+// //         }
+// //         
+// //         if (!tp.tree->write) {
+// //             tp.tree->write = TRUE;
+// //             Vcb->write_trees++;
+// //         }
+// //     }
+// //     
+// //     // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
+// //     
+// //     return STATUS_SUCCESS;
+// // }
 
-static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
-    NTSTATUS Status;
-    UINT64 num_entries, new_cache_size, i;
-    UINT64 lastused = c->offset;
-    UINT32 num_sectors;
-    
-    // FIXME - also do bitmaps
-    // FIXME - make sure this works when sector_size is not 4096
-    
-    *changed = FALSE;
-    
-    num_entries = 0;
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        space* s = CONTAINING_RECORD(le, space, list_entry);
-
-        if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
-            if (s->offset > lastused) {
-//                 TRACE("free: (%llx,%llx)\n", lastused, s->offset - lastused);
-                num_entries++;
-            }
-            
-            lastused = s->offset + s->size;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (c->offset + c->chunk_item->size > lastused) {
-//         TRACE("free: (%llx,%llx)\n", lastused, c->offset + c->chunk_item->size - lastused);
-        num_entries++;
-    }
-    
-    new_cache_size = sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
-    
-    num_sectors = sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
-    num_sectors = sector_align(num_sectors, CACHE_INCREMENTS);
-    
-    // adjust for padding
-    // FIXME - there must be a more efficient way of doing this
-    new_cache_size = sizeof(UINT64) + (sizeof(UINT32) * num_sectors);
-    for (i = 0; i < num_entries; i++) {
-        if ((new_cache_size / Vcb->superblock.sector_size) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size))
-            new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
-        
-        new_cache_size += sizeof(FREE_SPACE_ENTRY);
-    }
-    
-    new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
-    
-    TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache_size, new_cache_size);
-    
-    if (new_cache_size > c->cache_size) {
-        if (c->cache_size == 0) {
-            INODE_ITEM* ii;
-            FREE_SPACE_ITEM* fsi;
-            UINT64 inode;
-            
-            // create new inode
-            
-            ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-            if (!ii) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            RtlZeroMemory(ii, sizeof(INODE_ITEM));
-            ii->st_size = new_cache_size;
-            ii->st_blocks = new_cache_size;
-            ii->st_nlink = 1;
-            ii->st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
-            ii->flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
-            
-            if (Vcb->root_root->lastinode == 0)
-                get_last_inode(Vcb, Vcb->root_root);
-            
-            inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-
-            if (!insert_tree_item(Vcb, Vcb->root_root, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
-                ERR("insert_tree_item failed\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            // create new free space entry
-            
-            fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_ITEM), ALLOC_TAG);
-            if (!fsi) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            fsi->key.obj_id = inode;
-            fsi->key.obj_type = TYPE_INODE_ITEM;
-            fsi->key.offset = 0;
-            
-            if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, rollback)) {
-                ERR("insert_tree_item failed\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            // allocate space
-            
-            Status = insert_cache_extent(Vcb, inode, 0, new_cache_size, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_cache_extent returned %08x\n", Status);
-                return Status;
-            }
-            
-            Vcb->root_root->lastinode = inode;
-            c->cache_inode = inode;
-        } else {
-            KEY searchkey;
-            traverse_ptr tp;
-            INODE_ITEM* ii;
-            
-            ERR("extending existing inode\n");
-            
-            // FIXME - try to extend existing extent first of all
-            // Or ditch all existing extents and replace with one new one?
-            
-            // add INODE_ITEM to tree cache
-            
-            searchkey.obj_id = c->cache_inode;
-            searchkey.obj_type = TYPE_INODE_ITEM;
-            searchkey.offset = 0;
-            
-            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                return Status;
-            }
-            
-            if (keycmp(&searchkey, &tp.item->key)) {
-                ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (tp.item->size < sizeof(INODE_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            ii = (INODE_ITEM*)tp.item->data;
-            
-            if (!tp.tree->write) {
-                tp.tree->write = TRUE;
-                Vcb->write_trees++;
-            }
-
-            // add free_space entry to tree cache
-            
-            searchkey.obj_id = FREE_SPACE_CACHE_ID;
-            searchkey.obj_type = 0;
-            searchkey.offset = c->offset;
-            
-            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                return Status;
-            }
-            
-            if (keycmp(&searchkey, &tp.item->key)) {
-                ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (!tp.tree->write) {
-                tp.tree->write = TRUE;
-                Vcb->write_trees++;
-            }
-
-            // add new extent
-            
-            Status = insert_cache_extent(Vcb, c->cache_inode, c->cache_size, new_cache_size - c->cache_size, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_cache_extent returned %08x\n", Status);
-                return Status;
-            }
-            
-            // modify INODE_ITEM
-            
-            ii->st_size = new_cache_size;
-            ii->st_blocks = new_cache_size;
-        }
-        
-        c->cache_size = new_cache_size;
-        *changed = TRUE;
-    } else {
-        KEY searchkey;
-        traverse_ptr tp;
-        
-        // add INODE_ITEM and free_space entry to tree cache, for writing later
-        
-        searchkey.obj_id = c->cache_inode;
-        searchkey.obj_type = TYPE_INODE_ITEM;
-        searchkey.offset = 0;
-        
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (keycmp(&searchkey, &tp.item->key)) {
-            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (tp.item->size < sizeof(INODE_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (!tp.tree->write) {
-            tp.tree->write = TRUE;
-            Vcb->write_trees++;
-        }
-
-        searchkey.obj_id = FREE_SPACE_CACHE_ID;
-        searchkey.obj_type = 0;
-        searchkey.offset = c->offset;
-        
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (keycmp(&searchkey, &tp.item->key)) {
-            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (!tp.tree->write) {
-            tp.tree->write = TRUE;
-            Vcb->write_trees++;
-        }
-    }
-    
-    // FIXME - reduce inode allocation if cache is shrinking. Make sure to avoid infinite write loops
-    
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
-    NTSTATUS Status;
-
-    *changed = FALSE;
-    
-    while (le != &Vcb->chunks_changed) {
-        BOOL b;
-        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
-            
-        Status = allocate_cache_chunk(Vcb, c, &b, rollback);
-        
-        if (b)
-            *changed = TRUE;
-        
-        if (!NT_SUCCESS(Status)) {
-            ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
-            return Status;
-        }
-        
-        le = le->Flink;
-    }
-    
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    KEY searchkey;
-    traverse_ptr tp;
-    FREE_SPACE_ITEM* fsi;
-    INODE_ITEM* ii;
-    void* data;
-    FREE_SPACE_ENTRY* fse;
-    UINT64 num_entries, num_sectors, lastused, *cachegen, i, off;
-    UINT32* checksums;
-    LIST_ENTRY* le;
-    BOOL b;
-    
-    data = ExAllocatePoolWithTag(NonPagedPool, c->cache_size, ALLOC_TAG);
-    if (!data) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlZeroMemory(data, c->cache_size);
-    
-    num_entries = 0;
-    num_sectors = c->cache_size / Vcb->superblock.sector_size;
-    off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
-    
-    lastused = c->offset;
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        space* s = CONTAINING_RECORD(le, space, list_entry);
-
-        if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
-            if (s->offset > lastused) {
-                if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
-                    off = sector_align(off, Vcb->superblock.sector_size);
-                
-                fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
-                
-                fse->offset = lastused;
-                fse->size = s->offset - lastused;
-                fse->type = FREE_SPACE_EXTENT;
-                num_entries++;
-                
-                off += sizeof(FREE_SPACE_ENTRY);
-            }
-            
-            lastused = s->offset + s->size;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (c->offset + c->chunk_item->size > lastused) {
-        if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
-            off = sector_align(off, Vcb->superblock.sector_size);
-        
-        fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
-        
-        fse->offset = lastused;
-        fse->size = c->offset + c->chunk_item->size - lastused;
-        fse->type = FREE_SPACE_EXTENT;
-        num_entries++;
-    }
-
-    // update INODE_ITEM
-    
-    searchkey.obj_id = c->cache_inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (tp.item->size < sizeof(INODE_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    ii = (INODE_ITEM*)tp.item->data;
-    
-    ii->generation = Vcb->superblock.generation;
-    ii->transid = Vcb->superblock.generation;
-    ii->sequence++;
-    ii->st_ctime = *now;
-    
-    // update free_space item
-    
-    searchkey.obj_id = FREE_SPACE_CACHE_ID;
-    searchkey.obj_type = 0;
-    searchkey.offset = c->offset;
-    
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    fsi = (FREE_SPACE_ITEM*)tp.item->data;
-    
-    fsi->generation = Vcb->superblock.generation;
-    fsi->num_entries = num_entries;
-    fsi->num_bitmaps = 0;
-    
-    // set cache generation
-    
-    cachegen = (UINT64*)((UINT8*)data + (sizeof(UINT32) * num_sectors));
-    *cachegen = Vcb->superblock.generation;
-    
-    // calculate cache checksums
-    
-    checksums = (UINT32*)data;
-    
-    // FIXME - if we know sector is fully zeroed, use cached checksum
-    
-    for (i = 0; i < num_sectors; i++) {
-        if (i * Vcb->superblock.sector_size > sizeof(UINT32) * num_sectors)
-            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(UINT32) * num_sectors)
-            checksums[i] = 0; // FIXME - test this
-        else
-            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (sizeof(UINT32) * num_sectors), ((i + 1) * Vcb->superblock.sector_size) - (sizeof(UINT32) * num_sectors));
-    }
-    
-    // write cache
-    
-    searchkey.obj_id = c->cache_inode;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    do {
-        traverse_ptr next_tp;
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->key.offset < c->cache_size) {
-            EXTENT_DATA* ed;
-            EXTENT_DATA2* eds;
-            
-            if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            ed = (EXTENT_DATA*)tp.item->data;
-            
-            if (ed->type != EXTENT_TYPE_REGULAR) {
-                ERR("cache EXTENT_DATA type not regular\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            eds = (EXTENT_DATA2*)&ed->data[0];
-
-            if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                ERR("not writing compressed cache\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                WARN("encryption not supported\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            if (ed->encoding != BTRFS_ENCODING_NONE) {
-                WARN("other encodings not supported\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (eds->address == 0) {
-                ERR("not writing cache to sparse extent\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            Status = write_data_complete(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data returned %08x\n", Status);
-                return Status;
-            }
-        }
-        
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-        if (b) {
-            tp = next_tp;
-            
-            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                break;
-        }
-    } while (b);
-    
-    ExFreePool(data);
-    
-    return STATUS_SUCCESS;
-}
+// NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback) {
+//     LIST_ENTRY* le = Vcb->chunks_changed.Flink;
+//     NTSTATUS Status;
+// 
+//     *changed = FALSE;
+//     
+//     while (le != &Vcb->chunks_changed) {
+//         BOOL b;
+//         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+//             
+//         Status = allocate_cache_chunk(Vcb, c, &b, rollback);
+//         
+//         if (b)
+//             *changed = TRUE;
+//         
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+//             return Status;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     return STATUS_SUCCESS;
+// }
+// 
+// static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* rollback) {
+//     NTSTATUS Status;
+//     KEY searchkey;
+//     traverse_ptr tp;
+//     FREE_SPACE_ITEM* fsi;
+//     INODE_ITEM* ii;
+//     void* data;
+//     FREE_SPACE_ENTRY* fse;
+//     UINT64 num_entries, num_sectors, lastused, *cachegen, i, off;
+//     UINT32* checksums;
+//     LIST_ENTRY* le;
+//     BOOL b;
+//     
+//     data = ExAllocatePoolWithTag(NonPagedPool, c->cache_size, ALLOC_TAG);
+//     if (!data) {
+//         ERR("out of memory\n");
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//     
+//     RtlZeroMemory(data, c->cache_size);
+//     
+//     num_entries = 0;
+//     num_sectors = c->cache_size / Vcb->superblock.sector_size;
+//     off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
+//     
+//     lastused = c->offset;
+//     
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         space* s = CONTAINING_RECORD(le, space, list_entry);
+// 
+//         if (s->type == SPACE_TYPE_USED || s->type == SPACE_TYPE_WRITING) {
+//             if (s->offset > lastused) {
+//                 if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+//                     off = sector_align(off, Vcb->superblock.sector_size);
+//                 
+//                 fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
+//                 
+//                 fse->offset = lastused;
+//                 fse->size = s->offset - lastused;
+//                 fse->type = FREE_SPACE_EXTENT;
+//                 num_entries++;
+//                 
+//                 off += sizeof(FREE_SPACE_ENTRY);
+//             }
+//             
+//             lastused = s->offset + s->size;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (c->offset + c->chunk_item->size > lastused) {
+//         if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+//             off = sector_align(off, Vcb->superblock.sector_size);
+//         
+//         fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
+//         
+//         fse->offset = lastused;
+//         fse->size = c->offset + c->chunk_item->size - lastused;
+//         fse->type = FREE_SPACE_EXTENT;
+//         num_entries++;
+//     }
+// 
+//     // update INODE_ITEM
+//     
+//     searchkey.obj_id = c->cache_inode;
+//     searchkey.obj_type = TYPE_INODE_ITEM;
+//     searchkey.offset = 0;
+//     
+//     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (keycmp(&searchkey, &tp.item->key)) {
+//         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     if (tp.item->size < sizeof(INODE_ITEM)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     ii = (INODE_ITEM*)tp.item->data;
+//     
+//     ii->generation = Vcb->superblock.generation;
+//     ii->transid = Vcb->superblock.generation;
+//     ii->sequence++;
+//     ii->st_ctime = *now;
+//     
+//     // update free_space item
+//     
+//     searchkey.obj_id = FREE_SPACE_CACHE_ID;
+//     searchkey.obj_type = 0;
+//     searchkey.offset = c->offset;
+//     
+//     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (keycmp(&searchkey, &tp.item->key)) {
+//         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     fsi = (FREE_SPACE_ITEM*)tp.item->data;
+//     
+//     fsi->generation = Vcb->superblock.generation;
+//     fsi->num_entries = num_entries;
+//     fsi->num_bitmaps = 0;
+//     
+//     // set cache generation
+//     
+//     cachegen = (UINT64*)((UINT8*)data + (sizeof(UINT32) * num_sectors));
+//     *cachegen = Vcb->superblock.generation;
+//     
+//     // calculate cache checksums
+//     
+//     checksums = (UINT32*)data;
+//     
+//     // FIXME - if we know sector is fully zeroed, use cached checksum
+//     
+//     for (i = 0; i < num_sectors; i++) {
+//         if (i * Vcb->superblock.sector_size > sizeof(UINT32) * num_sectors)
+//             checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+//         else if ((i + 1) * Vcb->superblock.sector_size < sizeof(UINT32) * num_sectors)
+//             checksums[i] = 0; // FIXME - test this
+//         else
+//             checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (sizeof(UINT32) * num_sectors), ((i + 1) * Vcb->superblock.sector_size) - (sizeof(UINT32) * num_sectors));
+//     }
+//     
+//     // write cache
+//     
+//     searchkey.obj_id = c->cache_inode;
+//     searchkey.obj_type = TYPE_EXTENT_DATA;
+//     searchkey.offset = 0;
+//     
+//     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     do {
+//         traverse_ptr next_tp;
+//         
+//         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->key.offset < c->cache_size) {
+//             EXTENT_DATA* ed;
+//             EXTENT_DATA2* eds;
+//             
+//             if (tp.item->size < sizeof(EXTENT_DATA)) {
+//                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             ed = (EXTENT_DATA*)tp.item->data;
+//             
+//             if (ed->type != EXTENT_TYPE_REGULAR) {
+//                 ERR("cache EXTENT_DATA type not regular\n");
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+// 
+//             if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             eds = (EXTENT_DATA2*)&ed->data[0];
+// 
+//             if (ed->compression != BTRFS_COMPRESSION_NONE) {
+//                 ERR("not writing compressed cache\n");
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+// 
+//             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+//                 WARN("encryption not supported\n");
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+// 
+//             if (ed->encoding != BTRFS_ENCODING_NONE) {
+//                 WARN("other encodings not supported\n");
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             if (eds->address == 0) {
+//                 ERR("not writing cache to sparse extent\n");
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             Status = write_data_complete(Vcb, eds->address + eds->offset, (UINT8*)data + tp.item->key.offset, min(c->cache_size - tp.item->key.offset, eds->num_bytes));
+//             if (!NT_SUCCESS(Status)) {
+//                 ERR("write_data returned %08x\n", Status);
+//                 return Status;
+//             }
+//         }
+//         
+//         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+//         if (b) {
+//             tp = next_tp;
+//             
+//             if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+//                 break;
+//         }
+//     } while (b);
+//     
+//     ExFreePool(data);
+//     
+//     return STATUS_SUCCESS;
+// }
 
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
-    NTSTATUS Status;
-    chunk* c;
+//     LIST_ENTRY* le = Vcb->chunks_changed.Flink;
+//     NTSTATUS Status;
+//     chunk* c;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    while (le != &Vcb->chunks_changed) {
-        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
-        
-        Status = update_chunk_cache(Vcb, c, &now, rollback);
+//     while (le != &Vcb->chunks_changed) {
+//         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+//         
+//         Status = update_chunk_cache(Vcb, c, &now, rollback);
+// 
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
+//             return Status;
+//         }
+//         
+//         le = le->Flink;
+//     }
+    
+    return STATUS_SUCCESS;
+}
 
-        if (!NT_SUCCESS(Status)) {
-            ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
-            return Status;
+void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+    LIST_ENTRY *list, *le;
+    space2 *s, *s2;
+    
+    TRACE("(%p, %p, %u, %llx, %llx, %p)\n", Vcb, c, deleting, address, length, rollback);
+    
+    list = deleting ? &c->deleting : &c->space2;
+    
+    if (!c->list_entry_changed.Flink)
+        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+    
+    if (IsListEmpty(list)) {
+        s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+
+        if (!s) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        s->address = address;
+        s->size = length;
+        InsertTailList(list, &s->list_entry);
+        
+        // FIXME - insert rollback entry
+        
+        return;
+    }
+    
+    // FIXME
+    le = list->Flink;
+    while (le != list) {
+        s2 = CONTAINING_RECORD(le, space2, list_entry);
+        
+        // old entry envelops new one completely
+        if (s2->address <= address && s2->address + s2->size >= address + length)
+            return;
+        
+        // new entry envelops old one completely
+        if (address <= s2->address && address + length >= s2->address + s2->size) {
+            if (address < s2->address) {
+                s2->size += s2->address - address;
+                s2->address = address;
+                // FIXME - insert rollback
+                
+                while (s2->list_entry.Blink != list) {
+                    space2* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space2, list_entry);
+                    
+                    if (s3->address + s3->size == s2->address) {
+                        s2->address = s3->address;
+                        s2->size += s3->size;
+                        
+                        RemoveEntryList(&s3->list_entry);
+                        ExFreePool(s3);
+                    } else
+                        break;
+                }
+            }
+            
+            if (length > s2->size) {
+                s2->size = length;
+                // FIXME - insert rollback
+                
+                while (s2->list_entry.Flink != list) {
+                    space2* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space2, list_entry);
+                    
+                    if (s3->address <= s2->address + s2->size) {
+                        s2->size = max(s2->size, s3->address + s3->size - s2->address);
+                        
+                        RemoveEntryList(&s3->list_entry);
+                        ExFreePool(s3);
+                    } else
+                        break;
+                }
+            }
+            
+            return;
+        }
+        
+        // new entry overlaps start of old one
+        if (address < s2->address && address + length >= s2->address) {
+            s2->size += s2->address - address;
+            s2->address = address;
+            // FIXME - insert rollback
+            
+            while (s2->list_entry.Blink != list) {
+                space2* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space2, list_entry);
+                
+                if (s3->address + s3->size == s2->address) {
+                    s2->address = s3->address;
+                    s2->size += s3->size;
+                    
+                    RemoveEntryList(&s3->list_entry);
+                    ExFreePool(s3);
+                } else
+                    break;
+            }
+            return;
+        }
+        
+        // new entry overlaps end of old one
+        if (address <= s2->address + s2->size && address + length > s2->address + s2->size) {
+            s2->size = address + length - s2->address;
+            // FIXME - insert rollback
+            
+            while (s2->list_entry.Flink != list) {
+                space2* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space2, list_entry);
+                
+                if (s3->address <= s2->address + s2->size) {
+                    s2->size = max(s2->size, s3->address + s3->size - s2->address);
+                    
+                    RemoveEntryList(&s3->list_entry);
+                    ExFreePool(s3);
+                } else
+                    break;
+            }
+            return;
+        }
+        
+        // add completely separate entry
+        if (s2->address > address + length) {
+            s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+
+            if (!s) {
+                ERR("out of memory\n");
+                return;
+            }
+            
+            // FIXME - insert rollback
+            s->address = address;
+            s->size = length;
+            InsertHeadList(s2->list_entry.Blink, &s->list_entry);
+            return;
         }
         
         le = le->Flink;
     }
     
-    return STATUS_SUCCESS;
+    // check if contiguous with last entry
+    if (s2->address + s2->size == address) {
+        s2->size += length;
+        // FIXME - insert rollback
+        return;
+    }
+    
+    // otherwise, insert at end
+    s = ExAllocatePoolWithTag(PagedPool, sizeof(space2), ALLOC_TAG);
+
+    if (!s) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    s->address = address;
+    s->size = length;
+    InsertTailList(list, &s->list_entry);
+    // FIXME - insert rollback
+}
+
+void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+    // FIXME
 }

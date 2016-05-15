@@ -426,7 +426,7 @@ void decrease_chunk_usage(chunk* c, UINT64 delta) {
     TRACE("decreasing size of chunk %llx by %llx\n", c->offset, delta);
 }
 
-static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list) {
+static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     chunk* c;
     LIST_ENTRY* le;
     
@@ -461,7 +461,7 @@ static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size
     if (c) {
         decrease_chunk_usage(c, size);
         
-        add_to_space_list(Vcb, c, address, size, SPACE_TYPE_DELETING);
+        space_list_add(Vcb, c, TRUE, address, size, rollback);
     }
     
     return STATUS_SUCCESS;
@@ -580,7 +580,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
                     if (ei->refcount == edr->count) {
-                        Status = remove_extent(Vcb, address, size, changed_sector_list);
+                        Status = remove_extent(Vcb, address, size, changed_sector_list, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("remove_extent returned %08x\n", Status);
                             return Status;
@@ -679,7 +679,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         
         if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
             if (ei->refcount == edr->count) {
-                Status = remove_extent(Vcb, address, size, changed_sector_list);
+                Status = remove_extent(Vcb, address, size, changed_sector_list, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("remove_extent returned %08x\n", Status);
                     return Status;

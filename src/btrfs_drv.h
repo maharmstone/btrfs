@@ -248,17 +248,23 @@ typedef struct _root_cache {
     struct _root_cache* next;
 } root_cache;
 
-#define SPACE_TYPE_FREE     0
-#define SPACE_TYPE_USED     1
-#define SPACE_TYPE_DELETING 2
-#define SPACE_TYPE_WRITING  3
+// #define SPACE_TYPE_FREE     0
+// #define SPACE_TYPE_USED     1
+// #define SPACE_TYPE_DELETING 2
+// #define SPACE_TYPE_WRITING  3
+
+// typedef struct {
+//     UINT64 offset;
+//     UINT64 size;
+//     UINT8 type;
+//     LIST_ENTRY list_entry;
+// } space;
 
 typedef struct {
-    UINT64 offset;
+    UINT64 address;
     UINT64 size;
-    UINT8 type;
     LIST_ENTRY list_entry;
-} space;
+} space2;
 
 typedef struct {
     UINT64 address;
@@ -283,7 +289,8 @@ typedef struct {
     device** devices;
     UINT64 cache_size;
     UINT64 cache_inode;
-    LIST_ENTRY space;
+    LIST_ENTRY space2;
+    LIST_ENTRY deleting;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
 } chunk;
@@ -607,7 +614,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
-void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type);
+// void add_to_space_list(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT8 type);
 NTSTATUS consider_write(device_extension* Vcb);
 BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
                                UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
@@ -674,6 +681,8 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
 NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback);
+void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
