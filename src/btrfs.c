@@ -868,6 +868,18 @@ exit:
     return Status;
 }
 
+static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LONGLONG* freespace) {
+    UINT8 factor;
+    
+    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID0 || Vcb->data_flags & BLOCK_FLAG_RAID10)
+        factor = 2;
+    else
+        factor = 1;
+    
+    *totalsize = (Vcb->superblock.total_bytes / Vcb->superblock.sector_size) / factor;
+    *freespace = ((Vcb->superblock.total_bytes - Vcb->superblock.bytes_used) / Vcb->superblock.sector_size) / factor;
+}
+
 static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
@@ -946,16 +958,10 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         case FileFsFullSizeInformation:
         {
             FILE_FS_FULL_SIZE_INFORMATION* ffsi = Irp->AssociatedIrp.SystemBuffer;
-            UINT64 totalsize, freespace;
             
             TRACE("FileFsFullSizeInformation\n");
             
-            // FIXME - calculate correctly for RAID
-            totalsize = Vcb->superblock.total_bytes / Vcb->superblock.sector_size;
-            freespace = (Vcb->superblock.total_bytes - Vcb->superblock.bytes_used) / Vcb->superblock.sector_size;
-            
-            ffsi->TotalAllocationUnits.QuadPart = totalsize;
-            ffsi->ActualAvailableAllocationUnits.QuadPart = freespace;
+            calculate_total_space(Vcb, &ffsi->TotalAllocationUnits.QuadPart, &ffsi->ActualAvailableAllocationUnits.QuadPart);
             ffsi->CallerAvailableAllocationUnits.QuadPart = ffsi->ActualAvailableAllocationUnits.QuadPart;
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
@@ -973,17 +979,10 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         case FileFsSizeInformation:
         {
             FILE_FS_SIZE_INFORMATION* ffsi = Irp->AssociatedIrp.SystemBuffer;
-            UINT64 totalsize, freespace;
             
             TRACE("FileFsSizeInformation\n");
             
-            // FIXME - calculate correctly for RAID
-            // FIXME - is this returning the right free space?
-            totalsize = Vcb->superblock.dev_item.num_bytes / Vcb->superblock.sector_size;
-            freespace = (Vcb->superblock.dev_item.num_bytes - Vcb->superblock.dev_item.bytes_used) / Vcb->superblock.sector_size;
-            
-            ffsi->TotalAllocationUnits.QuadPart = totalsize;
-            ffsi->AvailableAllocationUnits.QuadPart = freespace;
+            calculate_total_space(Vcb, &ffsi->TotalAllocationUnits.QuadPart, &ffsi->AvailableAllocationUnits.QuadPart);
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
             
