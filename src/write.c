@@ -1010,6 +1010,8 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         
         if (stripestart[i] == stripeend[i]) {
             stripe->status = WriteDataStatus_Ignore;
+            stripe->Irp = NULL;
+            stripe->buf = NULL;
         } else {
             stripe->context = (struct write_data_context*)wtc;
             stripe->buf = stripedata[i];
@@ -1050,6 +1052,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             IrpSp->Parameters.Write.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
             
             stripe->Irp->UserIosb = &stripe->iosb;
+            wtc->stripes_left++;
 
             IoSetCompletionRoutine(stripe->Irp, write_data_completion, stripe, TRUE, TRUE, TRUE);
         }
@@ -1086,6 +1089,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc->stripes);
     wtc->tree = FALSE;
+    wtc->stripes_left = 0;
     
     Status = write_data(Vcb, address, data, length, wtc);
     if (!NT_SUCCESS(Status)) {
@@ -1901,7 +1905,6 @@ static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     write_data_stripe* stripe = conptr;
     write_data_context* context = (write_data_context*)stripe->context;
     LIST_ENTRY* le;
-    BOOL complete;
     
     // FIXME - we need a lock here
     
@@ -1932,21 +1935,7 @@ static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     }
     
 end:
-    le = context->stripes.Flink;
-    complete = TRUE;
-        
-    while (le != &context->stripes) {
-        write_data_stripe* s2 = CONTAINING_RECORD(le, write_data_stripe, list_entry);
-        
-        if (s2->status == WriteDataStatus_Pending || s2->status == WriteDataStatus_Cancelling || s2->status == WriteDataStatus_Ignore) {
-            complete = FALSE;
-            break;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (complete)
+    if (InterlockedDecrement(&context->stripes_left) == 0)
         KeSetEvent(&context->Event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
@@ -1959,9 +1948,11 @@ void free_write_data_stripes(write_data_context* wtc) {
     while (le != &wtc->stripes) {
         write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
         
-        if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
-            MmUnlockPages(stripe->Irp->MdlAddress);
-            IoFreeMdl(stripe->Irp->MdlAddress);
+        if (stripe->Irp) {
+            if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
+                MmUnlockPages(stripe->Irp->MdlAddress);
+                IoFreeMdl(stripe->Irp->MdlAddress);
+            }
         }
         
         le = le->Flink;
@@ -2115,6 +2106,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
     KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc->stripes);
     wtc->tree = TRUE;
+    wtc->stripes_left = 0;
     
     le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
@@ -2259,7 +2251,8 @@ static NTSTATUS write_trees(device_extension* Vcb) {
         while (le != &wtc->stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
-            IoCallDriver(stripe->device->devobj, stripe->Irp);
+            if (stripe->status != WriteDataStatus_Ignore)
+                IoCallDriver(stripe->device->devobj, stripe->Irp);
             
             le = le->Flink;
         }
@@ -2270,7 +2263,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
         while (le != &wtc->stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
-            if (!NT_SUCCESS(stripe->iosb.Status)) {
+            if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
                 break;
             }

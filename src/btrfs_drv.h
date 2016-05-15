@@ -405,6 +405,7 @@ typedef struct {
 typedef struct {
     KEVENT Event;
     LIST_ENTRY stripes;
+    LONG stripes_left;
     BOOL tree;
 } write_data_context;
 
