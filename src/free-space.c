@@ -389,8 +389,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
     UINT64 lastaddr;
     BOOL b;
-    space2 *s/*, *s2*/;
-//     LIST_ENTRY* le;
+    space2* s;
     NTSTATUS Status;
     
     if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
@@ -464,58 +463,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             TRACE("(%llx,%llx)\n", s->address, s->size);
         }
     }
-    
-//     // add allocated space
-//     
-//     lastaddr = c->offset;
-//     
-//     le = c->space.Flink;
-//     while (le != &c->space) {
-//         s = CONTAINING_RECORD(le, space, list_entry);
-//         
-//         if (s->offset > lastaddr) {
-//             s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-//             
-//             if (!s2) {
-//                 ERR("out of memory\n");
-//                 return STATUS_INSUFFICIENT_RESOURCES;
-//             }
-//             
-//             s2->offset = lastaddr;
-//             s2->size = s->offset - lastaddr;
-//             s2->type = SPACE_TYPE_USED;
-//             
-//             InsertTailList(&s->list_entry, &s2->list_entry);
-//         }
-//         
-//         lastaddr = s->offset + s->size;
-//         
-//         le = le->Flink;
-//     }
-//     
-//     if (lastaddr < c->offset + c->chunk_item->size) {
-//         s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
-//         
-//         if (!s) {
-//             ERR("out of memory\n");
-//             return STATUS_INSUFFICIENT_RESOURCES;
-//         }
-//         
-//         s->offset = lastaddr;
-//         s->size = c->offset + c->chunk_item->size - lastaddr;
-//         s->type = SPACE_TYPE_USED;
-//         InsertTailList(&c->space, &s->list_entry);
-//     }
-//     
-//     le = c->space.Flink;
-//     while (le != &c->space) {
-//         s = CONTAINING_RECORD(le, space, list_entry);
-//         
-//         TRACE("%llx,%llx,%u\n", s->offset, s->size, s->type);
-//         
-//         le = le->Flink;
-//     }
-    
+
     return STATUS_SUCCESS;
 }
 
