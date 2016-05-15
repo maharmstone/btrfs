@@ -428,7 +428,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
 }
 
 static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, UINT16 type) {
-    UINT64 j, k, devnum, devusage = 0xffffffffffffffff;
+    UINT64 j, k, devnum = 0xffffffffffffffff, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
     
     for (j = 0; j < Vcb->superblock.num_devices; j++) {
