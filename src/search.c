@@ -48,7 +48,7 @@ VOID WINAPI IopNotifyPlugPlayNotification(
 static const WCHAR devpath[] = {'\\','D','e','v','i','c','e',0};
 
 static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pardir, PUNICODE_STRING nameus,
-                             BTRFS_UUID* uuid, PDEVICE_OBJECT* NewDeviceObject) {
+                             BTRFS_UUID* uuid) {
     PDEVICE_OBJECT newdevobj;
     UNICODE_STRING name;
     NTSTATUS Status;
@@ -99,7 +99,6 @@ static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceO
     newdevobj->Flags |= DO_DIRECT_IO;
     newdevobj->Flags &= ~DO_DEVICE_INITIALIZING;
     
-    *NewDeviceObject = newdevobj;
     *nameus = name;
     
     return STATUS_SUCCESS;
@@ -276,17 +275,27 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     }
 
     if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
+        int i;
+        GET_LENGTH_INFORMATION gli;
         superblock* sb = (superblock*)data;
         volume* v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
+        
         if (!v) {
             ERR("out of memory\n");
+            goto deref;
+        }
+        
+        Status = dev_ioctl(DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                           &gli, sizeof(gli), TRUE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error reading length information: %08x\n", Status);
             goto deref;
         }
         
         if (part0) {
             UNICODE_STRING us3;
             
-            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &sb->dev_item.device_uuid, &DeviceObject);
+            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &sb->dev_item.device_uuid);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("create_part0 returned %08x\n", Status);
@@ -302,9 +311,49 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         v->devnum = sb->dev_item.dev_id;
         v->devpath = us2;
         v->processed = FALSE;
+        v->length = gli.Length.QuadPart;
+        v->gen1 = sb->generation;
+        v->gen2 = 0;
         InsertTailList(volumes, &v->list_entry);
         
+        i = 1;
+        while (superblock_addrs[i] != 0 && superblock_addrs[i] + toread <= v->length) {
+            KeInitializeEvent(&Event, NotificationEvent, FALSE);
+            
+            Offset.QuadPart = superblock_addrs[i];
+            
+            Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, data, toread, &Offset, &Event, &IoStatusBlock);
+            
+            if (!Irp) {
+                ERR("IoBuildSynchronousFsdRequest failed\n");
+                goto deref;
+            }
+
+            Status = IoCallDriver(DeviceObject, Irp);
+
+            if (Status == STATUS_PENDING) {
+                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+                Status = IoStatusBlock.Status;
+            }
+            
+            if (NT_SUCCESS(Status)) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+                
+                if (crc32 != *((UINT32*)sb->checksum))
+                    WARN("superblock %u CRC error\n", i);
+                else if (sb->generation > v->gen1) {
+                    v->gen2 = v->gen1;
+                    v->gen1 = sb->generation;
+                }
+            } else {
+                ERR("got error %08x while reading superblock %u\n", Status, i);
+            }
+            
+            i++;
+        }
+        
         TRACE("volume found\n");
+        TRACE("gen1 = %llx, gen2 = %llx\n", v->gen1, v->gen2);
         TRACE("FS uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
               v->fsuuid.uuid[0], v->fsuuid.uuid[1], v->fsuuid.uuid[2], v->fsuuid.uuid[3], v->fsuuid.uuid[4], v->fsuuid.uuid[5], v->fsuuid.uuid[6], v->fsuuid.uuid[7],
               v->fsuuid.uuid[8], v->fsuuid.uuid[9], v->fsuuid.uuid[10], v->fsuuid.uuid[11], v->fsuuid.uuid[12], v->fsuuid.uuid[13], v->fsuuid.uuid[14], v->fsuuid.uuid[15]);

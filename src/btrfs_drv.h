@@ -82,6 +82,8 @@ typedef struct {
     BTRFS_UUID devuuid;
     UINT64 devnum;
     UNICODE_STRING devpath;
+    UINT64 length;
+    UINT64 gen1, gen2;
     BOOL processed;
     LIST_ENTRY list_entry;
 } volume;

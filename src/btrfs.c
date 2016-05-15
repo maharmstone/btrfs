@@ -3623,6 +3623,32 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     return TRUE;
 }
 
+static BOOL raid_generations_okay(device_extension* Vcb) {
+    UINT64 i;
+    
+    // FIXME - if the difference between superblocks is small, we should try to recover
+    
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        LIST_ENTRY* le = volumes.Flink;
+        while (le != &volumes) {
+            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+            
+            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
+                RtlCompareMemory(&Vcb->devices[i].devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
+            ) {
+                if (v->gen1 != Vcb->superblock.generation - 1) {
+                    WARN("device %llu had generation %llx, expected %llx\n", i, v->gen1, Vcb->superblock.generation - 1);
+                    return FALSE;
+                } else
+                    break;
+            }
+            le = le->Flink;
+        }
+    }
+    
+    return TRUE;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION Stack;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3831,10 +3857,17 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (Vcb->superblock.num_devices > 1) {
-        // FIXME - check generations are okay
-        
         if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
             ERR("could not mount as %u device(s) missing\n", Vcb->superblock.num_devices - Vcb->devices_loaded);
+            
+            IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
+
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        if (!raid_generations_okay(Vcb)) {
+            ERR("could not mount as generation mismatch\n");
             
             IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
 
