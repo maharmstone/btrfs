@@ -3353,25 +3353,51 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
 }
 
 void protect_superblocks(device_extension* Vcb, chunk* c) {
-    int i = 0, j;
+    UINT16 i = 0, j;
     UINT64 off_start, off_end;
-    
-    // FIXME - this will need modifying for RAID
     
     while (superblock_addrs[i] != 0) {
         CHUNK_ITEM* ci = c->chunk_item;
         CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
         
-        for (j = 0; j < ci->num_stripes; j++) {
-            if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
-                TRACE("cut out superblock in chunk %llx\n", c->offset);
-                
-                // The Linux driver protects the whole stripe in which the superblock lives
-                
-                off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
-                off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
-                
-                space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                if (cis[j].offset + (ci->size * ci->num_stripes / ci->sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+#ifdef _DEBUG
+                    UINT64 startoff;
+                    UINT16 startoffstripe;
+#endif
+                    
+                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % ci->stripe_length;
+                    off_start *= ci->num_stripes / ci->sub_stripes;
+                    off_start += (j / ci->sub_stripes) * ci->stripe_length;
+
+                    off_end = off_start + ci->stripe_length;
+                    
+#ifdef _DEBUG
+                    get_raid0_offset(off_start, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &startoff, &startoffstripe);
+                    TRACE("j = %u, startoffstripe = %u\n", j, startoffstripe);
+                    TRACE("startoff = %llx, superblock = %llx\n", startoff + cis[j].offset, superblock_addrs[i]);
+#endif
+                    
+                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                }
+            }
+        } else { // SINGLE, DUPLICATE, RAID1
+            for (j = 0; j < ci->num_stripes; j++) {
+                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    
+                    // The Linux driver protects the whole stripe in which the superblock lives
+
+                    off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
+                    
+                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                }
             }
         }
         
