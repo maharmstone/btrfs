@@ -1182,67 +1182,30 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     return STATUS_SUCCESS;
 }
 
-// static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
-//     LIST_ENTRY *le, *nextle;
-//     space *s, *s2;
-//     
-// //     // TESTING
-// //     le = c->space.Flink;
-// //     while (le != &c->space) {
-// //         s = CONTAINING_RECORD(le, space, list_entry);
-// //         
-// //         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
-// //         
-// //         le = le->Flink;
-// //     }
-//     
-//     le = c->space.Flink;
-//     while (le != &c->space) {
-//         s = CONTAINING_RECORD(le, space, list_entry);
-//         nextle = le->Flink;
-//         
-//         if (s->type == SPACE_TYPE_DELETING)
-//             s->type = SPACE_TYPE_FREE;
-//         else if (s->type == SPACE_TYPE_WRITING)
-//             s->type = SPACE_TYPE_USED;
-//         
-//         if (le->Blink != &c->space) {
-//             s2 = CONTAINING_RECORD(le->Blink, space, list_entry);
-//             
-//             if (s2->type == s->type) { // do merge
-//                 s2->size += s->size;
-//                 
-//                 RemoveEntryList(&s->list_entry);
-//                 ExFreePool(s);
-//             }
-//         }
-// 
-//         le = nextle;
-//     }
-//     
-// //     le = c->space.Flink;
-// //     while (le != &c->space) {
-// //         s = CONTAINING_RECORD(le, space, list_entry);
-// //         
-// //         TRACE("%x,%x,%x\n", (UINT32)s->offset, (UINT32)s->size, s->type);
-// //         
-// //         le = le->Flink;
-// //     }
-// }
-// 
-// static void clean_space_cache(device_extension* Vcb) {
-//     chunk* c;
-//     
-//     TRACE("(%p)\n", Vcb);
-//     
-//     while (!IsListEmpty(&Vcb->chunks_changed)) {
-//         c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
-//         
-//         clean_space_cache_chunk(Vcb, c);
-//         RemoveEntryList(&c->list_entry_changed);
-//         c->list_entry_changed.Flink = NULL;
-//     }
-// }
+static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
+    // FIXME - loop through c->deleting and do TRIM if device supports it
+    
+    while (!IsListEmpty(&c->deleting)) {
+        space2* s = CONTAINING_RECORD(c->deleting.Flink, space2, list_entry);
+        
+        RemoveEntryList(&s->list_entry);
+        ExFreePool(s);
+    }
+}
+
+static void clean_space_cache(device_extension* Vcb) {
+    chunk* c;
+    
+    TRACE("(%p)\n", Vcb);
+    
+    while (!IsListEmpty(&Vcb->chunks_changed)) {
+        c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
+        
+        clean_space_cache_chunk(Vcb, c);
+        RemoveEntryList(&c->list_entry_changed);
+        c->list_entry_changed.Flink = NULL;
+    }
+}
 
 static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
     ULONG maxsize = Vcb->superblock.node_size - sizeof(tree_header);
@@ -3806,11 +3769,11 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             goto end;
         }
         
-//         Status = allocate_cache(Vcb, &cache_changed, rollback);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("allocate_cache returned %08x\n", Status);
-//             goto end;
-//         }
+        Status = allocate_cache(Vcb, &cache_changed, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("allocate_cache returned %08x\n", Status);
+            goto end;
+        }
     } while (cache_changed || !trees_consistent(Vcb, rollback));
     
     TRACE("trees consistent\n");
@@ -3835,7 +3798,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         goto end;
     }
     
-//     clean_space_cache(Vcb);
+    clean_space_cache(Vcb);
     
     Vcb->superblock.generation++;
     
