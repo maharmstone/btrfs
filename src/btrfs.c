@@ -2805,7 +2805,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device) {
+static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
     unsigned int i, to_read;
@@ -2822,7 +2822,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     i = 0;
     
     while (superblock_addrs[i] > 0) {
-        if (i > 0 && superblock_addrs[i] + sizeof(superblock) > Vcb->length)
+        if (i > 0 && superblock_addrs[i] + sizeof(superblock) > length)
             break;
         
         Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb);
@@ -3177,9 +3177,22 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
-static void init_device(device_extension* Vcb, device* dev) {
+static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
+    NTSTATUS Status;
+    GET_LENGTH_INFORMATION gli;
+    
     dev->removable = is_device_removable(dev->devobj);
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
+    
+    if (get_length) {
+        Status = dev_ioctl(dev->devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                        &gli, sizeof(gli), TRUE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error reading length information: %08x\n", Status);
+        }
+        
+        dev->length = gli.Length.QuadPart;
+    }
 }
 
 static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
@@ -3217,7 +3230,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                         RtlCopyMemory(&Vcb->devices[i].devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
                         
                         if (i > 0)
-                            init_device(Vcb, &Vcb->devices[i]);
+                            init_device(Vcb, &Vcb->devices[i], TRUE);
                         
                         done = TRUE;
                         break;
@@ -3250,7 +3263,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                                 
                                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
-                                init_device(Vcb, &Vcb->devices[i]);
+                                init_device(Vcb, &Vcb->devices[i], FALSE);
+                                Vcb->devices[i].length = v->length;
                                 Vcb->devices_loaded++;
 
                                 done = TRUE;
@@ -3744,10 +3758,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //                       Vcb->geometry.SectorsPerTrack, Vcb->geometry.BytesPerSector);
 //     }
     
-    Vcb->length = gli.Length.QuadPart;
     TRACE("partition length = %llx\n", gli.Length.QuadPart);
 
-    Status = read_superblock(Vcb, DeviceToMount);
+    Status = read_superblock(Vcb, DeviceToMount, gli.Length.QuadPart);
     if (!NT_SUCCESS(Status)) {
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
@@ -3798,7 +3811,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
-    init_device(Vcb, &Vcb->devices[0]);
+    init_device(Vcb, &Vcb->devices[0], FALSE);
+    Vcb->devices[0].length = gli.Length.QuadPart;
     
     if (Vcb->superblock.num_devices > 1)
         RtlZeroMemory(&Vcb->devices[1], sizeof(DEV_ITEM) * (Vcb->superblock.num_devices - 1));

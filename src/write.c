@@ -153,7 +153,7 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
     RtlCopyMemory(&Vcb->superblock.dev_item, &device->devitem, sizeof(DEV_ITEM));
     
     // FIXME - only write one superblock if on SSD (?)
-    while (superblock_addrs[i] > 0 && Vcb->length >= superblock_addrs[i] + sizeof(superblock)) {
+    while (superblock_addrs[i] > 0 && device->length >= superblock_addrs[i] + sizeof(superblock)) {
         TRACE("writing superblock %u\n", i);
         
         Vcb->superblock.sb_phys_addr = superblock_addrs[i];
@@ -169,6 +169,10 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
             break;
         
         i++;
+    }
+    
+    if (i == 0) {
+        ERR("no superblocks written!\n");
     }
 
     return Status;

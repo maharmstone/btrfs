@@ -261,6 +261,7 @@ typedef struct {
     DEV_ITEM devitem;
     BOOL removable;
     ULONG change_count;
+    UINT64 length;
     LIST_ENTRY space;
 } device;
 
@@ -314,7 +315,6 @@ typedef struct _device_extension {
     device* devices;
     UINT64 devices_loaded;
 //     DISK_GEOMETRY geometry;
-    UINT64 length;
     superblock superblock;
 //     WCHAR label[MAX_LABEL_SIZE];
     BOOL readonly;
