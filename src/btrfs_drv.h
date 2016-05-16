@@ -114,6 +114,7 @@ typedef struct _fcb {
     ULONG atts;
     SHARE_ACCESS share_access;
     WCHAR* debug_desc;
+    BOOL sd_dirty;
     
     BOOL ads;
     UINT32 adssize;

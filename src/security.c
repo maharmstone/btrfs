@@ -866,16 +866,11 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     SECURITY_DESCRIPTOR* oldsd;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    LIST_ENTRY rollback;
     
     TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, flags);
     
-    InitializeListHead(&rollback);
-    
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
-    
-    acquire_tree_lock(Vcb, TRUE);
     
     if (fcb->ads) {
         if (fileref && fileref->parent)
@@ -886,6 +881,8 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
             goto end;
         }
     }
+    
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
         Status = STATUS_ACCESS_DENIED;
@@ -924,27 +921,16 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
-    Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("set_xattr returned %08x\n", Status);
-        goto end;
-    }
+    fcb->sd_dirty = TRUE;
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
     
     mark_fcb_dirty(fcb);
     
-    Status = consider_write(Vcb);
-    
 end:
-    if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
-    else
-        do_rollback(Vcb, &rollback);
+    ExReleaseResourceLite(fcb->Header.Resource);
 
-    release_tree_lock(Vcb, TRUE);
-    
     return Status;
 }
 

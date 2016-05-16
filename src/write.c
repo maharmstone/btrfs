@@ -3676,6 +3676,15 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
         ERR("insert_tree_item failed\n");
         return;
     }
+    
+    if (fcb->sd_dirty) {
+        Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_xattr returned %08x\n", Status);
+        }
+        
+        fcb->sd_dirty = FALSE;
+    }
 }
 
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
