@@ -28,12 +28,50 @@ static void STDCALL release_file_for_create_section(PFILE_OBJECT FileObject) {
     TRACE("STUB: release_file_for_create_section\n");
 }
 
-static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFILE_BASIC_INFORMATION buf,
-                                     PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
+static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFILE_BASIC_INFORMATION fbi,
+                                             PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
+    fcb* fcb;
     
-    TRACE("STUB: fast_query_basic_info\n");
+    TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fbi, IoStatus, DeviceObject);
     
-    return FALSE;
+    if (!FileObject)
+        return FALSE;
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb)
+        return FALSE;
+    
+    if (fcb->ads) {
+        ccb* ccb = FileObject->FsContext2;
+        
+        if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb)
+            return FALSE;
+        
+        fcb = ccb->fileref->parent->fcb;
+    }
+    
+    FsRtlEnterFileSystem();
+    
+    if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
+        FsRtlExitFileSystem();
+        return FALSE;
+    }
+
+    fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
+    fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_atime);
+    fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_mtime);
+    fbi->ChangeTime.QuadPart = 0;
+    fbi->FileAttributes = fcb->atts;
+
+    IoStatus->Status = STATUS_SUCCESS;
+    IoStatus->Information = sizeof(FILE_BASIC_INFORMATION);
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    FsRtlExitFileSystem();
+    
+    return TRUE;
 }
 
 static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFILE_STANDARD_INFORMATION buf,
