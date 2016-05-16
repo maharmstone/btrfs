@@ -864,9 +864,6 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
     SECURITY_DESCRIPTOR* oldsd;
-    INODE_ITEM* ii;
-    KEY searchkey;
-    traverse_ptr tp;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY rollback;
@@ -885,7 +882,8 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
             fcb = fileref->parent->fcb;
         else {
             ERR("could not find parent fcb for stream\n");
-            return STATUS_INTERNAL_ERROR;
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
         }
     }
     
@@ -904,24 +902,6 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     }
     
     ExFreePool(oldsd);
-    
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (keycmp(&tp.item->key, &searchkey)) {
-        ERR("error - could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    delete_tree_item(Vcb, &tp, &rollback);
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -944,31 +924,16 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    
-    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-        ERR("error - failed to insert INODE_ITEM\n");
-        Status = STATUS_INTERNAL_ERROR;
-        ExFreePool(ii);
-        goto end;
-    }
-    
     Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("set_xattr returned %08x\n", Status);
-        ExFreePool(ii);
         goto end;
     }
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
+    
+    mark_fcb_dirty(fcb);
     
     Status = consider_write(Vcb);
     
