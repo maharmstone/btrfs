@@ -2444,7 +2444,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
     TRACE("set information\n");
     
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     switch (IrpSp->Parameters.SetFile.FileInformationClass) {
         case FileAllocationInformation:
@@ -2511,7 +2511,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     else
         do_rollback(Vcb, &rollback);
     
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
 end:
     Irp->IoStatus.Status = Status;
@@ -3739,7 +3739,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
-    acquire_tree_lock(Vcb, FALSE);
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
     fcb = IrpSp->FileObject->FsContext;
     TRACE("fcb = %p\n", fcb);
@@ -3753,7 +3753,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
-    release_tree_lock(Vcb, FALSE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
 exit:
     if (top_level) 

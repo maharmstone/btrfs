@@ -26,7 +26,7 @@ static void do_flush(device_extension* Vcb) {
     
     FsRtlEnterFileSystem();
 
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);
@@ -35,7 +35,7 @@ static void do_flush(device_extension* Vcb) {
     
     clear_rollback(&rollback);
 
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
 
     FsRtlExitFileSystem();
 }

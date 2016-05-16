@@ -330,7 +330,6 @@ typedef struct _device_extension {
     ERESOURCE tree_lock;
     PNOTIFY_SYNC NotifySync;
     LIST_ENTRY DirNotifyList;
-    LONG tree_lock_counter;
     LONG open_trees;
     ULONG write_trees;
 //     ERESOURCE LogToPhysLock;
@@ -718,33 +717,10 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
 #define int3 asm("int3;")
 #endif
 
-#define acquire_tree_lock(Vcb, exclusive) {\
-    LONG ref = InterlockedIncrement(&Vcb->tree_lock_counter); \
-    ref = ref; \
-    if (exclusive) { \
-        TRACE("getting tree_lock (exclusive) %u->%u\n", ref-1, ref); \
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE); \
-        TRACE("open tree count = %i\n", Vcb->open_trees); \
-    } else { \
-        TRACE("getting tree_lock %u->%u\n", ref-1, ref); \
-        ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE); \
-    } \
-} 
-
 // if (Vcb->open_trees > 0) { ERR("open tree count = %i\n", Vcb->open_trees); print_open_trees(Vcb); int3; }
 // else TRACE("open tree count = %i\n", Vcb->open_trees);
 
 // FIXME - find a way to catch unfreed trees again
-
-#define release_tree_lock(Vcb, exclusive) {\
-    LONG ref = InterlockedDecrement(&Vcb->tree_lock_counter); \
-    ref = ref; \
-    TRACE("releasing tree_lock %u->%u\n", ref+1, ref); \
-    if (exclusive) {\
-        TRACE("open tree count = %i\n", Vcb->open_trees); \
-    } \
-    ExReleaseResourceLite(&Vcb->tree_lock); \
-}
 
 // from sys/stat.h
 #define __S_IFMT        0170000 /* These bits determine file type.  */

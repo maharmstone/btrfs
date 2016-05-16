@@ -1114,14 +1114,14 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
             }
         }
         
-        acquire_tree_lock(fcb->Vcb, FALSE);
+        ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
             Status = read_file_fcb(fcb, data, start, length, bytes_read);
         
-        release_tree_lock(fcb->Vcb, FALSE);
+        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         
         TRACE("read %u bytes\n", *bytes_read);
         

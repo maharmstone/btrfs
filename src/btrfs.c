@@ -1002,7 +1002,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             TRACE("FileFsVolumeInformation\n");
             TRACE("max length = %u\n", IrpSp->Parameters.QueryVolume.Length);
             
-            acquire_tree_lock(Vcb, FALSE);
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
             
 //             orig_label_len = label_len = (ULONG)(wcslen(Vcb->label) * sizeof(WCHAR));
             RtlUTF8ToUnicodeN(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
@@ -1034,7 +1034,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
                 TRACE("label = %.*S\n", label_len / sizeof(WCHAR), data->VolumeLabel);
             }
             
-            release_tree_lock(Vcb, FALSE);
+            ExReleaseResourceLite(&Vcb->tree_lock);
 
             BytesCopied = sizeof(FILE_FS_VOLUME_INFORMATION) - sizeof(WCHAR) + label_len;
             Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
@@ -1391,7 +1391,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     
     // FIXME - check for '/' and '\\' and reject
     
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
 //     utf8 = ExAllocatePoolWithTag(PagedPool, utf8len + 1, ALLOC_TAG);
     
@@ -1412,7 +1412,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     Status = consider_write(Vcb);
     
 release:  
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
 
 end:
     TRACE("returning %08x\n", Status);
@@ -2349,7 +2349,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     if (flush) {
         InitializeListHead(&rollback);
         
-        acquire_tree_lock(Vcb, TRUE);
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
         if (Vcb->write_trees > 0)
             do_write(Vcb, &rollback);
@@ -2358,7 +2358,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         
         clear_rollback(&rollback);
 
-        release_tree_lock(Vcb, TRUE);
+        ExReleaseResourceLite(&Vcb->tree_lock);
     }
     
     // FIXME - stop async threads
@@ -2475,7 +2475,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 LIST_ENTRY rollback;
                 InitializeListHead(&rollback);
                 
-                acquire_tree_lock(fcb->Vcb, TRUE);
+                ExAcquireResourceExclusiveLite(&fcb->Vcb->tree_lock, TRUE);
                 
                 Status = delete_fileref(fileref, FileObject, &rollback);
                 
@@ -2495,7 +2495,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 } else
                     do_rollback(fcb->Vcb, &rollback);
                 
-                release_tree_lock(fcb->Vcb, TRUE);
+                ExReleaseResourceLite(&fcb->Vcb->tree_lock);
             } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                 IO_STATUS_BLOCK iosb;
                 CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
@@ -3657,7 +3657,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->type = VCB_TYPE_VOLUME;
     
     ExInitializeResourceLite(&Vcb->tree_lock);
-    Vcb->tree_lock_counter = 0;
     Vcb->open_trees = 0;
     Vcb->write_trees = 0;
 

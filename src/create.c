@@ -2798,8 +2798,12 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         // Don't lock again if we're being called from within CcCopyRead etc.
         skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
 
-        if (!skip_lock)
-            acquire_tree_lock(Vcb, exclusive); 
+        if (!skip_lock) {
+            if (exclusive)
+                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+            else
+                ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+        }
         
 //         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
     //     Status = NtfsCreateFile(DeviceObject,
@@ -2813,7 +2817,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             clear_rollback(&rollback);
         
         if (!skip_lock)
-            release_tree_lock(Vcb, exclusive);
+            ExReleaseResourceLite(&Vcb->tree_lock);
         
 //         Status = STATUS_ACCESS_DENIED;
     }

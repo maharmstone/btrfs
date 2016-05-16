@@ -30,7 +30,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
     
-    acquire_tree_lock(fcb->Vcb, FALSE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
@@ -140,7 +140,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     }
     
 end:
-    release_tree_lock(fcb->Vcb, FALSE);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 
     return Status;
 }
@@ -591,7 +591,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("%S\n", file_desc(FileObject));
     
-    acquire_tree_lock(fcb->Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->tree_lock, TRUE);
     
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         WARN("tried to set a reparse point on an existing symlink\n");
@@ -661,7 +661,7 @@ end:
     else
         do_rollback(fcb->Vcb, &rollback);
 
-    release_tree_lock(fcb->Vcb, TRUE);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     return Status;
 }
@@ -710,7 +710,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
     
-    acquire_tree_lock(fcb->Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->tree_lock, TRUE);
     
     if (fcb->ads) {
         WARN("tried to delete reparse point on ADS\n");
@@ -830,7 +830,7 @@ end:
     else
         do_rollback(fcb->Vcb, &rollback);
 
-    release_tree_lock(fcb->Vcb, TRUE);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     return Status;
 }

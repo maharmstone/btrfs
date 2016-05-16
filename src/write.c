@@ -7140,7 +7140,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     TRACE("buf = %p\n", buf);
     
     if (Irp->Flags & IRP_NOCACHE) {
-        acquire_tree_lock(Vcb, TRUE);
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
         locked = TRUE;
     }
     
@@ -7182,7 +7182,7 @@ exit:
         else
             do_rollback(Vcb, &rollback);
         
-        release_tree_lock(Vcb, TRUE);
+        ExReleaseResourceLite(&Vcb->tree_lock);
     }
     
 //     time2 = KeQueryPerformanceCounter(NULL);

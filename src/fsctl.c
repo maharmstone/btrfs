@@ -255,7 +255,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     InitializeListHead(&rollback);
     
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
     // flush open files on this subvol
     
@@ -539,7 +539,7 @@ end:
     else
         do_rollback(Vcb, &rollback);
 
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;
 }
@@ -787,7 +787,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         goto end2;
     }
     
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1089,7 +1089,7 @@ end:
     else
         clear_rollback(&rollback);
     
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;

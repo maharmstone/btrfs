@@ -550,7 +550,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ccb = IrpSp->FileObject->FsContext2;
     fileref = ccb ? ccb->fileref : NULL;
     
-    acquire_tree_lock(fcb->Vcb, FALSE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     
     TRACE("%S\n", file_desc(IrpSp->FileObject));
     
@@ -846,7 +846,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Irp->IoStatus.Information = IrpSp->Parameters.QueryDirectory.Length - length;
     
 end:
-    release_tree_lock(fcb->Vcb, FALSE);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
 //     TRACE("query directory performed %u reads\n", (UINT32)(num_reads-num_reads_orig));
     TRACE("returning %08x\n", Status);
@@ -870,7 +870,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
         return STATUS_INVALID_PARAMETER;
     }
     
-    acquire_tree_lock(fcb->Vcb, FALSE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
         Status = STATUS_INVALID_PARAMETER;
@@ -887,7 +887,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     Status = STATUS_PENDING;
     
 end:
-    release_tree_lock(fcb->Vcb, FALSE);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     return Status;
 }

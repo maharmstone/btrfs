@@ -174,14 +174,14 @@ static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     InitializeListHead(&rollback);
     
-    acquire_tree_lock(Vcb, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);
     
     clear_rollback(&rollback);
 
-    release_tree_lock(Vcb, TRUE);
+    ExReleaseResourceLite(&Vcb->tree_lock);
 
     Status = STATUS_SUCCESS;
 end:
