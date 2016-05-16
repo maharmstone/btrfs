@@ -7140,7 +7140,10 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     TRACE("buf = %p\n", buf);
     
     if (Irp->Flags & IRP_NOCACHE) {
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        if (!ExAcquireResourceExclusiveLite(&Vcb->tree_lock, wait)) {
+            Status = STATUS_PENDING;
+            goto exit;
+        }
         locked = TRUE;
     }
     
