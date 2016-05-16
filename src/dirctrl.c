@@ -128,24 +128,22 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                 LIST_ENTRY* le;
                 BOOL found = FALSE;
                 
-                if (fileref) {
-                    ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
-                    
-                    le = fileref->children.Flink;
-                    while (le != &fileref->children) {
-                        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
+                ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
+                if (!IsListEmpty(&r->fcbs)) {
+                    le = r->fcbs.Flink;
+                    while (le != &r->fcbs) {
+                        struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
                         
-                        if (c->fcb->subvol == r && c->fcb->inode == inode && !c->fcb->ads) {
-                            ii = c->fcb->inode_item;
+                        if (fcb2->inode == inode && !fcb2->ads) {
+                            ii = fcb2->inode_item;
                             found = TRUE;
                             break;
                         }
                         
                         le = le->Flink;
                     }
-                    
-                    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                 }
+                ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                 
                 if (!found) {
                     KEY searchkey;
