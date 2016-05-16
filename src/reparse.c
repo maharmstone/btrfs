@@ -556,11 +556,7 @@ static NTSTATUS delete_symlink(fcb* fcb, LIST_ENTRY* rollback) {
     fcb->inode_item.st_ctime = now;
     fcb->inode_item.st_mtime = now;
 
-    Status = update_inode_item(fcb->Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("update_inode_item returned %08x\n", Status);
-        return Status;
-    }
+    mark_fcb_dirty(fcb);
 
     fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
@@ -773,11 +769,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb->inode_item.st_ctime = now;
         fcb->inode_item.st_mtime = now;
 
-        Status = update_inode_item(fcb->Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, &rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("update_inode_item returned %08x\n", Status);
-            goto end;
-        }
+        mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
@@ -817,11 +809,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb->inode_item.st_ctime = now;
         fcb->inode_item.st_mtime = now;
 
-        Status = update_inode_item(fcb->Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, &rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("update_inode_item returned %08x\n", Status);
-            goto end;
-        }
+        mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;

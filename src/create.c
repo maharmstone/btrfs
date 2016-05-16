@@ -2139,44 +2139,6 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
     }
 }
 
-NTSTATUS update_inode_item(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    INODE_ITEM* newii;
-    NTSTATUS Status;
-    UINT64 offset = 0;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-        delete_tree_item(Vcb, &tp, rollback);
-        
-        offset = tp.item->key.offset;
-    } else {
-        WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, subvol->id);
-    }
-    
-    newii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!newii) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlCopyMemory(newii, ii, sizeof(INODE_ITEM));
-    
-    insert_tree_item(Vcb, subvol, inode, TYPE_INODE_ITEM, offset, newii, sizeof(INODE_ITEM), NULL, rollback);
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
     NTSTATUS Status;
     
@@ -2576,12 +2538,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 }
             }
             
-            Status = update_inode_item(Vcb, fileref->fcb->subvol, fileref->fcb->inode, &fileref->fcb->inode_item, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("update_inode_item returned %08x\n", Status);
-                free_fileref(fileref);
-                goto exit;
-            }
+            mark_fcb_dirty(fileref->fcb);
             
             defda = get_file_attributes(Vcb, &fileref->fcb->inode_item, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
                                         fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
