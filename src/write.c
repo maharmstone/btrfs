@@ -3638,12 +3638,61 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
+    traverse_ptr tp;
+    KEY searchkey;
+    NTSTATUS Status;
+    INODE_ITEM* ii;
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+        return;
+    }
+    
+    delete_tree_item(fcb->Vcb, &tp, rollback);
+        
+    if (fcb->deleted)
+        return;
+    
+    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+    if (!ii) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
+    
+    if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        return;
+    }
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     BOOL cache_changed = FALSE;
     
     TRACE("(%p)\n", Vcb);
+    
+    while (!IsListEmpty(&Vcb->dirty_fcbs)) {
+        struct _fcb* fcb;
+        le = RemoveHeadList(&Vcb->dirty_fcbs);
+        fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_dirty);
+        
+        flush_fcb(fcb, rollback);
+        free_fcb(fcb);
+    }
     
     if (!IsListEmpty(&Vcb->drop_roots)) {
         Status = drop_roots(Vcb, rollback);
@@ -6614,7 +6663,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     BOOL make_inline;
     UINT8* data;
     LIST_ENTRY changed_sector_list;
-    INODE_ITEM *ii, *origii;
+    INODE_ITEM* origii;
     BOOL changed_length = FALSE, nocsum, nocow/*, lazy_writer = FALSE, write_eof = FALSE*/;
     NTSTATUS Status;
     LARGE_INTEGER time;
@@ -7000,32 +7049,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         origii->st_mtime = now;
     }
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp, rollback);
-    else
-        WARN("couldn't find existing INODE_ITEM\n");
-
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, origii, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
-    
-    // FIXME - update inode_item of open FCBs pointing to the same inode (i.e. hardlinked files)
+    mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     
     if (!nocsum)
         update_checksum_tree(Vcb, &changed_sector_list, rollback);

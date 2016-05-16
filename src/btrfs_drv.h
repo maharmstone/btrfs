@@ -121,6 +121,7 @@ typedef struct _fcb {
     ANSI_STRING adsxattr;
     
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_dirty;
 } fcb;
 
 struct _file_ref;
@@ -350,6 +351,7 @@ typedef struct _device_extension {
     LIST_ENTRY chunks;
     LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
+    LIST_ENTRY dirty_fcbs;
     HANDLE flush_thread_handle;
     drv_threads threads;
     LIST_ENTRY list_entry;
@@ -497,6 +499,7 @@ WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+void mark_fcb_dirty(fcb* fcb);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
