@@ -538,6 +538,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     UINT64 num_reads_orig;
     traverse_ptr tp;
     dir_entry de;
+    UINT64 newoffset;
     
     TRACE("query directory\n");
     
@@ -642,13 +643,16 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     tp.tree = NULL;
-    Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
+    newoffset = ccb->query_dir_offset;
+    Status = next_dir_entry(fcb, fileref, &newoffset, &de, &tp);
     
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_NO_MORE_FILES && initial)
             Status = STATUS_NO_SUCH_FILE;
         goto end;
     }
+    
+    ccb->query_dir_offset = newoffset;
 
     // FIXME - make this work
 //     if (specific_file) {
@@ -707,10 +711,13 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         di_uni_fn.Buffer = uni_fn;
         
         while (!FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, TRUE, NULL)) {
-            Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
+            newoffset = ccb->query_dir_offset;
+            Status = next_dir_entry(fcb, fileref, &newoffset, &de, &tp);
             
             ExFreePool(uni_fn);
             if (NT_SUCCESS(Status)) {
+                ccb->query_dir_offset = newoffset;
+                
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de.name, de.namelen);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
@@ -776,7 +783,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 WCHAR* uni_fn = NULL;
                 UNICODE_STRING di_uni_fn;
                 
-                Status = next_dir_entry(fcb, fileref, &ccb->query_dir_offset, &de, &tp);
+                newoffset = ccb->query_dir_offset;
+                Status = next_dir_entry(fcb, fileref, &newoffset, &de, &tp);
                 if (NT_SUCCESS(Status)) {
                     if (has_wildcard) {
                         ULONG stringlen;
@@ -819,6 +827,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                             ULONG* lastoffset = (ULONG*)lastitem;
                             
                             *lastoffset = (ULONG)(curitem - lastitem);
+                            ccb->query_dir_offset = newoffset;
                             
                             lastitem = curitem;
                         } else {
@@ -826,7 +835,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
                             break;
                         }
-                    }
+                    } else
+                        ccb->query_dir_offset = newoffset;
                     
                     if (uni_fn) {
                         ExFreePool(uni_fn);
