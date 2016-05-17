@@ -1785,7 +1785,6 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     BTRFS_TIME now;
     KEY searchkey;
     traverse_ptr tp;
-    INODE_ITEM* ii;
     CC_FILE_SIZES ccfs;
     UINT8* data = NULL;
     UINT16 datalen;
@@ -1897,30 +1896,8 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     fileref->parent->fcb->inode_item.sequence++;
     fileref->parent->fcb->inode_item.st_ctime = now;
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp, rollback);
-    else
-        WARN("couldn't find existing INODE_ITEM\n");
+    mark_fcb_dirty(fileref->parent->fcb);
 
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(ii, &fileref->parent->fcb->inode_item, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
-    
     fileref->parent->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fileref->parent->fcb->subvol->root_item.ctime = now;
 
