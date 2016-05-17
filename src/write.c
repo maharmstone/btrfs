@@ -3661,8 +3661,26 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     
     delete_tree_item(fcb->Vcb, &tp, rollback);
         
-    if (fcb->deleted)
+    if (fcb->deleted) {
+        traverse_ptr tp2;
+        
+        // delete XATTR_ITEMs
+    
+        while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
+            tp = tp2;
+            
+            if (tp.item->key.obj_id == fcb->inode) {
+                // FIXME - do metadata thing here too?
+                if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                }
+            } else
+                break;
+        }
+        
         return;
+    }
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {

@@ -1959,7 +1959,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     char* utf8 = NULL;
     UINT32 crc32;
     KEY searchkey;
-    traverse_ptr tp, tp2;
+    traverse_ptr tp;
     UINT64 parinode, index;
     root* parsubvol;
     LARGE_INTEGER time;
@@ -2094,31 +2094,17 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     TRACE("nlink = %u\n", fcb->inode_item.st_nlink);
     
+    mark_fcb_dirty(fcb);
+    
     if (fcb->inode_item.st_nlink > 1) {
         fcb->inode_item.st_nlink--;
         fcb->inode_item.transid = fcb->Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         fcb->inode_item.st_ctime = now;
         
-        mark_fcb_dirty(fileref->parent->fcb);
-        
         goto success2;
-    }
-    
-    // delete XATTR_ITEM (0x18)
-    
-    while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
-        tp = tp2;
-        
-        if (tp.item->key.obj_id == fcb->inode) {
-            // FIXME - do metadata thing here too?
-            if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-                delete_tree_item(fcb->Vcb, &tp, rollback);
-                TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-            }
-        } else
-            break;
-    }
+    } else
+        fcb->deleted = TRUE;
     
     // excise extents
     
