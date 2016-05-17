@@ -2021,11 +2021,10 @@ static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp
 
 static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
     FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
-    fcb *fcb = FileObject->FsContext, *tfofcb;
+    fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related;
-    root* parsubvol;
-    UINT64 parinode, dirpos;
+    UINT64 dirpos;
     WCHAR* fn;
     ULONG fnlen, utf8len, disize;
     UNICODE_STRING fnus;
@@ -2035,9 +2034,6 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     DIR_ITEM *di, *di2;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    KEY searchkey;
-    traverse_ptr tp;
-    INODE_ITEM *ii, *fcbii;
     LIST_ENTRY rollback;
     
     InitializeListHead(&rollback);
@@ -2059,15 +2055,13 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
             return STATUS_INVALID_PARAMETER;
         }
         
-        parsubvol = fileref->parent->fcb->subvol;
-        parinode = fileref->parent->fcb->inode;
+        parfcb = fileref->parent->fcb;
         tfofcb = NULL;
     } else {
         LONG i;
         
         tfofcb = tfo->FsContext;
-        parsubvol = tfofcb->subvol;
-        parinode = tfofcb->inode;
+        parfcb = tfofcb;
         
         for (i = fnlen - 1; i >= 0; i--) {
             if (fli->FileName[i] == '\\' || fli->FileName[i] == '/') {
@@ -2147,7 +2141,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
-    if (fcb->subvol != parsubvol) {
+    if (fcb->subvol != parfcb->subvol) {
         WARN("can't create hard link over subvolume boundary\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -2192,7 +2186,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     RtlCopyMemory(di->name, utf8.Buffer, di->n);
     RtlCopyMemory(di2, di, disize);
     
-    Status = add_dir_item(Vcb, fcb->subvol, parinode, crc32, di, disize, &rollback);
+    Status = add_dir_item(Vcb, fcb->subvol, parfcb->inode, crc32, di, disize, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_item returned %08x\n", Status);
         ExFreePool(di);
@@ -2202,7 +2196,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     // add DIR_INDEX
     
-    dirpos = find_next_dir_index(Vcb, fcb->subvol, parinode);
+    dirpos = find_next_dir_index(Vcb, fcb->subvol, parfcb->inode);
     if (dirpos == 0) {
         ERR("find_next_dir_index failed\n");
         Status = STATUS_INTERNAL_ERROR;
@@ -2210,7 +2204,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         goto end;
     }
     
-    if (!insert_tree_item(Vcb, fcb->subvol, parinode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
+    if (!insert_tree_item(Vcb, fcb->subvol, parfcb->inode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
         ERR("insert_tree_item failed\n");
         Status = STATUS_INTERNAL_ERROR;
         ExFreePool(di2);
@@ -2219,7 +2213,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     // add INODE_REF
     
-    Status = add_inode_ref(Vcb, fcb->subvol, fcb->inode, parinode, dirpos, &utf8, &rollback);
+    Status = add_inode_ref(Vcb, fcb->subvol, fcb->inode, parfcb->inode, dirpos, &utf8, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_inode_ref returned %08x\n", Status);
         goto end;
@@ -2235,97 +2229,16 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fcb->inode_item.st_nlink++;
     fcb->inode_item.st_ctime = now;
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-        delete_tree_item(Vcb, &tp, &rollback);
-        searchkey.offset = tp.item->key.offset;
-    } else
-        searchkey.offset = 0;
-    
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    
-    if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    mark_fcb_dirty(fcb);
     
     // update parent's INODE_ITEM
     
-    searchkey.obj_id = parinode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
+    parfcb->inode_item.transid = Vcb->superblock.generation;
+    parfcb->inode_item.st_size += 2 * utf8len;
+    parfcb->inode_item.sequence++;
+    parfcb->inode_item.st_ctime = now;
     
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-        delete_tree_item(Vcb, &tp, &rollback);
-        searchkey.offset = tp.item->key.offset;
-    } else {
-        ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", parinode, fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    if (tfofcb)
-        fcbii = &tfofcb->inode_item;
-    else {
-        if (tp.item->size < sizeof(INODE_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
-        
-        fcbii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!fcbii) {
-            ERR("out of memory\n");
-            goto end;
-        }
-        
-        RtlCopyMemory(fcbii, tp.item->data, sizeof(INODE_ITEM));
-    }
-    
-    fcbii->transid = Vcb->superblock.generation;
-    fcbii->st_size += 2 * utf8len;
-    fcbii->sequence++;
-    fcbii->st_ctime = now;
-    
-    if (tfofcb) {
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!ii) {
-            ERR("out of memory\n");
-            goto end;
-        }
-        
-        RtlCopyMemory(ii, fcbii, sizeof(INODE_ITEM));
-    } else
-        ii = fcbii;
-    
-    if (!insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        ExFreePool(ii);
-        goto end;
-    }
+    mark_fcb_dirty(parfcb);
     
     // FIXME - notification
 
