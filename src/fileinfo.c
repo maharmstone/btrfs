@@ -1358,7 +1358,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     LARGE_INTEGER time;
     BTRFS_TIME now;
     BOOL across_directories;
-    INODE_ITEM* ii;
     LONG i;
     LIST_ENTRY rollback;
     
@@ -1513,7 +1512,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     } else {
         UINT64 oldindex;
-        INODE_ITEM* ii;
         
         // delete old DIR_ITEM entry
         
@@ -1642,31 +1640,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fcb->inode_item.sequence++;
         fcb->inode_item.st_ctime = now;
         
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_INODE_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(Vcb, parsubvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp, &rollback);
-        
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!ii) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-        
-        if (!insert_tree_item(Vcb, parsubvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-            WARN("insert_tree_item failed\n");
-        }
+        mark_fcb_dirty(fcb);
     }
     
     // update directory INODE_ITEMs
@@ -1697,57 +1671,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         TRACE("oldfileref->parent->fcb->inode_item.st_size now %llx\n", oldfileref->parent->fcb->inode_item.st_size);
     }
     
-    searchkey.obj_id = fileref->parent->fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
+    mark_fcb_dirty(fileref->parent->fcb);
     
-    Status = find_item(Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-        delete_tree_item(Vcb, &tp, &rollback);
-    
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, &fileref->parent->fcb->inode_item, sizeof(INODE_ITEM));
-    
-    if (!insert_tree_item(Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback))
-        WARN("insert_tree_item failed\n");
-    
-    if (tfofcb && (fileref->parent->fcb->inode != tfofcb->inode || fileref->parent->fcb->subvol != tfofcb->subvol)) {
-        searchkey.obj_id = tfofcb->inode;
-        searchkey.obj_type = TYPE_INODE_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(Vcb, tfofcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp, &rollback);
-        
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!ii) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(ii, &tfofcb->inode_item, sizeof(INODE_ITEM));
-        
-        if (!insert_tree_item(Vcb, tfofcb->subvol, tfofcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback))
-            WARN("insert_tree_item failed\n");
-    }
+    if (tfofcb && (fileref->parent->fcb->inode != tfofcb->inode || fileref->parent->fcb->subvol != tfofcb->subvol))
+        mark_fcb_dirty(tfofcb);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
