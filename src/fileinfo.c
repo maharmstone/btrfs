@@ -102,43 +102,10 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
 //     FIXME - ChangeTime
 
     if (inode_item_changed) {
-        KEY searchkey;
-        traverse_ptr tp;
-        INODE_ITEM* ii;
-        
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_INODE_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp, &rollback);
-        else
-            WARN("couldn't find old INODE_ITEM\n");
-        
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!ii) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-            
-        RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-        
-        if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-            ERR("error - failed to insert item\n");
-            ExFreePool(ii);
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
+        mark_fcb_dirty(fcb);
     }
 
     Status = STATUS_SUCCESS;
