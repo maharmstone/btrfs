@@ -315,6 +315,8 @@ fcb* create_fcb() {
     
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     
+    InitializeListHead(&fcb->extents);
+    
     return fcb;
 }
 
@@ -804,11 +806,13 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
     } else {
-        EXTENT_DATA* ed;
+        EXTENT_DATA* ed = NULL;
+        traverse_ptr next_tp;
+        BOOL b;
         
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = 0xffffffffffffffff;
+        searchkey.offset = 0;
         
         Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
         if (!NT_SUCCESS(Status)) {
@@ -817,23 +821,53 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
             return Status;
         }
         
-        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-            ERR("error - could not find EXTENT_DATA items for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-            free_fcb(fcb);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (tp.item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                tp.item->size, sizeof(EXTENT_DATA));
+        do {
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                extent* ext;
+                
+                if (tp.item->size < sizeof(EXTENT_DATA)) {
+                    ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        tp.item->size, sizeof(EXTENT_DATA));
+                    
+                    free_fcb(fcb);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                ed = (EXTENT_DATA*)tp.item->data;
+                
+                ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                if (!ext) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                ext->data = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                if (!ext->data) {
+                    ERR("out of memory\n");
+                    ExFreePool(ext);
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                ext->offset = tp.item->key.offset;
+                RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
+                ext->datalen = tp.item->size;
+                
+                InsertTailList(&fcb->extents, &ext->list_entry);
+            }
             
-            free_fcb(fcb);
-            return STATUS_INTERNAL_ERROR;
-        }
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+         
+            if (b) {
+                tp = next_tp;
+                
+                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                    break;
+            }
+        } while (b);
         
-        ed = (EXTENT_DATA*)tp.item->data;
-        
-        if (ed->type == EXTENT_TYPE_INLINE)
+        if (ed && ed->type == EXTENT_TYPE_INLINE)
             fcb->Header.AllocationSize.QuadPart = fcb->inode_item.st_size;
         else
             fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);

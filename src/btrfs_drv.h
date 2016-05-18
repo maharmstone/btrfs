@@ -97,6 +97,14 @@ typedef struct _fcb_nonpaged {
 
 struct _root;
 
+typedef struct {
+    UINT64 offset;
+    EXTENT_DATA* data;
+    ULONG datalen;
+    
+    LIST_ENTRY list_entry;
+} extent;
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -114,6 +122,7 @@ typedef struct _fcb {
     ULONG atts;
     SHARE_ACCESS share_access;
     WCHAR* debug_desc;
+    LIST_ENTRY extents;
     
     BOOL sd_dirty;
     BOOL atts_changed, atts_deleted;
