@@ -28,22 +28,19 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     ULONG defda;
     BOOL inode_item_changed = FALSE;
     NTSTATUS Status;
-    LIST_ENTRY rollback;
-    
-    InitializeListHead(&rollback);
     
     if (fcb->ads) {
         if (fileref && fileref->parent)
             fcb = fileref->parent->fcb;
         else {
             ERR("stream did not have fileref\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            return STATUS_INTERNAL_ERROR;
         }
     }
     
     TRACE("file = %S, attributes = %x\n", file_desc(FileObject), fbi->FileAttributes);
     
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fbi->FileAttributes & FILE_ATTRIBUTE_DIRECTORY && fcb->type != BTRFS_TYPE_DIRECTORY) {
         WARN("attempted to set FILE_ATTRIBUTE_DIRECTORY on non-directory\n");
@@ -69,20 +66,10 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         else if (fcb->type == BTRFS_TYPE_SYMLINK)
             fbi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
                 
-        // create new xattr
-        if (defda != fbi->FileAttributes) {
-            char val[64];
-            
-            TRACE("inserting new DOSATTRIB xattr\n");
-            sprintf(val, "0x%lx", fbi->FileAttributes);
+        fcb->atts_changed = TRUE;
         
-            Status = set_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), &rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("set_xattr returned %08x\n", Status);
-                goto end;
-            }
-        } else
-            delete_xattr(Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, &rollback);
+        if (defda == fbi->FileAttributes)
+            fcb->atts_deleted = TRUE;
         
         fcb->atts = fbi->FileAttributes;
         
@@ -111,15 +98,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     Status = STATUS_SUCCESS;
 
 end:
-    if (NT_SUCCESS(Status))
-        Status = consider_write(Vcb);
-
-    if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
-    else
-        do_rollback(Vcb, &rollback);
-
-    ExReleaseResourceLite(&Vcb->tree_lock);
+    ExReleaseResourceLite(fcb->Header.Resource);
     
     return Status;
 }

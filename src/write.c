@@ -3644,6 +3644,8 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     INODE_ITEM* ii;
     
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
@@ -3651,12 +3653,12 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return;
+        goto end;
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        return;
+        goto end;
     }
     
     delete_tree_item(fcb->Vcb, &tp, rollback);
@@ -3679,20 +3681,20 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
                 break;
         }
         
-        return;
+        goto end;
     }
     
     ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
     if (!ii) {
         ERR("out of memory\n");
-        return;
+        goto end;
     }
     
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     
     if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
         ERR("insert_tree_item failed\n");
-        return;
+        goto end;
     }
     
     if (fcb->sd_dirty) {
@@ -3703,6 +3705,28 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
         
         fcb->sd_dirty = FALSE;
     }
+    
+    if (fcb->atts_changed) {
+        if (!fcb->atts_deleted) {
+            char val[64];
+            
+            TRACE("inserting new DOSATTRIB xattr\n");
+            sprintf(val, "0x%lx", fcb->atts);
+        
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
+        
+        fcb->atts_changed = FALSE;
+        fcb->atts_deleted = FALSE;
+    }
+    
+end:
+    ExReleaseResourceLite(fcb->Header.Resource);
 }
 
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
