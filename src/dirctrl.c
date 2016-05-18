@@ -90,7 +90,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
     INODE_ITEM ii;
     NTSTATUS Status;
     ULONG stringlen;
-    BOOL dotfile;
+    ULONG atts;
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -136,6 +136,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                         
                         if (fcb2->inode == inode && !fcb2->ads) {
                             ii = fcb2->inode_item;
+                            atts = fcb2->atts;
                             found = TRUE;
                             break;
                         }
@@ -168,6 +169,16 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                     
                     if (tp.item->size > 0)
                         RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+                    
+                    if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation) {
+                        
+                        BOOL dotfile = de->namelen > 1 && de->name[0] == '.';
+
+                        atts = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
+                    }
                 }
                 
                 break;
@@ -177,6 +188,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                 ii = fcb->inode_item;
                 r = fcb->subvol;
                 inode = fcb->inode;
+                atts = fcb->atts;
                 break;
                 
             case DirEntryType_Parent:
@@ -184,6 +196,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                     ii = fileref->parent->fcb->inode_item;
                     r = fileref->parent->fcb->subvol;
                     inode = fileref->parent->fcb->inode;
+                    atts = fileref->parent->fcb->atts;
                 } else {
                     ERR("no fileref\n");
                     return STATUS_INTERNAL_ERROR;
@@ -205,8 +218,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             return Status;
         }
     }
-    
-    dotfile = de->name[0] == '.' && (de->name[1] != '.' || de->name[2] != 0) && (de->name[1] != 0);
     
     switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
         case FileBothDirectoryInformation:
@@ -230,7 +241,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->ChangeTime.QuadPart = 0;
             fbdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
-            fbdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
+            fbdi->FileAttributes = atts;
             fbdi->FileNameLength = stringlen;
             fbdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
             fbdi->ShortNameLength = 0;
@@ -269,7 +280,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fdi->ChangeTime.QuadPart = 0;
             fdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
-            fdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
+            fdi->FileAttributes = atts;
             fdi->FileNameLength = stringlen;
             
             Status = RtlUTF8ToUnicodeN(fdi->FileName, stringlen, &stringlen, de->name, de->namelen);
@@ -305,7 +316,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->ChangeTime.QuadPart = 0;
             ffdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
-            ffdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
+            ffdi->FileAttributes = atts;
             ffdi->FileNameLength = stringlen;
             ffdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
             
@@ -345,7 +356,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->ChangeTime.QuadPart = 0;
             fibdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
-            fibdi->FileAttributes = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE);
+            fibdi->FileAttributes = atts;
             fibdi->FileNameLength = stringlen;
             fibdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
             fibdi->ShortNameLength = 0;
