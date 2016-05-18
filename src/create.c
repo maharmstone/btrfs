@@ -1409,19 +1409,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (IrpSp->Parameters.Create.FileAttributes == FILE_ATTRIBUTE_NORMAL)
         IrpSp->Parameters.Create.FileAttributes = defda;
     
-    if (IrpSp->Parameters.Create.FileAttributes != defda) {
-        char val[64];
-    
-        sprintf(val, "0x%x", IrpSp->Parameters.Create.FileAttributes);
-    
-        Status = set_xattr(Vcb, parfileref->fcb->subvol, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            ExFreePool(utf8);
-            return Status;
-        }
-    }
-    
     parfileref->fcb->subvol->lastinode++;
     
     fcb = create_fcb();
@@ -1471,6 +1458,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->Header.ValidDataLength.QuadPart = 0;
     
     fcb->atts = IrpSp->Parameters.Create.FileAttributes;
+    fcb->atts_changed = fcb->atts != defda;
     
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->fcb->refcount);
@@ -1490,6 +1478,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         return Status;
     }
     
+    fcb->sd_dirty = TRUE;
+    
     fileref = create_fileref();
     if (!fileref) {
         ERR("out of memory\n");
@@ -1503,14 +1493,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->utf8.Buffer = utf8;
     
     fileref->filepart = *fpus;
-        
-    Status = set_xattr(Vcb, parfileref->fcb->subvol, inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("set_xattr returned %08x\n", Status);
-        free_fileref(fileref);
-        return Status;
-    }
-    
+
     fileref->full_filename.Length = parfileref->full_filename.Length + (parfileref->full_filename.Length == sizeof(WCHAR) ? 0 : sizeof(WCHAR)) + fileref->filepart.Length;
     fileref->full_filename.MaximumLength = fileref->full_filename.Length;
     fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.Length, ALLOC_TAG);
