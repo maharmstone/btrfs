@@ -2117,8 +2117,11 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
             goto exit;
         }
         
-        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-            update_checksum_tree(fcb->Vcb, &changed_sector_list, rollback);
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+            ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+            commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+            ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+        }
     }
     
 success2:
@@ -2403,6 +2406,13 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         ExFreePool(c);
     }
     
+    while (!IsListEmpty(&Vcb->sector_checksums)) {
+        LIST_ENTRY* le = RemoveHeadList(&Vcb->sector_checksums);
+        changed_sector* cs = (changed_sector*)le;
+        
+        ExFreePool(cs);
+    }
+    
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         while (!IsListEmpty(&Vcb->devices[i].space)) {
             LIST_ENTRY* le = RemoveHeadList(&Vcb->devices[i].space);
@@ -2417,6 +2427,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->fcb_lock);
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
+    ExDeleteResourceLite(&Vcb->checksum_lock);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -3795,6 +3806,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->chunks_changed);
     InitializeListHead(&Vcb->trees);
     InitializeListHead(&Vcb->dirty_fcbs);
+    InitializeListHead(&Vcb->sector_checksums);
+    
+    ExInitializeResourceLite(&Vcb->checksum_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 
@@ -4062,6 +4076,7 @@ exit:
             ExDeleteResourceLite(&Vcb->load_lock);
             ExDeleteResourceLite(&Vcb->fcb_lock);
             ExDeleteResourceLite(&Vcb->DirResource);
+            ExDeleteResourceLite(&Vcb->checksum_lock);
 
             if (Vcb->devices)
                 ExFreePoolWithTag(Vcb->devices, ALLOC_TAG);

@@ -48,6 +48,7 @@ typedef struct {
 static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
+static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -3745,6 +3746,12 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         free_fcb(fcb);
     }
     
+    ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
+    if (!IsListEmpty(&Vcb->sector_checksums)) {
+        update_checksum_tree(Vcb, rollback);
+    }
+    ExReleaseResourceLite(&Vcb->checksum_lock);
+    
     if (!IsListEmpty(&Vcb->drop_roots)) {
         Status = drop_roots(Vcb, rollback);
         
@@ -5351,8 +5358,8 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     return STATUS_DISK_FULL;
 }
 
-void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = changed_sector_list->Flink;
+static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le = Vcb->sector_checksums.Flink;
     changed_sector* cs;
     traverse_ptr tp, next_tp;
     KEY searchkey;
@@ -5364,7 +5371,7 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
         goto exit;
     }
     
-    while (le != changed_sector_list) {
+    while (le != &Vcb->sector_checksums) {
         UINT64 startaddr, endaddr;
         ULONG len;
         UINT32* checksums;
@@ -5529,14 +5536,21 @@ void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* changed_sector_list
     }
     
 exit:
-    while (!IsListEmpty(changed_sector_list)) {
-        le = RemoveHeadList(changed_sector_list);
+    while (!IsListEmpty(&Vcb->sector_checksums)) {
+        le = RemoveHeadList(&Vcb->sector_checksums);
         cs = (changed_sector*)le;
         
         if (cs->checksums)
             ExFreePool(cs->checksums);
         
         ExFreePool(cs);
+    }
+}
+
+void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_list) {
+    while (!IsListEmpty(changed_sector_list)) {
+        LIST_ENTRY* le = RemoveHeadList(changed_sector_list);
+        InsertTailList(&Vcb->sector_checksums, le);
     }
 }
 
@@ -5567,8 +5581,11 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     
     TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
     
-    if (!nocsum)
-        update_checksum_tree(fcb->Vcb, &changed_sector_list, rollback);
+    if (!nocsum) {
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+        commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+        ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+    }
     
     return STATUS_SUCCESS;
 }
@@ -5651,8 +5668,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 ExFreePool(data);
                 
-                if (!nocsum)
-                    update_checksum_tree(fcb->Vcb, &changed_sector_list, rollback);
+                if (!nocsum) {
+                    ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+                    ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+                }
             }
             
             if (cur_inline) {
@@ -7102,8 +7122,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     
-    if (!nocsum)
-        update_checksum_tree(Vcb, &changed_sector_list, rollback);
+    if (!nocsum) {
+        ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
+        commit_checksum_changes(Vcb, &changed_sector_list);
+        ExReleaseResourceLite(&Vcb->checksum_lock);
+    }
     
     if (changed_length) {
         CC_FILE_SIZES ccfs;
