@@ -697,20 +697,12 @@ end:
     return Status;
 }
 
-static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum) {
-    UINT32* csum;
+static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
     UINT64 i, j;
     BOOL b;
-    
-    if (length == 0) {
-        *pcsum = NULL;
-        return STATUS_SUCCESS;
-    }
-    
-    csum = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * length, ALLOC_TAG);
     
     searchkey.obj_id = EXTENT_CSUM_ID;
     searchkey.obj_type = TYPE_EXTENT_CSUM;
@@ -719,7 +711,7 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
     Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        goto end;
+        return Status;
     }
     
     i = 0;
@@ -734,8 +726,7 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
             
             if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
                 ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
+                return STATUS_INTERNAL_ERROR;
             }
             
             readlen = min((tp.item->size / sizeof(UINT32)) - j, length - i);
@@ -754,14 +745,99 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
     
     if (i < length) {
         ERR("could not read checksums: offset %llx, length %llx sectors\n", start, length);
-        Status = STATUS_INTERNAL_ERROR;
-    } else    
-        Status = STATUS_SUCCESS;
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum) {
+    UINT32* csum = NULL;
+    NTSTATUS Status;
+    UINT64 end;
+    RTL_BITMAP bmp;
+    ULONG *bmpbuf = NULL, bmpbuflen, index, runlength;
+    LIST_ENTRY* le;
+    
+    if (length == 0) {
+        *pcsum = NULL;
+        return STATUS_SUCCESS;
+    }
+    
+    bmpbuflen = sector_align(length, sizeof(ULONG) * 8) / 8;
+    bmpbuf = ExAllocatePoolWithTag(PagedPool, bmpbuflen, ALLOC_TAG);
+    if (!bmpbuf) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlInitializeBitMap(&bmp, bmpbuf, length);
+    RtlClearAllBits(&bmp);
+    
+    csum = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * length, ALLOC_TAG);
+    if (!csum) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    ExAcquireResourceSharedLite(&Vcb->checksum_lock, TRUE);
+    
+    end = start + (length * Vcb->superblock.sector_size);
+    
+    le = Vcb->sector_checksums.Flink;
+    while (le != &Vcb->sector_checksums) {
+        changed_sector* cs = (changed_sector*)le;
+        UINT64 cs_end = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
+        
+        if (cs->ol.key <= start && cs_end >= end) { // outer
+            if (cs->deleted) {
+                RtlClearAllBits(&bmp);
+            } else {
+                RtlSetAllBits(&bmp);
+                RtlCopyMemory(csum, &cs->checksums[(start - cs->ol.key) / Vcb->superblock.sector_size], sizeof(UINT32) * length);
+            }
+        } else if (cs->ol.key >= start && cs->ol.key <= end) { // right or inner
+            if (cs->deleted) {
+                RtlClearBits(&bmp, (cs->ol.key - start) / Vcb->superblock.sector_size, (min(end, cs_end) - cs->ol.key) / Vcb->superblock.sector_size);
+            } else {
+                RtlSetBits(&bmp, (cs->ol.key - start) / Vcb->superblock.sector_size, (min(end, cs_end) - cs->ol.key) / Vcb->superblock.sector_size);
+                RtlCopyMemory(&csum[(cs->ol.key - start) / Vcb->superblock.sector_size], cs->checksums, (min(end, cs_end) - cs->ol.key) * sizeof(UINT32) / Vcb->superblock.sector_size);
+            }
+        } else if (cs_end >= start && cs_end <= end) { // left
+            if (cs->deleted) {
+                RtlClearBits(&bmp, 0, (cs_end - start) / Vcb->superblock.sector_size);
+            } else {
+                RtlSetBits(&bmp, 0, (cs_end - start) / Vcb->superblock.sector_size);
+                RtlCopyMemory(csum, &cs->checksums[(start - cs->ol.key) / Vcb->superblock.sector_size], (cs_end - start) * sizeof(UINT32) / Vcb->superblock.sector_size);
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&Vcb->checksum_lock);
+    
+    runlength = RtlFindFirstRunClear(&bmp, &index);
+            
+    while (runlength != 0) {
+        Status = load_csum_from_disk(Vcb, &csum[index], start + (index * Vcb->superblock.sector_size), runlength);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_csum_from_disk returned %08x\n", Status);
+            goto end;
+        }
+       
+        runlength = RtlFindNextForwardRunClear(&bmp, index + runlength, &index);
+    }
     
 end:
+    if (bmpbuf)
+        ExFreePool(bmpbuf);
+    
     if (NT_SUCCESS(Status))
         *pcsum = csum;
-    else
+    else if (csum)
         ExFreePool(csum);
 
     return Status;
