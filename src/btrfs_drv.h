@@ -105,6 +105,15 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent;
 
+typedef struct {
+    UINT64 address;
+    UINT64 size;
+    UINT64 offset;
+    UINT32 refcount;
+    
+    LIST_ENTRY list_entry;
+} extent_backref;
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -123,6 +132,7 @@ typedef struct _fcb {
     SHARE_ACCESS share_access;
     WCHAR* debug_desc;
     LIST_ENTRY extents;
+    LIST_ENTRY extent_backrefs;
     
     BOOL sd_dirty;
     BOOL atts_changed, atts_deleted;

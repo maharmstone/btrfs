@@ -316,6 +316,7 @@ fcb* create_fcb() {
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     
     InitializeListHead(&fcb->extents);
+    InitializeListHead(&fcb->extent_backrefs);
     
     return fcb;
 }
@@ -732,6 +733,39 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     return deleted;
 }
 
+static NTSTATUS add_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset) {
+    extent_backref* extref;
+    
+    if (!IsListEmpty(&fcb->extent_backrefs)) {
+        LIST_ENTRY* le = fcb->extent_backrefs.Flink;
+        
+        while (le != &fcb->extent_backrefs) {
+            extref = CONTAINING_RECORD(le, extent_backref, list_entry);
+            
+            if (extref->address == address && extref->size == size && extref->offset == offset) {
+                extref->refcount++;
+                return STATUS_SUCCESS;
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
+    extref = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
+    if (!extref) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    extref->address = address;
+    extref->size = size;
+    extref->offset = offset;
+    extref->refcount = 1;
+    InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb) {
     KEY searchkey;
     traverse_ptr tp;
@@ -825,6 +859,8 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
             if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
                 extent* ext;
                 
+                ed = (EXTENT_DATA*)tp.item->data;
+                
                 if (tp.item->size < sizeof(EXTENT_DATA)) {
                     ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA));
@@ -833,7 +869,26 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
                     return STATUS_INTERNAL_ERROR;
                 }
                 
-                ed = (EXTENT_DATA*)tp.item->data;
+                if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                    
+                    if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                        ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                            tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                    
+                        free_fcb(fcb);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    if (ed2->size != 0) {
+                        Status = add_extent_backref(fcb, ed2->address, ed2->size, tp.item->key.offset - ed2->offset);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("add_extent_backref returned %08x\n", Status);
+                            free_fcb(fcb);
+                            return Status;
+                        }
+                    }
+                }
                 
                 ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
                 if (!ext) {

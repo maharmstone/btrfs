@@ -2223,6 +2223,13 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(ext);
     }
     
+    while (!IsListEmpty(&fcb->extent_backrefs)) {
+        LIST_ENTRY* le = RemoveHeadList(&fcb->extent_backrefs);
+        extent_backref* extref = CONTAINING_RECORD(le, extent_backref, list_entry);
+        
+        ExFreePool(extref);
+    }
+    
     FsRtlUninitializeFileLock(&fcb->lock);
     
     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
