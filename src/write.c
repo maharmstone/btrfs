@@ -4770,16 +4770,413 @@ end:
 
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
+    LIST_ENTRY* le;
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, changed_sector_list);
-    
-    Status = excise_extents_inode(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, start_data, end_data, changed_sector_list, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents_inode returned %08x\n");
-        return Status;
+    le = fcb->extents.Flink;
+
+    while (le != &fcb->extents) {
+        LIST_ENTRY* le2 = le->Flink;
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        EXTENT_DATA* ed = ext->data;
+        EXTENT_DATA2* ed2;
+        UINT64 len;
+        
+        if (ext->datalen < sizeof(EXTENT_DATA)) {
+            ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) { 
+            if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            ed2 = (EXTENT_DATA2*)ed->data;
+        }
+        
+        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+        
+        if (ext->offset < end_data && ext->offset + len >= start_data) {
+            if (ed->compression != BTRFS_COMPRESSION_NONE) {
+                FIXME("FIXME - compression not supported at present\n");
+                Status = STATUS_NOT_SUPPORTED;
+                goto end;
+            }
+            
+            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+                WARN("root %llx, inode %llx, extent %llx: encryption not supported (type %x)\n", fcb->subvol->id, fcb->inode, ext->offset, ed->encryption);
+                Status = STATUS_NOT_SUPPORTED;
+                goto end;
+            }
+            
+            if (ed->encoding != BTRFS_ENCODING_NONE) {
+                WARN("other encodings not supported\n");
+                Status = STATUS_NOT_SUPPORTED;
+                goto end;
+            }
+            
+            if (ed->type == EXTENT_TYPE_INLINE) {
+                if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                    
+                    fcb->inode_item.st_blocks -= len;
+                } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
+                    EXTENT_DATA* ned;
+                    UINT64 size;
+                    extent* newext;
+                    
+                    size = len - (end_data - ext->offset);
+                    
+                    ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned);
+                        goto end;
+                    }
+                    
+                    ned->generation = Vcb->superblock.generation;
+                    ned->decoded_size = size;
+                    ned->compression = ed->compression;
+                    ned->encryption = ed->encryption;
+                    ned->encoding = ed->encoding;
+                    ned->type = ed->type;
+                    
+                    RtlCopyMemory(&ned->data[0], &ed->data[end_data - ext->offset], size);
+                    
+                    newext->offset = end_data;
+                    newext->data = ned;
+                    newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    InsertHeadList(&ext->list_entry, &newext->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                    
+                    fcb->inode_item.st_blocks -= end_data - ext->offset;
+                } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
+                    EXTENT_DATA* ned;
+                    UINT64 size;
+                    extent* newext;
+                    
+                    size = start_data - ext->offset;
+                    
+                    ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned);
+                        goto end;
+                    }
+                    
+                    ned->generation = Vcb->superblock.generation;
+                    ned->decoded_size = size;
+                    ned->compression = ed->compression;
+                    ned->encryption = ed->encryption;
+                    ned->encoding = ed->encoding;
+                    ned->type = ed->type;
+                    
+                    RtlCopyMemory(&ned->data[0], &ed->data[0], size);
+                    
+                    newext->offset = ext->offset;
+                    newext->data = ned;
+                    newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    InsertHeadList(&ext->list_entry, &newext->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                    
+                    fcb->inode_item.st_blocks -= ext->offset + len - start_data;
+                } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
+                    EXTENT_DATA *ned1, *ned2;
+                    UINT64 size;
+                    extent *newext1, *newext2;
+                    
+                    size = start_data - ext->offset;
+                    
+                    ned1 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned1) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext1) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned1);
+                        goto end;
+                    }
+                    
+                    ned1->generation = Vcb->superblock.generation;
+                    ned1->decoded_size = size;
+                    ned1->compression = ed->compression;
+                    ned1->encryption = ed->encryption;
+                    ned1->encoding = ed->encoding;
+                    ned1->type = ed->type;
+                    
+                    RtlCopyMemory(&ned1->data[0], &ed->data[0], size);
+
+                    newext1->offset = ext->offset;
+                    newext1->data = ned1;
+                    newext1->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    
+                    size = ext->offset + len - end_data;
+                    
+                    ned2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + size, ALLOC_TAG);
+                    if (!ned2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned1);
+                        ExFreePool(newext1);
+                        goto end;
+                    }
+                    
+                    newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned1);
+                        ExFreePool(newext1);
+                        ExFreePool(ned2);
+                        goto end;
+                    }
+                    
+                    ned2->generation = Vcb->superblock.generation;
+                    ned2->decoded_size = size;
+                    ned2->compression = ed->compression;
+                    ned2->encryption = ed->encryption;
+                    ned2->encoding = ed->encoding;
+                    ned2->type = ed->type;
+                    
+                    RtlCopyMemory(&ned2->data[0], &ed->data[end_data - ext->offset], size);
+                    
+                    newext2->offset = end_data;
+                    newext2->data = ned2;
+                    newext2->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    
+                    InsertHeadList(&ext->list_entry, &newext1->list_entry);
+                    InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                    
+                    fcb->inode_item.st_blocks -= end_data - start_data;
+                }
+            } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
+                    if (ed2->address != 0)
+                        fcb->inode_item.st_blocks -= len;
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
+                    EXTENT_DATA* ned;
+                    EXTENT_DATA2* ned2;
+                    extent* newext;
+                    
+                    if (ed2->address != 0)
+                        fcb->inode_item.st_blocks -= end_data - ext->offset;
+                    
+                    ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned);
+                        goto end;
+                    }
+                    
+                    ned2 = (EXTENT_DATA2*)&ned->data[0];
+                    
+                    ned->generation = Vcb->superblock.generation;
+                    ned->decoded_size = ed->decoded_size;
+                    ned->compression = ed->compression;
+                    ned->encryption = ed->encryption;
+                    ned->encoding = ed->encoding;
+                    ned->type = ed->type;
+                    ned2->address = ed2->address;
+                    ned2->size = ed2->size;
+                    ned2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - ext->offset));
+                    ned2->num_bytes = ed2->num_bytes - (end_data - ext->offset);
+
+                    newext->offset = end_data;
+                    newext->data = ned;
+                    newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    InsertHeadList(&ext->list_entry, &newext->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
+                    EXTENT_DATA* ned;
+                    EXTENT_DATA2* ned2;
+                    extent* newext;
+                    
+                    if (ed2->address != 0)
+                        fcb->inode_item.st_blocks -= ext->offset + len - start_data;
+                    
+                    ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!ned) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(ned);
+                        goto end;
+                    }
+                    
+                    ned2 = (EXTENT_DATA2*)&ned->data[0];
+                    
+                    ned->generation = Vcb->superblock.generation;
+                    ned->decoded_size = ed->decoded_size;
+                    ned->compression = ed->compression;
+                    ned->encryption = ed->encryption;
+                    ned->encoding = ed->encoding;
+                    ned->type = ed->type;
+                    ned2->address = ed2->address;
+                    ned2->size = ed2->size;
+                    ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
+                    ned2->num_bytes = start_data - ext->offset;
+
+                    newext->offset = ext->offset;
+                    newext->data = ned;
+                    newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    InsertHeadList(&ext->list_entry, &newext->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
+                    EXTENT_DATA *neda, *nedb;
+                    EXTENT_DATA2 *neda2, *nedb2;
+                    extent *newext1, *newext2;
+                    
+                    if (ed2->address != 0)
+                        fcb->inode_item.st_blocks -= end_data - start_data;
+                    
+                    neda = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!neda) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext1) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(neda);
+                        goto end;
+                    }
+                    
+                    nedb = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                    if (!nedb) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(neda);
+                        ExFreePool(newext1);
+                        goto end;
+                    }
+                    
+                    newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    if (!newext1) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(neda);
+                        ExFreePool(newext1);
+                        ExFreePool(nedb);
+                        goto end;
+                    }
+                    
+                    neda2 = (EXTENT_DATA2*)&neda->data[0];
+                    
+                    neda->generation = Vcb->superblock.generation;
+                    neda->decoded_size = ed->decoded_size;
+                    neda->compression = ed->compression;
+                    neda->encryption = ed->encryption;
+                    neda->encoding = ed->encoding;
+                    neda->type = ed->type;
+                    neda2->address = ed2->address;
+                    neda2->size = ed2->size;
+                    neda2->offset = ed2->address == 0 ? 0 : ed2->offset;
+                    neda2->num_bytes = start_data - ext->offset;
+
+                    nedb2 = (EXTENT_DATA2*)&nedb->data[0];
+                    
+                    nedb->generation = Vcb->superblock.generation;
+                    nedb->decoded_size = ed->decoded_size;
+                    nedb->compression = ed->compression;
+                    nedb->encryption = ed->encryption;
+                    nedb->encoding = ed->encoding;
+                    nedb->type = ed->type;
+                    nedb2->address = ed2->address;
+                    nedb2->size = ed2->size;
+                    nedb2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - ext->offset));
+                    nedb2->num_bytes = ext->offset + len - end_data;
+                    
+                    newext1->offset = ext->offset;
+                    newext1->data = neda;
+                    newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    
+                    newext2->offset = end_data;
+                    newext2->data = nedb;
+                    newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    
+                    InsertHeadList(&ext->list_entry, &newext1->list_entry);
+                    InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                    
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
+                }
+            }
+        }
+
+        le = le2;
     }
     
-    return STATUS_SUCCESS;
+    // FIXME - do bitmap analysis of changed extents, and free what we can
+
+end:
+    fcb->extents_changed = TRUE;
+    mark_fcb_dirty(fcb);
+    
+    return Status;
 }
 
 static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, LIST_ENTRY* changed_sector_list) {
