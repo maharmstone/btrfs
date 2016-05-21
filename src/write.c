@@ -1332,8 +1332,12 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
         return FALSE;
     }
     
+    ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+    
     space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
 
+    ExReleaseResourceLite(&c->nonpaged->lock);
+    
     add_parents_to_cache(Vcb, insert_tp.tree);
     
     return TRUE;
@@ -1386,7 +1390,11 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
         return FALSE;
     }
     
+    ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+    
     space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
+    
+    ExReleaseResourceLite(&c->nonpaged->lock);
 
     add_parents_to_cache(Vcb, insert_tp.tree);
     
@@ -1536,9 +1544,13 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     c = get_chunk_from_address(Vcb, address);
     
     if (c) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         decrease_chunk_usage(c, Vcb->superblock.node_size);
         
         space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -1812,9 +1824,13 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     c = get_chunk_from_address(Vcb, address);
     
     if (c) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         decrease_chunk_usage(c, tp.item->key.offset);
         
         space_list_add(Vcb, c, TRUE, address, tp.item->key.offset, rollback);
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     } else
         ERR("could not find chunk for address %llx\n", address);
     
@@ -5521,8 +5537,12 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
         return FALSE;
     }
     
+    ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+    
     increase_chunk_usage(c, length);
     space_list_subtract(Vcb, c, FALSE, address, length, rollback);
+    
+    ExReleaseResourceLite(&c->nonpaged->lock);
     
     if (inode_item) {
         inode_item->st_blocks += length;
@@ -5624,9 +5644,13 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     c = get_chunk_from_address(Vcb, eitp->item->key.obj_id);
     
     if (c) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         increase_chunk_usage(c, length);
         
         space_list_subtract(Vcb, c, FALSE, eitp->item->key.obj_id + eitp->item->key.offset, length, rollback);
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
     
     fcb->inode_item.st_blocks += length;
