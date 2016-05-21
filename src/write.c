@@ -7472,8 +7472,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                      BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    KEY searchkey;
-    traverse_ptr tp;
     EXTENT_DATA* ed2;
     UINT64 newlength, start_data, end_data;
     UINT32 bufhead;
@@ -7792,7 +7790,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, NULL, rollback);
+            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength)) {
+                ERR("add_extent_to_fcb failed\n");
+                ExFreePool(data);
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
             
             fcb->inode_item.st_blocks += newlength;
         } else if (!nocow) {
