@@ -3686,6 +3686,7 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
         traverse_ptr next_tp;
         LIST_ENTRY* le;
         LIST_ENTRY changed_sector_list;
+        BOOL prealloc = FALSE;
         
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
             InitializeListHead(&changed_sector_list);
@@ -3736,6 +3737,9 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
                 ERR("insert_tree_item failed\n");
                 goto end;
             }
+            
+            if (!prealloc && ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
+                prealloc = TRUE;
             
             if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)) {
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
@@ -3804,7 +3808,12 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
             ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
         }
         
-        // FIXME - update prealloc flag in INODE_ITEM
+        // update prealloc flag in INODE_ITEM
+        
+        if (!prealloc)
+            fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
+        else
+            fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
         
         fcb->extents_changed = FALSE;
     }
