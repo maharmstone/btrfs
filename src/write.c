@@ -5554,8 +5554,91 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
     return TRUE;
 }
 
+static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize) {
+    extent* ext;
+    LIST_ENTRY* le;
+    
+    ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+    if (!ext) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
+    ext->offset = offset;
+    ext->data = ed;
+    ext->datalen = edsize;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (oldext->offset > offset) {
+            InsertHeadList(le->Blink, &ext->list_entry);
+            return TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
+    InsertTailList(&fcb->extents, &ext->list_entry);
+    
+    return TRUE;
+}
+
 static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
-    return insert_extent_chunk_inode(Vcb, fcb->subvol, fcb->inode, &fcb->inode_item, c, start_data, length, prealloc, data, changed_sector_list, rollback);
+    UINT64 address;
+    NTSTATUS Status;
+    EXTENT_DATA* ed;
+    EXTENT_DATA2* ed2;
+    ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+    
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, changed_sector_list, rollback);
+    
+    if (!find_address_in_chunk(Vcb, c, length, &address))
+        return FALSE;
+    
+    if (data) {
+        Status = do_write_data(Vcb, address, data, length, changed_sector_list);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_write_data returned %08x\n", Status);
+            return FALSE;
+        }
+    }
+    
+    // add extent data to inode
+    ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+    if (!ed) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
+    ed->generation = Vcb->superblock.generation;
+    ed->decoded_size = length;
+    ed->compression = BTRFS_COMPRESSION_NONE;
+    ed->encryption = BTRFS_ENCRYPTION_NONE;
+    ed->encoding = BTRFS_ENCODING_NONE;
+    ed->type = prealloc ? EXTENT_TYPE_PREALLOC : EXTENT_TYPE_REGULAR;
+    
+    ed2 = (EXTENT_DATA2*)ed->data;
+    ed2->address = address;
+    ed2->size = length;
+    ed2->offset = 0;
+    ed2->num_bytes = length;
+    
+    if (!add_extent_to_fcb(fcb, start_data, ed, edsize)) {
+        ERR("add_extent_to_fcb failed\n");
+        ExFreePool(ed);
+        return FALSE;
+    }
+    
+    increase_chunk_usage(c, length);
+    space_list_subtract(Vcb, c, FALSE, address, length, rollback);
+    
+    fcb->inode_item.st_blocks += length;
+    
+    mark_fcb_dirty(fcb);
+    
+    return TRUE;
 }
 
 static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
@@ -7177,131 +7260,131 @@ end:
     return Status;
 }
 
-#ifdef DEBUG_PARANOID
-static void print_loaded_trees(tree* t, int spaces) {
-    char pref[10];
-    int i;
-    LIST_ENTRY* le;
-    
-    for (i = 0; i < spaces; i++) {
-        pref[i] = ' ';
-    }
-    pref[spaces] = 0;
-    
-    if (!t) {
-        ERR("%s(not loaded)\n", pref);
-        return;
-    }
-    
-    le = t->itemlist.Flink;
-    while (le != &t->itemlist) {
-        tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-        
-        ERR("%s%llx,%x,%llx ignore=%s\n", pref, td->key.obj_id, td->key.obj_type, td->key.offset, td->ignore ? "TRUE" : "FALSE");
-        
-        if (t->header.level > 0) {
-            print_loaded_trees(td->treeholder.tree, spaces+1);
-        }
-        
-        le = le->Flink;
-    }
-}
+// #ifdef DEBUG_PARANOID
+// static void print_loaded_trees(tree* t, int spaces) {
+//     char pref[10];
+//     int i;
+//     LIST_ENTRY* le;
+//     
+//     for (i = 0; i < spaces; i++) {
+//         pref[i] = ' ';
+//     }
+//     pref[spaces] = 0;
+//     
+//     if (!t) {
+//         ERR("%s(not loaded)\n", pref);
+//         return;
+//     }
+//     
+//     le = t->itemlist.Flink;
+//     while (le != &t->itemlist) {
+//         tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+//         
+//         ERR("%s%llx,%x,%llx ignore=%s\n", pref, td->key.obj_id, td->key.obj_type, td->key.offset, td->ignore ? "TRUE" : "FALSE");
+//         
+//         if (t->header.level > 0) {
+//             print_loaded_trees(td->treeholder.tree, spaces+1);
+//         }
+//         
+//         le = le->Flink;
+//     }
+// }
 
-static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    UINT64 length, oldlength, lastoff, alloc;
-    NTSTATUS Status;
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
-    
-    if (fcb->ads || fcb->inode_item.st_size == 0 || fcb->deleted)
-        return;
-    
-    TRACE("inode = %llx, subvol = %llx\n", fcb->inode, fcb->subvol->id);
-    
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto failure;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("could not find EXTENT_DATA at offset 0\n");
-        goto failure;
-    }
-    
-    if (tp.item->size < sizeof(EXTENT_DATA)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-        goto failure;
-    }
-    
-    ed = (EXTENT_DATA*)tp.item->data;
-    ed2 = (EXTENT_DATA2*)&ed->data[0];
-    
-    length = oldlength = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-    lastoff = tp.item->key.offset;
-    
-    TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
-    
-    alloc = 0;
-    if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
-        alloc += length;
-    }
-    
-    while (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
-        if (next_tp.item->key.obj_id != searchkey.obj_id || next_tp.item->key.obj_type != searchkey.obj_type)
-            break;
-        
-        tp = next_tp;
-        
-        if (tp.item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-            goto failure;
-        }
-        
-        ed = (EXTENT_DATA*)tp.item->data;
-        ed2 = (EXTENT_DATA2*)&ed->data[0];
-    
-        length = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-    
-        TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
-        
-        if (tp.item->key.offset != lastoff + oldlength) {
-            ERR("EXTENT_DATA in %llx,%llx was at %llx, expected %llx\n", fcb->subvol->id, fcb->inode, tp.item->key.offset, lastoff + oldlength);
-            goto failure;
-        }
-        
-        if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
-            alloc += length;
-        }
-        
-        oldlength = length;
-        lastoff = tp.item->key.offset;
-    }
-    
-    if (alloc != fcb->inode_item.st_blocks) {
-        ERR("allocation size was %llx, expected %llx\n", alloc, fcb->inode_item.st_blocks);
-        goto failure;
-    }
-    
-//     if (fcb->inode_item.st_blocks != lastoff + oldlength) {
-//         ERR("extents finished at %x, expected %x\n", (UINT32)(lastoff + oldlength), (UINT32)fcb->inode_item.st_blocks);
+// static void check_extents_consistent(device_extension* Vcb, fcb* fcb) {
+//     KEY searchkey;
+//     traverse_ptr tp, next_tp;
+//     UINT64 length, oldlength, lastoff, alloc;
+//     NTSTATUS Status;
+//     EXTENT_DATA* ed;
+//     EXTENT_DATA2* ed2;
+//     
+//     if (fcb->ads || fcb->inode_item.st_size == 0 || fcb->deleted)
+//         return;
+//     
+//     TRACE("inode = %llx, subvol = %llx\n", fcb->inode, fcb->subvol->id);
+//     
+//     searchkey.obj_id = fcb->inode;
+//     searchkey.obj_type = TYPE_EXTENT_DATA;
+//     searchkey.offset = 0;
+//     
+//     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
 //         goto failure;
 //     }
-    
-    return;
-    
-failure:
-    if (fcb->subvol->treeholder.tree)
-        print_loaded_trees(fcb->subvol->treeholder.tree, 0);
-
-    int3;
-}
+//     
+//     if (keycmp(&searchkey, &tp.item->key)) {
+//         ERR("could not find EXTENT_DATA at offset 0\n");
+//         goto failure;
+//     }
+//     
+//     if (tp.item->size < sizeof(EXTENT_DATA)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+//         goto failure;
+//     }
+//     
+//     ed = (EXTENT_DATA*)tp.item->data;
+//     ed2 = (EXTENT_DATA2*)&ed->data[0];
+//     
+//     length = oldlength = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+//     lastoff = tp.item->key.offset;
+//     
+//     TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
+//     
+//     alloc = 0;
+//     if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
+//         alloc += length;
+//     }
+//     
+//     while (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
+//         if (next_tp.item->key.obj_id != searchkey.obj_id || next_tp.item->key.obj_type != searchkey.obj_type)
+//             break;
+//         
+//         tp = next_tp;
+//         
+//         if (tp.item->size < sizeof(EXTENT_DATA)) {
+//             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+//             goto failure;
+//         }
+//         
+//         ed = (EXTENT_DATA*)tp.item->data;
+//         ed2 = (EXTENT_DATA2*)&ed->data[0];
+//     
+//         length = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+//     
+//         TRACE("(%llx,%x,%llx) length = %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, length);
+//         
+//         if (tp.item->key.offset != lastoff + oldlength) {
+//             ERR("EXTENT_DATA in %llx,%llx was at %llx, expected %llx\n", fcb->subvol->id, fcb->inode, tp.item->key.offset, lastoff + oldlength);
+//             goto failure;
+//         }
+//         
+//         if (ed->type != EXTENT_TYPE_REGULAR || ed2->address != 0) {
+//             alloc += length;
+//         }
+//         
+//         oldlength = length;
+//         lastoff = tp.item->key.offset;
+//     }
+//     
+//     if (alloc != fcb->inode_item.st_blocks) {
+//         ERR("allocation size was %llx, expected %llx\n", alloc, fcb->inode_item.st_blocks);
+//         goto failure;
+//     }
+//     
+// //     if (fcb->inode_item.st_blocks != lastoff + oldlength) {
+// //         ERR("extents finished at %x, expected %x\n", (UINT32)(lastoff + oldlength), (UINT32)fcb->inode_item.st_blocks);
+// //         goto failure;
+// //     }
+//     
+//     return;
+//     
+// failure:
+//     if (fcb->subvol->treeholder.tree)
+//         print_loaded_trees(fcb->subvol->treeholder.tree, 0);
+// 
+//     int3;
+// }
 
 // static void check_extent_tree_consistent(device_extension* Vcb) {
 //     KEY searchkey;
@@ -7375,7 +7458,7 @@ failure:
 //     
 //     int3;
 // }
-#endif
+// #endif
 
 static void STDCALL deferred_write_callback(void* context1, void* context2) {
     PIRP Irp = context1;
@@ -7570,79 +7653,82 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (fcb->ads) {
-        UINT16 datalen;
-        UINT8* data2;
-        UINT32 maxlen;
+        Status = STATUS_NOT_SUPPORTED;
+        goto end;
         
-        if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
-            ERR("get_xattr failed\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
-        
-        if (changed_length) {
-            // find maximum length of xattr
-            maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-            
-            searchkey.obj_id = fcb->inode;
-            searchkey.obj_type = TYPE_XATTR_ITEM;
-            searchkey.offset = fcb->adshash;
-
-            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                goto end;
-            }
-            
-            if (keycmp(&tp.item->key, &searchkey)) {
-                ERR("error - could not find key for xattr\n");
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
-            
-            if (tp.item->size < datalen) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
-            
-            maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
-            
-            if (newlength > maxlen) {
-                ERR("error - xattr too long (%llu > %u)\n", newlength, maxlen);
-                Status = STATUS_DISK_FULL;
-                goto end;
-            }
-            
-            fcb->adssize = newlength;
-
-            data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
-            if (!data2) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            RtlCopyMemory(data2, data, datalen);
-            
-            if (offset.QuadPart > datalen)
-                RtlZeroMemory(&data2[datalen], offset.QuadPart - datalen);
-        } else
-            data2 = data;
-        
-        if (*length > 0)
-            RtlCopyMemory(&data2[offset.QuadPart], buf, *length);
-        
-        Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            goto end;
-        }
-        
-        if (data) ExFreePool(data);
-        if (data2 != data) ExFreePool(data2);
-        
-        fcb->Header.ValidDataLength.QuadPart = newlength;
+//         UINT16 datalen;
+//         UINT8* data2;
+//         UINT32 maxlen;
+//         
+//         if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
+//             ERR("get_xattr failed\n");
+//             Status = STATUS_INTERNAL_ERROR;
+//             goto end;
+//         }
+//         
+//         if (changed_length) {
+//             // find maximum length of xattr
+//             maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
+//             
+//             searchkey.obj_id = fcb->inode;
+//             searchkey.obj_type = TYPE_XATTR_ITEM;
+//             searchkey.offset = fcb->adshash;
+// 
+//             Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+//             if (!NT_SUCCESS(Status)) {
+//                 ERR("error - find_item returned %08x\n", Status);
+//                 goto end;
+//             }
+//             
+//             if (keycmp(&tp.item->key, &searchkey)) {
+//                 ERR("error - could not find key for xattr\n");
+//                 Status = STATUS_INTERNAL_ERROR;
+//                 goto end;
+//             }
+//             
+//             if (tp.item->size < datalen) {
+//                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
+//                 Status = STATUS_INTERNAL_ERROR;
+//                 goto end;
+//             }
+//             
+//             maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
+//             
+//             if (newlength > maxlen) {
+//                 ERR("error - xattr too long (%llu > %u)\n", newlength, maxlen);
+//                 Status = STATUS_DISK_FULL;
+//                 goto end;
+//             }
+//             
+//             fcb->adssize = newlength;
+// 
+//             data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
+//             if (!data2) {
+//                 ERR("out of memory\n");
+//                 Status = STATUS_INSUFFICIENT_RESOURCES;
+//                 goto end;
+//             }
+//             
+//             RtlCopyMemory(data2, data, datalen);
+//             
+//             if (offset.QuadPart > datalen)
+//                 RtlZeroMemory(&data2[datalen], offset.QuadPart - datalen);
+//         } else
+//             data2 = data;
+//         
+//         if (*length > 0)
+//             RtlCopyMemory(&data2[offset.QuadPart], buf, *length);
+//         
+//         Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("set_xattr returned %08x\n", Status);
+//             goto end;
+//         }
+//         
+//         if (data) ExFreePool(data);
+//         if (data2 != data) ExFreePool(data2);
+//         
+//         fcb->Header.ValidDataLength.QuadPart = newlength;
     } else {
         if (make_inline) {
             start_data = 0;
@@ -7836,7 +7922,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     LARGE_INTEGER offset = IrpSp->Parameters.Write.ByteOffset;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
-    BOOL locked = FALSE;
+//     BOOL locked = FALSE;
 //     LARGE_INTEGER freq, time1, time2;
     LIST_ENTRY rollback;
     
@@ -7870,13 +7956,13 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
     TRACE("buf = %p\n", buf);
     
-    if (Irp->Flags & IRP_NOCACHE) {
-        if (!ExAcquireResourceExclusiveLite(&Vcb->tree_lock, wait)) {
-            Status = STATUS_PENDING;
-            goto exit;
-        }
-        locked = TRUE;
-    }
+//     if (Irp->Flags & IRP_NOCACHE) {
+//         if (!ExAcquireResourceExclusiveLite(&Vcb->tree_lock, wait)) {
+//             Status = STATUS_PENDING;
+//             goto exit;
+//         }
+//         locked = TRUE;
+//     }
     
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
         WARN("tried to write to locked region\n");
@@ -7895,29 +7981,29 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
         goto exit;
     }
     
-    if (locked)
-        Status = consider_write(Vcb);
+//     if (locked)
+//         Status = consider_write(Vcb);
 
     if (NT_SUCCESS(Status)) {
         Irp->IoStatus.Information = IrpSp->Parameters.Write.Length;
     
 #ifdef DEBUG_PARANOID
-        if (locked)
-            check_extents_consistent(Vcb, FileObject->FsContext); // TESTING
+//         if (locked)
+//             check_extents_consistent(Vcb, FileObject->FsContext); // TESTING
     
 //         check_extent_tree_consistent(Vcb);
 #endif
     }
     
 exit:
-    if (locked) {
-        if (NT_SUCCESS(Status))
-            clear_rollback(&rollback);
-        else
-            do_rollback(Vcb, &rollback);
-        
-        ExReleaseResourceLite(&Vcb->tree_lock);
-    }
+//     if (locked) {
+//         if (NT_SUCCESS(Status))
+//             clear_rollback(&rollback);
+//         else
+//             do_rollback(Vcb, &rollback);
+//         
+//         ExReleaseResourceLite(&Vcb->tree_lock);
+//     }
     
 //     time2 = KeQueryPerformanceCounter(NULL);
     
