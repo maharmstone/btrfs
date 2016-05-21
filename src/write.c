@@ -5419,6 +5419,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     }
     
     // FIXME - do bitmap analysis of changed extents, and free what we can
+    
+    Status = STATUS_SUCCESS;
 
 end:
     fcb->extents_changed = TRUE;
