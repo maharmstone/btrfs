@@ -110,6 +110,7 @@ typedef struct {
     UINT64 size;
     UINT64 offset;
     UINT32 refcount;
+    UINT32 new_refcount;
     
     LIST_ENTRY list_entry;
 } extent_backref;

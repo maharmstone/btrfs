@@ -3639,13 +3639,175 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset) {
+    extent_backref* extref;
+    
+    if (!IsListEmpty(&fcb->extent_backrefs)) {
+        LIST_ENTRY* le = fcb->extent_backrefs.Flink;
+        
+        while (le != &fcb->extent_backrefs) {
+            extref = CONTAINING_RECORD(le, extent_backref, list_entry);
+            
+            if (extref->address == address && extref->size == size && extref->offset == offset) {
+                extref->new_refcount++;
+                return STATUS_SUCCESS;
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
+    extref = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
+    if (!extref) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    extref->address = address;
+    extref->size = size;
+    extref->offset = offset;
+    extref->refcount = 0;
+    extref->new_refcount = 1;
+    InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
+    
+    return STATUS_SUCCESS;
+}
+
 static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
     INODE_ITEM* ii;
     
-    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    if (fcb->extents_changed) {
+        BOOL b;
+        traverse_ptr next_tp;
+        LIST_ENTRY* le;
+        LIST_ENTRY changed_sector_list;
+        
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
+            InitializeListHead(&changed_sector_list);
+        
+        // delete existing EXTENT_DATA items
+        
+        searchkey.obj_id = fcb->inode;
+        searchkey.obj_type = TYPE_EXTENT_DATA;
+        searchkey.offset = 0;
+        
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        do {
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+                delete_tree_item(fcb->Vcb, &tp, rollback);
+            
+            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+            
+            if (b) {
+                tp = next_tp;
+                
+                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                    break;
+            }
+        } while (b);
+        
+        // add new EXTENT_DATAs
+        
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            EXTENT_DATA* ed;
+            
+            ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+            if (!ed) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            RtlCopyMemory(ed, ext->data, ext->datalen);
+            
+            if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                goto end;
+            }
+            
+            if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                
+                if (ed2->address != 0) {
+                    Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("update_extent_backref returned %08x\n", Status);
+                        goto end;
+                    }
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        // update extent backrefs
+        
+        // We tackle the backrefs where the refcount has increased first, so we don't
+        // accidentally delete anything.
+        
+        le = fcb->extent_backrefs.Flink;
+        while (le != &fcb->extent_backrefs) {
+            extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
+            
+            if (backref->new_refcount > backref->refcount) {
+                Status = increase_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode,
+                                                       backref->offset, backref->new_refcount - backref->refcount, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
+                    goto end;
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        le = fcb->extent_backrefs.Flink;
+        while (le != &fcb->extent_backrefs) {
+            extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
+            LIST_ENTRY* le2 = le->Flink;
+            
+            if (backref->new_refcount < backref->refcount) {
+                Status = decrease_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode, backref->offset,
+                                                       backref->refcount - backref->new_refcount, &changed_sector_list, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("decrease_extent_refcount_data returned %08x\n", Status);
+                    goto end;
+                }
+            }
+            
+            backref->refcount = backref->new_refcount;
+            
+            if (backref->refcount == 0) {
+                RemoveEntryList(&backref->list_entry);
+                ExFreePool(backref);
+            } else
+                backref->new_refcount = 0;
+            
+            le = le2;
+        }
+        
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) && !IsListEmpty(&changed_sector_list)) {
+            ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+            commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+            ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+        }
+        
+        // FIXME - update prealloc flag in INODE_ITEM
+        
+        fcb->extents_changed = FALSE;
+    }
     
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_INODE_ITEM;

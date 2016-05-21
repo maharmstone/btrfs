@@ -761,6 +761,7 @@ static NTSTATUS add_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64
     extref->size = size;
     extref->offset = offset;
     extref->refcount = 1;
+    extref->new_refcount = 0;
     InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
     
     return STATUS_SUCCESS;
