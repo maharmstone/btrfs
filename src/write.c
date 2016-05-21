@@ -5806,75 +5806,59 @@ NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT
 // }
 
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks.Flink;
+    LIST_ENTRY* le;
     chunk* c;
-    KEY searchkey;
     UINT64 flags;
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data, changed_sector_list);
     
     // FIXME - split data up if not enough space for just one extent
     
-    if (start_data > 0 && try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, rollback))
-        return STATUS_SUCCESS;
+//     if (start_data > 0 && try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, rollback))
+//         return STATUS_SUCCESS;
     
     // if there is a gap before start_data, plug it with a sparse extent
+    // FIXME - don't do this if no_holes set
     if (start_data > 0) {
-        traverse_ptr tp;
         NTSTATUS Status;
         EXTENT_DATA* ed;
+        extent* lastext = NULL;
         UINT64 len;
         
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = start_data;
-        
-        Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            
+            if (ext->offset == start_data) {
+                lastext = ext;
+                break;
+            } else if (ext->offset > start_data)
+                break;
+            
+            lastext = ext;
+            
+            le = le->Flink;
         }
-        
-//         if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset >= start_data) {
-//             traverse_ptr next_tp;
-//             
-//             ERR("error - did not find EXTENT_DATA expected - looking for %llx,%x,%llx, found %llx,%x,%llx\n",
-//                 searchkey.obj_id, searchkey.obj_type, searchkey.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-//             print_tree(tp.tree);
-//             
-//             if (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
-//                 ERR("---\n");
-//                 ERR("key = %llx,%x,%llx\n", next_tp.tree->paritem->key.obj_id, next_tp.tree->paritem->key.obj_type, next_tp.tree->paritem->key.offset);
-//                 print_tree(next_tp.tree);
-//                 
-//                 free_traverse_ptr(&next_tp);
-//             } else
-//                 ERR("next item not found\n");
-//             
-//             int3;
-//             free_traverse_ptr(&tp);
-//             return STATUS_INTERNAL_ERROR;
-//         }
 
-        if (tp.item->key.obj_type == TYPE_EXTENT_DATA && tp.item->size >= sizeof(EXTENT_DATA)) {
+        if (lastext && lastext->datalen >= sizeof(EXTENT_DATA)) {
             EXTENT_DATA2* ed2;
             
-            ed = (EXTENT_DATA*)tp.item->data;
+            ed = lastext->data;
             ed2 = (EXTENT_DATA2*)ed->data;
             
             len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
         } else
             ed = NULL;
         
-        if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || !ed || tp.item->key.offset + len < start_data) {
-            if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA)
+        if (!lastext || !ed || lastext->offset + len < start_data) {
+            if (!lastext)
                 Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, 0, start_data, rollback);
-            else if (!ed)
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-            else {
-                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, tp.item->key.offset + len,
-                                              start_data - tp.item->key.offset - len, rollback);
-            }
+            else if (!ed) {
+                ERR("extent at %llx was %u bytes, expected at least %u\n", lastext->offset, lastext->datalen, sizeof(EXTENT_DATA));
+                return STATUS_INTERNAL_ERROR;
+            } else
+                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, lastext->offset + len, start_data - lastext->offset - len, rollback);
+
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
                 return Status;
@@ -5884,24 +5868,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     
     flags = Vcb->data_flags;
     
-//     if (!chunk_test) { // TESTING
-//         if ((c = alloc_chunk(Vcb, flags, NULL))) {
-//             ERR("chunk_item->type = %llx\n", c->chunk_item->type);
-//             ERR("size = %llx\n", c->chunk_item->size);
-//             ERR("used = %llx\n", c->used);
-//             
-//             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-//                 if (insert_extent_chunk(Vcb, fcb, c, start_data, length, data, changed_sector_list)) {
-// //                     chunk_test = TRUE;
-//                     ERR("SUCCESS\n");
-//                     return STATUS_SUCCESS;
-//                 } else
-//                     ERR(":-(\n");
-//             } else
-//                 ERR("???\n");
-//         }
-//     }
-    
+    le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
