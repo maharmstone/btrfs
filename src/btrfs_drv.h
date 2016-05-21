@@ -623,7 +623,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
 NTSTATUS excise_extents_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* ii, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback);
 void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_list);
 NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);

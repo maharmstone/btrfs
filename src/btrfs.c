@@ -1964,7 +1964,6 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     root* parsubvol;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    LIST_ENTRY changed_sector_list;
     fcb* fcb = fileref->fcb;
 #ifdef _DEBUG
     LARGE_INTEGER freq, time1, time2;
@@ -2108,19 +2107,11 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     // excise extents
     
-    InitializeListHead(&changed_sector_list);
-    
     if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &changed_sector_list, rollback);
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08x\n", Status);
             goto exit;
-        }
-        
-        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
-            commit_checksum_changes(fcb->Vcb, &changed_sector_list);
-            ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
         }
     }
     

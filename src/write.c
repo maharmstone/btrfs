@@ -4939,7 +4939,7 @@ end:
     return Status;
 }
 
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
@@ -6123,17 +6123,12 @@ void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_l
 }
 
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
-    LIST_ENTRY changed_sector_list;
     NTSTATUS Status;
-    BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
-    
-    if (!nocsum)
-        InitializeListHead(&changed_sector_list);
     
     // FIXME - convert into inline extent if short enough
     
     Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sector_size),
-                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), nocsum ? NULL : &changed_sector_list, rollback);
+                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("error - excise_extents failed\n");
         return Status;
@@ -6148,12 +6143,6 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     // FIXME - inform cache manager of this
     
     TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
-    
-    if (!nocsum) {
-        ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
-        commit_checksum_changes(fcb->Vcb, &changed_sector_list);
-        ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
-    }
     
     return STATUS_SUCCESS;
 }
@@ -6415,7 +6404,7 @@ static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
 static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
-    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, changed_sector_list, rollback);
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("error - excise_extents returned %08x\n", Status);
         goto end;
@@ -6993,7 +6982,7 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
         if (do_cow) {
             TRACE("doing COW write\n");
             
-            Status = excise_extents(Vcb, fcb, new_start, new_start + new_end, changed_sector_list, rollback);
+            Status = excise_extents(Vcb, fcb, new_start, new_start + new_end, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - excise_extents returned %08x\n", Status);
@@ -7596,7 +7585,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             InitializeListHead(&changed_sector_list);
 
         if (make_inline) {
-            Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, nocsum ? NULL : &changed_sector_list, rollback);
+            Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - excise_extents returned %08x\n", Status);
                 ExFreePool(data);
