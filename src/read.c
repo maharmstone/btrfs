@@ -1074,7 +1074,180 @@ exit:
 }
 
 NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
-    return read_file(fcb->Vcb, fcb->subvol, fcb->inode, data, start, length, !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM), pbr);
+    NTSTATUS Status;
+    EXTENT_DATA* ed;
+    UINT64 bytes_read = 0;
+    LIST_ENTRY* le;
+    
+    TRACE("(%p, %p, %llx, %llx, %p)\n", fcb, data, start, length, pbr);
+    
+    if (pbr)
+        *pbr = 0;
+
+    le = fcb->extents.Flink;
+
+    while (le != &fcb->extents) {
+        UINT64 len;
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        EXTENT_DATA2* ed2;
+        
+        ed = ext->data;
+        
+        if (ext->datalen < sizeof(EXTENT_DATA)) {
+            ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        ed2 = (EXTENT_DATA2*)ed->data;
+        
+        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+        
+        if (le == fcb->extents.Flink && ext->offset > start) {
+            ERR("first EXTENT_DATA was after offset\n");
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+        
+        if (ext->offset + len < start) {
+            ERR("Tried to read beyond end of file\n");
+            Status = STATUS_END_OF_FILE;
+            goto exit;
+        }
+        
+        if (ed->compression != BTRFS_COMPRESSION_NONE) {
+            FIXME("FIXME - compression not yet supported\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            goto exit;
+        }
+        
+        if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+            WARN("Encryption not supported\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            goto exit;
+        }
+        
+        if (ed->encoding != BTRFS_ENCODING_NONE) {
+            WARN("Other encodings not supported\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            goto exit;
+        }
+        
+        switch (ed->type) {
+            case EXTENT_TYPE_INLINE:
+            {
+                UINT64 off = start + bytes_read - ext->offset;
+                UINT64 read = len - off;
+                
+                if (read > length) read = length;
+                
+                RtlCopyMemory(data + bytes_read, &ed->data[off], read);
+                
+                bytes_read += read;
+                length -= read;
+                break;
+            }
+            
+            case EXTENT_TYPE_REGULAR:
+            {
+                UINT64 off = start + bytes_read - ext->offset;
+                UINT32 to_read, read;
+                UINT8* buf;
+                
+                read = len - off;
+                if (read > length) read = length;
+                
+                if (ed2->address == 0) {
+                    RtlZeroMemory(data + bytes_read, read);
+                } else {
+                    UINT32 *csum, bumpoff = 0;
+                    UINT64 addr;
+                    
+                    addr = ed2->address + ed2->offset + off;
+                    to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
+                    
+                    if (addr % fcb->Vcb->superblock.sector_size > 0) {
+                        bumpoff = addr % fcb->Vcb->superblock.sector_size;
+                        addr -= bumpoff;
+                        to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
+                    }
+                    
+                    buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                    
+                    if (!buf) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                        Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("load_csum returned %08x\n", Status);
+                            ExFreePool(buf);
+                            goto exit;
+                        }
+                    } else
+                        csum = NULL;
+                    
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_data returned %08x\n", Status);
+                        ExFreePool(buf);
+                        goto exit;
+                    }
+                    
+                    RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
+                    
+                    ExFreePool(buf);
+                    
+                    if (csum)
+                        ExFreePool(csum);
+                }
+                
+                bytes_read += read;
+                length -= read;
+                
+                break;
+            }
+           
+            case EXTENT_TYPE_PREALLOC:
+            {
+                UINT64 off = start + bytes_read - ext->offset;
+                UINT32 read = len - off;
+                
+                if (read > length) read = length;
+
+                RtlZeroMemory(data + bytes_read, read);
+
+                bytes_read += read;
+                length -= read;
+                
+                break;
+            }
+                
+            default:
+                WARN("Unsupported extent data type %u\n", ed->type);
+                Status = STATUS_NOT_IMPLEMENTED;
+                goto exit;
+        }
+
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    if (pbr)
+        *pbr = bytes_read;
+    
+exit:
+    return Status;
 }
 
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
@@ -1214,6 +1387,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ULONG bytes_read;
     NTSTATUS Status;
     BOOL top_level;
+    fcb* fcb;
     
     FsRtlEnterFileSystem();
     
@@ -1238,7 +1412,23 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
+    if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
+        Status = STATUS_PENDING;
+        IoMarkIrpPending(Irp);
+        goto exit;
+    }
+    
     Status = do_read(Irp, IoIsOperationSynchronous(Irp), &bytes_read);
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
 
 exit:
     Irp->IoStatus.Status = Status;
