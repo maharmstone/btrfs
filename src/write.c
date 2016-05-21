@@ -6742,7 +6742,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    BOOL paging_lock = FALSE;
+    BOOL paging_lock = FALSE, fcb_lock = FALSE;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
     
@@ -6800,8 +6800,17 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (paging_io) {
-        ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, TRUE);
-        paging_lock = TRUE;
+        if (!ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, wait))
+            return STATUS_PENDING;
+        else
+            paging_lock = TRUE;
+    }
+    
+    if (no_cache) {
+        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
+            return STATUS_PENDING;
+        else
+            fcb_lock = TRUE;
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
@@ -6862,8 +6871,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (!no_cache) {
-        BOOL wait;
-        
         if (!FileObject->PrivateCacheMap || changed_length) {
             CC_FILE_SIZES ccfs;
             
@@ -6881,10 +6888,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
         }
         
-        // FIXME - uncomment this when async is working
-//             wait = IoIsOperationSynchronous(Irp) ? TRUE : FALSE;
-        wait = TRUE;
-        
         if (IrpSp->MinorFunction & IRP_MN_MDL) {
             CcPrepareMdlWrite(FileObject, &offset, *length, &Irp->MdlAddress, &Irp->IoStatus);
 
@@ -6893,9 +6896,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         } else {
             TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
             if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
-                TRACE("CcCopyWrite failed.\n");
-                
-                IoMarkIrpPending(Irp);
                 Status = STATUS_PENDING;
                 goto end;
             }
@@ -7156,6 +7156,9 @@ end:
         FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + (NT_SUCCESS(Status) ? *length : 0);
         TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
     }
+    
+    if (fcb_lock)
+        ExReleaseResourceLite(fcb->Header.Resource);
     
     if (paging_lock)
         ExReleaseResourceLite(fcb->Header.PagingIoResource);
