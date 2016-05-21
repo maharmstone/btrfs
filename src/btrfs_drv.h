@@ -291,6 +291,10 @@ typedef struct {
 } device;
 
 typedef struct {
+    ERESOURCE lock;
+} chunk_nonpaged;
+
+typedef struct {
     CHUNK_ITEM* chunk_item;
     UINT32 size;
     UINT64 offset;
@@ -301,6 +305,8 @@ typedef struct {
     UINT64 cache_inode;
     LIST_ENTRY space;
     LIST_ENTRY deleting;
+    chunk_nonpaged* nonpaged;
+    
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
 } chunk;
@@ -376,6 +382,7 @@ typedef struct _device_extension {
     LIST_ENTRY trees;
     LIST_ENTRY dirty_fcbs;
     ERESOURCE checksum_lock;
+    ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;
     HANDLE flush_thread_handle;
     drv_threads threads;

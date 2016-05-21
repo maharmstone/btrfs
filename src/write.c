@@ -213,17 +213,23 @@ chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address) {
     LIST_ENTRY* le2;
     chunk* c;
     
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+    
     le2 = Vcb->chunks.Flink;
     while (le2 != &Vcb->chunks) {
         c = CONTAINING_RECORD(le2, chunk, list_entry);
         
 //         TRACE("chunk: %llx, %llx\n", c->offset, c->chunk_item->size);
         
-        if (address >= c->offset && address < c->offset + c->chunk_item->size)
+        if (address >= c->offset && address < c->offset + c->chunk_item->size) {
+            ExReleaseResourceLite(&Vcb->chunk_lock);
             return c;
+        }
          
         le2 = le2->Flink;
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     return NULL;
 }
@@ -590,6 +596,12 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
         goto end;
     }
     
+    c->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk_nonpaged), ALLOC_TAG);
+    if (!c->nonpaged) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
     // add CHUNK_ITEM to tree 3
     
     cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(CHUNK_ITEM_STRIPE));
@@ -698,6 +710,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     InitializeListHead(&c->space);
     InitializeListHead(&c->deleting);
     
+    ExInitializeResourceLite(&c->nonpaged->lock);
+    
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
@@ -774,7 +788,10 @@ end:
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
     } else {
+        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
         InsertTailList(&Vcb->chunks, &c->list_entry);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
+        
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     }
 
@@ -1154,9 +1171,13 @@ static void clean_space_cache(device_extension* Vcb) {
     while (!IsListEmpty(&Vcb->chunks_changed)) {
         c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         clean_space_cache_chunk(Vcb, c);
         RemoveEntryList(&c->list_entry_changed);
         c->list_entry_changed.Flink = NULL;
+        
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
     }
 }
 
@@ -1405,31 +1426,47 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
         }
     }
     
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+    
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
             if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 t->new_address = addr;
                 t->has_new_address = TRUE;
                 return STATUS_SUCCESS;
             }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
 
         le = le->Flink;
     }
     
     // allocate new chunk if necessary
     if ((c = alloc_chunk(Vcb, flags, rollback))) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
             if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 t->new_address = addr;
                 t->has_new_address = TRUE;
                 return STATUS_SUCCESS;
             }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     ERR("couldn't find any metadata chunks with %x bytes free\n", Vcb->superblock.node_size);
 
@@ -2404,8 +2441,12 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
     
     TRACE("(%p)\n", Vcb);
     
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+    
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         if (c->used != c->oldused) {
             searchkey.obj_id = c->offset;
@@ -2415,24 +2456,31 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
-                return Status;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
             
             if (keycmp(&searchkey, &tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 int3;
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
             
             if (tp.item->size < sizeof(BLOCK_GROUP_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
             
             bgi = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!bgi) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
     
             RtlCopyMemory(bgi, tp.item->data, tp.item->size);
@@ -2445,7 +2493,9 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, rollback)) {
                 ERR("insert_tree_item failed\n");
                 ExFreePool(bgi);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
             
             TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
@@ -2458,11 +2508,15 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
                 FIXME("RAID5 not yet supported\n");
                 ExFreePool(bgi);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
                 FIXME("RAID6 not yet supported\n");
                 ExFreePool(bgi);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             } else { // SINGLE
                 Vcb->superblock.bytes_used += c->used - c->oldused;
             }
@@ -2472,10 +2526,17 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             c->oldused = c->used;
         }
         
+        ExReleaseResourceLite(&c->nonpaged->lock);
+        
         le = le->Flink;
     }
     
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+    
+    return Status;
 }
 
 static void get_first_item(tree* t, KEY* key) {
@@ -3558,6 +3619,9 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
     }
+    
+    ExReleaseResourceLite(&c->nonpaged->lock);
+    ExFreePool(c->nonpaged);
 
     ExFreePool(c);
     
@@ -3569,10 +3633,14 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 used_minus_cache;
     
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+    
     while (le != &Vcb->chunks_changed) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
         le2 = le->Flink;
+        
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         used_minus_cache = c->used;
         
@@ -3589,6 +3657,8 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return Status;
             }
             
@@ -3629,12 +3699,19 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
             Status = drop_chunk(Vcb, c, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("drop_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return Status;
             }
         }
+        
+        if (used_minus_cache > 0)
+            ExReleaseResourceLite(&c->nonpaged->lock);
 
         le = le2;
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     return STATUS_SUCCESS;
 }
@@ -5738,23 +5815,41 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     // FIXME - if length is more than max chunk size, loop through and
     // create the new chunks first
     
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback))
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
 
         le = le->Flink;
     }
     
     if ((c = alloc_chunk(fcb->Vcb, flags, rollback))) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback))
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
+    
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
     
     // FIXME - rebalance chunks if free space elsewhere?
     WARN("couldn't find any data chunks with %llx bytes free\n", length);
@@ -5868,24 +5963,42 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
     
     flags = Vcb->data_flags;
     
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+    
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback))
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
 
         le = le->Flink;
     }
     
     if ((c = alloc_chunk(Vcb, flags, rollback))) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback))
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     // FIXME - rebalance chunks if free space elsewhere?
     WARN("couldn't find any data chunks with %llx bytes free\n", length);

@@ -474,23 +474,41 @@ static NTSTATUS insert_cache_extent(device_extension* Vcb, UINT64 inode, UINT64 
     
     flags = Vcb->data_flags;
     
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+    
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
         
         le = le->Flink;
     }
     
     if ((c = alloc_chunk(Vcb, flags, rollback))) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback))
+            if (insert_extent_chunk_inode(Vcb, Vcb->root_root, inode, NULL, c, start, length, FALSE, NULL, NULL, rollback)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
+            }
         }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     WARN("couldn't find any data chunks with %llx bytes free\n", length);
 
@@ -761,8 +779,10 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
     while (le != &Vcb->chunks_changed) {
         BOOL b;
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
-            
+
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         Status = allocate_cache_chunk(Vcb, c, &b, rollback);
+        ExReleaseResourceLite(&c->nonpaged->lock);
         
         if (b)
             *changed = TRUE;
@@ -1158,7 +1178,9 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
     while (le != &Vcb->chunks_changed) {
         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         Status = update_chunk_cache(Vcb, c, &now, rollback);
+        ExReleaseResourceLite(&c->nonpaged->lock);
 
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);

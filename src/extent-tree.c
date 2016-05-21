@@ -447,6 +447,9 @@ static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size
     }
     
     c = NULL;
+    
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+    
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
@@ -458,10 +461,14 @@ static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size
     }
     if (le == &Vcb->chunks) c = NULL;
     
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+    
     if (c) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         decrease_chunk_usage(c, size);
         
         space_list_add(Vcb, c, TRUE, address, size, rollback);
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
     
     return STATUS_SUCCESS;

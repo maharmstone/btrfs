@@ -2393,6 +2393,9 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         if (c->devices)
             ExFreePool(c->devices);
         
+        ExDeleteResourceLite(&c->nonpaged->lock);
+        
+        ExFreePool(c->nonpaged);
         ExFreePool(c->chunk_item);
         ExFreePool(c);
     }
@@ -2419,6 +2422,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
     ExDeleteResourceLite(&Vcb->checksum_lock);
+    ExDeleteResourceLite(&Vcb->chunk_lock);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -3206,6 +3210,14 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
+                c->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk_nonpaged), ALLOC_TAG);
+                
+                if (!c->nonpaged) {
+                    ERR("out of memory\n");
+                    ExFreePool(c);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
@@ -3216,6 +3228,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 
                 if (!c->chunk_item) {
                     ERR("out of memory\n");
+                    ExFreePool(c);
+                    ExFreePool(c->nonpaged);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
             
@@ -3231,6 +3245,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     
                     if (!c->devices) {
                         ERR("out of memory\n");
+                        ExFreePool(c);
+                        ExFreePool(c->nonpaged);
+                        ExFreePool(c->chunk_item);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
@@ -3240,6 +3257,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     }
                 } else
                     c->devices = NULL;
+                
+                ExInitializeResourceLite(&c->nonpaged->lock);
                 
                 InitializeListHead(&c->space);
                 InitializeListHead(&c->deleting);
@@ -3800,6 +3819,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->sector_checksums);
     
     ExInitializeResourceLite(&Vcb->checksum_lock);
+    ExInitializeResourceLite(&Vcb->chunk_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 
@@ -4068,6 +4088,7 @@ exit:
             ExDeleteResourceLite(&Vcb->fcb_lock);
             ExDeleteResourceLite(&Vcb->DirResource);
             ExDeleteResourceLite(&Vcb->checksum_lock);
+            ExDeleteResourceLite(&Vcb->chunk_lock);
 
             if (Vcb->devices)
                 ExFreePoolWithTag(Vcb->devices, ALLOC_TAG);
