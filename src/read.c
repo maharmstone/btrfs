@@ -1087,6 +1087,25 @@ NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 lengt
         *pbr = 0;
 
     le = fcb->extents.Flink;
+    
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (ext->offset == start)
+            break;
+        else if (ext->offset > start) {
+            if (le->Blink == &fcb->extents) {
+                ERR("first extent was after offset\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto exit;
+            }
+            
+            le = le->Blink;
+            break;
+        }
+        
+        le = le->Flink;
+    }
 
     while (le != &fcb->extents) {
         UINT64 len;
@@ -1110,12 +1129,6 @@ NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 lengt
         ed2 = (EXTENT_DATA2*)ed->data;
         
         len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-        
-        if (le == fcb->extents.Flink && ext->offset > start) {
-            ERR("first EXTENT_DATA was after offset\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto exit;
-        }
         
         if (ext->offset + len < start) {
             ERR("Tried to read beyond end of file\n");
@@ -1240,6 +1253,9 @@ NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 lengt
                 Status = STATUS_NOT_IMPLEMENTED;
                 goto exit;
         }
+        
+        if (length == 0)
+            break;
 
         le = le->Flink;
     }
