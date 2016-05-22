@@ -1177,7 +1177,7 @@ static void clean_space_cache(device_extension* Vcb) {
         RemoveEntryList(&c->list_entry_changed);
         c->list_entry_changed.Flink = NULL;
         
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        ExReleaseResourceLite(&c->nonpaged->lock);
     }
 }
 
