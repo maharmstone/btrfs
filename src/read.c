@@ -1106,6 +1106,9 @@ NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 lengt
         
         le = le->Flink;
     }
+    
+    if (le == &fcb->extents)
+        le = le->Blink;
 
     while (le != &fcb->extents) {
         UINT64 len;
