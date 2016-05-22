@@ -644,6 +644,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+void flush_fcb(fcb* fcb, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);

@@ -221,7 +221,7 @@ end:
     return Status;
 }
 
-static void flush_subvol_fcbs(root* subvol) {
+static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = subvol->fcbs.Flink;
     
     if (IsListEmpty(&subvol->fcbs))
@@ -233,6 +233,8 @@ static void flush_subvol_fcbs(root* subvol) {
         
         if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
             CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+        
+        flush_fcb(fcb, rollback);
         
         le = le->Flink;
     }
@@ -253,6 +255,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     DIR_ITEM *di, *di2;
     ROOT_REF *rr, *rr2;
     INODE_ITEM* ii;
+    LIST_ENTRY* le;
     
     InitializeListHead(&rollback);
     
@@ -260,7 +263,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // flush open files on this subvol
     
-    flush_subvol_fcbs(subvol);
+    flush_subvol_fcbs(subvol, &rollback);
 
     // flush metadata
     
@@ -526,6 +529,22 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fcb->subvol->root_item.ctime = now;
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    
+    le = subvol->fcbs.Flink;
+    while (le != &subvol->fcbs) {
+        struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+        LIST_ENTRY* le2 = fcb2->extents.Flink;
+        
+        while (le2 != &fcb2->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            
+            ext->unique = FALSE;
+            
+            le2 = le2->Flink;
+        }
+        
+        le = le->Flink;
+    }
     
     if (Vcb->write_trees > 0)
         do_write(Vcb, &rollback);

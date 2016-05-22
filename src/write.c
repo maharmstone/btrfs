@@ -3766,7 +3766,7 @@ static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UIN
     return STATUS_SUCCESS;
 }
 
-static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
+void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
