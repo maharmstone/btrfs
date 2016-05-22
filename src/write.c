@@ -3772,7 +3772,7 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     INODE_ITEM* ii;
     
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+//     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->extents_changed) {
         BOOL b;
@@ -3991,7 +3991,8 @@ static void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     }
     
 end:
-    ExReleaseResourceLite(fcb->Header.Resource);
+//     ExReleaseResourceLite(fcb->Header.Resource);
+    return;
 }
 
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
@@ -7483,7 +7484,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    BOOL paging_lock = FALSE, fcb_lock = FALSE;
+    BOOL paging_lock = FALSE, fcb_lock = FALSE, tree_lock = FALSE;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
     
@@ -7542,16 +7543,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (paging_io) {
         if (!ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, wait))
-            return STATUS_PENDING;
+            goto end;
         else
             paging_lock = TRUE;
     }
     
     if (no_cache) {
         if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
-            return STATUS_PENDING;
+            goto end;
         else
             fcb_lock = TRUE;
+    
+        if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait))
+            goto end;
+        else
+            tree_lock = TRUE;
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
@@ -7900,11 +7906,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     Status = STATUS_SUCCESS;
     
 end:
-    if (FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
+    if (NT_SUCCESS(Status) && FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
         TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
         FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + (NT_SUCCESS(Status) ? *length : 0);
         TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
     }
+    
+    if (tree_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
@@ -7922,7 +7931,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     LARGE_INTEGER offset = IrpSp->Parameters.Write.ByteOffset;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
-    BOOL locked = FALSE;
+//     BOOL locked = FALSE;
 //     LARGE_INTEGER freq, time1, time2;
     LIST_ENTRY rollback;
     
@@ -7956,13 +7965,13 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
     TRACE("buf = %p\n", buf);
     
-    if (Irp->Flags & IRP_NOCACHE) {
-        if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
-            Status = STATUS_PENDING;
-            goto exit;
-        }
-        locked = TRUE;
-    }
+//     if (Irp->Flags & IRP_NOCACHE) {
+//         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
+//             Status = STATUS_PENDING;
+//             goto exit;
+//         }
+//         locked = TRUE;
+//     }
     
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
         WARN("tried to write to locked region\n");
@@ -7996,14 +8005,14 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     }
     
 exit:
-    if (locked) {
+//     if (locked) {
 //         if (NT_SUCCESS(Status))
 //             clear_rollback(&rollback);
 //         else
 //             do_rollback(Vcb, &rollback);
-        
-        ExReleaseResourceLite(&Vcb->tree_lock);
-    }
+//         
+//         ExReleaseResourceLite(&Vcb->tree_lock);
+//     }
     
 //     time2 = KeQueryPerformanceCounter(NULL);
     
