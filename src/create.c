@@ -1644,15 +1644,15 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-//     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-//         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
-//         
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("extend_file returned %08x\n", Status);
-//             free_fileref(fileref);
-//             return Status;
-//         }
-//     }
+    if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+        Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("extend_file returned %08x\n", Status);
+            free_fileref(fileref);
+            return Status;
+        }
+    }
     
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     insert_tree_item(Vcb, fcb->subvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
@@ -2637,15 +2637,15 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 goto exit;
             }
             
-//             if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-//                 Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
-//                 
-//                 if (!NT_SUCCESS(Status)) {
-//                     ERR("extend_file returned %08x\n", Status);
-//                     free_fileref(fileref);
-//                     goto exit;
-//                 }
-//             }
+            if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+                Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("extend_file returned %08x\n", Status);
+                    free_fileref(fileref);
+                    goto exit;
+                }
+            }
             
             mark_fcb_dirty(fileref->fcb);
             
