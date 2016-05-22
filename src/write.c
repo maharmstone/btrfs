@@ -5754,7 +5754,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         if (nextext->offset == start_data) {
             ext = nextext;
             break;
-        } else if (ext->offset > start_data)
+        } else if (nextext->offset > start_data)
             break;
         
         ext = nextext;
