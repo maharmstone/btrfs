@@ -6338,37 +6338,27 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
 
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) {
     UINT64 oldalloc, newalloc;
-    KEY searchkey;
-    traverse_ptr tp;
     BOOL cur_inline;
     NTSTATUS Status;
     
-    TRACE("(%p, %x, %p)\n", fcb, end, rollback);
+    TRACE("(%p, %p, %x, %u)\n", fcb, fileref, end, prealloc);
 
     if (fcb->ads)
-        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE, rollback) ;
+        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE, rollback);
     else {
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
+        extent* ext = IsListEmpty(&fcb->extents) ? NULL : CONTAINING_RECORD(fcb->extents.Blink, extent, list_entry);
         
         oldalloc = 0;
-        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-            EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+        if (ext) {
+            EXTENT_DATA* ed = ext->data;
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
             
-            if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            if (ext->datalen < sizeof(EXTENT_DATA)) {
+                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
                 return STATUS_INTERNAL_ERROR;
             }
             
-            oldalloc = tp.item->key.offset + (ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes);
+            oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes);
             cur_inline = ed->type == EXTENT_TYPE_INLINE;
         
             if (cur_inline && end > fcb->Vcb->max_inline) {
@@ -6376,6 +6366,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
                 UINT64 origlength, length;
                 UINT8* data;
+                UINT64 offset = ext->offset;
                 
                 TRACE("giving inline file proper extents\n");
                 
@@ -6385,8 +6376,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 if (!nocsum)
                     InitializeListHead(&changed_sector_list);
-                
-                delete_tree_item(fcb->Vcb, &tp, rollback);
                 
                 length = sector_align(origlength, fcb->Vcb->superblock.sector_size);
                 
@@ -6403,14 +6392,18 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 fcb->inode_item.st_blocks -= origlength;
                 
-                Status = insert_extent(fcb->Vcb, fcb, tp.item->key.offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
+                RemoveEntryList(&ext->list_entry);
+                ExFreePool(ext->data);
+                ExFreePool(ext);
+                
+                Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_extent returned %08x\n", Status);
                     ExFreePool(data);
                     return Status;
                 }
                 
-                oldalloc = tp.item->key.offset + length;
+                oldalloc = ext->offset + length;
                 
                 ExFreePool(data);
                 
@@ -6425,7 +6418,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 ULONG edsize;
                 
                 if (end > oldalloc) {
-                    edsize = sizeof(EXTENT_DATA) - 1 + end - tp.item->key.offset;
+                    UINT64 offset = ext->offset;
+                    
+                    edsize = sizeof(EXTENT_DATA) - 1 + end - ext->offset;
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
                     
                     if (!ed) {
@@ -6434,14 +6429,16 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                     }
                     
                     RtlZeroMemory(ed, edsize);
-                    RtlCopyMemory(ed, tp.item->data, tp.item->size);
+                    RtlCopyMemory(ed, ext->data, ext->datalen);
                     
-                    ed->decoded_size = end - tp.item->key.offset;
+                    ed->decoded_size = end - ext->offset;
                     
-                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                    RemoveEntryList(&ext->list_entry);
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
                     
-                    if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ed, edsize, NULL, rollback)) {
-                        ERR("error - failed to insert item\n");
+                    if (!add_extent_to_fcb(fcb, offset, ed, edsize)) {
+                        ERR("add_extent_to_fcb failed\n");
                         ExFreePool(ed);
                         return STATUS_INTERNAL_ERROR;
                     }
@@ -6533,9 +6530,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 ed->type = EXTENT_TYPE_INLINE;
                 
                 RtlZeroMemory(ed->data, end);
-
-                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, ed, edsize, NULL, rollback)) {
-                    ERR("error - failed to insert item\n");
+                
+                if (!add_extent_to_fcb(fcb, 0, ed, edsize)) {
+                    ERR("add_extent_to_fcb failed\n");
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
                 }

@@ -1895,10 +1895,12 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     
     InitializeListHead(&rollback);
     
-    if (fileref ? fileref->deleted : fcb->deleted)
-        return STATUS_FILE_CLOSED;
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    if (fileref ? fileref->deleted : fcb->deleted) {
+        Status = STATUS_FILE_CLOSED;
+        goto end;
+    }
     
     if (fcb->ads) {
         Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, FileObject, advance_only, &rollback);
@@ -1919,7 +1921,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     if (feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
         if (advance_only) {
             Status = STATUS_SUCCESS;
-            goto end2;
+            goto end;
         }
         
         TRACE("truncating file to %llx bytes\n", feofi->EndOfFile.QuadPart);
@@ -1933,7 +1935,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         if (Irp->Flags & IRP_PAGING_IO) {
             TRACE("paging IO tried to extend file size\n");
             Status = STATUS_SUCCESS;
-            goto end2;
+            goto end;
         }
         
         TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
@@ -1959,20 +1961,16 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     mark_fcb_dirty(fcb);
 
     Status = STATUS_SUCCESS;
-    
-end:
-    if (NT_SUCCESS(Status))
-        Status = consider_write(Vcb);
 
+end:
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
 
-end2:
-    ExReleaseResourceLite(&Vcb->tree_lock);
+    ExReleaseResourceLite(fcb->Header.Resource);
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 // static NTSTATUS STDCALL set_allocation_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
