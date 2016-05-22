@@ -831,6 +831,8 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
         runlength = RtlFindNextForwardRunClear(&bmp, index + runlength, &index);
     }
     
+    Status = STATUS_SUCCESS;
+    
 end:
     if (bmpbuf)
         ExFreePool(bmpbuf);
