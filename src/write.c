@@ -7686,11 +7686,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
             if (changed_length) {
                 if (fcb->inode_item.st_size > start_data) 
-                    Status = read_file_fcb(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL);
+                    Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL);
                 else
                     Status = STATUS_SUCCESS;
             } else
-                Status = read_file_fcb(fcb, data + bufhead, start_data, end_data - start_data, NULL);
+                Status = read_file(fcb, data + bufhead, start_data, end_data - start_data, NULL);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);

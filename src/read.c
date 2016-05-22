@@ -845,7 +845,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL read_file(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, BOOL check_csum, ULONG* pbr) {
+NTSTATUS STDCALL read_file_inode(device_extension* Vcb, root* subvol, UINT64 inode, UINT8* data, UINT64 start, UINT64 length, BOOL check_csum, ULONG* pbr) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, next_tp;
@@ -1075,7 +1075,7 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL read_file_fcb(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
+NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     UINT64 bytes_read = 0;
@@ -1389,7 +1389,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
-            Status = read_file_fcb(fcb, data, start, length, bytes_read);
+            Status = read_file(fcb, data, start, length, bytes_read);
         
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         
