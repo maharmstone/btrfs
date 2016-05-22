@@ -1895,6 +1895,8 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     
     InitializeListHead(&rollback);
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fileref ? fileref->deleted : fcb->deleted) {
@@ -1969,6 +1971,8 @@ end:
         do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;
 }

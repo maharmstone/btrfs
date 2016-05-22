@@ -7922,7 +7922,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     LARGE_INTEGER offset = IrpSp->Parameters.Write.ByteOffset;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
-//     BOOL locked = FALSE;
+    BOOL locked = FALSE;
 //     LARGE_INTEGER freq, time1, time2;
     LIST_ENTRY rollback;
     
@@ -7956,13 +7956,13 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
     TRACE("buf = %p\n", buf);
     
-//     if (Irp->Flags & IRP_NOCACHE) {
-//         if (!ExAcquireResourceExclusiveLite(&Vcb->tree_lock, wait)) {
-//             Status = STATUS_PENDING;
-//             goto exit;
-//         }
-//         locked = TRUE;
-//     }
+    if (Irp->Flags & IRP_NOCACHE) {
+        if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
+            Status = STATUS_PENDING;
+            goto exit;
+        }
+        locked = TRUE;
+    }
     
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
         WARN("tried to write to locked region\n");
@@ -7996,14 +7996,14 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     }
     
 exit:
-//     if (locked) {
+    if (locked) {
 //         if (NT_SUCCESS(Status))
 //             clear_rollback(&rollback);
 //         else
 //             do_rollback(Vcb, &rollback);
-//         
-//         ExReleaseResourceLite(&Vcb->tree_lock);
-//     }
+        
+        ExReleaseResourceLite(&Vcb->tree_lock);
+    }
     
 //     time2 = KeQueryPerformanceCounter(NULL);
     
