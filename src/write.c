@@ -46,7 +46,6 @@ typedef struct {
 } EXTENT_ITEM_SKINNY_METADATA;
 
 // static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
-static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback);
 
@@ -6512,7 +6511,55 @@ static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
 }
 
 static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
-    return is_file_prealloc_inode(fcb->Vcb, fcb->subvol, fcb->inode, start_data, end_data);
+    LIST_ENTRY* le;
+    extent* ext = NULL;
+    
+    le = fcb->extents.Flink;
+    
+    while (le != &fcb->extents) {
+        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (nextext->offset == start_data) {
+            ext = nextext;
+            break;
+        } else if (nextext->offset > start_data)
+            break;
+        
+        ext = nextext;
+        le = le->Flink;
+    }
+    
+    if (!ext)
+        return FALSE;
+    
+    le = &ext->list_entry;
+    
+    while (le != &fcb->extents) {
+        ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (ext->datalen < sizeof(EXTENT_DATA)) {
+            ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+            return FALSE;
+        }
+        
+        if (ext->offset < end_data && ext->data->type == EXTENT_TYPE_PREALLOC) {
+            EXTENT_DATA2* ed2;
+            
+            if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                return FALSE;
+            }
+            
+            ed2 = (EXTENT_DATA2*)ext->data->data;
+            
+            if (ext->offset + ed2->num_bytes >= start_data)
+                return TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
+    return FALSE;
 }
 
 static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
