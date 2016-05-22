@@ -5124,6 +5124,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext->offset = end_data;
                     newext->data = ned;
                     newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    newext->unique = ext->unique;
                     InsertHeadList(&ext->list_entry, &newext->list_entry);
                     
                     RemoveEntryList(&ext->list_entry);
@@ -5165,6 +5166,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext->offset = ext->offset;
                     newext->data = ned;
                     newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    newext->unique = ext->unique;
                     InsertHeadList(&ext->list_entry, &newext->list_entry);
                     
                     RemoveEntryList(&ext->list_entry);
@@ -5206,6 +5208,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext1->offset = ext->offset;
                     newext1->data = ned1;
                     newext1->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    newext1->unique = FALSE;
                     
                     size = ext->offset + len - end_data;
                     
@@ -5240,6 +5243,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext2->offset = end_data;
                     newext2->data = ned2;
                     newext2->datalen = sizeof(EXTENT_DATA) - 1 + size;
+                    newext2->unique = FALSE;
                     
                     InsertHeadList(&ext->list_entry, &newext1->list_entry);
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
@@ -5297,6 +5301,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext->offset = end_data;
                     newext->data = ned;
                     newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    newext->unique = ext->unique;
                     InsertHeadList(&ext->list_entry, &newext->list_entry);
                     
                     RemoveEntryList(&ext->list_entry);
@@ -5341,6 +5346,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext->offset = ext->offset;
                     newext->data = ned;
                     newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    newext->unique = ext->unique;
                     InsertHeadList(&ext->list_entry, &newext->list_entry);
                     
                     RemoveEntryList(&ext->list_entry);
@@ -5417,10 +5423,12 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     newext1->offset = ext->offset;
                     newext1->data = neda;
                     newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    newext1->unique = FALSE;
                     
                     newext2->offset = end_data;
                     newext2->data = nedb;
                     newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    newext2->unique = FALSE;
                     
                     InsertHeadList(&ext->list_entry, &newext1->list_entry);
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
@@ -5555,7 +5563,7 @@ BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode
     return TRUE;
 }
 
-static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize) {
+static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique) {
     extent* ext;
     LIST_ENTRY* le;
     
@@ -5568,6 +5576,7 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     ext->offset = offset;
     ext->data = ed;
     ext->datalen = edsize;
+    ext->unique = unique;
     
     le = fcb->extents.Flink;
     while (le != &fcb->extents) {
@@ -5626,7 +5635,7 @@ static BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT6
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!add_extent_to_fcb(fcb, start_data, ed, edsize)) {
+    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE)) {
         ERR("add_extent_to_fcb failed\n");
         ExFreePool(ed);
         return FALSE;
@@ -6419,8 +6428,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 ULONG edsize;
                 
                 if (end > oldalloc) {
-                    UINT64 offset = ext->offset;
-                    
                     edsize = sizeof(EXTENT_DATA) - 1 + end - ext->offset;
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
                     
@@ -6435,14 +6442,17 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                     ed->decoded_size = end - ext->offset;
                     
                     RemoveEntryList(&ext->list_entry);
-                    ExFreePool(ext->data);
-                    ExFreePool(ext);
                     
-                    if (!add_extent_to_fcb(fcb, offset, ed, edsize)) {
+                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique)) {
                         ERR("add_extent_to_fcb failed\n");
                         ExFreePool(ed);
+                        ExFreePool(ext->data);
+                        ExFreePool(ext);
                         return STATUS_INTERNAL_ERROR;
                     }
+                    
+                    ExFreePool(ext->data);
+                    ExFreePool(ext);
                 }
                 
                 TRACE("extending inline file (oldalloc = %llx, end = %llx)\n", oldalloc, end);
@@ -6532,7 +6542,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 RtlZeroMemory(ed->data, end);
                 
-                if (!add_extent_to_fcb(fcb, 0, ed, edsize)) {
+                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE)) {
                     ERR("add_extent_to_fcb failed\n");
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
@@ -7793,7 +7803,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength)) {
+            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE)) {
                 ERR("add_extent_to_fcb failed\n");
                 ExFreePool(data);
                 Status = STATUS_INTERNAL_ERROR;

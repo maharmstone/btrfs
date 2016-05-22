@@ -101,6 +101,7 @@ typedef struct {
     UINT64 offset;
     EXTENT_DATA* data;
     ULONG datalen;
+    BOOL unique;
     
     LIST_ENTRY list_entry;
 } extent;

@@ -767,6 +767,38 @@ static NTSTATUS add_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64
     return STATUS_SUCCESS;
 }
 
+static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = size;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (keycmp(&searchkey, &tp.item->key)) {
+        ERR("couldn't find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return 0;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        return 0;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    
+    return ei->refcount;
+}
+
 static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb) {
     KEY searchkey;
     traverse_ptr tp;
@@ -859,6 +891,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
         do {
             if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
                 extent* ext;
+                BOOL unique = FALSE;
                 
                 ed = (EXTENT_DATA*)tp.item->data;
                 
@@ -888,6 +921,8 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
                             free_fcb(fcb);
                             return Status;
                         }
+                        
+                        unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size) == 1;
                     }
                 }
                 
@@ -909,6 +944,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
                 ext->offset = tp.item->key.offset;
                 RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
                 ext->datalen = tp.item->size;
+                ext->unique = unique;
                 
                 InsertTailList(&fcb->extents, &ext->list_entry);
             }
