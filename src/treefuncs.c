@@ -804,7 +804,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     if (!tp.tree->write) {
         tp.tree->write = TRUE;
-        Vcb->write_trees++;
+        Vcb->need_write = TRUE;
     }
     
     if (ptp)
@@ -876,7 +876,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     
     if (!tp->tree->write) {
         tp->tree->write = TRUE;
-        Vcb->write_trees++;
+        Vcb->need_write = TRUE;
     }
     
     tp->tree->header.num_items--;

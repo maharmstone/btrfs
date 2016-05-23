@@ -1250,7 +1250,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
         InsertTailList(&Vcb->trees, &t->list_entry);
         
         t->write = TRUE;
-        Vcb->write_trees++;
+        Vcb->need_write = TRUE;
     }
     
     *rootptr = r;
@@ -2357,7 +2357,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
-        if (Vcb->write_trees > 0)
+        if (Vcb->need_write)
             do_write(Vcb, &rollback);
         
         free_trees(Vcb);
@@ -3691,7 +3691,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExInitializeResourceLite(&Vcb->tree_lock);
     Vcb->open_trees = 0;
-    Vcb->write_trees = 0;
+    Vcb->need_write = FALSE;
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
     ExInitializeResourceLite(&Vcb->DirResource);

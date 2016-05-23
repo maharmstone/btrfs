@@ -366,7 +366,7 @@ typedef struct _device_extension {
     PNOTIFY_SYNC NotifySync;
     LIST_ENTRY DirNotifyList;
     LONG open_trees;
-    ULONG write_trees;
+    BOOL need_write;
 //     ERESOURCE LogToPhysLock;
 //     UINT64 chunk_root_phys_addr;
     UINT64 root_tree_phys_addr;

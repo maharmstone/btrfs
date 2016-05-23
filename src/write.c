@@ -1215,10 +1215,7 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         if (t->write) {
             if (t->parent) {
-                if (!t->parent->write) {
-                    t->parent->write = TRUE;
-                    Vcb->write_trees++;
-                }
+                t->parent->write = TRUE;
             } else if (t->root != Vcb->chunk_root && t->root != Vcb->root_root) {
                 KEY searchkey;
                 traverse_ptr tp;
@@ -1257,10 +1254,7 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                         return STATUS_INTERNAL_ERROR;
                     }
                 } else {
-                    if (!tp.tree->write) {
-                        tp.tree->write = TRUE;
-                        Vcb->write_trees++;
-                    }
+                    tp.tree->write = TRUE;
                 }
             }
         }
@@ -1278,11 +1272,7 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     
     while (t->parent) {
         t = t->parent;
-        
-        if (!t->write) {
-            t->write = TRUE;
-            Vcb->write_trees++;
-        }
+        t->write = TRUE;
     }
     
     if (t->root == Vcb->root_root || t->root == Vcb->chunk_root)
@@ -1303,10 +1293,7 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
         return;
     }
     
-    if (!tp.tree->write) {
-        tp.tree->write = TRUE;
-        Vcb->write_trees++;
-    }
+    tp.tree->write = TRUE;
 }
 
 static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
@@ -2666,7 +2653,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     t->size = size;
     t->header.num_items = numitems;
     nt->write = TRUE;
-    Vcb->write_trees++;
     
     InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &nt->list_entry);
@@ -2793,7 +2779,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->paritem = td;
     
     pt->write = TRUE;
-    Vcb->write_trees++;
 
     t->root->treeholder.tree = pt;
     
@@ -2970,10 +2955,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         
         par = next_tree->parent;
         while (par) {
-            if (!par->write) {
-                par->write = TRUE;
-                Vcb->write_trees++;
-            }
+            par->write = TRUE;
             par = par->parent;
         }
         
@@ -3043,10 +3025,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         
         par = next_tree;
         while (par) {
-            if (!par->write) {
-                par->write = TRUE;
-                Vcb->write_trees++;
-            }
+            par->write = TRUE;
             par = par->parent;
         }
     }
@@ -4040,7 +4019,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     
     // If only changing superblock, e.g. changing label, we still need to rewrite
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.
-    if (Vcb->write_trees == 0) {
+    if (!Vcb->root_root->treeholder.tree || !Vcb->root_root->treeholder.tree->write) {
         KEY searchkey;
         traverse_ptr tp;
         
@@ -4054,10 +4033,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             return Status;
         }
         
-        if (!Vcb->root_root->treeholder.tree->write) {
-            Vcb->root_root->treeholder.tree->write = TRUE;
-            Vcb->write_trees++;
-        }
+        Vcb->root_root->treeholder.tree->write = TRUE;
     }
     
     do {
@@ -4129,7 +4105,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         le = le->Flink;
     }
     
-    Vcb->write_trees = 0;
+    Vcb->need_write = FALSE;
     
     while (!IsListEmpty(&Vcb->drop_roots)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->drop_roots);

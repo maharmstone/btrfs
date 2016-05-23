@@ -267,7 +267,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     // flush metadata
     
-    if (Vcb->write_trees > 0)
+    if (Vcb->need_write)
         do_write(Vcb, &rollback);
     
     free_trees(Vcb);
@@ -398,10 +398,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    if (!subvol->treeholder.tree->write) {
-        subvol->treeholder.tree->write = TRUE;
-        Vcb->write_trees++;
-    }
+    subvol->treeholder.tree->write = TRUE;
     
     // add DIR_ITEM
     
@@ -546,8 +543,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         le = le->Flink;
     }
     
-    if (Vcb->write_trees > 0)
-        do_write(Vcb, &rollback);
+    do_write(Vcb, &rollback);
     
     free_trees(Vcb);
     

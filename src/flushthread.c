@@ -28,7 +28,7 @@ static void do_flush(device_extension* Vcb) {
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
-    if (Vcb->write_trees > 0)
+    if (Vcb->need_write)
         do_write(Vcb, &rollback);
     
     free_trees(Vcb);
