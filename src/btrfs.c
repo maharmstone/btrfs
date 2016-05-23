@@ -1409,6 +1409,8 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_alloc_chunk(Vcb);
 //     test_space_list(Vcb);
     
+    Vcb->need_write = TRUE;
+    
     Status = consider_write(Vcb);
     
 release:  
