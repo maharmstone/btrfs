@@ -3990,6 +3990,8 @@ void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     }
     
 end:
+    fcb->dirty = FALSE;
+    
 //     ExReleaseResourceLite(fcb->Header.Resource);
     return;
 }
@@ -4002,12 +4004,14 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     TRACE("(%p)\n", Vcb);
     
     while (!IsListEmpty(&Vcb->dirty_fcbs)) {
-        struct _fcb* fcb;
-        le = RemoveHeadList(&Vcb->dirty_fcbs);
-        fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_dirty);
+        dirty_fcb* dirt;
         
-        flush_fcb(fcb, rollback);
-        free_fcb(fcb);
+        le = RemoveHeadList(&Vcb->dirty_fcbs);
+        dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
+        
+        flush_fcb(dirt->fcb, rollback);
+        free_fcb(dirt->fcb);
+        ExFreePool(dirt);
     }
     
     ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);

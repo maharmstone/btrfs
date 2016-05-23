@@ -136,6 +136,7 @@ typedef struct _fcb {
     LIST_ENTRY extents;
     LIST_ENTRY extent_backrefs;
     
+    BOOL dirty;
     BOOL sd_dirty;
     BOOL atts_changed, atts_deleted;
     BOOL extents_changed;
@@ -146,8 +147,12 @@ typedef struct _fcb {
     ANSI_STRING adsxattr;
     
     LIST_ENTRY list_entry;
-    LIST_ENTRY list_entry_dirty;
 } fcb;
+
+typedef struct {
+    fcb* fcb;
+    LIST_ENTRY list_entry;
+} dirty_fcb;
 
 struct _file_ref;
 
@@ -382,6 +387,7 @@ typedef struct _device_extension {
     LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
     LIST_ENTRY dirty_fcbs;
+    KSPIN_LOCK dirty_fcbs_lock;
     ERESOURCE checksum_lock;
     ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;

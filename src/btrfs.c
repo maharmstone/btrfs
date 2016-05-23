@@ -1947,9 +1947,20 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
 }
 
 void mark_fcb_dirty(fcb* fcb) {
-    if (!fcb->list_entry_dirty.Flink) {
-        InsertTailList(&fcb->Vcb->dirty_fcbs, &fcb->list_entry_dirty);
+    if (!fcb->dirty) {
+        dirty_fcb* dirt = ExAllocatePoolWithTag(NonPagedPool, sizeof(dirty_fcb), ALLOC_TAG);
+        
+        if (!dirt) {
+            ExFreePool("out of memory\n");
+            return;
+        }
+        
+        fcb->dirty = TRUE;
         fcb->refcount++;
+        
+        dirt->fcb = fcb;
+        
+        ExInterlockedInsertTailList(&fcb->Vcb->dirty_fcbs, &dirt->list_entry, &fcb->Vcb->dirty_fcbs_lock);
     }
 }
 
@@ -3817,6 +3828,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->trees);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->sector_checksums);
+    
+    KeInitializeSpinLock(&Vcb->dirty_fcbs_lock);
     
     ExInitializeResourceLite(&Vcb->checksum_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
