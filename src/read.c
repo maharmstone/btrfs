@@ -1409,7 +1409,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     fcb* fcb;
-    BOOL locked = FALSE;
+    BOOL tree_lock = FALSE, fcb_lock = FALSE;
     
     FsRtlEnterFileSystem();
     
@@ -1442,27 +1442,31 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
-        Status = STATUS_PENDING;
-        IoMarkIrpPending(Irp);
-        goto exit;
-    }
-    
     if (Irp->Flags & IRP_NOCACHE) {
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, IoIsOperationSynchronous(Irp))) {
             Status = STATUS_PENDING;
             goto exit;
         }
-        locked = TRUE;
+        
+        tree_lock = TRUE;
+    
+        if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
+            Status = STATUS_PENDING;
+            IoMarkIrpPending(Irp);
+            goto exit;
+        }
+        
+        fcb_lock = TRUE;
     }
     
     Status = do_read(Irp, IoIsOperationSynchronous(Irp), &bytes_read);
     
 exit:
-    if (locked)
-        ExReleaseResourceLite(&Vcb->tree_lock);
+    if (fcb_lock)
+        ExReleaseResourceLite(fcb->Header.Resource);
     
-    ExReleaseResourceLite(fcb->Header.Resource);
+    if (tree_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
 
     Irp->IoStatus.Status = Status;
     

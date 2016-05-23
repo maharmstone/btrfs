@@ -7565,15 +7565,15 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (no_cache) {
-        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
-            goto end;
-        else
-            fcb_lock = TRUE;
-    
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait))
             goto end;
         else
             tree_lock = TRUE;
+        
+        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
+            goto end;
+        else
+            fcb_lock = TRUE;
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
@@ -7928,11 +7928,11 @@ end:
         TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
     }
     
-    if (tree_lock)
-        ExReleaseResourceLite(&Vcb->tree_lock);
-    
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
+    
+    if (tree_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (paging_lock)
         ExReleaseResourceLite(fcb->Header.PagingIoResource);
