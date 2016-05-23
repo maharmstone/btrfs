@@ -1964,6 +1964,8 @@ void mark_fcb_dirty(fcb* fcb) {
         
         ExInterlockedInsertTailList(&fcb->Vcb->dirty_fcbs, &dirt->list_entry, &fcb->Vcb->dirty_fcbs_lock);
     }
+    
+    fcb->Vcb->need_write = TRUE;
 }
 
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
