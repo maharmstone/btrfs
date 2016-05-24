@@ -140,6 +140,7 @@ typedef struct _fcb {
     BOOL sd_dirty;
     BOOL atts_changed, atts_deleted;
     BOOL extents_changed;
+    BOOL created;
     
     BOOL ads;
     UINT32 adssize;

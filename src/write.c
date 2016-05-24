@@ -3749,6 +3749,7 @@ void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     KEY searchkey;
     NTSTATUS Status;
     INODE_ITEM* ii;
+    UINT64 ii_offset;
     
 //     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
@@ -3889,22 +3890,29 @@ void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
         fcb->extents_changed = FALSE;
     }
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
+    if (!fcb->created) {
+        searchkey.obj_id = fcb->inode;
+        searchkey.obj_type = TYPE_INODE_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+            ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+            goto end;
+        }
+        
+        delete_tree_item(fcb->Vcb, &tp, rollback);
+        
+        ii_offset = tp.item->key.offset;
+    } else
+        ii_offset = 0;
     
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        goto end;
-    }
-    
-    delete_tree_item(fcb->Vcb, &tp, rollback);
+    fcb->created = FALSE;
         
     if (fcb->deleted) {
         traverse_ptr tp2;
@@ -3935,7 +3943,7 @@ void flush_fcb(fcb* fcb, LIST_ENTRY* rollback) {
     
     RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
     
-    if (!insert_tree_item(fcb->Vcb, fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+    if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
         ERR("insert_tree_item failed\n");
         goto end;
     }

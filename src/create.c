@@ -1377,9 +1377,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     char* utf8 = NULL;
     UINT32 crc32;
     UINT64 dirpos, inode;
-    KEY searchkey;
-    traverse_ptr tp;
-    INODE_ITEM *dirii, *ii;
     UINT8 type;
     ULONG disize;
     DIR_ITEM *di, *di2;
@@ -1433,34 +1430,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     parfileref->fcb->inode_item.st_ctime = now;
     parfileref->fcb->inode_item.st_mtime = now;
     
-    searchkey.obj_id = parfileref->fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        ExFreePool(utf8);
-        return Status;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("error - could not find INODE_ITEM for parent directory %llx in subvol %llx\n", parfileref->fcb->inode, parfileref->fcb->subvol->id);
-        ExFreePool(utf8);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    dirii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!dirii) {
-        ERR("out of memory\n");
-        ExFreePool(utf8);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(dirii, &parfileref->fcb->inode_item, sizeof(INODE_ITEM));
-    delete_tree_item(Vcb, &tp, rollback);
-    
-    insert_tree_item(Vcb, parfileref->fcb->subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, dirii, sizeof(INODE_ITEM), NULL, rollback);
+    mark_fcb_dirty(parfileref->fcb);
     
     if (parfileref->fcb->subvol->lastinode == 0)
         get_last_inode(Vcb, parfileref->fcb->subvol);
@@ -1637,13 +1607,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     RtlCopyMemory(&fileref->full_filename.Buffer[(parfileref->full_filename.Length / sizeof(WCHAR)) + (parfileref->full_filename.Length == sizeof(WCHAR) ? 0 : 1)],
                   fileref->filepart.Buffer, fileref->filepart.Length);
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        free_fileref(fileref);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
         
@@ -1654,8 +1617,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         }
     }
     
-    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    insert_tree_item(Vcb, fcb->subvol, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback);
+    fcb->created = TRUE;
+    mark_fcb_dirty(fcb);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
