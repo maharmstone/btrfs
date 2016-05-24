@@ -6468,39 +6468,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
     return STATUS_SUCCESS;
 }
 
-static UINT64 get_extent_item_refcount(device_extension* Vcb, UINT64 address) {
-    KEY searchkey;
-    traverse_ptr tp;
-    EXTENT_ITEM* ei;
-    UINT64 rc;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return 0;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("error - could not find EXTENT_ITEM for %llx\n", address);
-        return 0;
-    }
-    
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-        return 0;
-    }
-    
-    ei = (EXTENT_ITEM*)tp.item->data;
-    rc = ei->refcount;
-    
-    return rc;
-}
-
 static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
     LIST_ENTRY* le;
     extent* ext = NULL;
@@ -7064,137 +7031,124 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
+static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    EXTENT_DATA* ed;
-    BOOL b, do_cow;
-    EXTENT_DATA2* eds;
-    UINT64 size, new_start, new_end, last_write = 0;
+    UINT64 size, new_start, new_end, last_written = start_data;
+    extent* ext = NULL;
+    LIST_ENTRY* le;
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data, changed_sector_list);
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, data, changed_sector_list);
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
-    searchkey.offset = start_data;
+    le = fcb->extents.Flink;
     
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
+    while (le != &fcb->extents) {
+        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (nextext->offset == start_data) {
+            ext = nextext;
+            break;
+        } else if (nextext->offset > start_data)
+            break;
+        
+        ext = nextext;
+        le = le->Flink;
     }
     
-    if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset > start_data) {
-        ERR("previous EXTENT_DATA not found (found %llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    if (!ext)
+        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, rollback);
     
-    do {
-        if (tp.item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
+    le = &ext->list_entry;
+    
+    while (le != &fcb->extents) {
+        EXTENT_DATA* ed;
+        EXTENT_DATA2* ed2;
+        BOOL do_cow;
+        LIST_ENTRY* le2 = le->Flink;
+        
+        ext = CONTAINING_RECORD(le, extent, list_entry);
+        ed = ext->data;
+        
+        if (ext->offset >= end_data)
+            break;
+        
+        if (ext->datalen < sizeof(EXTENT_DATA)) {
+            ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+            return STATUS_INTERNAL_ERROR;
         }
         
-        ed = (EXTENT_DATA*)tp.item->data;
-        
-        if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
-        
-        eds = (EXTENT_DATA2*)&ed->data[0];
-        
-        b = find_next_item(Vcb, &tp, &next_tp, TRUE);
-        
-        switch (ed->type) {
-            case EXTENT_TYPE_REGULAR:
-            {
-                UINT64 rc = get_extent_item_refcount(Vcb, eds->address);
-                
-                if (rc == 0) {
-                    ERR("get_extent_item_refcount failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
-                }
-                
-                do_cow = rc > 1;
-                break;
+        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+            if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                return STATUS_INTERNAL_ERROR;
             }
-                
-            case EXTENT_TYPE_INLINE:
-                do_cow = TRUE;
-                break;
-                
-            case EXTENT_TYPE_PREALLOC:
-                FIXME("FIXME - handle prealloc extents\n"); // FIXME
-                Status = STATUS_NOT_SUPPORTED;
-                goto end;
-                
-            default:
-                ERR("error - unknown extent type %x\n", ed->type);
-                Status = STATUS_NOT_SUPPORTED;
-                goto end;
+            
+            ed2 = (EXTENT_DATA2*)ed->data;
+        }
+        
+        if (ed->type == EXTENT_TYPE_REGULAR) {
+            do_cow = !ext->unique;
+        } else {
+            do_cow = TRUE;
         }
         
         if (ed->compression != BTRFS_COMPRESSION_NONE) {
             FIXME("FIXME: compression not yet supported\n");
-            Status = STATUS_NOT_SUPPORTED;
-            goto end;
+            return STATUS_NOT_SUPPORTED;
         }
         
         if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
             WARN("encryption not supported\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
+            return STATUS_NOT_SUPPORTED;
         }
         
         if (ed->encoding != BTRFS_ENCODING_NONE) {
             WARN("other encodings not supported\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
+            return STATUS_NOT_SUPPORTED;
         }
         
-        size = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : eds->num_bytes;
+        size = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
         
-        TRACE("extent: start = %llx, length = %llx\n", tp.item->key.offset, size);
+        TRACE("extent: start = %llx, length = %llx\n", ext->offset, size);
         
-        new_start = tp.item->key.offset < start_data ? start_data : tp.item->key.offset;
-        new_end = tp.item->key.offset + size > start_data + length ? (start_data + length) : (tp.item->key.offset + size);
+        new_start = ext->offset < start_data ? start_data : ext->offset;
+        new_end = ext->offset + size > end_data ? end_data : (ext->offset + size);
         
         TRACE("new_start = %llx\n", new_start);
         TRACE("new_end = %llx\n", new_end);
         
-        if (do_cow) {
+        if (ed->type == EXTENT_TYPE_PREALLOC) {
+            Status = do_prealloc_write(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_prealloc_write returned %08x\n", Status);
+                return Status;
+            }
+        } else if (do_cow) {
             TRACE("doing COW write\n");
             
             Status = excise_extents(Vcb, fcb, new_start, new_start + new_end, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - excise_extents returned %08x\n", Status);
-                goto end;
+                return Status;
             }
             
             Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - insert_extent returned %08x\n", Status);
-                goto end;
+                return Status;
             }
         } else {
-            UINT64 writeaddr;
+            UINT64 writeaddr = ed2->address + ed2->offset + new_start - ext->offset;
             
-            writeaddr = eds->address + eds->offset + new_start - tp.item->key.offset;
             TRACE("doing non-COW write to %llx\n", writeaddr);
             
             Status = write_data_complete(Vcb, writeaddr, (UINT8*)data + new_start - start_data, new_end - new_start);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - write_data returned %08x\n", Status);
-                goto end;
+                return Status;
             }
             
             if (changed_sector_list) {
@@ -7204,8 +7158,7 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
                 sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
                 if (!sc) {
                     ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 sc->ol.key = writeaddr;
@@ -7216,8 +7169,7 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
                 if (!sc->checksums) {
                     ERR("out of memory\n");
                     ExFreePool(sc);
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 for (i = 0; i < sc->length; i++) {
@@ -7228,34 +7180,24 @@ static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_dat
             }
         }
         
-        last_write = new_end;
+        last_written = new_end;
         
-        if (b) {
-            tp = next_tp;
-            
-            if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_EXTENT_DATA || tp.item->key.offset >= start_data + length)
-                b = FALSE;
-        }
-    } while (b);
+        le = le2;
+    }
     
-    if (last_write < start_data + length) {
-        new_start = last_write;
-        new_end = start_data + length;
-        
-        TRACE("new_start = %llx\n", new_start);
-        TRACE("new_end = %llx\n", new_end);
-        
-        Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, rollback);
-            
+    if (last_written < end_data) {
+        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, rollback);
+                
         if (!NT_SUCCESS(Status)) {
-            ERR("error - insert_extent returned %08x\n", Status);
-            goto end;
+            ERR("do_cow_write returned %08x\n", Status);
+            return Status;
         }
     }
 
     Status = STATUS_SUCCESS;
     
-end:
+    fcb->extents_changed = TRUE;
+    mark_fcb_dirty(fcb);
     
     return Status;
 }
@@ -7824,7 +7766,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             ExFreePool(data);
         } else {
-            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data - start_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - do_nocow_write returned %08x\n", Status);
