@@ -5881,11 +5881,11 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     return STATUS_DISK_FULL;
 }
 
-NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     
-    TRACE("(%p, %llx, %llx, %llx, %llx)\n", Vcb, r->id, inode, start, length);
+    TRACE("((%llx, %llx), %llx, %llx)\n", fcb->subvol->id, fcb->inode, start, length);
     
     ed = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
     if (!ed) {
@@ -5893,7 +5893,7 @@ NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    ed->generation = Vcb->superblock.generation;
+    ed->generation = fcb->Vcb->superblock.generation;
     ed->decoded_size = length;
     ed->compression = BTRFS_COMPRESSION_NONE;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
@@ -5905,12 +5905,14 @@ NTSTATUS insert_sparse_extent(device_extension* Vcb, root* r, UINT64 inode, UINT
     ed2->size = 0;
     ed2->offset = 0;
     ed2->num_bytes = length;
-    
-    if (!insert_tree_item(Vcb, r, inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
-        ERR("insert_tree_item failed\n");
-        ExFreePool(ed);
+
+    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE)) {
+        ERR("add_extent_to_fcb failed\n");
         return STATUS_INTERNAL_ERROR;
     }
+    
+    fcb->extents_changed = TRUE;
+    mark_fcb_dirty(fcb);
     
     return STATUS_SUCCESS;
 }
@@ -5971,12 +5973,12 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         
         if (!lastext || !ed || lastext->offset + len < start_data) {
             if (!lastext)
-                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, 0, start_data, rollback);
+                Status = insert_sparse_extent(fcb, 0, start_data);
             else if (!ed) {
                 ERR("extent at %llx was %u bytes, expected at least %u\n", lastext->offset, lastext->datalen, sizeof(EXTENT_DATA));
                 return STATUS_INTERNAL_ERROR;
             } else
-                Status = insert_sparse_extent(Vcb, fcb->subvol, fcb->inode, lastext->offset + len, start_data - lastext->offset - len, rollback);
+                Status = insert_sparse_extent(fcb, lastext->offset + len, start_data - lastext->offset - len);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
@@ -6382,7 +6384,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                             return Status;
                         }
                     } else {
-                        Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, oldalloc, newalloc - oldalloc, rollback);
+                        Status = insert_sparse_extent(fcb, oldalloc, newalloc - oldalloc);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_sparse_extent returned %08x\n", Status);
@@ -6411,7 +6413,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                         return Status;
                     }
                 } else {
-                    Status = insert_sparse_extent(fcb->Vcb, fcb->subvol, fcb->inode, 0, newalloc, rollback);
+                    Status = insert_sparse_extent(fcb, 0, newalloc);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_sparse_extent returned %08x\n", Status);
