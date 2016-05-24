@@ -1748,11 +1748,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ULONG xapreflen = strlen(xapref), fnlen;
         LARGE_INTEGER time;
         BTRFS_TIME now;
-        KEY searchkey;
-        traverse_ptr tp;
-        INODE_ITEM* ii;
         ULONG utf8len;
-        UINT64 offset;
 #ifdef DEBUG_FCB_REFCOUNTS
         LONG rc;
 #endif
@@ -1941,36 +1937,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         parfileref->fcb->inode_item.sequence++;
         parfileref->fcb->inode_item.st_ctime = now;
         
-        searchkey.obj_id = parfileref->fcb->inode;
-        searchkey.obj_type = TYPE_INODE_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            free_fileref(fileref);
-            goto end;
-        }
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            delete_tree_item(Vcb, &tp, rollback);
-            offset = tp.item->key.offset;
-        } else {
-            WARN("could not find INODE_ITEM for inode %llx in subvol %llx\n", searchkey.obj_id, parfileref->fcb->subvol->id);
-            offset = 0;
-        }
-        
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-        if (!ii) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            free_fileref(fileref);
-            goto end;
-        }
-    
-        RtlCopyMemory(ii, &parfileref->fcb->inode_item, sizeof(INODE_ITEM));
-        
-        insert_tree_item(Vcb, parfileref->fcb->subvol, parfileref->fcb->inode, TYPE_INODE_ITEM, offset, ii, sizeof(INODE_ITEM), NULL, rollback);
+        mark_fcb_dirty(parfileref->fcb);
         
         parfileref->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         parfileref->fcb->subvol->root_item.ctime = now;
