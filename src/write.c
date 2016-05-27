@@ -3461,7 +3461,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     TRACE("dropping chunk %llx\n", c->offset);
     
     // remove free space cache
-    if (c->cache_inode != 0) {
+    if (c->cache) {
         searchkey.obj_id = c->cache_inode;
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0;
@@ -3472,6 +3472,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             ERR("remove_free_space_inode returned %08x\n", Status);
             return Status;
         }
+        
+        free_fcb(c->cache);
         
         searchkey.obj_id = FREE_SPACE_CACHE_ID;
         searchkey.obj_type = 0;

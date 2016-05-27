@@ -799,7 +799,7 @@ static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     return ei->refcount;
 }
 
-static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb) {
+NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -860,7 +860,7 @@ static NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT
     if (tp.item->size > 0)
         RtlCopyMemory(&fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
     
-    fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8->Buffer[0] == '.', FALSE);
+    fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE);
     
     fcb_get_sd(fcb, parent);
     

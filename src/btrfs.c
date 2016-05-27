@@ -2375,8 +2375,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     free_fcb(Vcb->volume_fcb);
     free_fileref(Vcb->root_fileref);
-    
-    // FIXME - free any open fcbs?
 
     while (!IsListEmpty(&Vcb->roots)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->roots);
@@ -2408,12 +2406,17 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         if (c->devices)
             ExFreePool(c->devices);
         
+        if (c->cache)
+            free_fcb(c->cache);
+        
         ExDeleteResourceLite(&c->nonpaged->lock);
         
         ExFreePool(c->nonpaged);
         ExFreePool(c->chunk_item);
         ExFreePool(c);
     }
+    
+    // FIXME - free any open fcbs?
     
     while (!IsListEmpty(&Vcb->sector_checksums)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->sector_checksums);
@@ -3236,6 +3239,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
+                c->cache = NULL;
                 c->cache_inode = 0;
                 c->cache_size = 0;
                 

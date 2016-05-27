@@ -184,10 +184,9 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offse
 
 static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
-    traverse_ptr tp, tp2;
+    traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
     UINT64 inode, num_sectors, num_valid_sectors, i, *generation;
-    INODE_ITEM* ii;
     UINT8* data;
     NTSTATUS Status;
     UINT32 *checksums, crc32;
@@ -196,6 +195,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     LIST_ENTRY* le;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
+    // FIXME - remove INODE_ITEM etc. if cache invalid for whatever reason
     
     TRACE("(%p, %llx)\n", Vcb, c->offset);
     
@@ -227,56 +227,42 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     inode = fsi->key.obj_id;
-    
-    searchkey = fsi->key;
-
     num_entries = fsi->num_entries;
     num_bitmaps = fsi->num_bitmaps;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey, FALSE);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
+        ERR("open_fcb returned %08x\n", Status);
         return Status;
     }
     
-    if (keycmp(&tp2.item->key, &searchkey)) {
-        WARN("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return STATUS_NOT_FOUND;
-    }
+    c->cache->inode_item.flags |= BTRFS_INODE_NODATACOW;
     
-    if (tp2.item->size < sizeof(INODE_ITEM)) {
-        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(INODE_ITEM));
-        return STATUS_NOT_FOUND;
-    }
+    c->cache_size = c->cache->inode_item.st_size;
+    c->cache_inode = inode;
     
-    ii = (INODE_ITEM*)tp2.item->data;
-    
-    if (ii->st_size == 0) {
-        ERR("inode %llx had a length of 0\n", inode);
-        return STATUS_NOT_FOUND;
-    }
-    
-    c->cache_size = ii->st_size;
-    c->cache_inode = fsi->key.obj_id;
-    
-    size = sector_align(ii->st_size, Vcb->superblock.sector_size);
+    size = sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
     
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
     
     if (!data) {
         ERR("out of memory\n");
+        free_fcb(c->cache);
+        c->cache = NULL;
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_file_inode(Vcb, Vcb->root_root, inode, data, 0, ii->st_size, !(ii->flags & BTRFS_INODE_NODATASUM), NULL);
+    Status = read_file(c->cache, data, 0, c->cache->inode_item.st_size, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
         ExFreePool(data);
+        free_fcb(c->cache);
+        c->cache = NULL;
         return Status;
     }
     
-    if (size > ii->st_size)
-        RtlZeroMemory(&data[ii->st_size], size - ii->st_size);
+    if (size > c->cache->inode_item.st_size)
+        RtlZeroMemory(&data[c->cache->inode_item.st_size], size - c->cache->inode_item.st_size);
     
     num_sectors = size / Vcb->superblock.sector_size;
     
@@ -285,6 +271,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (*generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
         ExFreePool(data);
+        free_fcb(c->cache);
+        c->cache = NULL;
         return STATUS_NOT_FOUND;
     }
     
@@ -295,6 +283,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
         ExFreePool(data);
+        free_fcb(c->cache);
+        c->cache = NULL;
         return STATUS_NOT_FOUND;
     }
     
@@ -311,6 +301,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         if (crc32 != checksums[i]) {
             WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
             ExFreePool(data);
+            free_fcb(c->cache);
+            c->cache = NULL;
             return STATUS_NOT_FOUND;
         }
     }
