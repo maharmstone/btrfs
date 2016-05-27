@@ -704,8 +704,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->size = cisize;
     c->offset = logaddr;
     c->used = c->oldused = 0;
+    c->cache = NULL;
     c->cache_size = 0;
-    c->cache_inode = 0;
     InitializeListHead(&c->space);
     InitializeListHead(&c->deleting);
     
@@ -3462,7 +3462,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     
     // remove free space cache
     if (c->cache) {
-        searchkey.obj_id = c->cache_inode;
+        searchkey.obj_id = c->cache->inode;
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0;
 
@@ -3641,12 +3641,12 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
         used_minus_cache = c->used;
         
         // subtract self-hosted cache
-        if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache_size == c->used && c->cache_inode != 0) {
+        if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache_size == c->used && c->cache) {
             KEY searchkey;
             traverse_ptr tp, next_tp;
             BOOL b;
             
-            searchkey.obj_id = c->cache_inode;
+            searchkey.obj_id = c->cache->inode;
             searchkey.obj_type = TYPE_EXTENT_DATA;
             searchkey.offset = 0;
             

@@ -310,7 +310,6 @@ typedef struct {
     device** devices;
     fcb* cache;
     UINT64 cache_size;
-    UINT64 cache_inode;
     LIST_ENTRY space;
     LIST_ENTRY deleting;
     chunk_nonpaged* nonpaged;

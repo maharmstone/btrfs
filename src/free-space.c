@@ -239,7 +239,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     c->cache->inode_item.flags |= BTRFS_INODE_NODATACOW;
     
     c->cache_size = c->cache->inode_item.st_size;
-    c->cache_inode = inode;
     
     size = sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
     
@@ -561,63 +560,68 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache_size, new_cache_size);
     
     if (new_cache_size > c->cache_size) {
-        if (c->cache_size == 0) {
-            INODE_ITEM* ii;
+        if (!c->cache) {
             FREE_SPACE_ITEM* fsi;
-            UINT64 inode;
             
             // create new inode
             
-            ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-            if (!ii) {
+            c->cache = create_fcb();
+            if (!c->cache) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
+                
+            c->cache->Vcb = Vcb;
             
-            RtlZeroMemory(ii, sizeof(INODE_ITEM));
-            ii->st_size = new_cache_size;
-            ii->st_blocks = new_cache_size;
-            ii->st_nlink = 1;
-            ii->st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
-            ii->flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
+            c->cache->inode_item.st_size = new_cache_size;
+            c->cache->inode_item.st_blocks = new_cache_size;
+            c->cache->inode_item.st_nlink = 1;
+            c->cache->inode_item.st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
+            c->cache->inode_item.flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
             
-            if (Vcb->root_root->lastinode == 0)
-                get_last_inode(Vcb, Vcb->root_root);
+            c->cache->Header.IsFastIoPossible = fast_io_possible(c->cache);
+            c->cache->Header.AllocationSize.QuadPart = 0;
+            c->cache->Header.FileSize.QuadPart = 0;
+            c->cache->Header.ValidDataLength.QuadPart = 0;
             
-            inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
-
-            if (!insert_tree_item(Vcb, Vcb->root_root, inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
-                ERR("insert_tree_item failed\n");
-                return STATUS_INTERNAL_ERROR;
-            }
+            c->cache->subvol = Vcb->root_root;
+            c->cache->inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+            c->cache->type = BTRFS_TYPE_FILE;
+            c->cache->created = TRUE;
             
             // create new free space entry
             
             fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_ITEM), ALLOC_TAG);
             if (!fsi) {
                 ERR("out of memory\n");
+                free_fcb(c->cache);
+                c->cache = NULL;
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
-            fsi->key.obj_id = inode;
+            fsi->key.obj_id = c->cache->inode;
             fsi->key.obj_type = TYPE_INODE_ITEM;
             fsi->key.offset = 0;
             
             if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, rollback)) {
                 ERR("insert_tree_item failed\n");
+                free_fcb(c->cache);
+                c->cache = NULL;
                 return STATUS_INTERNAL_ERROR;
             }
             
             // allocate space
             
-            Status = insert_cache_extent(Vcb, inode, 0, new_cache_size, rollback);
+            Status = insert_cache_extent(Vcb, c->cache->inode, 0, new_cache_size, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_cache_extent returned %08x\n", Status);
+                free_fcb(c->cache);
+                c->cache = NULL;
                 return Status;
             }
             
-            Vcb->root_root->lastinode = inode;
-            c->cache_inode = inode;
+            Vcb->root_root->lastinode = c->cache->inode;
+            mark_fcb_dirty(c->cache);
         } else {
             KEY searchkey;
             traverse_ptr tp;
@@ -630,7 +634,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             
             // add INODE_ITEM to tree cache
             
-            searchkey.obj_id = c->cache_inode;
+            searchkey.obj_id = c->cache->inode;
             searchkey.obj_type = TYPE_INODE_ITEM;
             searchkey.offset = 0;
             
@@ -680,7 +684,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 
             // add new extent
             
-            Status = insert_cache_extent(Vcb, c->cache_inode, c->cache_size, new_cache_size - c->cache_size, rollback);
+            Status = insert_cache_extent(Vcb, c->cache->inode, c->cache_size, new_cache_size - c->cache_size, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_cache_extent returned %08x\n", Status);
                 return Status;
@@ -700,7 +704,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         // add INODE_ITEM and free_space entry to tree cache, for writing later
         
-        searchkey.obj_id = c->cache_inode;
+        searchkey.obj_id = c->cache->inode;
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0;
         
@@ -991,7 +995,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
     // update INODE_ITEM
     
-    searchkey.obj_id = c->cache_inode;
+    searchkey.obj_id = c->cache->inode;
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0;
     
@@ -1068,7 +1072,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     // write cache
     
-    searchkey.obj_id = c->cache_inode;
+    searchkey.obj_id = c->cache->inode;
     searchkey.obj_type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
     
