@@ -67,14 +67,22 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
         
         ExFreePool(data);
     } else {
-        // FIXME - see if file loaded and cached, and do CcCopyRead if it is
-
-        Status = read_file_inode(Vcb, subvol, inode, (UINT8*)&tag, 0, sizeof(ULONG), FALSE, &br);
+        fcb* fcb;
         
+        Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
         if (!NT_SUCCESS(Status)) {
-            ERR("read_file returned %08x\n", Status);
+            ERR("open_fcb returned %08x\n", Status);
             return 0;
         }
+
+        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            free_fcb(fcb);
+            return 0;
+        }
+        
+        free_fcb(fcb);
         
         if (br < sizeof(ULONG))
             return 0;
