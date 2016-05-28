@@ -1639,6 +1639,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     fileref->fcb = fcb;
+    fileref->index = dirpos;
 
     fileref->utf8.MaximumLength = fileref->utf8.Length = utf8len;
     fileref->utf8.Buffer = utf8;
