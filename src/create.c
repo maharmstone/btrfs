@@ -21,7 +21,7 @@
 extern PDEVICE_OBJECT devobj;
 
 BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
-                                         UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, PANSI_STRING utf8) {
+                                         UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp, tp2, next_tp;
@@ -132,6 +132,57 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             }
                             
                             ExFreePool(utf16);
+                            
+                            if (index) {
+                                searchkey.obj_id = di->key.obj_id;
+                                searchkey.obj_type = TYPE_INODE_REF;
+                                searchkey.offset = parinode;
+                                
+                                Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("error - find_item returned %08x\n", Status);
+                                    return FALSE;
+                                }
+                                
+                                if (!keycmp(&tp.item->key, &searchkey)) {
+                                    INODE_REF* ir;
+                                    ULONG len;
+                                    
+                                    *index = 0;
+                                    
+                                    ir = (INODE_REF*)tp.item->data;
+                                    len = tp.item->size;
+                                    
+                                    do {
+                                        ULONG itemlen;
+                                        
+                                        if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                                            ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                                            break;
+                                        }
+                                        
+                                        itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+                                        
+                                        if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
+                                            *index = ir->index;
+                                            break;
+                                        }
+                                        
+                                        if (len > itemlen) {
+                                            len -= itemlen;
+                                            ir = (INODE_REF*)&ir->name[ir->n];
+                                        } else
+                                            break;
+                                    } while (len > 0);
+                                    
+                                    if (*index == 0)
+                                        WARN("found INODE_REF entry, but couldn't find filename\n");
+                                } else {
+                                    // FIXME - try INODE_EXTREF
+                                    
+                                    ERR("INODE_REF not found for inode %llx in %llx in subvol %llx\n", di->key.obj_id, parinode, r->id);
+                                }
+                            }
                             
 //                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
                             
@@ -254,6 +305,9 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                         
                         ExFreePool(utf16);
                         
+                        if (index)
+                            *index = tp.item->key.offset;
+                        
                         return TRUE;
                     }
                 }
@@ -344,7 +398,7 @@ file_ref* create_fileref() {
 }
 
 static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, root* r,
-                                     UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, PANSI_STRING utf8) {
+                                     UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     char* fn;
     UINT32 crc32;
     BOOL ret;
@@ -375,7 +429,7 @@ static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING file
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
     TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
     
-    ret = find_file_in_dir_with_crc32(Vcb, filename, crc32, r, parinode, subvol, inode, type, utf8);
+    ret = find_file_in_dir_with_crc32(Vcb, filename, crc32, r, parinode, subvol, inode, type, index, utf8);
     
     return ret;
 }
@@ -1239,14 +1293,14 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 }
             } else {
                 root* subvol;
-                UINT64 inode;
+                UINT64 inode, index;
                 UINT8 type;
                 ANSI_STRING utf8;
 #ifdef DEBUG_FCB_REFCOUNTS
                 LONG rc;
 #endif
                 
-                if (!find_file_in_dir(Vcb, &parts[i], sf->fcb->subvol, sf->fcb->inode, &subvol, &inode, &type, &utf8)) {
+                if (!find_file_in_dir(Vcb, &parts[i], sf->fcb->subvol, sf->fcb->inode, &subvol, &inode, &type, &index, &utf8)) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
                     Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
@@ -1278,6 +1332,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->fcb = fcb;
                     
+                    sf2->index = index;
                     sf2->utf8 = utf8;
                     
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);

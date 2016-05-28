@@ -3514,8 +3514,6 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
 
 static root* find_default_subvol(device_extension* Vcb) {
     root* subvol;
-    UINT64 inode;
-    UINT8 type;
     UNICODE_STRING filename;
     LIST_ENTRY* le;
     
@@ -3526,7 +3524,7 @@ static root* find_default_subvol(device_extension* Vcb) {
         filename.Buffer = fn;
         filename.Length = filename.MaximumLength = (USHORT)wcslen(fn) * sizeof(WCHAR);
         
-        if (!find_file_in_dir_with_crc32(Vcb, &filename, crc32, Vcb->root_root, Vcb->superblock.root_dir_objectid, &subvol, &inode, &type, NULL))
+        if (!find_file_in_dir_with_crc32(Vcb, &filename, crc32, Vcb->root_root, Vcb->superblock.root_dir_objectid, &subvol, NULL, NULL, NULL, NULL))
             WARN("couldn't find default subvol DIR_ITEM, using default tree\n");
         else
             return subvol;

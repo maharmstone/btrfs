@@ -163,6 +163,7 @@ typedef struct _file_ref {
     ANSI_STRING utf8;
     UNICODE_STRING full_filename;
     ULONG name_offset;
+    UINT64 index;
     BOOL delete_on_close;
     BOOL deleted;
     LIST_ENTRY children;
@@ -681,7 +682,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 // in create.c
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r, UINT64 parinode, root** subvol,
-                                         UINT64* inode, UINT8* type, PANSI_STRING utf8);
+                                         UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8);
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb);
 
