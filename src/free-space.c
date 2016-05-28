@@ -1030,9 +1030,9 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     // write cache
     
-    Status = do_prealloc_write(Vcb, c->cache, 0, c->cache->inode_item.st_size, data, NULL, rollback);
+    Status = do_nocow_write(Vcb, c->cache, 0, c->cache->inode_item.st_size, data, NULL, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("do_prealloc_write returned %08x\n", Status);
+        ERR("do_nocow_write returned %08x\n", Status);
         return Status;
     }
 

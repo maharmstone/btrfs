@@ -6625,7 +6625,7 @@ static NTSTATUS merge_data_extents(device_extension* Vcb, fcb* fcb, UINT64 start
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 last_written = start_data;
     extent* ext = NULL;
@@ -6998,7 +6998,7 @@ NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, U
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 size, new_start, new_end, last_written = start_data;
     extent* ext = NULL;
