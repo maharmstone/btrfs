@@ -2526,29 +2526,21 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         
         if (oc == 0) {
             if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                LIST_ENTRY rollback;
-                InitializeListHead(&rollback);
-                
-                ExAcquireResourceExclusiveLite(&fcb->Vcb->tree_lock, TRUE);
-                
-                Status = delete_fileref(fileref, FileObject, &rollback);
-                
-                if (NT_SUCCESS(Status)) {
-                    LARGE_INTEGER newlength;
+                LARGE_INTEGER newlength;
 
-                    if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject)
-                        CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
-                    
-                    newlength.QuadPart = 0;
-                    
-                    if (!CcUninitializeCacheMap(FileObject, &newlength, NULL)) {
-                        TRACE("CcUninitializeCacheMap failed\n");
-                    }
-                    
-                    clear_rollback(&rollback);
-                } else
-                    do_rollback(fcb->Vcb, &rollback);
+                ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                 
+                fileref->deleted = TRUE;
+                
+                if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject)
+                    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                
+                newlength.QuadPart = 0;
+                
+                if (!CcUninitializeCacheMap(FileObject, &newlength, NULL)) {
+                    TRACE("CcUninitializeCacheMap failed\n");
+                }
+
                 ExReleaseResourceLite(&fcb->Vcb->tree_lock);
             } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                 IO_STATUS_BLOCK iosb;
