@@ -82,11 +82,25 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
                 if (fsi->key.obj_type != TYPE_INODE_ITEM)
                     WARN("key (%llx,%x,%llx) does not point to an INODE_ITEM\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset);
                 else {
+                    LIST_ENTRY* le;
+                    
                     Status = remove_free_space_inode(Vcb, fsi->key.obj_id, &rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
                         goto end;
+                    }
+                    
+                    le = Vcb->chunks.Flink;
+                    while (le != &Vcb->chunks) {
+                        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+                        
+                        if (c->offset == tp.item->key.offset) {
+                            free_fcb(c->cache);
+                            c->cache = NULL;
+                        }
+                        
+                        le = le->Flink;
                     }
                 }
             } else
