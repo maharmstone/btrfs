@@ -167,13 +167,21 @@ typedef struct _file_ref {
     UINT64 index;
     BOOL delete_on_close;
     BOOL deleted;
+    BOOL created;
     LIST_ENTRY children;
     LONG refcount;
     struct _file_ref* parent;
     WCHAR* debug_desc;
     
+    BOOL dirty;
+    
     LIST_ENTRY list_entry;
 } file_ref;
+
+typedef struct {
+    file_ref* fileref;
+    LIST_ENTRY list_entry;
+} dirty_fileref;
 
 typedef struct _ccb {
     USHORT NodeType;
@@ -390,6 +398,8 @@ typedef struct _device_extension {
     LIST_ENTRY trees;
     LIST_ENTRY dirty_fcbs;
     KSPIN_LOCK dirty_fcbs_lock;
+    LIST_ENTRY dirty_filerefs;
+    KSPIN_LOCK dirty_filerefs_lock;
     ERESOURCE checksum_lock;
     ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;
@@ -541,6 +551,7 @@ WCHAR* file_desc_fileref(file_ref* fileref);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
+void mark_fileref_dirty(file_ref* fileref);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

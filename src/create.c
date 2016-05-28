@@ -1555,15 +1555,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb* fcb;
     ULONG utf8len;
     char* utf8 = NULL;
-    UINT32 crc32;
     UINT64 dirpos, inode;
     UINT8 type;
-    ULONG disize;
-    DIR_ITEM *di, *di2;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    ANSI_STRING utf8as;
     ULONG defda;
     file_ref* fileref;
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1588,16 +1584,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     utf8[utf8len] = 0;
     
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, utf8len);
-    
     Status = fcb_get_last_dir_index(parfileref->fcb, &dirpos);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
         ExFreePool(utf8);
         return Status;
     }
-    
-    TRACE("filename = %s, crc = %08x, dirpos = %llx\n", utf8, crc32, dirpos);
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1618,51 +1610,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     inode = parfileref->fcb->subvol->lastinode + 1;
     
     type = options & FILE_DIRECTORY_FILE ? BTRFS_TYPE_DIRECTORY : BTRFS_TYPE_FILE;
-    
-    disize = sizeof(DIR_ITEM) - 1 + utf8len;
-    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di) {
-        ERR("out of memory\n");
-        ExFreePool(utf8);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    di->key.obj_id = inode;
-    di->key.obj_type = TYPE_INODE_ITEM;
-    di->key.offset = 0;
-    di->transid = Vcb->superblock.generation;
-    di->m = 0;
-    di->n = (UINT16)utf8len;
-    di->type = type;
-    RtlCopyMemory(di->name, utf8, utf8len);
-    
-    insert_tree_item(Vcb, parfileref->fcb->subvol, parfileref->fcb->inode, TYPE_DIR_INDEX, dirpos, di, disize, NULL, rollback);
-    
-    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di2) {
-        ERR("out of memory\n");
-        ExFreePool(utf8);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(di2, di, disize);
-    
-    Status = add_dir_item(Vcb, parfileref->fcb->subvol, parfileref->fcb->inode, crc32, di2, disize, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_dir_item returned %08x\n", Status);
-        ExFreePool(utf8);
-        return Status;
-    }
-    
-    utf8as.Buffer = utf8;
-    utf8as.Length = utf8as.MaximumLength = utf8len;
-    
-    Status = add_inode_ref(Vcb, parfileref->fcb->subvol, inode, parfileref->fcb->inode, dirpos, &utf8as, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_inode_ref returned %08x\n", Status);
-        ExFreePool(utf8);
-        return Status;
-    }
     
     // FIXME - link FILE_ATTRIBUTE_READONLY to st_mode
     
@@ -1800,6 +1747,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fcb->created = TRUE;
     mark_fcb_dirty(fcb);
+    
+    fileref->created = TRUE;
+    mark_fileref_dirty(fileref);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;

@@ -3994,12 +3994,79 @@ end:
     return;
 }
 
+static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    ULONG disize;
+    DIR_ITEM *di, *di2;
+    UINT32 crc32;
+    
+    if (fileref->created) {
+        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+        
+        disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
+        di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+        if (!di) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        di->key.obj_id = fileref->fcb->inode;
+        di->key.obj_type = TYPE_INODE_ITEM;
+        di->key.offset = 0;
+        di->transid = fileref->fcb->Vcb->superblock.generation;
+        di->m = 0;
+        di->n = (UINT16)fileref->utf8.Length;
+        di->type = fileref->fcb->type;
+        RtlCopyMemory(di->name, fileref->utf8.Buffer, fileref->utf8.Length);
+        
+        insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, rollback);
+        
+        di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+        if (!di2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(di2, di, disize);
+        
+        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di2, disize, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_dir_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_inode_ref returned %08x\n", Status);
+            return Status;
+        }
+        
+        fileref->created = FALSE;
+    }
+
+    fileref->dirty = FALSE;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     BOOL cache_changed = FALSE;
     
     TRACE("(%p)\n", Vcb);
+    
+    while (!IsListEmpty(&Vcb->dirty_filerefs)) {
+        dirty_fileref* dirt;
+        
+        le = RemoveHeadList(&Vcb->dirty_filerefs);
+        
+        dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
+        
+        flush_fileref(dirt->fileref, rollback);
+        free_fileref(dirt->fileref);
+        ExFreePool(dirt);
+    }
     
     le = Vcb->dirty_fcbs.Flink;
     
@@ -4048,6 +4115,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.
     if (!Vcb->root_root->treeholder.tree || !Vcb->root_root->treeholder.tree->write) {
         KEY searchkey;
+        
         traverse_ptr tp;
         
         searchkey.obj_id = 0;
