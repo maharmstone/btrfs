@@ -2965,28 +2965,18 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;
     } else {
-        BOOL exclusive, skip_lock;
-        ULONG disposition;
+        BOOL skip_lock;
         
         TRACE("file name: %.*S\n", IrpSp->FileObject->FileName.Length / sizeof(WCHAR), IrpSp->FileObject->FileName.Buffer);
         
         if (IrpSp->FileObject->RelatedFileObject)
             TRACE("related file = %S\n", file_desc(IrpSp->FileObject->RelatedFileObject));
         
-        disposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
-        
-        // We acquire the lock exclusively if there's the possibility we might be writing
-        exclusive = disposition != FILE_OPEN;
-        
         // Don't lock again if we're being called from within CcCopyRead etc.
         skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
 
-        if (!skip_lock) {
-            if (exclusive)
-                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-            else
-                ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-        }
+        if (!skip_lock)
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
         
 //         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
     //     Status = NtfsCreateFile(DeviceObject,
@@ -2994,7 +2984,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = open_file(DeviceObject, Irp, &rollback);
 //         ExReleaseResourceLite(&Vpb->DirResource);
         
-        if (exclusive && !NT_SUCCESS(Status))
+        if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);
         else
             clear_rollback(&rollback);
