@@ -20,6 +20,120 @@
 
 extern PDEVICE_OBJECT devobj;
 
+static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    UINT64 index;
+    
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_INODE_REF;
+    searchkey.offset = parinode;
+    
+    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey)) {
+        INODE_REF* ir;
+        ULONG len;
+        
+        index = 0;
+        
+        ir = (INODE_REF*)tp.item->data;
+        len = tp.item->size;
+        
+        do {
+            ULONG itemlen;
+            
+            if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                break;
+            }
+            
+            itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+            
+            if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
+                index = ir->index;
+                break;
+            }
+            
+            if (len > itemlen) {
+                len -= itemlen;
+                ir = (INODE_REF*)&ir->name[ir->n];
+            } else
+                break;
+        } while (len > 0);
+        
+        if (index == 0)
+            return STATUS_NOT_FOUND;
+        
+        *pindex = index;
+        
+        return STATUS_SUCCESS;
+    } else
+        return STATUS_NOT_FOUND;
+}
+
+static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    UINT64 index;
+    
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_INODE_EXTREF;
+    searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
+    
+    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey)) {
+        INODE_EXTREF* ier;
+        ULONG len;
+        
+        index = 0;
+        
+        ier = (INODE_EXTREF*)tp.item->data;
+        len = tp.item->size;
+        
+        do {
+            ULONG itemlen;
+            
+            if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                break;
+            }
+            
+            itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
+            
+            if (ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
+                index = ier->index;
+                break;
+            }
+            
+            if (len > itemlen) {
+                len -= itemlen;
+                ier = (INODE_EXTREF*)&ier->name[ier->n];
+            } else
+                break;
+        } while (len > 0);
+        
+        if (index == 0)
+            return STATUS_NOT_FOUND;
+        
+        *pindex = index;
+        
+        return STATUS_SUCCESS;
+    } else
+        return STATUS_NOT_FOUND;
+}
+
 BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
                                          UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     DIR_ITEM* di;
@@ -134,53 +248,19 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             ExFreePool(utf16);
                             
                             if (index) {
-                                searchkey.obj_id = di->key.obj_id;
-                                searchkey.obj_type = TYPE_INODE_REF;
-                                searchkey.offset = parinode;
+                                *index = 0;
                                 
-                                Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+                                Status = find_file_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
                                 if (!NT_SUCCESS(Status)) {
-                                    ERR("error - find_item returned %08x\n", Status);
-                                    return FALSE;
-                                }
-                                
-                                if (!keycmp(&tp.item->key, &searchkey)) {
-                                    INODE_REF* ir;
-                                    ULONG len;
-                                    
-                                    *index = 0;
-                                    
-                                    ir = (INODE_REF*)tp.item->data;
-                                    len = tp.item->size;
-                                    
-                                    do {
-                                        ULONG itemlen;
+                                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                                        Status = find_file_dir_index_extref(Vcb, r, di->key.obj_id, parinode, utf8, index);
                                         
-                                        if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
-                                            ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                                            break;
+                                        if (!NT_SUCCESS(Status)) {
+                                            ERR("find_file_dir_index_extref returned %08x\n", Status);
+                                            return FALSE;
                                         }
-                                        
-                                        itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
-                                        
-                                        if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
-                                            *index = ir->index;
-                                            break;
-                                        }
-                                        
-                                        if (len > itemlen) {
-                                            len -= itemlen;
-                                            ir = (INODE_REF*)&ir->name[ir->n];
-                                        } else
-                                            break;
-                                    } while (len > 0);
-                                    
-                                    if (*index == 0)
-                                        WARN("found INODE_REF entry, but couldn't find filename\n");
-                                } else {
-                                    // FIXME - try INODE_EXTREF
-                                    
-                                    ERR("INODE_REF not found for inode %llx in %llx in subvol %llx\n", di->key.obj_id, parinode, r->id);
+                                    } else
+                                        ERR("find_file_dir_index returned %08x\n", Status);
                                 }
                             }
                             
