@@ -3927,6 +3927,16 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         traverse_ptr tp2;
         
         // delete XATTR_ITEMs
+        
+        searchkey.obj_id = fcb->inode;
+        searchkey.obj_type = TYPE_XATTR_ITEM;
+        searchkey.offset = 0;
+        
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
     
         while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
             tp = tp2;
@@ -4000,6 +4010,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     DIR_ITEM *di, *di2;
     UINT32 crc32;
     
+    // if fileref created and then immediately deleted, do nothing
+    if (fileref->created && fileref->deleted)
+        return STATUS_SUCCESS;
+    
     if (fileref->created) {
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
         
@@ -4042,6 +4056,61 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         }
         
         fileref->created = FALSE;
+    } else if (fileref->deleted) {
+        UINT32 crc32;
+        UINT64 parinode;
+        KEY searchkey;
+        traverse_ptr tp;
+        
+        // FIXME - delete subvol
+        
+        if (fileref->fcb->ads) {
+            FIXME("FIXME - delete stream\n"); // FIXME
+            return STATUS_NOT_IMPLEMENTED;
+        }
+
+        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+
+        TRACE("deleting %.*S\n", file_desc_fileref(fileref));
+        
+        if (fileref->parent->fcb->subvol == fileref->fcb->subvol)
+            parinode = fileref->parent->fcb->inode;
+        else
+            parinode = SUBVOL_ROOT_INODE;
+        
+        // delete DIR_ITEM (0x54)
+        
+        Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, &fileref->utf8, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_dir_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        // delete INODE_REF (0xc)
+        
+        Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, &fileref->utf8, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_inode_ref returned %08x\n", Status);
+            return Status;
+        }
+        
+        // delete DIR_INDEX (0x60)
+        
+        searchkey.obj_id = parinode;
+        searchkey.obj_type = TYPE_DIR_INDEX;
+        searchkey.offset = fileref->index;
+        
+        Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            Status = STATUS_INTERNAL_ERROR;
+            return Status;
+        }
+        
+        if (!keycmp(&searchkey, &tp.item->key)) {
+            delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
+            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        }
     }
 
     fileref->dirty = FALSE;

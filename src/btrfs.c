@@ -1556,7 +1556,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
     return STATUS_SUCCESS;
 }
 
-NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* index, LIST_ENTRY* rollback) {
+NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     BOOL changed = FALSE;
@@ -1622,9 +1622,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                         
                         insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL, rollback);
                     }
-                    
-                    if (index)
-                        *index = ir->index;
                     
                     break;
                 }
@@ -1710,9 +1707,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
                         
                         insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL, rollback);
                     }
-                    
-                    if (index)
-                        *index = ier->index;
                     
                     break;
                 }
@@ -1995,7 +1989,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     UINT32 crc32;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 parinode, index;
+    UINT64 parinode;
     root* parsubvol;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -2102,15 +2096,13 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     // delete INODE_REF (0xc)
     
-    index = 0;
-    
-    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fileref->utf8, &index, rollback);
+    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fileref->utf8, rollback);
     
     // delete DIR_INDEX (0x60)
     
     searchkey.obj_id = parinode;
     searchkey.obj_type = TYPE_DIR_INDEX;
-    searchkey.offset = index;
+    searchkey.offset = fileref->index;
     
     Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
@@ -2525,12 +2517,82 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             fileref->delete_on_close = FALSE;
         
         if (oc == 0) {
+            LIST_ENTRY rollback;
+    
+            InitializeListHead(&rollback);
+            
             if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                LARGE_INTEGER newlength;
+                LARGE_INTEGER newlength, time;
+                BTRFS_TIME now;
+                        
+                KeQuerySystemTime(&time);
+                win_time_to_unix(time, &now);
 
                 ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                 
+                ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+                
                 fileref->deleted = TRUE;
+                mark_fileref_dirty(fileref);
+                
+                // delete INODE_ITEM (0x1)
+        
+                TRACE("nlink = %u\n", fileref->fcb->inode_item.st_nlink);
+                
+                mark_fcb_dirty(fileref->fcb);
+                
+                if (fileref->fcb->inode_item.st_nlink > 1) {
+                    fileref->fcb->inode_item.st_nlink--;
+                    fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+                    fileref->fcb->inode_item.sequence++;
+                    fileref->fcb->inode_item.st_ctime = now;
+                } else {
+                    fileref->fcb->deleted = TRUE;
+                
+                    // excise extents
+                    
+                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
+                        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("excise_extents returned %08x\n", Status);
+                            do_rollback(fcb->Vcb, &rollback);
+                            ExReleaseResourceLite(fcb->Header.Resource);
+                            ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                            goto exit;
+                        }
+                        
+                        clear_rollback(&rollback);
+                    }
+                    
+                    fcb->Header.AllocationSize.QuadPart = 0;
+                    fcb->Header.FileSize.QuadPart = 0;
+                    fcb->Header.ValidDataLength.QuadPart = 0;
+                    
+                    if (FileObject && FileObject->PrivateCacheMap) {
+                        CC_FILE_SIZES ccfs;
+                        
+                        ccfs.AllocationSize = fcb->Header.AllocationSize;
+                        ccfs.FileSize = fcb->Header.FileSize;
+                        ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+                        
+                        CcSetFileSizes(FileObject, &ccfs);
+                    }
+                }
+                
+                // update INODE_ITEM of parent
+                
+                TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
+                fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
+                TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
+                fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+                fileref->parent->fcb->inode_item.sequence++;
+                fileref->parent->fcb->inode_item.st_ctime = now;
+                fileref->parent->fcb->inode_item.st_mtime = now;
+
+                mark_fcb_dirty(fileref->parent->fcb);
+                
+                fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
+                fileref->fcb->subvol->root_item.ctime = now;
                 
                 if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject)
                     CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
@@ -2541,6 +2603,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     TRACE("CcUninitializeCacheMap failed\n");
                 }
 
+                ExReleaseResourceLite(fcb->Header.Resource);
                 ExReleaseResourceLite(&fcb->Vcb->tree_lock);
             } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                 IO_STATUS_BLOCK iosb;

@@ -452,7 +452,7 @@ static NTSTATUS get_fileref_from_dir_item(device_extension* Vcb, file_ref** pfr,
 
 static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, file_ref* fileref, root* destsubvol, UINT64 destinode, UINT64 inode,
                                                   UINT64 oldparinode, PANSI_STRING utf8, UINT32 crc32, BTRFS_TIME* now, LIST_ENTRY* rollback) {
-    UINT64 oldindex, index;
+    UINT64 index;
     UINT32 oldcrc32;
     INODE_ITEM* ii;
     BOOL has_hardlink = FALSE;
@@ -551,7 +551,7 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, file_re
         return Status;
     }
     
-    Status = delete_inode_ref(Vcb, fileref->fcb->subvol, fileref->fcb->inode, oldparinode, &fileref->utf8, &oldindex, rollback);
+    Status = delete_inode_ref(Vcb, fileref->fcb->subvol, fileref->fcb->inode, oldparinode, &fileref->utf8, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_inode_ref returned %08x\n", Status);
         return Status;
@@ -559,12 +559,12 @@ static NTSTATUS STDCALL move_inode_across_subvols(device_extension* Vcb, file_re
     
     // delete DIR_INDEX
     
-    if (oldindex == 0) {
+    if (fileref->index == 0) {
         WARN("couldn't find old INODE_REF\n");
     } else {    
         searchkey.obj_id = oldparinode;
         searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = oldindex;
+        searchkey.offset = fileref->index;
         
         Status = find_item(Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
         if (!NT_SUCCESS(Status)) {
@@ -1490,8 +1490,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
     } else {
-        UINT64 oldindex;
-        
         // delete old DIR_ITEM entry
         
         Status = delete_dir_item(Vcb, fcb->subvol, fileref->parent->fcb->inode, oldcrc32, &fileref->utf8, &rollback);
@@ -1526,9 +1524,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        oldindex = 0;
-        
-        Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, fileref->parent->fcb->inode, &fileref->utf8, &oldindex, &rollback);
+        Status = delete_inode_ref(Vcb, fcb->subvol, fcb->inode, fileref->parent->fcb->inode, &fileref->utf8, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_inode_ref returned %08x\n", Status);
             goto end;
@@ -1536,10 +1532,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 
         // delete old DIR_INDEX entry
         
-        if (oldindex != 0) {
+        if (fileref->index != 0) {
             searchkey.obj_id = fileref->parent->fcb->inode;
             searchkey.obj_type = TYPE_DIR_INDEX;
-            searchkey.offset = oldindex;
+            searchkey.offset = fileref->index;
             
             Status = find_item(Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
             if (!NT_SUCCESS(Status)) {
@@ -1585,7 +1581,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                     break;
             } while (tp.item->key.obj_id >= parinode && tp.item->key.obj_type >= TYPE_DIR_INDEX);
         } else
-            dirpos = oldindex;
+            dirpos = fileref->index;
         
         disize = (ULONG)(sizeof(DIR_ITEM) - 1 + utf8.Length);
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
