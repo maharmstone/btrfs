@@ -2300,6 +2300,9 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     
     // FIXME - do delete if needed
     
+    if (fr->parent)
+        ExAcquireResourceExclusiveLite(&fr->parent->nonpaged->children_lock, TRUE);
+    
     if (fr->filepart.Buffer)
         ExFreePool(fr->filepart.Buffer);
     
@@ -2323,8 +2326,10 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
     
-    if (fr->parent)
+    if (fr->parent) {
+        ExReleaseResourceLite(&fr->parent->nonpaged->children_lock);
         free_fileref((file_ref*)fr->parent);
+    }
     
     ExFreePool(fr);
 }

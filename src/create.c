@@ -1764,7 +1764,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->subvol->root_item.ctime = now;
     
     fileref->parent = parfileref;
+    
+    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
     InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->refcount);
     WARN("fileref %p: refcount now %i\n", parfileref, rc);
