@@ -309,7 +309,6 @@ typedef struct {
     UINT32 oldused;
     device** devices;
     fcb* cache;
-    UINT64 cache_size;
     LIST_ENTRY space;
     LIST_ENTRY deleting;
     chunk_nonpaged* nonpaged;
@@ -643,15 +642,15 @@ void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_l
 NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 NTSTATUS consider_write(device_extension* Vcb);
-BOOL insert_extent_chunk_inode(device_extension* Vcb, root* subvol, UINT64 inode, INODE_ITEM* inode_item, chunk* c, UINT64 start_data,
-                               UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc);
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length);
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void flush_fcb(fcb* fcb, LIST_ENTRY* rollback);
+void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
+BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -708,7 +707,6 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c);
 NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
-NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback);
 NTSTATUS add_space_entry(LIST_ENTRY* list, UINT64 offset, UINT64 size);
 void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
