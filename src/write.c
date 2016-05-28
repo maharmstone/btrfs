@@ -3919,8 +3919,23 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         
         if (!cache)
             delete_tree_item(fcb->Vcb, &tp, rollback);
-        else
-            RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(INODE_ITEM)));
+        else {
+            searchkey.obj_id = fcb->inode;
+            searchkey.obj_type = TYPE_INODE_ITEM;
+            searchkey.offset = ii_offset;
+            
+            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                goto end;
+            }
+            
+            if (keycmp(&tp.item->key, &searchkey)) {
+                ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+                goto end;
+            } else
+                RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(INODE_ITEM)));
+        }
     } else
         ii_offset = 0;
     
