@@ -3622,6 +3622,8 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
     
+    // FIXME - do tree chunks before data chunks
+    
     while (le != &Vcb->chunks_changed) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
@@ -3633,53 +3635,33 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         // subtract self-hosted cache
         if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.st_size == c->used) {
-            KEY searchkey;
-            traverse_ptr tp, next_tp;
-            BOOL b;
+            LIST_ENTRY* le3;
             
-            searchkey.obj_id = c->cache->inode;
-            searchkey.obj_type = TYPE_EXTENT_DATA;
-            searchkey.offset = 0;
-            
-            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                ExReleaseResourceLite(&c->nonpaged->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                return Status;
-            }
-            
-            do {
-                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
-                    
-                    if (tp.item->size < sizeof(EXTENT_DATA)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-                        break;
-                    }
-                    
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
-                        
-                        if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size,
-                                sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                            break;
-                        }
-                        
-                        if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
-                            used_minus_cache -= ed2->size;
-                    }
+            le3 = c->cache->extents.Flink;
+            while (le3 != &c->cache->extents) {
+                extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
+                EXTENT_DATA* ed = ext->data;
+                
+                if (ext->datalen < sizeof(EXTENT_DATA)) {
+                    ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+                    break;
                 }
                 
-                b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-                if (b) {
-                    tp = next_tp;
+                if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                     
-                    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                    if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen,
+                            sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
                         break;
+                    }
+                    
+                    if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
+                        used_minus_cache -= ed2->size;
                 }
-            } while (b);
+                
+                le3 = le3->Flink;
+            }
         }
         
         if (used_minus_cache == 0) {
