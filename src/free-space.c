@@ -21,37 +21,32 @@
 // this be a constant number of sectors, a constant 256 KB, or what?
 #define CACHE_INCREMENTS    64
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, KEY* key, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    traverse_ptr tp;
-    INODE_ITEM* ii;
+    fcb* fcb;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, key, FALSE);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &fcb);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
+        ERR("open_fcb returned %08x\n", Status);
         return Status;
     }
     
-    if (keycmp(key, &tp.item->key)) {
-        ERR("could not find (%llx,%x,%llx) in root_root\n", key->obj_id, key->obj_type, key->offset);
-        return STATUS_NOT_FOUND;
+    fcb->dirty = TRUE;
+    
+    if (fcb->inode_item.st_size > 0) {
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            return Status;
+        }
     }
     
-    if (tp.item->size < offsetof(INODE_ITEM, st_blocks)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(INODE_ITEM, st_blocks));
-        return STATUS_INTERNAL_ERROR;
-    }
+    fcb->deleted = TRUE;
     
-    ii = (INODE_ITEM*)tp.item->data;
+    flush_fcb(fcb, FALSE, rollback);
     
-    Status = excise_extents_inode(Vcb, Vcb->root_root, key->obj_id, NULL, 0, ii->st_size, NULL, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents returned %08x\n", Status);
-        return Status;
-    }
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    
+    free_fcb(fcb);
+
     return STATUS_SUCCESS;
 }
 
@@ -87,7 +82,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
                 if (fsi->key.obj_type != TYPE_INODE_ITEM)
                     WARN("key (%llx,%x,%llx) does not point to an INODE_ITEM\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset);
                 else {
-                    Status = remove_free_space_inode(Vcb, &fsi->key, &rollback);
+                    Status = remove_free_space_inode(Vcb, fsi->key.obj_id, &rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
