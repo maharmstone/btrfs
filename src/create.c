@@ -466,6 +466,13 @@ file_ref* create_fileref() {
     
     RtlZeroMemory(fr, sizeof(file_ref));
     
+    fr->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(file_ref_nonpaged), ALLOC_TAG);
+    if (!fr->nonpaged) {
+        ERR("out of memory\n");
+        ExFreePool(fr);
+        return NULL;
+    }
+    
     fr->refcount = 1;
     
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -473,6 +480,8 @@ file_ref* create_fileref() {
 #endif
     
     InitializeListHead(&fr->children);
+    
+    ExInitializeResourceLite(&fr->nonpaged->children_lock);
     
     return fr;
 }

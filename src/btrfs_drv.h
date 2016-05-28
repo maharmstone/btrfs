@@ -158,6 +158,10 @@ typedef struct {
 
 struct _file_ref;
 
+typedef struct {
+    ERESOURCE children_lock;
+} file_ref_nonpaged;
+
 typedef struct _file_ref {
     fcb* fcb;
     UNICODE_STRING filepart;
@@ -168,6 +172,7 @@ typedef struct _file_ref {
     BOOL delete_on_close;
     BOOL deleted;
     BOOL created;
+    file_ref_nonpaged* nonpaged;
     LIST_ENTRY children;
     LONG refcount;
     struct _file_ref* parent;

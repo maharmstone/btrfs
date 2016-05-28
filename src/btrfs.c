@@ -2312,6 +2312,10 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->debug_desc)
         ExFreePool(fr->debug_desc);
     
+    ExDeleteResourceLite(&fr->nonpaged->children_lock);
+    
+    ExFreePool(fr->nonpaged);
+    
     // FIXME - throw error if children not empty
     
     free_fcb(fr->fcb);
