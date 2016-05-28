@@ -135,6 +135,7 @@ typedef struct _fcb {
     WCHAR* debug_desc;
     LIST_ENTRY extents;
     LIST_ENTRY extent_backrefs;
+    UINT64 last_dir_index;
     
     BOOL dirty;
     BOOL sd_dirty;

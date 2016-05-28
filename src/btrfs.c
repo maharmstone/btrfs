@@ -699,8 +699,8 @@ UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
         return 0;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
-        if (!find_prev_item(Vcb, &tp, &prev_tp, FALSE)) {
+    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
+        if (find_prev_item(Vcb, &tp, &prev_tp, FALSE)) {
             tp = prev_tp;
             
             TRACE("moving back to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);

@@ -1505,6 +1505,51 @@ end2:
     return Status;
 }
 
+static NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index) {
+    KEY searchkey;
+    traverse_ptr tp, prev_tp;
+    NTSTATUS Status;
+    
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    if (fcb->last_dir_index != 0) {
+        *index = fcb->last_dir_index;
+        fcb->last_dir_index++;
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_DIR_INDEX + 1;
+    searchkey.offset = 0;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
+        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, FALSE))
+            tp = prev_tp;
+    }
+    
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_DIR_INDEX) {
+        fcb->last_dir_index = tp.item->key.offset + 1;
+    } else
+        fcb->last_dir_index = 2;
+    
+    *index = fcb->last_dir_index;
+    fcb->last_dir_index++;
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
@@ -1545,9 +1590,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, utf8len);
     
-    dirpos = find_next_dir_index(Vcb, parfileref->fcb->subvol, parfileref->fcb->inode);
-    if (dirpos == 0) {
-        Status = STATUS_INTERNAL_ERROR;
+    Status = fcb_get_last_dir_index(parfileref->fcb, &dirpos);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fcb_get_last_dir_index returned %08x\n", Status);
         ExFreePool(utf8);
         return Status;
     }
