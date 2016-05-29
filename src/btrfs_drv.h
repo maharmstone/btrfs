@@ -557,7 +557,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
 void mark_fileref_dirty(file_ref* fileref);
-NTSTATUS delete_fileref2(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
+NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

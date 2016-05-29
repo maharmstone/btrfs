@@ -1885,9 +1885,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     if (oldfileref) {
         // FIXME - check we have permissions for this
-        Status = delete_fileref2(oldfileref, NULL, &rollback);
+        Status = delete_fileref(oldfileref, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("delete_fileref2 returned %08x\n", Status);
+            ERR("delete_fileref returned %08x\n", Status);
             goto end;
         }
     }
@@ -2461,9 +2461,9 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     if (oldfileref) {
         // FIXME - check we have permissions for this
-        Status = delete_fileref2(oldfileref, NULL, &rollback);
+        Status = delete_fileref(oldfileref, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("delete_fileref2 returned %08x\n", Status);
+            ERR("delete_fileref returned %08x\n", Status);
             goto end;
         }
     }

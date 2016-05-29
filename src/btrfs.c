@@ -2254,7 +2254,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ZwClose(Vcb->flush_thread_handle);
 }
 
-NTSTATUS delete_fileref2(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
+NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
     LARGE_INTEGER newlength, time;
     BTRFS_TIME now;
     NTSTATUS Status;
@@ -2394,9 +2394,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
                 ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                 
-                Status = delete_fileref2(fileref, FileObject, &rollback);
+                Status = delete_fileref(fileref, FileObject, &rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("delete_fileref2 returned %08x\n", Status);
+                    ERR("delete_fileref returned %08x\n", Status);
                     do_rollback(Vcb, &rollback);
                     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                     goto exit;
