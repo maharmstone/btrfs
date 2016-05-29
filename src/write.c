@@ -4213,16 +4213,21 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        di->key.obj_id = fileref->fcb->inode;
-        di->key.obj_type = TYPE_INODE_ITEM;
-        di->key.offset = 0;
+        if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+            di->key.obj_id = fileref->fcb->inode;
+            di->key.obj_type = TYPE_INODE_ITEM;
+            di->key.offset = 0;
+        } else { // subvolume
+            di->key.obj_id = fileref->fcb->subvol->id;
+            di->key.obj_type = TYPE_ROOT_ITEM;
+            di->key.offset = 0xffffffffffffffff;
+        }
+
         di->transid = fileref->fcb->Vcb->superblock.generation;
         di->m = 0;
         di->n = (UINT16)fileref->utf8.Length;
         di->type = fileref->fcb->type;
         RtlCopyMemory(di->name, fileref->utf8.Buffer, fileref->utf8.Length);
-        
-        insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, rollback);
         
         di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di2) {
@@ -4231,6 +4236,12 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         }
         
         RtlCopyMemory(di2, di, disize);
+              
+        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            Status = STATUS_INTERNAL_ERROR;
+            return Status;
+        }
         
         Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di2, disize, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -4238,21 +4249,48 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             return Status;
         }
         
-        Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("add_inode_ref returned %08x\n", Status);
-            return Status;
+        if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_inode_ref returned %08x\n", Status);
+                return Status;
+            }
+        } else {
+            ULONG rrlen;
+            ROOT_REF* rr;
+
+            rrlen = sizeof(ROOT_REF) - 1 + fileref->utf8.Length;
+                
+            rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
+            if (!rr) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            rr->dir = fileref->parent->fcb->inode;
+            rr->index = fileref->index;
+            rr->n = fileref->utf8.Length;
+            RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
+            
+            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_root_ref returned %08x\n", Status);
+                return Status;
+            }
+            
+            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_root_backref returned %08x\n", Status);
+                return Status;
+            }
         }
         
         fileref->created = FALSE;
     } else if (fileref->deleted) {
         UINT32 crc32;
-        UINT64 parinode;
         KEY searchkey;
         traverse_ptr tp;
         ANSI_STRING* name;
-        
-        // FIXME - delete subvol
         
         if (fileref->fcb->ads) {
             FIXME("FIXME - delete stream\n"); // FIXME
@@ -4268,34 +4306,42 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
 
         TRACE("deleting %.*S\n", file_desc_fileref(fileref));
         
-        if (fileref->parent->fcb->subvol == fileref->fcb->subvol)
-            parinode = fileref->parent->fcb->inode;
-        else
-            parinode = SUBVOL_ROOT_INODE;
-        
         // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, name, rollback);
+        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, name, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_dir_item returned %08x\n", Status);
             return Status;
         }
         
-        // delete INODE_REF (0xc)
-        
-        Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, name, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_inode_ref returned %08x\n", Status);
-            return Status;
+        if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+            // delete INODE_REF (0xc)
+            
+            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, name, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_inode_ref returned %08x\n", Status);
+                return Status;
+            }
+        } else { // subvolume
+            Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, name, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_root_ref returned %08x\n", Status);
+            }
+            
+            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_root_backref returned %08x\n", Status);
+                return Status;
+            }
         }
         
         // delete DIR_INDEX (0x60)
         
-        searchkey.obj_id = parinode;
+        searchkey.obj_id = fileref->parent->fcb->inode;
         searchkey.obj_type = TYPE_DIR_INDEX;
         searchkey.offset = fileref->index;
-        
-        Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
+
+        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);        
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             Status = STATUS_INTERNAL_ERROR;
