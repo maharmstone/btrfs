@@ -262,6 +262,10 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
         ExFreePool(data);
+        
+        c->cache->deleted = TRUE;
+        mark_fcb_dirty(c->cache);
+        
         free_fcb(c->cache);
         c->cache = NULL;
         return Status;
@@ -277,6 +281,10 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (*generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
         ExFreePool(data);
+        
+        c->cache->deleted = TRUE;
+        mark_fcb_dirty(c->cache);
+        
         free_fcb(c->cache);
         c->cache = NULL;
         return STATUS_NOT_FOUND;
@@ -289,6 +297,10 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
         ExFreePool(data);
+        
+        c->cache->deleted = TRUE;
+        mark_fcb_dirty(c->cache);
+        
         free_fcb(c->cache);
         c->cache = NULL;
         return STATUS_NOT_FOUND;
@@ -307,6 +319,10 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         if (crc32 != checksums[i]) {
             WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
             ExFreePool(data);
+            
+            c->cache->deleted = TRUE;
+            mark_fcb_dirty(c->cache);
+            
             free_fcb(c->cache);
             c->cache = NULL;
             return STATUS_NOT_FOUND;
@@ -568,6 +584,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     if (!c->cache) {
         FREE_SPACE_ITEM* fsi;
+        KEY searchkey;
+        traverse_ptr tp;
         
         // create new inode
         
@@ -604,6 +622,19 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             c->cache = NULL;
             return STATUS_INSUFFICIENT_RESOURCES;
         }
+        
+        searchkey.obj_id = FREE_SPACE_CACHE_ID;
+        searchkey.obj_type = 0;
+        searchkey.offset = c->offset;
+        
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&searchkey, &tp.item->key))
+            delete_tree_item(Vcb, &tp, rollback);
         
         fsi->key.obj_id = c->cache->inode;
         fsi->key.obj_type = TYPE_INODE_ITEM;
