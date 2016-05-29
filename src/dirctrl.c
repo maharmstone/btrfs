@@ -536,7 +536,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
                 tp = next_tp;
         }
         
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (keycmp(&tp.item->key, &searchkey) != -1 && tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             while (fr && fr->index < tp.item->key.offset) {
                 fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
                 
