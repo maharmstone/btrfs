@@ -4004,6 +4004,194 @@ end:
     return;
 }
 
+static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = parsubvolid;
+    searchkey.obj_type = TYPE_ROOT_REF;
+    searchkey.offset = subvolid;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&searchkey, &tp.item->key)) {
+        if (tp.item->size < sizeof(ROOT_REF)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+            return STATUS_INTERNAL_ERROR;
+        } else {
+            ROOT_REF* rr;
+            ULONG len;
+            
+            rr = (ROOT_REF*)tp.item->data;
+            len = tp.item->size;
+            
+            do {
+                ULONG itemlen;
+                
+                if (len < sizeof(ROOT_REF) || len < sizeof(ROOT_REF) - 1 + rr->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    break;
+                }
+                
+                itemlen = sizeof(ROOT_REF) - sizeof(char) + rr->n;
+                
+                if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
+                    ULONG newlen = tp.item->size - itemlen;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (newlen == 0) {
+                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    } else {
+                        UINT8 *newrr = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
+                        
+                        if (!newrr) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                        if ((UINT8*)rr > tp.item->data) {
+                            RtlCopyMemory(newrr, tp.item->data, (UINT8*)rr - tp.item->data);
+                            rroff = newrr + ((UINT8*)rr - tp.item->data);
+                        } else {
+                            rroff = newrr;
+                        }
+                        
+                        if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
+                            RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
+                        
+                        insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, rollback);
+                    }
+                    
+                    break;
+                }
+                
+                if (len > itemlen) {
+                    len -= itemlen;
+                    rr = (ROOT_REF*)&rr->name[rr->n];
+                } else
+                    break;
+            } while (len > 0);
+        }
+    } else {
+        WARN("could not find ROOT_REF entry for subvol %llx in %llx\n", searchkey.offset, searchkey.obj_id);
+        return STATUS_NOT_FOUND;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = parsubvolid;
+    searchkey.obj_type = TYPE_ROOT_REF;
+    searchkey.offset = subvolid;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&searchkey, &tp.item->key)) {
+        ULONG rrsize = tp.item->size + sizeof(ROOT_REF) - 1 + rr->n;
+        UINT8* rr2;
+        
+        rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
+        if (!rr2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        if (tp.item->size > 0)
+            RtlCopyMemory(rr2, tp.item->data, tp.item->size);
+        
+        RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
+        ExFreePool(rr);
+        
+        delete_tree_item(Vcb, &tp, rollback);
+        
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, rollback)) {
+            ERR("error - failed to insert item\n");
+            ExFreePool(rr2);
+            return STATUS_INTERNAL_ERROR;
+        }
+    } else {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, rollback)) {
+            ERR("error - failed to insert item\n");
+            ExFreePool(rr);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT8* data;
+    ULONG datalen;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = parsubvolid;
+    searchkey.obj_type = TYPE_ROOT_REF;
+    searchkey.offset = subvolid;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey) && tp.item->size > 0) {
+        datalen = tp.item->size;
+        
+        data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        if (!data) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(data, tp.item->data, datalen);
+    } else {
+        datalen = 0;
+    }
+    
+    searchkey.obj_id = subvolid;
+    searchkey.obj_type = TYPE_ROOT_BACKREF;
+    searchkey.offset = parsubvolid;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey))
+        delete_tree_item(Vcb, &tp, rollback);
+    
+    if (datalen > 0) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, rollback)) {
+            ERR("error - failed to insert item\n");
+            ExFreePool(data);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
@@ -4200,7 +4388,14 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
                 }
             } else { // subvolume
                 ULONG rrlen;
-                ROOT_REF *rr, *rr2;
+                ROOT_REF* rr;
+                
+                // FIXME - make sure this works with duff subvols within snapshots
+                
+                Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, &fileref->oldutf8, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_root_ref returned %08x\n", Status);
+                }
                 
                 rrlen = sizeof(ROOT_REF) - 1 + fileref->utf8.Length;
                 
@@ -4210,74 +4405,20 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                rr2 = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
-                if (!rr2) {
-                    ERR("out of memory\n");
-                    ExFreePool(rr);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
                 rr->dir = fileref->parent->fcb->inode;
                 rr->index = fileref->index;
                 rr->n = fileref->utf8.Length;
                 RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
                 
-                RtlCopyMemory(rr2, rr, rrlen);
-                
-                // delete ROOT_REF (0x9c)
-                
-                searchkey.obj_id = fileref->parent->fcb->subvol->id;
-                searchkey.obj_type = TYPE_ROOT_REF;
-                searchkey.offset = fileref->fcb->subvol->id;
-                
-                Status = find_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+                Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("error - find_item returned %08x\n", Status);
-                    Status = STATUS_INTERNAL_ERROR;
+                    ERR("add_root_ref returned %08x\n", Status);
                     return Status;
                 }
                 
-                if (!keycmp(&tp.item->key, &searchkey))
-                    delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
-                else
-                    WARN("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                
-                // delete ROOT_BACKREF (0x90)
-                
-                searchkey.obj_id = fileref->fcb->subvol->id;
-                searchkey.obj_type = TYPE_ROOT_BACKREF;
-                searchkey.offset = fileref->parent->fcb->subvol->id;
-                
-                Status = find_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+                Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("error - find_item returned %08x\n", Status);
-                    Status = STATUS_INTERNAL_ERROR;
-                    return Status;
-                }
-                
-                if (!keycmp(&tp.item->key, &searchkey))
-                    delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
-                else
-                    WARN("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                
-                // add ROOT_REF (0x9c)
-                
-                if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, fileref->parent->fcb->subvol->id, TYPE_ROOT_REF,
-                    fileref->fcb->subvol->id, rr, rrlen, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
-                    ExFreePool(rr);
-                    ExFreePool(rr2);
-                    return Status;
-                }
-                
-                // add ROOT_BACKREF (0x90)
-                
-                if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, fileref->fcb->subvol->id, TYPE_ROOT_BACKREF,
-                    fileref->parent->fcb->subvol->id, rr2, rrlen, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
-                    ExFreePool(rr2);
+                    ERR("update_root_backref returned %08x\n", Status);
                     return Status;
                 }
             }
