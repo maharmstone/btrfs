@@ -134,6 +134,48 @@ static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT6
         return STATUS_NOT_FOUND;
 }
 
+static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 subvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    ROOT_REF* rr;
+    
+    searchkey.obj_id = r->id;
+    searchkey.obj_type = TYPE_ROOT_REF;
+    searchkey.offset = subvolid;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(&tp.item->key, &searchkey)) {
+        ERR("couldn't find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size < sizeof(ROOT_REF)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+            tp.item->size, sizeof(ROOT_REF));
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    rr = (ROOT_REF*)tp.item->data;
+    
+    if (tp.item->size < sizeof(ROOT_REF) - 1 + rr->n) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+            tp.item->size, sizeof(ROOT_REF) - 1 + rr->n);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(utf8->Buffer, rr->name, rr->n) == rr->n) {
+        *pindex = rr->index;
+        return STATUS_SUCCESS;
+    } else
+        return STATUS_NOT_FOUND;
+}
+
 BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
                                          UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     DIR_ITEM* di;
@@ -250,17 +292,27 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             if (index) {
                                 *index = 0;
                                 
-                                Status = find_file_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
-                                if (!NT_SUCCESS(Status)) {
-                                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                                        Status = find_file_dir_index_extref(Vcb, r, di->key.obj_id, parinode, utf8, index);
-                                        
-                                        if (!NT_SUCCESS(Status)) {
-                                            ERR("find_file_dir_index_extref returned %08x\n", Status);
+                                if (di->key.obj_type == TYPE_ROOT_ITEM) {
+                                    Status = find_subvol_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("find_subvol_dir_index returned %08x\n", Status);
+                                        return FALSE;
+                                    }
+                                } else {
+                                    Status = find_file_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                    if (!NT_SUCCESS(Status)) {
+                                        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                                            Status = find_file_dir_index_extref(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                            
+                                            if (!NT_SUCCESS(Status)) {
+                                                ERR("find_file_dir_index_extref returned %08x\n", Status);
+                                                return FALSE;
+                                            }
+                                        } else {
+                                            ERR("find_file_dir_index returned %08x\n", Status);
                                             return FALSE;
                                         }
-                                    } else
-                                        ERR("find_file_dir_index returned %08x\n", Status);
+                                    }
                                 }
                             }
                             
