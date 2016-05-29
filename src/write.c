@@ -4126,7 +4126,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     } else { // rename
         if (fileref->oldutf8.Buffer) {
             UINT32 crc32, oldcrc32;
-            UINT64 parinode;
             ULONG disize;
             DIR_ITEM *di, *di2;
             KEY searchkey;
@@ -4134,15 +4133,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             
             crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
             oldcrc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->oldutf8.Buffer, fileref->oldutf8.Length);
-            
-            if (fileref->parent->fcb->subvol == fileref->fcb->subvol)
-                parinode = fileref->parent->fcb->inode;
-            else
-                parinode = SUBVOL_ROOT_INODE;
-            
+
             // delete DIR_ITEM (0x54)
             
-            Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, oldcrc32, &fileref->oldutf8, rollback);
+            Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, oldcrc32, &fileref->oldutf8, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_dir_item returned %08x\n", Status);
                 return Status;
@@ -4175,35 +4169,119 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             
             RtlCopyMemory(di2, di, disize);
             
-            Status = add_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, di, disize, rollback);
+            Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di, disize, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_dir_item returned %08x\n", Status);
                 return Status;
             }
             
-            // delete INODE_REF (0xc)
-            
-            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, &fileref->oldutf8, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_inode_ref returned %08x\n", Status);
-                return Status;
-            }
-            
-            // add INODE_REF (0xc)
-            
-            Status = add_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, fileref->index, &fileref->utf8, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_inode_ref returned %08x\n", Status);
-                return Status;
+            if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+                // delete INODE_REF (0xc)
+                
+                Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, &fileref->oldutf8, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_inode_ref returned %08x\n", Status);
+                    return Status;
+                }
+                
+                // add INODE_REF (0xc)
+                
+                Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_inode_ref returned %08x\n", Status);
+                    return Status;
+                }
+            } else { // subvolume
+                ULONG rrlen;
+                ROOT_REF *rr, *rr2;
+                
+                rrlen = sizeof(ROOT_REF) - 1 + fileref->utf8.Length;
+                
+                rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
+                if (!rr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                rr2 = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
+                if (!rr2) {
+                    ERR("out of memory\n");
+                    ExFreePool(rr);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                rr->dir = fileref->parent->fcb->inode;
+                rr->index = fileref->index;
+                rr->n = fileref->utf8.Length;
+                RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
+                
+                RtlCopyMemory(rr2, rr, rrlen);
+                
+                // delete ROOT_REF (0x9c)
+                
+                searchkey.obj_id = fileref->parent->fcb->subvol->id;
+                searchkey.obj_type = TYPE_ROOT_REF;
+                searchkey.offset = fileref->fcb->subvol->id;
+                
+                Status = find_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("error - find_item returned %08x\n", Status);
+                    Status = STATUS_INTERNAL_ERROR;
+                    return Status;
+                }
+                
+                if (!keycmp(&tp.item->key, &searchkey))
+                    delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
+                else
+                    WARN("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                
+                // delete ROOT_BACKREF (0x90)
+                
+                searchkey.obj_id = fileref->fcb->subvol->id;
+                searchkey.obj_type = TYPE_ROOT_BACKREF;
+                searchkey.offset = fileref->parent->fcb->subvol->id;
+                
+                Status = find_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("error - find_item returned %08x\n", Status);
+                    Status = STATUS_INTERNAL_ERROR;
+                    return Status;
+                }
+                
+                if (!keycmp(&tp.item->key, &searchkey))
+                    delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
+                else
+                    WARN("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                
+                // add ROOT_REF (0x9c)
+                
+                if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, fileref->parent->fcb->subvol->id, TYPE_ROOT_REF,
+                    fileref->fcb->subvol->id, rr, rrlen, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    ExFreePool(rr);
+                    ExFreePool(rr2);
+                    return Status;
+                }
+                
+                // add ROOT_BACKREF (0x90)
+                
+                if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->Vcb->root_root, fileref->fcb->subvol->id, TYPE_ROOT_BACKREF,
+                    fileref->parent->fcb->subvol->id, rr2, rrlen, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    ExFreePool(rr2);
+                    return Status;
+                }
             }
             
             // delete DIR_INDEX (0x60)
             
-            searchkey.obj_id = parinode;
+            searchkey.obj_id = fileref->parent->fcb->inode;
             searchkey.obj_type = TYPE_DIR_INDEX;
             searchkey.offset = fileref->index;
             
-            Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
+            Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 Status = STATUS_INTERNAL_ERROR;
@@ -4218,7 +4296,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             
             // add DIR_INDEX (0x60)
             
-            if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, rollback)) {
+            if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, rollback)) {
                 ERR("insert_tree_item failed\n");
                 Status = STATUS_INTERNAL_ERROR;
                 return Status;

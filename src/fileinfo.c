@@ -1757,7 +1757,7 @@ BOOL has_open_children(file_ref* fileref) {
 
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
-    fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
+    fcb *fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
     UINT64 index;
@@ -1790,14 +1790,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             ERR("no fileref set and no directory given\n");
             return STATUS_INVALID_PARAMETER;
         }
-        
-        parfcb = fileref->parent->fcb;
-        tfofcb = NULL;
     } else {
         LONG i;
-        
-        tfofcb = tfo->FsContext;
-        parfcb = tfofcb;
         
         for (i = fnlen - 1; i >= 0; i--) {
             if (fri->FileName[i] == '\\' || fri->FileName[i] == '/') {
@@ -1883,7 +1877,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    if (fcb->subvol != parfcb->subvol) {
+    if (fileref->parent->fcb->subvol != related->fcb->subvol) {
         FIXME("FIXME - move file across subvols\n"); // FIXME
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
