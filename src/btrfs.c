@@ -2271,40 +2271,55 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 
     TRACE("nlink = %u\n", fileref->fcb->inode_item.st_nlink);
     
-    mark_fcb_dirty(fileref->fcb);
-    
-    if (fileref->fcb->inode_item.st_nlink > 1) {
-        fileref->fcb->inode_item.st_nlink--;
-        fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
-        fileref->fcb->inode_item.sequence++;
-        fileref->fcb->inode_item.st_ctime = now;
-    } else {
-        fileref->fcb->deleted = TRUE;
-    
-        // excise extents
+    if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+        mark_fcb_dirty(fileref->fcb);
         
-        if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
-            Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("excise_extents returned %08x\n", Status);
-                ExReleaseResourceLite(fileref->fcb->Header.Resource);
-                return Status;
+        if (fileref->fcb->inode_item.st_nlink > 1) {
+            fileref->fcb->inode_item.st_nlink--;
+            fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+            fileref->fcb->inode_item.sequence++;
+            fileref->fcb->inode_item.st_ctime = now;
+        } else {
+            fileref->fcb->deleted = TRUE;
+        
+            // excise extents
+            
+            if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
+                Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("excise_extents returned %08x\n", Status);
+                    ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                    return Status;
+                }
+            }
+            
+            fileref->fcb->Header.AllocationSize.QuadPart = 0;
+            fileref->fcb->Header.FileSize.QuadPart = 0;
+            fileref->fcb->Header.ValidDataLength.QuadPart = 0;
+            
+            if (FileObject && FileObject->PrivateCacheMap) {
+                CC_FILE_SIZES ccfs;
+                
+                ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
+                ccfs.FileSize = fileref->fcb->Header.FileSize;
+                ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
+                
+                CcSetFileSizes(FileObject, &ccfs);
             }
         }
-        
-        fileref->fcb->Header.AllocationSize.QuadPart = 0;
-        fileref->fcb->Header.FileSize.QuadPart = 0;
-        fileref->fcb->Header.ValidDataLength.QuadPart = 0;
-        
-        if (FileObject && FileObject->PrivateCacheMap) {
-            CC_FILE_SIZES ccfs;
+    } else { // subvolume
+        if (fileref->fcb->subvol->root_item.num_references > 1) {
+            fileref->fcb->subvol->root_item.num_references--;
             
-            ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
-            ccfs.FileSize = fileref->fcb->Header.FileSize;
-            ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
+            mark_fcb_dirty(fileref->fcb); // so ROOT_ITEM gets updated
+        } else {
+            // FIXME - we need a lock here
             
-            CcSetFileSizes(FileObject, &ccfs);
+            RemoveEntryList(&fileref->fcb->subvol->list_entry);
+            
+            InsertTailList(&fileref->fcb->Vcb->drop_roots, &fileref->fcb->subvol->list_entry);
         }
+        
     }
     
     // update INODE_ITEM of parent
