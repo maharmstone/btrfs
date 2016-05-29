@@ -1233,16 +1233,20 @@ void insert_fileref_child(file_ref* parent, file_ref* child) {
         LIST_ENTRY* le = parent->children.Flink;
         file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
         
-        while (le != &parent->children) {
-            file_ref* fr2 = (le->Flink == &parent->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
-            
-            if (child->index > fr1->index && (!fr2 || fr2->index > child->index)) {
-                InsertHeadList(&fr1->list_entry, &child->list_entry);
-                break;
+        if (child->index < fr1->index)
+            InsertHeadList(&parent->children, &child->list_entry);
+        else {
+            while (le != &parent->children) {
+                file_ref* fr2 = (le->Flink == &parent->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
+                
+                if (child->index > fr1->index && (!fr2 || fr2->index > child->index)) {
+                    InsertHeadList(&fr1->list_entry, &child->list_entry);
+                    break;
+                }
+                
+                fr1 = fr2;
+                le = le->Flink;
             }
-            
-            fr1 = fr2;
-            le = le->Flink;
         }
     }
     ExReleaseResourceLite(&parent->nonpaged->children_lock);
