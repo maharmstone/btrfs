@@ -2000,15 +2000,13 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
     ccb* ccb = FileObject->FsContext2;
-    file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related;
-    UINT64 dirpos;
+    file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
+    UINT64 index;
     WCHAR* fn;
-    ULONG fnlen, utf8len, disize;
+    ULONG fnlen, utf8len;
     UNICODE_STRING fnus;
     ANSI_STRING utf8;
     NTSTATUS Status;
-    UINT32 crc32;
-    DIR_ITEM *di, *di2;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY rollback;
@@ -2049,9 +2047,8 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-    
-    utf8.Buffer = NULL;
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         WARN("tried to create hard link on directory\n");
@@ -2086,14 +2083,12 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     if (!NT_SUCCESS(Status))
         goto end;
     
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, (ULONG)utf8.Length);
-    
     if (tfo && tfo->FsContext2) {
         struct _ccb* relatedccb = tfo->FsContext2;
         
         related = relatedccb->fileref;
-    } else
-        related = NULL;
+        related->refcount++;
+    }
 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
 
@@ -2118,6 +2113,15 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
+    if (!related) {
+        Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref returned %08x\n", Status);
+            goto end;
+        }
+    }
+    
     if (fcb->subvol != parfcb->subvol) {
         WARN("can't create hard link over subvolume boundary\n");
         Status = STATUS_INVALID_PARAMETER;
@@ -2126,75 +2130,62 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     if (oldfileref) {
         // FIXME - check we have permissions for this
-        
-        Status = delete_fileref(oldfileref, NULL, &rollback);
+        Status = delete_fileref2(oldfileref, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("delete_fcb returned %08x\n", Status);
+            ERR("delete_fileref2 returned %08x\n", Status);
             goto end;
         }
     }
     
-    // add DIR_ITEM
+    Status = fcb_get_last_dir_index(related->fcb, &index);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fcb_get_last_dir_index returned %08x\n", Status);
+        goto end;
+    }
     
-    disize = sizeof(DIR_ITEM) - 1 + utf8len;
+    fr2 = create_fileref();
     
-    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di) {
+    fr2->fcb = fcb;
+    fcb->refcount++;
+    
+    fr2->utf8 = utf8;
+    fr2->index = index;
+    fr2->created = TRUE;
+    fr2->parent = related;
+    
+    fr2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
+    if (!fr2->filepart.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di2) {
+    fr2->filepart.Length = fr2->filepart.MaximumLength = fnus.Length;
+    RtlCopyMemory(fr2->filepart.Buffer, fnus.Buffer, fnus.Length);
+    
+    fr2->name_offset = related->full_filename.Length / sizeof(WCHAR);
+
+    if (related != Vcb->root_fileref)
+        fr2->name_offset++;
+    
+    fr2->full_filename.Length = fr2->full_filename.MaximumLength = (fr2->name_offset * sizeof(WCHAR)) + fr2->filepart.Length;
+    fr2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr2->full_filename.Length, ALLOC_TAG);
+    if (!fr2->full_filename.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        ExFreePool(di);
         goto end;
     }
     
-    di->key.obj_id = fcb->inode;
-    di->key.obj_type = TYPE_INODE_ITEM;
-    di->key.offset = 0;
-    di->transid = Vcb->superblock.generation;
-    di->m = 0;
-    di->n = utf8len;
-    di->type = fcb->type;
-    RtlCopyMemory(di->name, utf8.Buffer, di->n);
-    RtlCopyMemory(di2, di, disize);
+    RtlCopyMemory(fr2->full_filename.Buffer, related->full_filename.Buffer, related->full_filename.Length);
     
-    Status = add_dir_item(Vcb, fcb->subvol, parfcb->inode, crc32, di, disize, &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_dir_item returned %08x\n", Status);
-        ExFreePool(di);
-        ExFreePool(di2);
-        goto end;
-    }
+    fr2->full_filename.Buffer[related->full_filename.Length / sizeof(WCHAR)] = '\\';
     
-    // add DIR_INDEX
+    RtlCopyMemory(&fr2->full_filename.Buffer[fr2->name_offset], fr2->filepart.Buffer, fr2->filepart.Length);
     
-    dirpos = find_next_dir_index(Vcb, fcb->subvol, parfcb->inode);
-    if (dirpos == 0) {
-        ERR("find_next_dir_index failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        ExFreePool(di2);
-        goto end;
-    }
+    insert_fileref_child(related, fr2);
     
-    if (!insert_tree_item(Vcb, fcb->subvol, parfcb->inode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        ExFreePool(di2);
-        goto end;
-    }
-    
-    // add INODE_REF
-    
-    Status = add_inode_ref(Vcb, fcb->subvol, fcb->inode, parfcb->inode, dirpos, &utf8, &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_inode_ref returned %08x\n", Status);
-        goto end;
-    }
+    mark_fileref_dirty(fr2);
+    free_fileref(fr2);
     
     // update inode's INODE_ITEM
     
@@ -2222,20 +2213,21 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     Status = STATUS_SUCCESS;
     
 end:
-    if (utf8.Buffer)
-        ExFreePool(utf8.Buffer);
-    
     if (oldfileref)
         free_fileref(oldfileref);
     
-    if (NT_SUCCESS(Status))
-        Status = consider_write(Vcb);
-
-    if (NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status) && related)
+        free_fileref(related);
+    
+    if (!NT_SUCCESS(Status) && fr2)
+        free_fileref(fr2);
+    
+//     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
-    else
-        do_rollback(Vcb, &rollback);
+//     else
+//         do_rollback(Vcb, &rollback);
 
+    ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;

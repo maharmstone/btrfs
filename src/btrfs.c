@@ -2466,6 +2466,88 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ZwClose(Vcb->flush_thread_handle);
 }
 
+NTSTATUS delete_fileref2(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
+    LARGE_INTEGER newlength, time;
+    BTRFS_TIME now;
+    NTSTATUS Status;
+
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    ExAcquireResourceExclusiveLite(fileref->fcb->Header.Resource, TRUE);
+    
+    fileref->deleted = TRUE;
+    mark_fileref_dirty(fileref);
+    
+    // delete INODE_ITEM (0x1)
+
+    TRACE("nlink = %u\n", fileref->fcb->inode_item.st_nlink);
+    
+    mark_fcb_dirty(fileref->fcb);
+    
+    if (fileref->fcb->inode_item.st_nlink > 1) {
+        fileref->fcb->inode_item.st_nlink--;
+        fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+        fileref->fcb->inode_item.sequence++;
+        fileref->fcb->inode_item.st_ctime = now;
+    } else {
+        fileref->fcb->deleted = TRUE;
+    
+        // excise extents
+        
+        if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
+            Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("excise_extents returned %08x\n", Status);
+                ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                return Status;
+            }
+        }
+        
+        fileref->fcb->Header.AllocationSize.QuadPart = 0;
+        fileref->fcb->Header.FileSize.QuadPart = 0;
+        fileref->fcb->Header.ValidDataLength.QuadPart = 0;
+        
+        if (FileObject && FileObject->PrivateCacheMap) {
+            CC_FILE_SIZES ccfs;
+            
+            ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
+            ccfs.FileSize = fileref->fcb->Header.FileSize;
+            ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
+            
+            CcSetFileSizes(FileObject, &ccfs);
+        }
+    }
+    
+    // update INODE_ITEM of parent
+    
+    TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
+    fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
+    TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
+    fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+    fileref->parent->fcb->inode_item.sequence++;
+    fileref->parent->fcb->inode_item.st_ctime = now;
+    fileref->parent->fcb->inode_item.st_mtime = now;
+
+    mark_fcb_dirty(fileref->parent->fcb);
+    
+    fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
+    fileref->fcb->subvol->root_item.ctime = now;
+    
+    if (FileObject && FileObject->Flags & FO_CACHE_SUPPORTED && fileref->fcb->nonpaged->segment_object.DataSectionObject)
+        CcPurgeCacheSection(&fileref->fcb->nonpaged->segment_object, NULL, 0, FALSE);
+    
+    newlength.QuadPart = 0;
+    
+    if (FileObject && !CcUninitializeCacheMap(FileObject, &newlength, NULL))
+        TRACE("CcUninitializeCacheMap failed\n");
+
+
+    ExReleaseResourceLite(fileref->fcb->Header.Resource);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -2522,89 +2604,18 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             InitializeListHead(&rollback);
             
             if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                LARGE_INTEGER newlength, time;
-                BTRFS_TIME now;
-                        
-                KeQuerySystemTime(&time);
-                win_time_to_unix(time, &now);
-
                 ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                 
-                ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
-                
-                fileref->deleted = TRUE;
-                mark_fileref_dirty(fileref);
-                
-                // delete INODE_ITEM (0x1)
-        
-                TRACE("nlink = %u\n", fileref->fcb->inode_item.st_nlink);
-                
-                mark_fcb_dirty(fileref->fcb);
-                
-                if (fileref->fcb->inode_item.st_nlink > 1) {
-                    fileref->fcb->inode_item.st_nlink--;
-                    fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
-                    fileref->fcb->inode_item.sequence++;
-                    fileref->fcb->inode_item.st_ctime = now;
-                } else {
-                    fileref->fcb->deleted = TRUE;
-                
-                    // excise extents
-                    
-                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-                        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), &rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("excise_extents returned %08x\n", Status);
-                            do_rollback(fcb->Vcb, &rollback);
-                            ExReleaseResourceLite(fcb->Header.Resource);
-                            ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                            goto exit;
-                        }
-                        
-                        clear_rollback(&rollback);
-                    }
-                    
-                    fcb->Header.AllocationSize.QuadPart = 0;
-                    fcb->Header.FileSize.QuadPart = 0;
-                    fcb->Header.ValidDataLength.QuadPart = 0;
-                    
-                    if (FileObject && FileObject->PrivateCacheMap) {
-                        CC_FILE_SIZES ccfs;
-                        
-                        ccfs.AllocationSize = fcb->Header.AllocationSize;
-                        ccfs.FileSize = fcb->Header.FileSize;
-                        ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-                        
-                        CcSetFileSizes(FileObject, &ccfs);
-                    }
+                Status = delete_fileref2(fileref, FileObject, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_fileref2 returned %08x\n", Status);
+                    do_rollback(Vcb, &rollback);
+                    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                    goto exit;
                 }
                 
-                // update INODE_ITEM of parent
-                
-                TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
-                fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
-                TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
-                fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
-                fileref->parent->fcb->inode_item.sequence++;
-                fileref->parent->fcb->inode_item.st_ctime = now;
-                fileref->parent->fcb->inode_item.st_mtime = now;
-
-                mark_fcb_dirty(fileref->parent->fcb);
-                
-                fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
-                fileref->fcb->subvol->root_item.ctime = now;
-                
-                if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject)
-                    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
-                
-                newlength.QuadPart = 0;
-                
-                if (!CcUninitializeCacheMap(FileObject, &newlength, NULL)) {
-                    TRACE("CcUninitializeCacheMap failed\n");
-                }
-
-                ExReleaseResourceLite(fcb->Header.Resource);
                 ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                clear_rollback(&rollback);
             } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                 IO_STATUS_BLOCK iosb;
                 CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);

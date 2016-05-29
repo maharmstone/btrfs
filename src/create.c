@@ -1173,6 +1173,29 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     return STATUS_SUCCESS;
 }
 
+void insert_fileref_child(file_ref* parent, file_ref* child) {
+    ExAcquireResourceExclusiveLite(&parent->nonpaged->children_lock, TRUE);
+    if (IsListEmpty(&parent->children))
+        InsertTailList(&parent->children, &child->list_entry);
+    else {
+        LIST_ENTRY* le = parent->children.Flink;
+        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
+        
+        while (le != &parent->children) {
+            file_ref* fr2 = (le->Flink == &parent->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
+            
+            if (child->index > fr1->index && (!fr2 || fr2->index > child->index)) {
+                InsertHeadList(&fr1->list_entry, &child->list_entry);
+                break;
+            }
+            
+            fr1 = fr2;
+            le = le->Flink;
+        }
+    }
+    ExReleaseResourceLite(&parent->nonpaged->children_lock);
+}
+
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
@@ -1472,28 +1495,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->parent = (struct _file_ref*)sf;
                     
-                    ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
-    
-                    if (IsListEmpty(&sf->children))
-                        InsertTailList(&sf->children, &sf2->list_entry);
-                    else {
-                        LIST_ENTRY* le = sf->children.Flink;
-                        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
-                        
-                        while (le != &sf->children) {
-                            file_ref* fr2 = (le->Flink == &sf->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
-                            
-                            if (sf2->index > fr1->index && (!fr2 || fr2->index > sf2->index)) {
-                                InsertHeadList(&fr1->list_entry, &sf2->list_entry);
-                                break;
-                            }
-                            
-                            fr1 = fr2;
-                            le = le->Flink;
-                        }
-                    }
-
-                    ExReleaseResourceLite(&sf->nonpaged->children_lock);
+                    insert_fileref_child(sf, sf2);
                     
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->refcount);
@@ -1537,7 +1539,7 @@ end2:
     return Status;
 }
 
-static NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index) {
+NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index) {
     KEY searchkey;
     traverse_ptr tp, prev_tp;
     NTSTATUS Status;

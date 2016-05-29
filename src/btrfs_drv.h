@@ -557,6 +557,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
 void mark_fileref_dirty(file_ref* fileref);
+NTSTATUS delete_fileref2(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -702,6 +703,8 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                          UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8);
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb);
+void insert_fileref_child(file_ref* parent, file_ref* child);
+NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
