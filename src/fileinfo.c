@@ -1963,62 +1963,77 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    Status = STATUS_INTERNAL_ERROR; // FIXME
-    goto end;
+    // We move files by moving the existing fileref to the new directory, and
+    // replacing it with a dummy fileref with the same original values, but marked as deleted.
     
-    // FIXME - created deleted fileref after current one
-    // FIXME - move current fileref to new directory
+    fr2 = create_fileref();
     
+    fr2->fcb = fileref->fcb;
+    fr2->fcb->refcount++;
+    
+    fr2->filepart = fileref->filepart;
+    fr2->utf8 = fileref->utf8;
+    fr2->oldutf8 = fileref->oldutf8;
+    fr2->full_filename = fileref->full_filename;
+    fr2->name_offset = fileref->name_offset;
+    fr2->index = fileref->index;
+    fr2->delete_on_close = fileref->delete_on_close;
+    fr2->deleted = TRUE;
+    fr2->created = fileref->created;
+    fr2->parent = fileref->parent;
+
     Status = fcb_get_last_dir_index(related->fcb, &index);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
         goto end;
     }
     
-    fr2 = create_fileref();
-    
-    fr2->fcb = fcb;
-    fcb->refcount++;
-    
-    fr2->utf8 = utf8;
-    fr2->index = index;
-    fr2->created = TRUE;
-    fr2->parent = related;
-    
-    fr2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
-    if (!fr2->filepart.Buffer) {
+    fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
+    if (!fileref->filepart.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    fr2->filepart.Length = fr2->filepart.MaximumLength = fnus.Length;
-    RtlCopyMemory(fr2->filepart.Buffer, fnus.Buffer, fnus.Length);
+    fileref->filepart.Length = fileref->filepart.MaximumLength = fnus.Length;
+    RtlCopyMemory(fileref->filepart.Buffer, fnus.Buffer, fnus.Length);
     
-    fr2->name_offset = related->full_filename.Length / sizeof(WCHAR);
+    fileref->name_offset = related->full_filename.Length / sizeof(WCHAR);
 
     if (related != Vcb->root_fileref)
-        fr2->name_offset++;
+        fileref->name_offset++;
     
-    fr2->full_filename.Length = fr2->full_filename.MaximumLength = (fr2->name_offset * sizeof(WCHAR)) + fr2->filepart.Length;
-    fr2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr2->full_filename.Length, ALLOC_TAG);
-    if (!fr2->full_filename.Buffer) {
+    fileref->full_filename.Length = fileref->full_filename.MaximumLength = (fileref->name_offset * sizeof(WCHAR)) + fileref->filepart.Length;
+    fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.Length, ALLOC_TAG);
+    if (!fileref->full_filename.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    RtlCopyMemory(fr2->full_filename.Buffer, related->full_filename.Buffer, related->full_filename.Length);
+    RtlCopyMemory(fileref->full_filename.Buffer, related->full_filename.Buffer, related->full_filename.Length);
     
-    fr2->full_filename.Buffer[related->full_filename.Length / sizeof(WCHAR)] = '\\';
+    fileref->full_filename.Buffer[related->full_filename.Length / sizeof(WCHAR)] = '\\';
     
-    RtlCopyMemory(&fr2->full_filename.Buffer[fr2->name_offset], fr2->filepart.Buffer, fr2->filepart.Length);
+    RtlCopyMemory(&fileref->full_filename.Buffer[fileref->name_offset], fileref->filepart.Buffer, fileref->filepart.Length);
+
+    fileref->utf8 = utf8;
+    fileref->oldutf8.Buffer = NULL;
+    fileref->index = index;
+    fileref->deleted = FALSE;
+    fileref->created = TRUE;
+    fileref->parent = related;
+
+    ExAcquireResourceExclusiveLite(&fileref->parent->nonpaged->children_lock, TRUE);
+    InsertHeadList(&fileref->list_entry, &fr2->list_entry);
+    RemoveEntryList(&fileref->list_entry);
+    ExReleaseResourceLite(&fileref->parent->nonpaged->children_lock);
     
-    insert_fileref_child(related, fr2);
+    insert_fileref_child(related, fileref);
     
     mark_fileref_dirty(fr2);
-    free_fileref(fr2);
-    
+    mark_fileref_dirty(fileref);
+
     // update inode's INODE_ITEM
     
     KeQuerySystemTime(&time);
@@ -2030,14 +2045,27 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     mark_fcb_dirty(fcb);
     
-    // update parent's INODE_ITEM
+    // update new parent's INODE_ITEM
     
-    parfcb->inode_item.transid = Vcb->superblock.generation;
-    parfcb->inode_item.st_size += 2 * utf8len;
-    parfcb->inode_item.sequence++;
-    parfcb->inode_item.st_ctime = now;
+    related->fcb->inode_item.transid = Vcb->superblock.generation;
+    related->fcb->inode_item.st_size += 2 * utf8len;
+    related->fcb->inode_item.sequence++;
+    related->fcb->inode_item.st_ctime = now;
+    related->fcb->inode_item.st_mtime = now;
     
-    mark_fcb_dirty(parfcb);
+    mark_fcb_dirty(related->fcb);
+    
+    // update old parent's INODE_ITEM
+    
+    fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
+    fr2->parent->fcb->inode_item.st_size -= 2 * fr2->utf8.Length;
+    fr2->parent->fcb->inode_item.sequence++;
+    fr2->parent->fcb->inode_item.st_ctime = now;
+    fr2->parent->fcb->inode_item.st_mtime = now;
+    
+    free_fileref(fr2);
+    
+    mark_fcb_dirty(fr2->parent->fcb);
     
     // FIXME - notification
 
