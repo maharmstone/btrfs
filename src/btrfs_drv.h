@@ -166,6 +166,7 @@ typedef struct _file_ref {
     fcb* fcb;
     UNICODE_STRING filepart;
     ANSI_STRING utf8;
+    ANSI_STRING oldutf8;
     UNICODE_STRING full_filename;
     ULONG name_offset;
     UINT64 index;
