@@ -1725,155 +1725,155 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS delete_subvol(file_ref* fileref, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    UINT64 index;
-    KEY searchkey;
-    traverse_ptr tp;
-    UINT32 crc32;
-    ROOT_ITEM* ri;
-    BOOL no_ref = FALSE;
-    fcb* fcb = fileref->fcb;
-    
-    // delete ROOT_REF in root tree
-    
-    Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, &fileref->utf8, &index, rollback);
-    
-    // A bug in Linux means that if you create a snapshot of a subvol containing another subvol,
-    // the ROOT_REF and ROOT_BACKREF items won't be created, nor will num_references of ROOT_ITEM
-    // be increased. In this case, we just unlink the subvol from its parent, and don't worry
-    // about anything else.
-    
-    if (Status == STATUS_NOT_FOUND)
-        no_ref = TRUE;
-    else if (!NT_SUCCESS(Status)) {
-        ERR("delete_root_ref returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!no_ref) {
-        // delete ROOT_BACKREF in root tree
-        
-        Status = update_root_backref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("update_root_backref returned %08x\n", Status);
-            return Status;
-        }
-    }
-    
-    // delete DIR_ITEM in parent
-    
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
-    Status = delete_dir_item(fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, &fileref->utf8, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("delete_dir_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    // delete DIR_INDEX in parent
-    
-    if (!no_ref) {
-        searchkey.obj_id = fileref->parent->fcb->inode;
-        searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = index;
-        
-        Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item 1 returned %08x\n", Status);
-            return Status;
-        }
-    
-        if (!keycmp(&searchkey, &tp.item->key)) {
-            delete_tree_item(fcb->Vcb, &tp, rollback);
-            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        }
-    } else {
-        BOOL b;
-        traverse_ptr next_tp;
-        
-        // If we have no ROOT_REF, we have to look through all the DIR_INDEX entries manually :-(
-        
-        searchkey.obj_id = fileref->parent->fcb->inode;
-        searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = 0;
-        
-        Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item 1 returned %08x\n", Status);
-            return Status;
-        }
-        
-        do {
-            if (tp.item->key.obj_type == TYPE_DIR_INDEX && tp.item->size >= sizeof(DIR_ITEM)) {
-                DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-                
-                if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fileref->utf8.Length &&
-                    tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fileref->utf8.Buffer, di->name, di->n) == di->n) {
-                    delete_tree_item(fcb->Vcb, &tp, rollback);
-                    break;
-                }
-            }
-        
-            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
-            
-            if (b) {
-                tp = next_tp;
-                
-                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                    break;
-            }
-        } while (b);
-    }
-    
-    if (no_ref)
-        return STATUS_SUCCESS;
-    
-    if (fcb->subvol->root_item.num_references > 1) {
-        UINT64 offset;
-        
-        // change ROOT_ITEM num_references
-        
-        fcb->subvol->root_item.num_references--;
-        
-        searchkey.obj_id = fcb->subvol->id;
-        searchkey.obj_type = TYPE_ROOT_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item 2 returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            delete_tree_item(fcb->Vcb, &tp, rollback);
-            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-            offset = tp.item->key.offset;
-        } else {
-            ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
-            offset = 0;
-        }
-        
-        ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
-        if (!ri) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
-        
-        if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else {
-        RemoveEntryList(&fcb->subvol->list_entry);
-        
-        InsertTailList(&fcb->Vcb->drop_roots, &fcb->subvol->list_entry);
-    }
-    
-    return STATUS_SUCCESS;
-}
+// static NTSTATUS delete_subvol(file_ref* fileref, LIST_ENTRY* rollback) {
+//     NTSTATUS Status;
+//     UINT64 index;
+//     KEY searchkey;
+//     traverse_ptr tp;
+//     UINT32 crc32;
+//     ROOT_ITEM* ri;
+//     BOOL no_ref = FALSE;
+//     fcb* fcb = fileref->fcb;
+//     
+//     // delete ROOT_REF in root tree
+//     
+//     Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, &fileref->utf8, &index, rollback);
+//     
+//     // A bug in Linux means that if you create a snapshot of a subvol containing another subvol,
+//     // the ROOT_REF and ROOT_BACKREF items won't be created, nor will num_references of ROOT_ITEM
+//     // be increased. In this case, we just unlink the subvol from its parent, and don't worry
+//     // about anything else.
+//     
+//     if (Status == STATUS_NOT_FOUND)
+//         no_ref = TRUE;
+//     else if (!NT_SUCCESS(Status)) {
+//         ERR("delete_root_ref returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (!no_ref) {
+//         // delete ROOT_BACKREF in root tree
+//         
+//         Status = update_root_backref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("update_root_backref returned %08x\n", Status);
+//             return Status;
+//         }
+//     }
+//     
+//     // delete DIR_ITEM in parent
+//     
+//     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+//     Status = delete_dir_item(fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, &fileref->utf8, rollback);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("delete_dir_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     // delete DIR_INDEX in parent
+//     
+//     if (!no_ref) {
+//         searchkey.obj_id = fileref->parent->fcb->inode;
+//         searchkey.obj_type = TYPE_DIR_INDEX;
+//         searchkey.offset = index;
+//         
+//         Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("find_item 1 returned %08x\n", Status);
+//             return Status;
+//         }
+//     
+//         if (!keycmp(&searchkey, &tp.item->key)) {
+//             delete_tree_item(fcb->Vcb, &tp, rollback);
+//             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+//         }
+//     } else {
+//         BOOL b;
+//         traverse_ptr next_tp;
+//         
+//         // If we have no ROOT_REF, we have to look through all the DIR_INDEX entries manually :-(
+//         
+//         searchkey.obj_id = fileref->parent->fcb->inode;
+//         searchkey.obj_type = TYPE_DIR_INDEX;
+//         searchkey.offset = 0;
+//         
+//         Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("find_item 1 returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         do {
+//             if (tp.item->key.obj_type == TYPE_DIR_INDEX && tp.item->size >= sizeof(DIR_ITEM)) {
+//                 DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+//                 
+//                 if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fileref->utf8.Length &&
+//                     tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fileref->utf8.Buffer, di->name, di->n) == di->n) {
+//                     delete_tree_item(fcb->Vcb, &tp, rollback);
+//                     break;
+//                 }
+//             }
+//         
+//             b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+//             
+//             if (b) {
+//                 tp = next_tp;
+//                 
+//                 if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+//                     break;
+//             }
+//         } while (b);
+//     }
+//     
+//     if (no_ref)
+//         return STATUS_SUCCESS;
+//     
+//     if (fcb->subvol->root_item.num_references > 1) {
+//         UINT64 offset;
+//         
+//         // change ROOT_ITEM num_references
+//         
+//         fcb->subvol->root_item.num_references--;
+//         
+//         searchkey.obj_id = fcb->subvol->id;
+//         searchkey.obj_type = TYPE_ROOT_ITEM;
+//         searchkey.offset = 0xffffffffffffffff;
+//         
+//         Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("find_item 2 returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+//             delete_tree_item(fcb->Vcb, &tp, rollback);
+//             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+//             offset = tp.item->key.offset;
+//         } else {
+//             ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
+//             offset = 0;
+//         }
+//         
+//         ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+//         if (!ri) {
+//             ERR("out of memory\n");
+//             return STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//         
+//         RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
+//         
+//         if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+//             ERR("insert_tree_item failed\n");
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//     } else {
+//         RemoveEntryList(&fcb->subvol->list_entry);
+//         
+//         InsertTailList(&fcb->Vcb->drop_roots, &fcb->subvol->list_entry);
+//     }
+//     
+//     return STATUS_SUCCESS;
+// }
 
 static WCHAR* file_desc_fcb(fcb* fcb) {
     char s[60];
@@ -1980,225 +1980,6 @@ void mark_fileref_dirty(file_ref* fileref) {
     }
     
     fileref->fcb->Vcb->need_write = TRUE;
-}
-
-NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback) {
-    ULONG bytecount;
-    NTSTATUS Status;
-    char* utf8 = NULL;
-    UINT32 crc32;
-    KEY searchkey;
-    traverse_ptr tp;
-    UINT64 parinode;
-    root* parsubvol;
-    LARGE_INTEGER time;
-    BTRFS_TIME now;
-    fcb* fcb = fileref->fcb;
-#ifdef _DEBUG
-    LARGE_INTEGER freq, time1, time2;
-#endif
-    
-    if (fileref->deleted || fcb->deleted) {
-        WARN("trying to delete already-deleted file\n");
-        return STATUS_SUCCESS;
-    }
-    
-    if (fileref == fcb->Vcb->root_fileref) {
-        ERR("error - trying to delete root FCB\n");
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (fcb->inode == SUBVOL_ROOT_INODE) {
-        Status = delete_subvol(fileref, rollback);
-        
-        if (!NT_SUCCESS(Status))
-            goto exit;
-        else {
-            parinode = fileref->parent->fcb->inode;
-            parsubvol = fileref->parent->fcb->subvol;
-            bytecount = fileref->utf8.Length;
-            goto success2;
-        }
-    }
-    
-#ifdef _DEBUG
-    time1 = KeQueryPerformanceCounter(&freq);
-#endif
-    
-    KeQuerySystemTime(&time);
-    win_time_to_unix(time, &now);
-    
-    if (fcb->ads) {
-        char* s;
-        TRACE("deleting ADS\n");
-        
-        s = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.Length + 1, ALLOC_TAG);
-        if (!s) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        RtlCopyMemory(s, fcb->adsxattr.Buffer, fcb->adsxattr.Length);
-        s[fcb->adsxattr.Length] = 0;
-        
-        if (!delete_xattr(fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, s, fcb->adshash, rollback)) {
-            ERR("failed to delete xattr %s\n", s);
-        }
-        
-        ExFreePool(s);
-        
-        fileref->parent->fcb->inode_item.transid = fcb->Vcb->superblock.generation;
-        fileref->parent->fcb->inode_item.sequence++;
-        fileref->parent->fcb->inode_item.st_ctime = now;
-        
-        mark_fcb_dirty(fileref->parent->fcb);
-        
-        fileref->parent->fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
-        fileref->parent->fcb->subvol->root_item.ctime = now;
-        
-        goto success;
-    }
-    
-    Status = RtlUnicodeToUTF8N(NULL, 0, &bytecount, fileref->filepart.Buffer, fileref->filepart.Length);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
-        return Status;
-    }
-    
-    utf8 = ExAllocatePoolWithTag(PagedPool, bytecount + 1, ALLOC_TAG);
-    if (!utf8) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlUnicodeToUTF8N(utf8, bytecount, &bytecount, fileref->filepart.Buffer, fileref->filepart.Length);
-    utf8[bytecount] = 0;
-    
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, bytecount);
-
-    TRACE("deleting %.*S\n", file_desc_fileref(fileref));
-    
-    if (fileref->parent->fcb->subvol == fcb->subvol)
-        parinode = fileref->parent->fcb->inode;
-    else
-        parinode = SUBVOL_ROOT_INODE;
-    
-    parsubvol = fcb->subvol;
-    
-    // delete DIR_ITEM (0x54)
-    
-    Status = delete_dir_item(fcb->Vcb, fcb->subvol, parinode, crc32, &fileref->utf8, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("delete_dir_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    // delete INODE_REF (0xc)
-    
-    Status = delete_inode_ref(fcb->Vcb, fcb->subvol, fcb->inode, parinode, &fileref->utf8, rollback);
-    
-    // delete DIR_INDEX (0x60)
-    
-    searchkey.obj_id = parinode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
-    searchkey.offset = fileref->index;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        Status = STATUS_INTERNAL_ERROR;
-        goto exit;
-    }
-    
-    if (!keycmp(&searchkey, &tp.item->key)) {
-        delete_tree_item(fcb->Vcb, &tp, rollback);
-        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-    }
-    
-    // delete INODE_ITEM (0x1)
-    
-    TRACE("nlink = %u\n", fcb->inode_item.st_nlink);
-    
-    mark_fcb_dirty(fcb);
-    
-    if (fcb->inode_item.st_nlink > 1) {
-        fcb->inode_item.st_nlink--;
-        fcb->inode_item.transid = fcb->Vcb->superblock.generation;
-        fcb->inode_item.sequence++;
-        fcb->inode_item.st_ctime = now;
-        
-        goto success2;
-    } else
-        fcb->deleted = TRUE;
-    
-    // excise extents
-    
-    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("excise_extents returned %08x\n", Status);
-            goto exit;
-        }
-    }
-    
-success2:
-    // update INODE_ITEM of parent
-    
-    TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
-    fileref->parent->fcb->inode_item.st_size -= bytecount * 2;
-    TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
-    fileref->parent->fcb->inode_item.transid = fcb->Vcb->superblock.generation;
-    fileref->parent->fcb->inode_item.sequence++;
-    fileref->parent->fcb->inode_item.st_ctime = now;
-    fileref->parent->fcb->inode_item.st_mtime = now;
-
-    mark_fcb_dirty(fileref->parent->fcb);
-    
-    parsubvol->root_item.ctransid = fcb->Vcb->superblock.generation;
-    parsubvol->root_item.ctime = now;
-    
-success:
-    consider_write(fcb->Vcb);
-    
-    fileref->deleted = TRUE;
-    
-    fcb->Header.AllocationSize.QuadPart = 0;
-    fcb->Header.FileSize.QuadPart = 0;
-    fcb->Header.ValidDataLength.QuadPart = 0;
-    
-    if (FileObject && FileObject->PrivateCacheMap) {
-        CC_FILE_SIZES ccfs;
-        
-        ccfs.AllocationSize = fcb->Header.AllocationSize;
-        ccfs.FileSize = fcb->Header.FileSize;
-        ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-        
-        CcSetFileSizes(FileObject, &ccfs);
-    }
-    
-    // FIXME - set deleted flag of any open FCBs for ADS
-    
-    if (FileObject && FileObject->FsContext2) {
-        ccb* ccb = FileObject->FsContext2;
-        
-        if (ccb->fileref)
-            send_notification_fileref(ccb->fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
-    }
-    
-#ifdef _DEBUG
-    time2 = KeQueryPerformanceCounter(NULL);
-#endif
-    
-    TRACE("time = %u (freq = %u)\n", (UINT32)(time2.QuadPart - time1.QuadPart), (UINT32)freq.QuadPart);
-    
-    Status = STATUS_SUCCESS;
-    
-exit:
-    if (utf8)
-        ExFreePool(utf8);
-    
-    return Status;
 }
 
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {

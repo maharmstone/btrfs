@@ -541,7 +541,6 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, LIST_ENTRY* rollback);
 UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, LIST_ENTRY* rollback);
-NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* rollback);
 fcb* create_fcb();
 file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
