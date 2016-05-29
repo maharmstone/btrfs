@@ -4006,15 +4006,16 @@ end:
 
 static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    ULONG disize;
-    DIR_ITEM *di, *di2;
-    UINT32 crc32;
     
     // if fileref created and then immediately deleted, do nothing
     if (fileref->created && fileref->deleted)
         return STATUS_SUCCESS;
     
     if (fileref->created) {
+        ULONG disize;
+        DIR_ITEM *di, *di2;
+        UINT32 crc32;
+        
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
         
         disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
@@ -4110,6 +4111,110 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         if (!keycmp(&searchkey, &tp.item->key)) {
             delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        }
+    } else { // rename
+        if (fileref->oldutf8.Buffer) {
+            UINT32 crc32, oldcrc32;
+            UINT64 parinode;
+            ULONG disize;
+            DIR_ITEM *di, *di2;
+            KEY searchkey;
+            traverse_ptr tp;
+            
+            crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+            oldcrc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->oldutf8.Buffer, fileref->oldutf8.Length);
+            
+            if (fileref->parent->fcb->subvol == fileref->fcb->subvol)
+                parinode = fileref->parent->fcb->inode;
+            else
+                parinode = SUBVOL_ROOT_INODE;
+            
+            // delete DIR_ITEM (0x54)
+            
+            Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, oldcrc32, &fileref->oldutf8, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_dir_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            // add DIR_ITEM (0x54)
+            
+            disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
+            di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+            if (!di) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
+            if (!di2) {
+                ERR("out of memory\n");
+                ExFreePool(di);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            di->key.obj_id = fileref->fcb->inode;
+            di->key.obj_type = TYPE_INODE_ITEM;
+            di->key.offset = 0;
+            di->transid = fileref->fcb->Vcb->superblock.generation;
+            di->m = 0;
+            di->n = (UINT16)fileref->utf8.Length;
+            di->type = fileref->fcb->type;
+            RtlCopyMemory(di->name, fileref->utf8.Buffer, fileref->utf8.Length);
+            
+            RtlCopyMemory(di2, di, disize);
+            
+            Status = add_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, di, disize, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_dir_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            // delete INODE_REF (0xc)
+            
+            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, &fileref->oldutf8, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_inode_ref returned %08x\n", Status);
+                return Status;
+            }
+            
+            // add INODE_REF (0xc)
+            
+            Status = add_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, fileref->index, &fileref->utf8, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_inode_ref returned %08x\n", Status);
+                return Status;
+            }
+            
+            // delete DIR_INDEX (0x60)
+            
+            searchkey.obj_id = parinode;
+            searchkey.obj_type = TYPE_DIR_INDEX;
+            searchkey.offset = fileref->index;
+            
+            Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                Status = STATUS_INTERNAL_ERROR;
+                return Status;
+            }
+            
+            if (!keycmp(&searchkey, &tp.item->key)) {
+                delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
+                TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            } else
+                WARN("could not find (%llx,%x,%llx) in subvol %llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, fileref->fcb->subvol->id);
+            
+            // add DIR_INDEX (0x60)
+            
+            if (!insert_tree_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                Status = STATUS_INTERNAL_ERROR;
+                return Status;
+            }
+
+            ExFreePool(fileref->oldutf8.Buffer);
+            fileref->oldutf8.Buffer = NULL;
         }
     }
 
