@@ -4158,9 +4158,16 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
-            di->key.obj_id = fileref->fcb->inode;
-            di->key.obj_type = TYPE_INODE_ITEM;
-            di->key.offset = 0;
+            if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+                di->key.obj_id = fileref->fcb->inode;
+                di->key.obj_type = TYPE_INODE_ITEM;
+                di->key.offset = 0;
+            } else { // subvolume
+                di->key.obj_id = fileref->fcb->subvol->id;
+                di->key.obj_type = TYPE_ROOT_ITEM;
+                di->key.offset = 0xffffffffffffffff;
+            }
+            
             di->transid = fileref->fcb->Vcb->superblock.generation;
             di->m = 0;
             di->n = (UINT16)fileref->utf8.Length;
