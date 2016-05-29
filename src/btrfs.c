@@ -2267,6 +2267,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 
 void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line) {
     LONG rc;
+    
+    if (fr->parent)
+        ExAcquireResourceExclusiveLite(&fr->parent->nonpaged->children_lock, TRUE);
 
     rc = InterlockedDecrement(&fr->refcount);
     
@@ -2281,19 +2284,23 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
 #ifdef _DEBUG
     if (rc < 0) {
         ERR("fileref %p: refcount now %i\n", fr, rc);
+        
+        if (fr->parent)
+            ExReleaseResourceLite(&fr->parent->nonpaged->children_lock);
         int3;
     }
 #endif
     
-    if (rc > 0)
+    if (rc > 0) {
+        if (fr->parent)
+            ExReleaseResourceLite(&fr->parent->nonpaged->children_lock);
+        
         return;
+    }
     
     // FIXME - do we need a file_ref lock?
     
     // FIXME - do delete if needed
-    
-    if (fr->parent)
-        ExAcquireResourceExclusiveLite(&fr->parent->nonpaged->children_lock, TRUE);
     
     if (fr->filepart.Buffer)
         ExFreePool(fr->filepart.Buffer);
@@ -2320,7 +2327,7 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     
     if (fr->parent) {
         ExReleaseResourceLite(&fr->parent->nonpaged->children_lock);
-        free_fileref((file_ref*)fr->parent);
+        free_fileref(fr->parent);
     }
     
     ExFreePool(fr);
