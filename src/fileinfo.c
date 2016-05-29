@@ -1900,6 +1900,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     if (related == fileref->parent) { // keeping file in same directory
         UNICODE_STRING fnus2, ff;
+        ULONG oldutf8len;
         
         fnus2.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
         if (!fnus2.Buffer) {
@@ -1920,6 +1921,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fnus2.Length = fnus2.MaximumLength = fnus.Length;
         RtlCopyMemory(fnus2.Buffer, fnus.Buffer, fnus.Length);
         
+        oldutf8len = fileref->utf8.Length;
+        
         if (!fileref->created && !fileref->oldutf8.Buffer)
             fileref->oldutf8 = fileref->utf8;
         else
@@ -1936,6 +1939,25 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         RtlCopyMemory(&fileref->full_filename.Buffer[fileref->name_offset], fileref->filepart.Buffer, fileref->filepart.Length);
         
         mark_fileref_dirty(fileref);
+        
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &now);
+        
+        fcb->inode_item.transid = Vcb->superblock.generation;
+        fcb->inode_item.sequence++;
+        fcb->inode_item.st_ctime = now;
+        
+        mark_fcb_dirty(fcb);
+        
+        // update parent's INODE_ITEM
+        
+        related->fcb->inode_item.transid = Vcb->superblock.generation;
+        related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2* oldutf8len);
+        related->fcb->inode_item.sequence++;
+        related->fcb->inode_item.st_ctime = now;
+        related->fcb->inode_item.st_mtime = now;
+        
+        mark_fcb_dirty(related->fcb);
         
         Status = STATUS_SUCCESS;
         goto end;
@@ -2004,7 +2026,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_nlink++;
     fcb->inode_item.st_ctime = now;
     
     mark_fcb_dirty(fcb);
