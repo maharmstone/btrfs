@@ -1687,7 +1687,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    if (fileref->parent->fcb->subvol != related->fcb->subvol) {
+    if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
         FIXME("FIXME - move file across subvols\n"); // FIXME
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
