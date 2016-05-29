@@ -4062,6 +4062,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         UINT64 parinode;
         KEY searchkey;
         traverse_ptr tp;
+        ANSI_STRING* name;
         
         // FIXME - delete subvol
         
@@ -4069,8 +4070,13 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             FIXME("FIXME - delete stream\n"); // FIXME
             return STATUS_NOT_IMPLEMENTED;
         }
+        
+        if (fileref->oldutf8.Buffer)
+            name = &fileref->oldutf8;
+        else
+            name = &fileref->utf8;
 
-        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+        crc32 = calc_crc32c(0xfffffffe, (UINT8*)name->Buffer, name->Length);
 
         TRACE("deleting %.*S\n", file_desc_fileref(fileref));
         
@@ -4081,7 +4087,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, &fileref->utf8, rollback);
+        Status = delete_dir_item(fileref->fcb->Vcb, fileref->fcb->subvol, parinode, crc32, name, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_dir_item returned %08x\n", Status);
             return Status;
@@ -4089,7 +4095,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         // delete INODE_REF (0xc)
         
-        Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, &fileref->utf8, rollback);
+        Status = delete_inode_ref(fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, parinode, name, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_inode_ref returned %08x\n", Status);
             return Status;
@@ -4111,6 +4117,11 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         if (!keycmp(&searchkey, &tp.item->key)) {
             delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        }
+        
+        if (fileref->oldutf8.Buffer) {
+            ExFreePool(fileref->oldutf8.Buffer);
+            fileref->oldutf8.Buffer = NULL;
         }
     } else { // rename
         if (fileref->oldutf8.Buffer) {
