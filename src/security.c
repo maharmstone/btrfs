@@ -17,6 +17,8 @@
 
 #include "btrfs_drv.h"
 
+#define SEF_DACL_AUTO_INHERIT 0x01
+
 typedef struct {
     UCHAR revision;
     UCHAR elements;
@@ -382,103 +384,6 @@ static ACL* load_default_acl() {
     return acl;
 }
 
-static ACL* inherit_acl(SECURITY_DESCRIPTOR* parsd, BOOL file) {
-    ULONG size;
-    NTSTATUS Status;
-    ACL *paracl, *acl;
-    BOOLEAN parhasdacl, pardefaulted;
-    ACE_HEADER *ah, *parah;
-    UINT32 i;
-    USHORT num_aces;
-    
-    // FIXME - replace this with SeAssignSecurity
-    
-    Status = RtlGetDaclSecurityDescriptor(parsd, &parhasdacl, &paracl, &pardefaulted);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlGetDaclSecurityDescriptor returned %08x\n", Status);
-        return NULL;
-    }
-    
-    // FIXME - handle parhasdacl == FALSE
-
-//     OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE
-    num_aces = 0;
-    size = sizeof(ACL);
-    ah = (ACE_HEADER*)&paracl[1];
-    for (i = 0; i < paracl->AceCount; i++) {
-        if (!file && ah->AceFlags & CONTAINER_INHERIT_ACE) {
-            num_aces++;
-            size += ah->AceSize;
-            
-            if (ah->AceFlags & INHERIT_ONLY_ACE) {
-                num_aces++;
-                size += ah->AceSize;
-            }
-        }
-        
-        if (ah->AceFlags & OBJECT_INHERIT_ACE && (file || !(ah->AceFlags & CONTAINER_INHERIT_ACE))) {
-            num_aces++;
-            size += ah->AceSize;
-        }
-        
-        ah = (ACE_HEADER*)((UINT8*)ah + ah->AceSize);
-    }
-    
-    acl = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
-    if (!acl) {
-        ERR("out of memory\n");
-        return NULL;
-    }
-    
-    acl->AclRevision = ACL_REVISION;
-    acl->Sbz1 = 0;
-    acl->AclSize = size;
-    acl->AceCount = num_aces;
-    acl->Sbz2 = 0;
-    
-    ah = (ACE_HEADER*)&acl[1];
-    parah = (ACE_HEADER*)&paracl[1];
-    for (i = 0; i < paracl->AceCount; i++) {
-        if (!file && parah->AceFlags & CONTAINER_INHERIT_ACE) {
-            if (parah->AceFlags & INHERIT_ONLY_ACE) {
-                RtlCopyMemory(ah, parah, parah->AceSize);
-                ah->AceFlags &= ~INHERIT_ONLY_ACE;
-                ah->AceFlags |= INHERITED_ACE;
-                ah->AceFlags &= ~(OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
-                
-                ah = (ACE_HEADER*)((UINT8*)ah + ah->AceSize);
-            }
-            
-            RtlCopyMemory(ah, parah, parah->AceSize);
-            ah->AceFlags |= INHERITED_ACE;
-            
-            if (ah->AceFlags & NO_PROPAGATE_INHERIT_ACE)
-                ah->AceFlags &= ~(OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
-            
-            ah = (ACE_HEADER*)((UINT8*)ah + ah->AceSize);
-        }
-        
-        if (parah->AceFlags & OBJECT_INHERIT_ACE && (file || !(parah->AceFlags & CONTAINER_INHERIT_ACE))) {
-            RtlCopyMemory(ah, parah, parah->AceSize);
-            ah->AceFlags |= INHERITED_ACE;
-            
-            if (file)
-                ah->AceFlags &= ~INHERIT_ONLY_ACE;
-            else
-                ah->AceFlags |= INHERIT_ONLY_ACE;
-            
-            if (ah->AceFlags & NO_PROPAGATE_INHERIT_ACE || file)
-                ah->AceFlags &= ~(OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
-            
-            ah = (ACE_HEADER*)((UINT8*)ah + ah->AceSize);
-        }
-        
-        parah = (ACE_HEADER*)((UINT8*)parah + parah->AceSize);
-    }
-    
-    return acl;
-}
-
 // static void STDCALL sid_to_string(PSID sid, char* s) {
 //     sid_header* sh = (sid_header*)sid;
 //     LARGE_INTEGER authnum;
@@ -646,15 +551,12 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
     return TRUE;
 }
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent) {
+static void get_top_level_sd(fcb* fcb) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
     ULONG buflen;
     ACL* acl = NULL;
     PSID usersid = NULL, groupsid = NULL;
-    
-    if (get_sd_from_xattr(fcb))
-        goto end;
     
     Status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
     
@@ -694,14 +596,10 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent) {
         }
 //     }
     
-    if (!parent)
-        acl = load_default_acl();
-    else
-        acl = inherit_acl(parent->sd, fcb->type != BTRFS_TYPE_DIRECTORY);
+    acl = load_default_acl();
     
     if (!acl) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -753,6 +651,47 @@ end:
     
     if (groupsid)
         ExFreePool(groupsid);
+}
+
+void fcb_get_sd(fcb* fcb, struct _fcb* parent) {
+    NTSTATUS Status;
+    PSID usersid = NULL, groupsid = NULL;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    
+    if (get_sd_from_xattr(fcb))
+        return;
+    
+    if (!parent) {
+        get_top_level_sd(fcb);
+        return;
+    }
+    
+    SeCaptureSubjectContext(&subjcont);
+    
+    Status = SeAssignSecurityEx(parent->sd, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY, SEF_DACL_AUTO_INHERIT,
+                                &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+    if (!NT_SUCCESS(Status)) {
+        ERR("SeAssignSecurityEx returned %08x\n", Status);
+    }
+    
+    uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    if (!usersid) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlSetOwnerSecurityDescriptor(&fcb->sd, usersid, FALSE);
+    
+    gid_to_sid(fcb->inode_item.st_gid, &groupsid);
+    if (!groupsid) {
+        ERR("out of memory\n");
+        return;
+    }
+       
+    RtlSetGroupSecurityDescriptor(&fcb->sd, groupsid, FALSE);
+    
+    ExFreePool(usersid);
+    ExFreePool(groupsid);
 }
 
 static NTSTATUS STDCALL get_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
