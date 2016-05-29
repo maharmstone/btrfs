@@ -436,44 +436,13 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
     return STATUS_NO_MORE_FILES;
 }
 
-static file_ref* get_fileref_by_index(file_ref* fileref, UINT64 offset) {
-    LIST_ENTRY* le;
-    file_ref* fr2 = NULL;
-    
-    ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
-    
-    le = fileref->children.Flink;
-    while (le != &fileref->children) {
-        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
-        
-        if (fr->index >= offset && !fr->deleted) {
-            if (fr->index == offset) {
-                fr->refcount++;
-                ExReleaseResourceLite(&fileref->nonpaged->children_lock);
-                return fr;
-            }
-            
-            if (!fr2 || fr->index < fr2->index)
-                fr2 = fr;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (fr2)
-        fr2->refcount++;
-    
-    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
-    
-    return fr2;
-}
-
 static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     DIR_ITEM* di;
     NTSTATUS Status;
-    file_ref* fr2;
+    file_ref* fr;
+    LIST_ENTRY* le;
     
     if (fileref->parent) { // don't return . and .. if root directory
         if (*offset == 0) {
@@ -506,124 +475,150 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     if (*offset < 2)
         *offset = 2;
     
-    fr2 = get_fileref_by_index(fileref, *offset);
+    ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
     
-    if (fr2 && fr2->index == *offset) {
-        if (fr2->fcb->subvol == fileref->fcb->subvol) {
-            de->key.obj_id = fr2->fcb->inode;
-            de->key.obj_type = TYPE_INODE_ITEM;
-            de->key.offset = 0;
-        } else {
-            de->key.obj_id = fr2->fcb->subvol->id;
-            de->key.obj_type = TYPE_ROOT_ITEM;
-            de->key.offset = 0;
+    fr = NULL;
+    le = fileref->children.Flink;
+    
+    // skip entries before offset
+    while (le != &fileref->children) {
+        file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+        
+        if (fr2->index >= *offset) {
+            fr = fr2;
+            break;
         }
         
-        de->name = fr2->utf8.Buffer;
-        de->namelen = fr2->utf8.Length;
-        de->type = fr2->fcb->type;
-        de->dir_entry_type = DirEntryType_File;
-        
-        free_fileref(fr2);
-        
-        (*offset)++;
-        
-        return STATUS_SUCCESS;
+        le = le->Flink;
     }
     
-    searchkey.obj_id = fileref->fcb->inode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
-    searchkey.offset = *offset;
-    
-    Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        
-        if (fr2)
-            free_fileref(fr2);
-        
-        return Status;
-    }
-    
-    TRACE("found item %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-    
-    if (keycmp(&tp.item->key, &searchkey) == -1) {
-        if (find_next_item(fileref->fcb->Vcb, &tp, &next_tp, FALSE)) {
-            tp = next_tp;
-            
-            TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        }
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type/* || tp.item->key.offset < *offset*/) {
-        if (fr2 && fr2->index <= tp.item->key.offset) {
-            if (fr2->fcb->subvol == fileref->fcb->subvol) {
-                de->key.obj_id = fr2->fcb->inode;
-                de->key.obj_type = TYPE_INODE_ITEM;
-                de->key.offset = 0;
+    do {
+        if (fr && fr->index == *offset) {
+            if (!fr->deleted) {
+                if (fr->fcb->subvol == fileref->fcb->subvol) {
+                    de->key.obj_id = fr->fcb->inode;
+                    de->key.obj_type = TYPE_INODE_ITEM;
+                    de->key.offset = 0;
+                } else {
+                    de->key.obj_id = fr->fcb->subvol->id;
+                    de->key.obj_type = TYPE_ROOT_ITEM;
+                    de->key.offset = 0;
+                }
+                
+                de->name = fr->utf8.Buffer;
+                de->namelen = fr->utf8.Length;
+                de->type = fr->fcb->type;
+                de->dir_entry_type = DirEntryType_File;
+                
+                (*offset)++;
+                
+                Status = STATUS_SUCCESS;
+                goto end;
             } else {
-                de->key.obj_id = fr2->fcb->subvol->id;
-                de->key.obj_type = TYPE_ROOT_ITEM;
-                de->key.offset = 0;
+                (*offset)++;
+                fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
+                continue;
+            }
+        }
+        
+        searchkey.obj_id = fileref->fcb->inode;
+        searchkey.obj_type = TYPE_DIR_INDEX;
+        searchkey.offset = *offset;
+        
+        Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        if (keycmp(&tp.item->key, &searchkey) == -1) {
+            if (find_next_item(fileref->fcb->Vcb, &tp, &next_tp, FALSE))
+                tp = next_tp;
+        }
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            while (fr && fr->index < tp.item->key.offset) {
+                fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
+                
+                if (fr && fr->index <= tp.item->key.offset && !fr->deleted) {
+                    if (fr->fcb->subvol == fileref->fcb->subvol) {
+                        de->key.obj_id = fr->fcb->inode;
+                        de->key.obj_type = TYPE_INODE_ITEM;
+                        de->key.offset = 0;
+                    } else {
+                        de->key.obj_id = fr->fcb->subvol->id;
+                        de->key.obj_type = TYPE_ROOT_ITEM;
+                        de->key.offset = 0;
+                    }
+                    
+                    de->name = fr->utf8.Buffer;
+                    de->namelen = fr->utf8.Length;
+                    de->type = fr->fcb->type;
+                    de->dir_entry_type = DirEntryType_File;
+                    
+                    *offset = fr->index + 1;
+                    
+                    Status = STATUS_SUCCESS;
+                    goto end;
+                }
             }
             
-            de->name = fr2->utf8.Buffer;
-            de->namelen = fr2->utf8.Length;
-            de->type = fr2->fcb->type;
+            if (fr && fr->index == tp.item->key.offset && fr->deleted) {
+                *offset = fr->index + 1;
+                fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
+                continue;
+            }
+            
+            *offset = tp.item->key.offset + 1;
+            
+            di = (DIR_ITEM*)tp.item->data;
+            
+            if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            de->key = di->key;
+            de->name = di->name;
+            de->namelen = di->n;
+            de->type = di->type;
             de->dir_entry_type = DirEntryType_File;
             
-            free_fileref(fr2);
-            
-            *offset = fr2->index + 1;
-            
-            return STATUS_SUCCESS;
-        }
-        
-        *offset = tp.item->key.offset + 1;
-        
-        di = (DIR_ITEM*)tp.item->data;
-        
-        if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        de->key = di->key;
-        de->name = di->name;
-        de->namelen = di->n;
-        de->type = di->type;
-        de->dir_entry_type = DirEntryType_File;
-        
-        if (fr2)
-            free_fileref(fr2);
-        
-        return STATUS_SUCCESS;
-    }
-    
-    if (fr2) {
-        if (fr2->fcb->subvol == fileref->fcb->subvol) {
-            de->key.obj_id = fr2->fcb->inode;
-            de->key.obj_type = TYPE_INODE_ITEM;
-            de->key.offset = 0;
+            Status = STATUS_SUCCESS;
+            goto end;
         } else {
-            de->key.obj_id = fr2->fcb->subvol->id;
-            de->key.obj_type = TYPE_ROOT_ITEM;
-            de->key.offset = 0;
+            if (fr) {
+                if (fr->fcb->subvol == fileref->fcb->subvol) {
+                    de->key.obj_id = fr->fcb->inode;
+                    de->key.obj_type = TYPE_INODE_ITEM;
+                    de->key.offset = 0;
+                } else {
+                    de->key.obj_id = fr->fcb->subvol->id;
+                    de->key.obj_type = TYPE_ROOT_ITEM;
+                    de->key.offset = 0;
+                }
+                
+                de->name = fr->utf8.Buffer;
+                de->namelen = fr->utf8.Length;
+                de->type = fr->fcb->type;
+                de->dir_entry_type = DirEntryType_File;
+                
+                *offset = fr->index + 1;
+                
+                Status = STATUS_SUCCESS;
+                goto end;
+            } else {
+                Status = STATUS_NO_MORE_FILES;
+                goto end;
+            }
         }
-        
-        de->name = fr2->utf8.Buffer;
-        de->namelen = fr2->utf8.Length;
-        de->type = fr2->fcb->type;
-        de->dir_entry_type = DirEntryType_File;
-        
-        free_fileref(fr2);
-        
-        *offset = fr2->index + 1;
-        
-        return STATUS_SUCCESS;
-    }
+    } while (TRUE);
     
-    return STATUS_NO_MORE_FILES;
+end:
+    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+    
+    return Status;
 }
 
 static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
