@@ -1471,7 +1471,30 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
                     
                     sf2->parent = (struct _file_ref*)sf;
-                    InsertTailList(&sf->children, &sf2->list_entry);
+                    
+                    ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
+    
+                    if (IsListEmpty(&sf->children))
+                        InsertTailList(&sf->children, &sf2->list_entry);
+                    else {
+                        LIST_ENTRY* le = sf->children.Flink;
+                        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
+                        
+                        while (le != &sf->children) {
+                            file_ref* fr2 = (le->Flink == &sf->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
+                            
+                            if (sf2->index > fr1->index && (!fr2 || fr2->index > sf2->index)) {
+                                InsertHeadList(&fr1->list_entry, &sf2->list_entry);
+                                break;
+                            }
+                            
+                            fr1 = fr2;
+                            le = le->Flink;
+                        }
+                    }
+
+                    ExReleaseResourceLite(&sf->nonpaged->children_lock);
+                    
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->refcount);
                     WARN("fileref %p: refcount now %i\n", sf, rc);
@@ -1766,7 +1789,26 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->parent = parfileref;
     
     ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
-    InsertTailList(&parfileref->children, &fileref->list_entry);
+    
+    if (IsListEmpty(&parfileref->children))
+        InsertTailList(&parfileref->children, &fileref->list_entry);
+    else {
+        LIST_ENTRY* le = parfileref->children.Flink;
+        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
+        
+        while (le != &parfileref->children) {
+            file_ref* fr2 = (le->Flink == &parfileref->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
+            
+            if (fileref->index > fr1->index && (!fr2 || fr2->index > fileref->index)) {
+                InsertHeadList(&fr1->list_entry, &fileref->list_entry);
+                break;
+            }
+            
+            fr1 = fr2;
+            le = le->Flink;
+        }
+    }
+    
     ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
     
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -2087,7 +2129,11 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         parfileref->fcb->subvol->root_item.ctime = now;
         
         fileref->parent = (struct _file_ref*)parfileref;
+        
+        ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
         InsertTailList(&parfileref->children, &fileref->list_entry);
+        ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+        
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&parfileref->refcount);
         WARN("fileref %p: refcount now %i\n", parfileref, rc);
