@@ -2850,30 +2850,12 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             else
                 fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
             
-            if (Stack->Parameters.Create.FileAttributes != defda) {
-                char val[64];
-            
-                sprintf(val, "0x%x", Stack->Parameters.Create.FileAttributes);
-            
-                Status = set_xattr(Vcb, fileref->fcb->subvol, fileref->fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("set_xattr returned %08x\n", Status);
-                    free_fileref(fileref);
-                    goto exit;
-                }
-            } else
-                delete_xattr(Vcb, fileref->fcb->subvol, fileref->fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
-            
+            fileref->fcb->atts_changed = TRUE;
+            fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
+
             // FIXME - truncate streams
             // FIXME - do we need to alter parent directory's times?
             // FIXME - send notifications
-            
-            Status = consider_write(Vcb);
-            if (!NT_SUCCESS(Status)) {
-                ERR("consider_write returned %08x\n", Status);
-                free_fileref(fileref);
-                goto exit;
-            }
         }
     
         if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
