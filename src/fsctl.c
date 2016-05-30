@@ -724,13 +724,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     root* r;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    ULONG len, disize, rrsize, irsize;
+    ULONG len, irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     UINT64 dirpos;
-    DIR_ITEM *di, *di2;
     UINT32 crc32;
-    ROOT_REF *rr, *rr2;
     INODE_REF* ir;
     KEY searchkey;
     traverse_ptr tp;
@@ -738,6 +736,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     PSID owner;
     BOOLEAN defaulted;
     UINT64* root_num;
+    file_ref* fr;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
@@ -890,6 +889,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     // add .. inode to new subvol
     
     rootfcb = create_fcb();
+    if (!rootfcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
     
     rootfcb->Vcb = Vcb;
     
@@ -940,9 +944,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     rootfcb->created = TRUE;
     
-    mark_fcb_dirty(rootfcb);
-    free_fcb(rootfcb);
-    
     // add INODE_REF
     
     irsize = sizeof(INODE_REF) - 1 + strlen(DOTDOT);
@@ -963,93 +964,68 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         goto end;
     }
     
-    // add DIR_ITEM
+    // create fileref for entry in other subvolume
     
-    dirpos = find_next_dir_index(Vcb, fcb->subvol, fcb->inode);
-    if (dirpos == 0) {
-        ERR("find_next_dir_index failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    disize = sizeof(DIR_ITEM) - 1 + utf8.Length;
-    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di) {
+    fr = create_fileref();
+    if (!fr) {
         ERR("out of memory\n");
+        free_fcb(rootfcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di2) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        ExFreePool(di);
-        goto end;
-    }
+    fr->fcb = rootfcb;
     
-    di->key.obj_id = id;
-    di->key.obj_type = TYPE_ROOT_ITEM;
-    di->key.offset = 0;
-    di->transid = Vcb->superblock.generation;
-    di->m = 0;
-    di->n = utf8.Length;
-    di->type = BTRFS_TYPE_DIRECTORY;
-    RtlCopyMemory(di->name, utf8.Buffer, utf8.Length);
+    mark_fcb_dirty(rootfcb);
     
-    RtlCopyMemory(di2, di, disize);
-    
-    Status = add_dir_item(Vcb, fcb->subvol, fcb->inode, crc32, di, disize, &rollback);
+    Status = fcb_get_last_dir_index(fcb, &dirpos);
     if (!NT_SUCCESS(Status)) {
-        ERR("add_dir_item returned %08x\n", Status);
+        ERR("fcb_get_last_dir_index returned %08x\n", Status);
+        free_fileref(fr);
         goto end;
     }
     
-    // add DIR_INDEX
+    fr->index = dirpos;
+    fr->utf8 = utf8;
     
-    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    // add ROOT_REF
-    
-    rrsize = sizeof(ROOT_REF) - 1 + utf8.Length;
-    rr = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
-    if (!rr) {
+    fr->filepart.MaximumLength = fr->filepart.Length = nameus.Length;
+    fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
+    if (!fr->filepart.Buffer) {
         ERR("out of memory\n");
+        free_fileref(fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    rr->dir = fcb->inode;
-    rr->index = dirpos;
-    rr->n = utf8.Length;
-    RtlCopyMemory(rr->name, utf8.Buffer, utf8.Length);
+    RtlCopyMemory(fr->filepart.Buffer, nameus.Buffer, nameus.Length);
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, fcb->subvol->id, TYPE_ROOT_REF, r->id, rr, rrsize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
+
+    if (fileref != Vcb->root_fileref)
+        fr->name_offset++;
     
-    // add ROOT_BACKREF
-    
-    rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
-    if (!rr2) {
+    fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
+    fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
+    if (!fr->full_filename.Buffer) {
         ERR("out of memory\n");
+        free_fileref(fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    RtlCopyMemory(rr2, rr, rrsize);
+    RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, r->id, TYPE_ROOT_BACKREF, fcb->subvol->id, rr2, rrsize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    if (fileref != Vcb->root_fileref)
+        fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
+    
+    RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
+    
+    fr->parent = fileref;
+    
+    insert_fileref_child(fileref, fr);
+    
+    fr->created = TRUE;
+    mark_fileref_dirty(fr);
     
     // change fcb->subvol's ROOT_ITEM
     
@@ -1113,8 +1089,6 @@ end:
     }
     
 end2:
-    if (utf8.Buffer)
-        ExFreePool(utf8.Buffer);
     
     return Status;
 }
