@@ -1059,6 +1059,16 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     
     fcb_get_sd(fcb, parent);
     
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        UINT8* xattrdata;
+        UINT16 xattrlen;
+        
+        if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen)) {
+            fcb->reparse_xattr.Buffer = (char*)xattrdata;
+            fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
+        }
+    }
+    
     InsertTailList(&subvol->fcbs, &fcb->list_entry);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
@@ -2517,27 +2527,28 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
                 return Status;
             }
         }
-    } else {
-        UINT16 datalen;
-        
-        if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, data, &datalen))
+    } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length == 0)
             return STATUS_INTERNAL_ERROR;
-        
-        if (!*data)
-            return STATUS_INTERNAL_ERROR;
-        
-        if (datalen < sizeof(ULONG)) {
+            
+        if (fcb->reparse_xattr.Length < sizeof(ULONG)) {
             WARN("xattr was too short to be a reparse point\n");
-            ExFreePool(*data);
             return STATUS_INTERNAL_ERROR;
         }
         
-        Status = FsRtlValidateReparsePointBuffer(datalen, (REPARSE_DATA_BUFFER*)*data);
+        Status = FsRtlValidateReparsePointBuffer(fcb->reparse_xattr.Length, (REPARSE_DATA_BUFFER*)fcb->reparse_xattr.Buffer);
         if (!NT_SUCCESS(Status)) {
             ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
-            ExFreePool(*data);
             return Status;
         }
+        
+        *data = ExAllocatePoolWithTag(PagedPool, fcb->reparse_xattr.Length, ALLOC_TAG);
+        if (!*data) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(*data, fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
     }
     
     return STATUS_SUCCESS;
@@ -2635,7 +2646,10 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     if (Status == STATUS_REPARSE) {
         REPARSE_DATA_BUFFER* data;
         
+        ExAcquireResourceSharedLite(fileref->fcb->Header.Resource, TRUE);
         Status = get_reparse_block(fileref->fcb, (UINT8**)&data);
+        ExReleaseResourceLite(fileref->fcb->Header.Resource);
+        
         if (!NT_SUCCESS(Status)) {
             ERR("get_reparse_block returned %08x\n", Status);
             

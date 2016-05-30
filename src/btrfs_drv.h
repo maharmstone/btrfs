@@ -136,11 +136,13 @@ typedef struct _fcb {
     LIST_ENTRY extents;
     LIST_ENTRY extent_backrefs;
     UINT64 last_dir_index;
+    ANSI_STRING reparse_xattr;
     
     BOOL dirty;
     BOOL sd_dirty;
     BOOL atts_changed, atts_deleted;
     BOOL extents_changed;
+    BOOL reparse_xattr_changed;
     BOOL created;
     
     BOOL ads;

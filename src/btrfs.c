@@ -2014,6 +2014,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->adsxattr.Buffer)
         ExFreePool(fcb->adsxattr.Buffer);
     
+    if (fcb->reparse_xattr.Buffer)
+        ExFreePool(fcb->reparse_xattr.Buffer);
+    
     if (fcb->debug_desc)
         ExFreePool(fcb->debug_desc);
     

@@ -31,6 +31,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
@@ -107,32 +108,16 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 ERR("read_file returned %08x\n", Status);
             }
         } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-            UINT8* data;
-            UINT16 datalen;
-            
-            if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen)) {
-                Status = STATUS_NOT_A_REPARSE_POINT;
-                goto end;
-            }
-            
-            if (!data) {
-                Status = STATUS_NOT_A_REPARSE_POINT;
-                goto end;
-            }
-            
-            if (datalen < sizeof(ULONG)) {
-                ExFreePool(data);
+            if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG)) {
                 Status = STATUS_NOT_A_REPARSE_POINT;
                 goto end;
             }
             
             if (buflen > 0) {
-                *retlen = min(buflen, datalen);
-                RtlCopyMemory(buffer, data, *retlen);
+                *retlen = min(buflen, fcb->reparse_xattr.Length);
+                RtlCopyMemory(buffer, fcb->reparse_xattr.Buffer, *retlen);
             } else
                 *retlen = 0;
-            
-            ExFreePool(data);
         } else
             Status = STATUS_NOT_A_REPARSE_POINT;
     } else {
@@ -140,6 +125,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     }
     
 end:
+    ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 
     return Status;
@@ -522,11 +508,25 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         LARGE_INTEGER offset;
         
         if (fcb->type == BTRFS_TYPE_DIRECTORY) { // for directories, store as xattr
-//             Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, buffer, buflen, &rollback);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("set_xattr returned %08x\n", Status);
-//                 goto end;
-//             }
+            ANSI_STRING buf;
+            
+            buf.Buffer = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+            if (!buf.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            buf.Length = buf.MaximumLength = buflen;
+            
+            if (fcb->reparse_xattr.Buffer)
+                ExFreePool(fcb->reparse_xattr.Buffer);
+            
+            fcb->reparse_xattr = buf;
+            RtlCopyMemory(fcb->reparse_xattr.Buffer, buffer, buflen);
+            
+            fcb->reparse_xattr_changed = TRUE;
+            
+            Status = STATUS_SUCCESS;
         } else { // otherwise, store as file data
             Status = truncate_file(fcb, 0, &rollback);
             if (!NT_SUCCESS(Status)) {

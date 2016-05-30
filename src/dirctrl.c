@@ -32,7 +32,8 @@ typedef struct {
 } dir_entry;
 
 ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type) {
-    ULONG tag, br;
+    fcb* fcb;
+    ULONG tag = 0, br;
     NTSTATUS Status;
     
     // FIXME - will this slow things down?
@@ -43,51 +44,37 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)
         return 0;
     
+    Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("open_fcb returned %08x\n", Status);
+        return 0;
+    }
+    
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
+    if (!(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT))
+        goto end;
+    
     if (type == BTRFS_TYPE_DIRECTORY) {
-        UINT8* data;
-        UINT16 datalen;
+        if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
+            goto end;
         
-        if (!get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &data, &datalen))
-            return 0;
-        
-        if (!data)
-            return 0;
-        
-        if (datalen < sizeof(ULONG)) {
-            ExFreePool(data);
-            return 0;
-        }
-        
-        RtlCopyMemory(&tag, data, sizeof(ULONG));
-        
-        ExFreePool(data);
+        RtlCopyMemory(&tag, fcb->reparse_xattr.Buffer, sizeof(ULONG));
     } else {
-        fcb* fcb;
-        
-        Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
-        if (!NT_SUCCESS(Status)) {
-            ERR("open_fcb returned %08x\n", Status);
-            return 0;
-        }
-        
-        if (!(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            free_fcb(fcb);
-            return 0;
-        }
-
         Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br);
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
-            free_fcb(fcb);
-            return 0;
+            goto end;
         }
         
-        free_fcb(fcb);
-        
         if (br < sizeof(ULONG))
-            return 0;
+            goto end;
     }
     
+end:
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    free_fcb(fcb);
     return tag;
 }
 
