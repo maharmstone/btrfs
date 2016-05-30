@@ -2270,37 +2270,33 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     
 //     TRACE("returning FCB %p with parent %p\n", fcb, parfcb);
     
-    Status = consider_write(Vcb);
-    
-    if (NT_SUCCESS(Status)) {
-//         ULONG fnlen;
+//     ULONG fnlen;
 // 
-//         fcb->name_offset = fcb->par->full_filename.Length / sizeof(WCHAR);
-//                 
-//         if (fcb->par != Vcb->root_fcb)
-//             fcb->name_offset++;
-//         
-//         fnlen = (fcb->name_offset * sizeof(WCHAR)) + fcb->filepart.Length;
-//         
-//         fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-//         if (!fcb->full_filename.Buffer) {
-//             ERR("out of memory\n");
-//             Status = STATUS_INSUFFICIENT_RESOURCES;
-//             goto end;
-//         }   
-//         
-//         fcb->full_filename.Length = fcb->full_filename.MaximumLength = fnlen;
-//         RtlCopyMemory(fcb->full_filename.Buffer, fcb->par->full_filename.Buffer, fcb->par->full_filename.Length);
-//         
-//         if (fcb->par != Vcb->root_fcb)
-//             fcb->full_filename.Buffer[fcb->par->full_filename.Length / sizeof(WCHAR)] = '\\';
-//         
-//         RtlCopyMemory(&fcb->full_filename.Buffer[fcb->name_offset], fcb->filepart.Buffer, fcb->filepart.Length);
+//     fcb->name_offset = fcb->par->full_filename.Length / sizeof(WCHAR);
+//             
+//     if (fcb->par != Vcb->root_fcb)
+//         fcb->name_offset++;
+//     
+//     fnlen = (fcb->name_offset * sizeof(WCHAR)) + fcb->filepart.Length;
+//     
+//     fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
+//     if (!fcb->full_filename.Buffer) {
+//         ERR("out of memory\n");
+//         Status = STATUS_INSUFFICIENT_RESOURCES;
+//         goto end;
+//     }   
+//     
+//     fcb->full_filename.Length = fcb->full_filename.MaximumLength = fnlen;
+//     RtlCopyMemory(fcb->full_filename.Buffer, fcb->par->full_filename.Buffer, fcb->par->full_filename.Length);
+//     
+//     if (fcb->par != Vcb->root_fcb)
+//         fcb->full_filename.Buffer[fcb->par->full_filename.Length / sizeof(WCHAR)] = '\\';
+//     
+//     RtlCopyMemory(&fcb->full_filename.Buffer[fcb->name_offset], fcb->filepart.Buffer, fcb->filepart.Length);
         
-        send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
+    send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
         
-        goto end2;
-    }
+    goto end2;
     
 end:    
     if (fpus.Buffer)
