@@ -3728,6 +3728,19 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     
 //     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
+    if (fcb->ads) {
+        if (fcb->deleted)
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, rollback);
+        else {
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        }
+        goto end;
+    }
+    
     if (fcb->extents_changed) {
         BOOL b;
         traverse_ptr next_tp;
@@ -4209,8 +4222,15 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     // if fileref created and then immediately deleted, do nothing
-    if (fileref->created && fileref->deleted)
+    if (fileref->created && fileref->deleted) {
+        fileref->dirty = FALSE;
         return STATUS_SUCCESS;
+    }
+    
+    if (fileref->fcb->ads) {
+        fileref->dirty = FALSE;
+        return STATUS_SUCCESS;
+    }
     
     if (fileref->created) {
         ULONG disize;
@@ -4304,11 +4324,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         KEY searchkey;
         traverse_ptr tp;
         ANSI_STRING* name;
-        
-        if (fileref->fcb->ads) {
-            FIXME("FIXME - delete stream\n"); // FIXME
-            return STATUS_NOT_IMPLEMENTED;
-        }
         
         if (fileref->oldutf8.Buffer)
             name = &fileref->oldutf8;
@@ -7662,20 +7677,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (fcb->ads) {
-        Status = STATUS_NOT_SUPPORTED;
-        goto end;
-        
-//         UINT16 datalen;
-//         UINT8* data2;
 //         UINT32 maxlen;
-//         
-//         if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
-//             ERR("get_xattr failed\n");
-//             Status = STATUS_INTERNAL_ERROR;
-//             goto end;
-//         }
-//         
-//         if (changed_length) {
+
+        if (changed_length) {
+            char* data2;
+            
 //             // find maximum length of xattr
 //             maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
 //             
@@ -7708,36 +7714,33 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 //                 Status = STATUS_DISK_FULL;
 //                 goto end;
 //             }
-//             
-//             fcb->adssize = newlength;
-// 
-//             data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
-//             if (!data2) {
-//                 ERR("out of memory\n");
-//                 Status = STATUS_INSUFFICIENT_RESOURCES;
-//                 goto end;
-//             }
-//             
-//             RtlCopyMemory(data2, data, datalen);
-//             
-//             if (offset.QuadPart > datalen)
-//                 RtlZeroMemory(&data2[datalen], offset.QuadPart - datalen);
-//         } else
-//             data2 = data;
-//         
-//         if (*length > 0)
-//             RtlCopyMemory(&data2[offset.QuadPart], buf, *length);
-//         
-//         Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, newlength, rollback);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("set_xattr returned %08x\n", Status);
-//             goto end;
-//         }
-//         
-//         if (data) ExFreePool(data);
-//         if (data2 != data) ExFreePool(data2);
-//         
-//         fcb->Header.ValidDataLength.QuadPart = newlength;
+
+            data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
+            if (!data2) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            if (fcb->adsdata.Buffer) {
+                RtlCopyMemory(data2, fcb->adsdata.Buffer, fcb->adsdata.Length);
+                ExFreePool(fcb->adsdata.Buffer);
+            }
+            
+            if (newlength > fcb->adsdata.Length)
+                RtlZeroMemory(&data2[fcb->adsdata.Length], newlength - fcb->adsdata.Length);
+            
+            
+            fcb->adsdata.Buffer = data2;
+            fcb->adsdata.Length = fcb->adsdata.MaximumLength = newlength;
+        }
+        
+        if (*length > 0)
+            RtlCopyMemory(&fcb->adsdata.Buffer[offset.QuadPart], buf, *length);
+        
+        fcb->Header.ValidDataLength.QuadPart = newlength;
+        
+        mark_fcb_dirty(fcb);
     } else {
         if (make_inline) {
             start_data = 0;

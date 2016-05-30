@@ -149,6 +149,7 @@ typedef struct _fcb {
     UINT32 adssize;
     UINT32 adshash;
     ANSI_STRING adsxattr;
+    ANSI_STRING adsdata;
     
     LIST_ENTRY list_entry;
 } fcb;

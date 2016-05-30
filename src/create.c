@@ -2175,12 +2175,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         RtlCopyMemory(&fileref->full_filename.Buffer[fileref->name_offset], fileref->filepart.Buffer, fileref->filepart.Length);
         TRACE("full_filename = %.*S\n", fileref->full_filename.Length / sizeof(WCHAR), fileref->full_filename.Buffer);
         
-        Status = set_xattr(Vcb, parfileref->fcb->subvol, parfileref->fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)"", 0, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            free_fileref(fileref);
-            goto end;
-        }
+        mark_fcb_dirty(fcb);
         
         InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
         

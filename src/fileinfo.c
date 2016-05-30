@@ -1899,103 +1899,78 @@ end:
 NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    KEY searchkey;
-    traverse_ptr tp;
     CC_FILE_SIZES ccfs;
-    UINT8* data = NULL;
-    UINT16 datalen;
-    NTSTATUS Status;
     
-    TRACE("setting new end to %llx bytes (currently %x)\n", end, fcb->adssize);
+    TRACE("setting new end to %llx bytes (currently %x)\n", end, fcb->adsdata.Length);
     
     if (!fileref || !fileref->parent) {
         ERR("no fileref for stream\n");
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (end < fcb->adssize) {
+    if (end < fcb->adsdata.Length) {
         if (advance_only)
             return STATUS_SUCCESS;
         
         TRACE("truncating stream to %llx bytes\n", end);
         
-        if (end > 0) {
-            if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
-                ERR("get_xattr failed\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-        }
-        
-        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data, end, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            return Status;
-        }
-        
-        fcb->adssize = end;
-        
-        if (data)
-            ExFreePool(data);
-    } else if (end > fcb->adssize) {
-        UINT16 maxlen;
-        UINT8* data2;
+        fcb->adsdata.Length = end;
+    } else if (end > fcb->adsdata.Length) {
+//         UINT16 maxlen;
         
         TRACE("extending stream to %llx bytes\n", end);
-        
-        // find maximum length of xattr
-        maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-        
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_XATTR_ITEM;
-        searchkey.offset = fcb->adshash;
+//         
+//         // find maximum length of xattr
+//         maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
+//         
+//         searchkey.obj_id = fcb->inode;
+//         searchkey.obj_type = TYPE_XATTR_ITEM;
+//         searchkey.offset = fcb->adshash;
+// 
+//         Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("error - find_item returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         if (keycmp(&tp.item->key, &searchkey)) {
+//             ERR("error - could not find key for xattr\n");
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//         
+//         if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
+//             ERR("get_xattr failed\n");
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//         
+//         maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
+//         
+//         if (end > maxlen) {
+//             ERR("error - xattr too long (%llu > %u)\n", end, maxlen);
+//             return STATUS_DISK_FULL;
+//         }
 
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
+        if (end > fcb->adsdata.MaximumLength) {
+            char* data = ExAllocatePoolWithTag(PagedPool, end, ALLOC_TAG);
+            if (!data) {
+                ERR("out of memory\n");
+                ExFreePool(data);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            if (fcb->adsdata.Buffer) {
+                RtlCopyMemory(data, fcb->adsdata.Buffer, fcb->adsdata.Length);
+                ExFreePool(fcb->adsdata.Buffer);
+            }
+            
+            fcb->adsdata.Buffer = data;
+            fcb->adsdata.MaximumLength = end;
         }
         
-        if (keycmp(&tp.item->key, &searchkey)) {
-            ERR("error - could not find key for xattr\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (!get_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &data, &datalen)) {
-            ERR("get_xattr failed\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
-        
-        if (end > maxlen) {
-            ERR("error - xattr too long (%llu > %u)\n", end, maxlen);
-            return STATUS_DISK_FULL;
-        }
-
-        data2 = ExAllocatePoolWithTag(PagedPool, end, ALLOC_TAG);
-        if (!data2) {
-            ERR("out of memory\n");
-            ExFreePool(data);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        if (data) {
-            RtlCopyMemory(data2, data, datalen);
-            ExFreePool(data);
-        }
-        
-        RtlZeroMemory(&data2[datalen], end - datalen);
-        
-        Status = set_xattr(Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, data2, end, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            return Status;
-        }
-        
-        fcb->adssize = end;
-        
-        ExFreePool(data2);
+        RtlZeroMemory(&fcb->adsdata.Buffer[fcb->adsdata.Length], end - fcb->adsdata.Length);
     }
+    
+    mark_fcb_dirty(fcb);
 
     if (FileObject) {
         ccfs.AllocationSize = fcb->Header.AllocationSize;

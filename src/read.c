@@ -654,8 +654,6 @@ exit:
 }
 
 static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* pbr) {
-    UINT8* xattrdata;
-    UINT16 xattrlen;
     ULONG readlen;
     NTSTATUS Status;
     
@@ -663,37 +661,28 @@ static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG l
     
     if (pbr) *pbr = 0;
     
-    if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, &xattrdata, &xattrlen)) {
-        ERR("get_xattr failed\n");
-        return STATUS_OBJECT_NAME_NOT_FOUND;
-    }
-    
-    if (start >= xattrlen) {
+    if (start >= fcb->adsdata.Length) {
         TRACE("tried to read beyond end of stream\n");
-        Status = STATUS_END_OF_FILE;
-        goto end;
+        return STATUS_END_OF_FILE;
     }
     
     if (length == 0) {
         WARN("tried to read zero bytes\n");
-        Status = STATUS_SUCCESS;
-        goto end;
+        return STATUS_SUCCESS;
     }
     
-    if (start + length < xattrlen)
+    if (start + length < fcb->adsdata.Length)
         readlen = length;
     else
-        readlen = (ULONG)xattrlen - (ULONG)start;
+        readlen = fcb->adsdata.Length - (ULONG)start;
     
-    RtlCopyMemory(data + start, xattrdata, readlen);
+    if (readlen > 0)
+        RtlCopyMemory(data + start, fcb->adsdata.Buffer, readlen);
     
     if (pbr) *pbr = readlen;
     
     Status = STATUS_SUCCESS;
-    
-end:
-    ExFreePool(xattrdata);
-    
+       
     return Status;
 }
 
