@@ -2697,92 +2697,59 @@ static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_IN
 typedef struct {
     UNICODE_STRING name;
     UINT64 size;
+    BOOL ignore;
+    LIST_ENTRY list_entry;
 } stream_info;
 
 static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fcb* fcb, LONG* length) {
     ULONG reqsize;
-    UINT64 i, num_streams;
-    stream_info* streams;
-    FILE_STREAM_INFORMATION* entry;
+    LIST_ENTRY streamlist, *le;
+    FILE_STREAM_INFORMATION *entry, *lastentry;
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
+    stream_info* si;
     
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     static char xapref[] = "user.";
     UNICODE_STRING suf;
     
+    InitializeListHead(&streamlist);
+    
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
     suf.Buffer = datasuf;
     suf.Length = suf.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
-    
-    num_streams = 1;
     
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    do {
-        if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            if (tp.item->size < sizeof(DIR_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-            } else {
-                ULONG len = tp.item->size;
-                DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
-                
-                do {
-                    if (len < sizeof(DIR_ITEM) || len < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                        ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                        break;
-                    }
-                    
-                    if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref)) {
-                        if (tp.item->key.offset != EA_DOSATTRIB_HASH || xa->n != strlen(EA_DOSATTRIB) || RtlCompareMemory(xa->name, EA_DOSATTRIB, xa->n) != xa->n) {
-                            num_streams++;
-                        }
-                    }
-                    
-                    len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
-                    xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
-                } while (len > 0);
-            }
-        }
-        
-        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
-        if (b) {
-            tp = next_tp;
-            
-            if (next_tp.item->key.obj_id > fcb->inode || next_tp.item->key.obj_type > TYPE_XATTR_ITEM)
-                break;
-        }
-    } while (b);
 
     Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    streams = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info) * num_streams, ALLOC_TAG);
-    if (!streams) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
     
     reqsize = 0;
     
-    streams[0].name.Length = streams[0].name.MaximumLength = 0;
-    streams[0].name.Buffer = NULL;
-    streams[0].size = fcb->inode_item.st_size;
-    reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + streams[0].name.Length;
+    si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
+    if (!si) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
     
-    i = 1;
+    si->name.Length = si->name.MaximumLength = 0;
+    si->name.Buffer = NULL;
+    si->size = fcb->inode_item.st_size;
+    si->ignore = FALSE;
+    reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + si->name.Length;
+    
+    InsertTailList(&streamlist, &si->list_entry);
+    
     do {
         if (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
             if (tp.item->size < sizeof(DIR_ITEM)) {
@@ -2802,52 +2769,45 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
                         (tp.item->key.offset != EA_DOSATTRIB_HASH || xa->n != strlen(EA_DOSATTRIB) || RtlCompareMemory(xa->name, EA_DOSATTRIB, xa->n) != xa->n)) {
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
                         if (!NT_SUCCESS(Status)) {
-                            UINT64 j;
-                            
                             ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            
-                            for (j = i; j < num_streams; j++)
-                                streams[j].name.Buffer = NULL;
-                            
                             goto end;
                         }
                         
-                        streams[i].name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                        if (!streams[i].name.Buffer) {
-                            UINT64 j;
-                            
+                        si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
+                        if (!si) {
                             ERR("out of memory\n");
-                            
-                            for (j = i+1; j < num_streams; j++)
-                                streams[j].name.Buffer = NULL;
-                            
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto end;
                         }
+                        
+                        si->name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
+                        if (!si->name.Buffer) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            ExFreePool(si);
+                            goto end;
+                        }
                             
-                        Status = RtlUTF8ToUnicodeN(streams[i].name.Buffer, stringlen, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
+                        Status = RtlUTF8ToUnicodeN(si->name.Buffer, stringlen, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
                         
                         if (!NT_SUCCESS(Status)) {
-                            UINT64 j;
-                            
                             ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            
-                            ExFreePool(streams[i].name.Buffer);
-                            for (j = i; j < num_streams; j++)
-                                streams[j].name.Buffer = NULL;
-                            
+                            ExFreePool(si->name.Buffer);
+                            ExFreePool(si);
                             goto end;
                         }
                         
-                        streams[i].name.Length = streams[i].name.MaximumLength = stringlen;
+                        si->name.Length = si->name.MaximumLength = stringlen;
                         
-                        streams[i].size = xa->m;
+                        si->size = xa->m;
                         reqsize = sector_align(reqsize, sizeof(LONGLONG));
-                        reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + streams[i].name.Length;
+                        reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + si->name.Length;
                         
-                        TRACE("streams[%llu].name = %.*S (length = %u)\n", i, streams[i].name.Length / sizeof(WCHAR), streams[i].name.Buffer, streams[i].name.Length / sizeof(WCHAR));
-
-                        i++;
+                        si->ignore = FALSE;
+                        
+                        TRACE("stream name = %.*S (length = %u)\n", si->name.Length / sizeof(WCHAR), si->name.Buffer, si->name.Length / sizeof(WCHAR));
+                        
+                        InsertTailList(&streamlist, &si->list_entry);
                     }
                     
                     len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
@@ -2863,7 +2823,9 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
             if (next_tp.item->key.obj_id > fcb->inode || next_tp.item->key.obj_type > TYPE_XATTR_ITEM)
                 break;
         }
-    } while (b);    
+    } while (b);
+    
+    // FIXME - loop through open filerefs
     
     TRACE("length = %i, reqsize = %u\n", *length, reqsize);
     
@@ -2873,29 +2835,41 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     }
     
     entry = fsi;
-    for (i = 0; i < num_streams; i++) {
-        entry->StreamNameLength = streams[i].name.Length + suf.Length + sizeof(WCHAR);
-        entry->StreamSize.QuadPart = streams[i].size;
+    lastentry = NULL;
+    
+    le = streamlist.Flink;
+    while (le != &streamlist) {
+        si = CONTAINING_RECORD(le, stream_info, list_entry);
         
-        if (i == 0)
-            entry->StreamAllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
-        else
-            entry->StreamAllocationSize.QuadPart = streams[i].size;
-        
-        entry->StreamName[0] = ':';
-        
-        if (streams[i].name.Length > 0)
-            RtlCopyMemory(&entry->StreamName[1], streams[i].name.Buffer, streams[i].name.Length);
-        
-        RtlCopyMemory(&entry->StreamName[1 + (streams[i].name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
-        
-        if (i == num_streams - 1)
+        if (!si->ignore) {
+            ULONG off;
+            
             entry->NextEntryOffset = 0;
-        else {
-            entry->NextEntryOffset = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + streams[i].name.Length, sizeof(LONGLONG));
+            entry->StreamNameLength = si->name.Length + suf.Length + sizeof(WCHAR);
+            entry->StreamSize.QuadPart = si->size;
+            
+            if (le == streamlist.Flink)
+                entry->StreamAllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+            else
+                entry->StreamAllocationSize.QuadPart = si->size;
+            
+            entry->StreamName[0] = ':';
+            
+            if (si->name.Length > 0)
+                RtlCopyMemory(&entry->StreamName[1], si->name.Buffer, si->name.Length);
+            
+            RtlCopyMemory(&entry->StreamName[1 + (si->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
+            
+            if (lastentry)
+                lastentry->NextEntryOffset = (UINT8*)entry - (UINT8*)lastentry;
+            
+            off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + si->name.Length, sizeof(LONGLONG));
 
-            entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + entry->NextEntryOffset);
+            lastentry = entry;
+            entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
         }
+        
+        le = le->Flink;
     }
     
     *length -= reqsize;
@@ -2903,12 +2877,18 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     Status = STATUS_SUCCESS;
     
 end:
-    for (i = 0; i < num_streams; i++) {
-        if (streams[i].name.Buffer)
-            ExFreePool(streams[i].name.Buffer);
+    while (!IsListEmpty(&streamlist)) {
+        le = RemoveHeadList(&streamlist);
+        si = CONTAINING_RECORD(le, stream_info, list_entry);
+        
+        if (si->name.Buffer)
+            ExFreePool(si->name.Buffer);
+        
+        ExFreePool(si);
     }
     
-    ExFreePool(streams);
+    ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     return Status;
 }
