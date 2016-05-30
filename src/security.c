@@ -18,6 +18,7 @@
 #include "btrfs_drv.h"
 
 #define SEF_DACL_AUTO_INHERIT 0x01
+#define SEF_SACL_AUTO_INHERIT 0x02
 
 typedef struct {
     UCHAR revision;
@@ -932,11 +933,11 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* fileref, ACCESS_STATE* as) {
     PSID owner;
     BOOLEAN defaulted;
     
-    Status = SeAssignSecurity((fileref && fileref->parent) ? fileref->parent->fcb->sd : NULL, as->SecurityDescriptor, (void**)&fcb->sd, fcb->type == BTRFS_TYPE_DIRECTORY,
-                              &as->SubjectSecurityContext, IoGetFileObjectGenericMapping(), PagedPool);
-    
+    Status = SeAssignSecurityEx((fileref && fileref->parent) ? fileref->parent->fcb->sd : NULL, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+                                SEF_SACL_AUTO_INHERIT, &as->SubjectSecurityContext, IoGetFileObjectGenericMapping(), PagedPool);
+
     if (!NT_SUCCESS(Status)) {
-        ERR("SeAssignSecurity returned %08x\n", Status);
+        ERR("SeAssignSecurityEx returned %08x\n", Status);
         return Status;
     }
     
