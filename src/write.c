@@ -7743,6 +7743,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         fcb->Header.ValidDataLength.QuadPart = newlength;
         
         mark_fcb_dirty(fcb);
+        
+        if (fileref)
+            mark_fileref_dirty(fileref);
     } else {
         if (make_inline) {
             start_data = 0;
