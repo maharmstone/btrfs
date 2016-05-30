@@ -240,7 +240,7 @@ static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
     }
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, UINT32 crc32, PANSI_STRING utf8) {
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, UINT32 crc32, PANSI_STRING utf8, PUNICODE_STRING name) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
@@ -251,10 +251,16 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     LARGE_INTEGER time;
     BTRFS_TIME now;
     fcb* fcb = parent->FsContext;
-    ULONG disize, rrsize;
-    DIR_ITEM *di, *di2;
-    ROOT_REF *rr, *rr2;
+    ccb* ccb = parent->FsContext2;
     LIST_ENTRY* le;
+    file_ref *fileref, *fr;
+    
+    if (!ccb) {
+        ERR("error - ccb was NULL\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    fileref = ccb->fileref;
     
     InitializeListHead(&rollback);
     
@@ -399,94 +405,84 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     subvol->treeholder.tree->write = TRUE;
     
-    // add DIR_ITEM
+    // create fileref for entry in other subvolume
     
-    dirpos = find_next_dir_index(Vcb, fcb->subvol, fcb->inode);
-    if (dirpos == 0) {
-        ERR("find_next_dir_index failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    disize = sizeof(DIR_ITEM) - 1 + utf8->Length;
-    di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di) {
+    fr = create_fileref();
+    if (!fr) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
-    if (!di2) {
+    fr->utf8.Length = fr->utf8.MaximumLength = utf8->Length;
+    fr->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, fr->utf8.MaximumLength, ALLOC_TAG);
+    if (!fr->utf8.Buffer) {
         ERR("out of memory\n");
+        free_fileref(fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        ExFreePool(di);
         goto end;
     }
     
-    di->key.obj_id = id;
-    di->key.obj_type = TYPE_ROOT_ITEM;
-    di->key.offset = 0xffffffffffffffff;
-    di->transid = Vcb->superblock.generation;
-    di->m = 0;
-    di->n = utf8->Length;
-    di->type = BTRFS_TYPE_DIRECTORY;
-    RtlCopyMemory(di->name, utf8->Buffer, utf8->Length);
+    RtlCopyMemory(fr->utf8.Buffer, utf8->Buffer, utf8->Length);
     
-    RtlCopyMemory(di2, di, disize);
-    
-    Status = add_dir_item(Vcb, fcb->subvol, fcb->inode, crc32, di, disize, &rollback);
+    Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb);
     if (!NT_SUCCESS(Status)) {
-        ERR("add_dir_item returned %08x\n", Status);
+        ERR("open_fcb returned %08x\n", Status);
+        free_fileref(fr);
         goto end;
     }
     
-    // add DIR_INDEX
-    
-    if (!insert_tree_item(Vcb, fcb->subvol, fcb->inode, TYPE_DIR_INDEX, dirpos, di2, disize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
+    Status = fcb_get_last_dir_index(fcb, &dirpos);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fcb_get_last_dir_index returned %08x\n", Status);
+        free_fileref(fr);
         goto end;
     }
     
-    // add ROOT_REF
+    fr->index = dirpos;
     
-    rrsize = sizeof(ROOT_REF) - 1 + utf8->Length;
-    rr = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
-    if (!rr) {
+    fr->filepart.MaximumLength = fr->filepart.Length = name->Length;
+    
+    fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
+    if (!fr->filepart.Buffer) {
         ERR("out of memory\n");
+        free_fileref(fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    rr->dir = fcb->inode;
-    rr->index = dirpos;
-    rr->n = utf8->Length;
-    RtlCopyMemory(rr->name, utf8->Buffer, utf8->Length);
+    RtlCopyMemory(fr->filepart.Buffer, name->Buffer, name->Length);
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, fcb->subvol->id, TYPE_ROOT_REF, r->id, rr, rrsize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
+
+    if (fileref != Vcb->root_fileref)
+        fr->name_offset++;
     
-    // add ROOT_BACKREF
-    
-    rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
-    if (!rr2) {
+    fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
+    fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
+    if (!fr->full_filename.Buffer) {
         ERR("out of memory\n");
+        free_fileref(fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    RtlCopyMemory(rr2, rr, rrsize);
+    RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, r->id, TYPE_ROOT_BACKREF, fcb->subvol->id, rr2, rrsize, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    if (fileref != Vcb->root_fileref)
+        fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
     
+    RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
+    
+    fr->parent = fileref;
+    
+    insert_fileref_child(fileref, fr);
+    
+    fr->created = TRUE;
+    mark_fileref_dirty(fr);
+    
+    free_fileref(fr);
+
     // change fcb's INODE_ITEM
     
     // unlike when we create a file normally, the seq of the parent doesn't appear to change
@@ -643,7 +639,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, crc32, &utf8);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, crc32, &utf8, &nameus);
     
     if (NT_SUCCESS(Status)) {
         UNICODE_STRING ffn;
