@@ -136,7 +136,8 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rd
     ULONG minlen;
     UNICODE_STRING subname;
     ANSI_STRING target;
-    LARGE_INTEGER offset;
+    LARGE_INTEGER offset, time;
+    BTRFS_TIME now;
     USHORT i;
     
     minlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + sizeof(WCHAR);
@@ -189,6 +190,17 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rd
     Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, (ULONG*)&target.Length, FALSE, TRUE,
                          TRUE, FALSE, rollback);
     ExFreePool(target.Buffer);
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+    fileref->fcb->inode_item.sequence++;
+    fileref->fcb->inode_item.st_ctime = now;
+    fileref->fcb->inode_item.st_mtime = now;
+    
+    fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
+    fileref->fcb->subvol->root_item.ctime = now;
     
     mark_fcb_dirty(fileref->fcb);
     mark_fileref_dirty(fileref);
@@ -264,7 +276,8 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = set_symlink(Irp, fileref, rdb, buflen, &rollback);
         fileref->fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {
-        LARGE_INTEGER offset;
+        LARGE_INTEGER offset, time;
+        BTRFS_TIME now;
         
         if (fcb->type == BTRFS_TYPE_DIRECTORY) { // for directories, store as xattr
             ANSI_STRING buf;
@@ -301,9 +314,19 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 goto end;
             }
         }
-            
+        
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &now);
+
+        fcb->inode_item.transid = fcb->Vcb->superblock.generation;
+        fcb->inode_item.sequence++;
+        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.st_mtime = now;
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
         fcb->atts_changed = TRUE;
+        
+        fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
+        fcb->subvol->root_item.ctime = now;
         
         mark_fcb_dirty(fcb);
     }
