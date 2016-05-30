@@ -4702,30 +4702,6 @@ end:
     return Status;
 }
 
-NTSTATUS consider_write(device_extension* Vcb) {
-    // FIXME - call do_write if Vcb->write_trees high
-#if 0
-    LIST_ENTRY rollback;
-    NTSTATUS Status = STATUS_SUCCESS;
-    
-    InitializeListHead(&rollback);
-    
-    if (Vcb->write_trees > 0)
-        Status = do_write(Vcb, &rollback);
-    
-    free_tree_cache(&Vcb->tree_cache);
-    
-    if (!NT_SUCCESS(Status))
-        do_rollback(Vcb, &rollback);
-    else
-        clear_rollback(&rollback);
-    
-    return Status;
-#else
-    return STATUS_SUCCESS;
-#endif
-}
-
 // NTSTATUS STDCALL add_extent_ref(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, LIST_ENTRY* rollback) {
 //     KEY searchkey;
 //     traverse_ptr tp;

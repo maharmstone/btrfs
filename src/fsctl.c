@@ -1045,9 +1045,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     Status = STATUS_SUCCESS;    
     
 end:
-    if (NT_SUCCESS(Status))
-        Status = consider_write(Vcb);
-    
     if (!NT_SUCCESS(Status))
         do_rollback(Vcb, &rollback);
     else

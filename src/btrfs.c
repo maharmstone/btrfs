@@ -1411,8 +1411,6 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     
     Vcb->need_write = TRUE;
     
-    Status = consider_write(Vcb);
-    
 release:  
     ExReleaseResourceLite(&Vcb->tree_lock);
 
