@@ -254,7 +254,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     ULONG disize, rrsize;
     DIR_ITEM *di, *di2;
     ROOT_REF *rr, *rr2;
-    INODE_ITEM* ii;
     LIST_ENTRY* le;
     
     InitializeListHead(&rollback);
@@ -496,33 +495,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fcb->inode_item.st_ctime = now;
     fcb->inode_item.st_mtime = now;
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("error - could not find INODE_ITEM for directory %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    delete_tree_item(Vcb, &tp, &rollback);
-    
-    insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback);
+    mark_fcb_dirty(fcb);
     
     fcb->subvol->root_item.ctime = now;
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
