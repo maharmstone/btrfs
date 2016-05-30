@@ -1468,7 +1468,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
 
                     sf2->parent = (struct _file_ref*)sf;
-                    InsertTailList(&sf->children, &sf2->list_entry);
+                    insert_fileref_child(sf, sf2);
                     
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->refcount);
