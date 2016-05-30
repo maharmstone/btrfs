@@ -32,7 +32,7 @@ typedef struct {
 } dir_entry;
 
 ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type) {
-    ULONG att, tag, br;
+    ULONG tag, br;
     NTSTATUS Status;
     
     // FIXME - will this slow things down?
@@ -41,11 +41,6 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
         return IO_REPARSE_TAG_SYMLINK;
     
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)
-        return 0;
-    
-    att = get_file_attributes(Vcb, NULL, subvol, inode, type, FALSE, FALSE);
-    
-    if (!(att & FILE_ATTRIBUTE_REPARSE_POINT))
         return 0;
     
     if (type == BTRFS_TYPE_DIRECTORY) {
@@ -72,6 +67,11 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
         Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
         if (!NT_SUCCESS(Status)) {
             ERR("open_fcb returned %08x\n", Status);
+            return 0;
+        }
+        
+        if (!(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            free_fcb(fcb);
             return 0;
         }
 
