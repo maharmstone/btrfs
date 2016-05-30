@@ -2327,6 +2327,9 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
                 InsertTailList(&fileref->fcb->Vcb->drop_roots, &fileref->fcb->subvol->list_entry);
             }
         }
+    } else {
+        fileref->fcb->deleted = TRUE;
+        mark_fcb_dirty(fileref->fcb);
     }
     
     // update INODE_ITEM of parent
