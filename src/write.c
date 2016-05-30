@@ -7731,6 +7731,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             fcb->adsdata.Buffer = data2;
             fcb->adsdata.Length = fcb->adsdata.MaximumLength = newlength;
+            
+            fcb->Header.AllocationSize.QuadPart = newlength;
+            fcb->Header.FileSize.QuadPart = newlength;
+            fcb->Header.ValidDataLength.QuadPart = newlength;
         }
         
         if (*length > 0)

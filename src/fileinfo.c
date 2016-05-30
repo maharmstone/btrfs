@@ -1973,6 +1973,10 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     }
     
     mark_fcb_dirty(fcb);
+    
+    fcb->Header.AllocationSize.QuadPart = end;
+    fcb->Header.FileSize.QuadPart = end;
+    fcb->Header.ValidDataLength.QuadPart = end;
 
     if (FileObject) {
         ccfs.AllocationSize = fcb->Header.AllocationSize;
