@@ -715,7 +715,7 @@ end2:
 }
 
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length) {
-    fcb* fcb;
+    fcb *fcb, *rootfcb;
     ccb* ccb;
     file_ref* fileref;
     NTSTATUS Status;
@@ -731,11 +731,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     DIR_ITEM *di, *di2;
     UINT32 crc32;
     ROOT_REF *rr, *rr2;
-    INODE_ITEM* ii;
     INODE_REF* ir;
     KEY searchkey;
     traverse_ptr tp;
-    SECURITY_DESCRIPTOR* sd = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;
     PSID owner;
     BOOLEAN defaulted;
@@ -891,59 +889,59 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // add .. inode to new subvol
     
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
+    rootfcb = create_fcb();
     
-    RtlZeroMemory(ii, sizeof(INODE_ITEM));
-    ii->generation = Vcb->superblock.generation;
-    ii->transid = Vcb->superblock.generation;
-    ii->st_nlink = 1;
-    ii->st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
-    ii->st_atime = ii->st_ctime = ii->st_mtime = ii->otime = now;
-    ii->st_gid = GID_NOBODY; // FIXME?
-       
+    rootfcb->Vcb = Vcb;
+    
+    rootfcb->subvol = r;
+    rootfcb->inode = SUBVOL_ROOT_INODE;
+    rootfcb->type = BTRFS_TYPE_DIRECTORY;
+    
+    rootfcb->inode_item.generation = Vcb->superblock.generation;
+    rootfcb->inode_item.transid = Vcb->superblock.generation;
+    rootfcb->inode_item.st_nlink = 1;
+    rootfcb->inode_item.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
+    rootfcb->inode_item.st_atime = rootfcb->inode_item.st_ctime = rootfcb->inode_item.st_mtime = rootfcb->inode_item.otime = now;
+    rootfcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+    
+    rootfcb->atts = get_file_attributes(Vcb, &rootfcb->inode_item, rootfcb->subvol, rootfcb->inode, rootfcb->type, FALSE, TRUE);
+    
     SeCaptureSubjectContext(&subjcont);
     
-    Status = SeAssignSecurity(fcb->sd, NULL, (void**)&sd, TRUE, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+    Status = SeAssignSecurity(fcb->sd, NULL, (void**)&rootfcb->sd, TRUE, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
     
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurity returned %08x\n", Status);
         goto end;
     }
     
-    if (!sd) {
+    if (!rootfcb->sd) {
         ERR("SeAssignSecurity returned NULL security descriptor\n");
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
     
-    Status = RtlGetOwnerSecurityDescriptor(sd, &owner, &defaulted);
+    Status = RtlGetOwnerSecurityDescriptor(rootfcb->sd, &owner, &defaulted);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
-        ii->st_uid = UID_NOBODY;
+        rootfcb->inode_item.st_uid = UID_NOBODY;
     } else {
-        ii->st_uid = sid_to_uid(&owner);
+        rootfcb->inode_item.st_uid = sid_to_uid(&owner);
     }
+    
+    rootfcb->sd_dirty = TRUE;
 
-    if (!insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
+    InsertTailList(&r->fcbs, &rootfcb->list_entry);
     
-    // add security.NTACL xattr
+    rootfcb->Header.IsFastIoPossible = fast_io_possible(rootfcb);
+    rootfcb->Header.AllocationSize.QuadPart = 0;
+    rootfcb->Header.FileSize.QuadPart = 0;
+    rootfcb->Header.ValidDataLength.QuadPart = 0;
     
-    Status = set_xattr(Vcb, r, r->root_item.objid, EA_NTACL, EA_NTACL_HASH, (UINT8*)sd, RtlLengthSecurityDescriptor(fcb->sd), &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("set_xattr returned %08x\n", Status);
-        goto end;
-    }
+    rootfcb->created = TRUE;
     
-    ExFreePool(sd);
+    mark_fcb_dirty(rootfcb);
+    free_fcb(rootfcb);
     
     // add INODE_REF
     
@@ -1064,33 +1062,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.st_size += utf8.Length * 2;
     
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("error - could not find INODE_ITEM for directory %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
-    }
-    
-    ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
-    if (!ii) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
-    delete_tree_item(Vcb, &tp, &rollback);
-    
-    insert_tree_item(Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ii, sizeof(INODE_ITEM), NULL, &rollback);
+    mark_fcb_dirty(fcb);
     
     Vcb->root_root->lastinode = id;
 
