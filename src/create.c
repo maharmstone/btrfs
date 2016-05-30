@@ -575,7 +575,7 @@ static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING file
     return ret;
 }
 
-static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* size, UINT32* hash, PANSI_STRING xattr) {
+static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr) {
     NTSTATUS Status;
     ULONG utf8len;
     char* utf8;
@@ -647,7 +647,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                 if (RtlCompareMemory(di->name, utf8, utf8len) == utf8len) {
                     TRACE("found exact match for %s\n", utf8);
                     
-                    *size = di->m;
                     *hash = tp.item->key.offset;
                     
                     xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
@@ -728,7 +727,6 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
                                 TRACE("found case-insensitive match for %s\n", utf8);
                                 
                                 *newstreamname = us;
-                                *size = di->m;
                                 *hash = tp.item->key.offset;
                                 
                                 xattr->Buffer = ExAllocatePoolWithTag(PagedPool, di->n + 1, ALLOC_TAG);
@@ -1178,8 +1176,10 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
 }
 
 static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr,
-                                UINT32 streamsize, UINT32 streamhash, fcb* parent, fcb** pfcb) {
+                                UINT32 streamhash, fcb* parent, fcb** pfcb) {
     fcb* fcb;
+    UINT8* xattrdata;
+    UINT16 xattrlen;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1210,6 +1210,12 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+      
+    if (!get_xattr(Vcb, parent->subvol, parent->inode, xattr->Buffer, streamhash, &xattrdata, &xattrlen)) {
+        ERR("get_xattr failed\n");
+        free_fcb(fcb);
+        return STATUS_INTERNAL_ERROR;
+    }
 
     fcb->Vcb = Vcb;
     
@@ -1217,16 +1223,18 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     fcb->inode = parent->inode;
     fcb->type = parent->type;
     fcb->ads = TRUE;
-    fcb->adssize = streamsize;
     fcb->adshash = streamhash;
     fcb->adsxattr = *xattr;
     
-    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-    fcb->Header.AllocationSize.QuadPart = fcb->adssize;
-    fcb->Header.FileSize.QuadPart = fcb->adssize;
-    fcb->Header.ValidDataLength.QuadPart = fcb->adssize;
+    fcb->adsdata.Buffer = (char*)xattrdata;
+    fcb->adsdata.Length = fcb->adsdata.MaximumLength = xattrlen;
     
-    TRACE("stream found: size = %x, hash = %08x\n", fcb->adssize, fcb->adshash);
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize.QuadPart = xattrlen;
+    fcb->Header.FileSize.QuadPart = xattrlen;
+    fcb->Header.ValidDataLength.QuadPart = xattrlen;
+    
+    TRACE("stream found: size = %x, hash = %08x\n", xattrlen, fcb->adshash);
     
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     
@@ -1375,7 +1383,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             if (has_stream && i == num_parts - 1) {
                 UNICODE_STRING streamname;
                 ANSI_STRING xattr;
-                UINT32 streamsize, streamhash;
+                UINT32 streamhash;
                 
                 streamname.Buffer = NULL;
                 streamname.Length = streamname.MaximumLength = 0;
@@ -1384,7 +1392,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 
                 // FIXME - check if already opened
                 
-                if (!find_stream(Vcb, sf->fcb, &parts[i], &streamname, &streamsize, &streamhash, &xattr)) {
+                if (!find_stream(Vcb, sf->fcb, &parts[i], &streamname, &streamhash, &xattr)) {
                     TRACE("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
                     
                     Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -1404,7 +1412,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         goto end;
                     }
                     
-                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamsize, streamhash, sf->fcb, &fcb);
+                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamhash, sf->fcb, &fcb);
                     if (!NT_SUCCESS(Status)) {
                         ERR("open_fcb_stream returned %08x\n", Status);
                         goto end;
@@ -2097,7 +2105,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fcb->type = parfileref->fcb->type;
         
         fcb->ads = TRUE;
-        fcb->adssize = 0;
         
         Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream.Buffer, stream.Length);
         if (!NT_SUCCESS(Status)) {

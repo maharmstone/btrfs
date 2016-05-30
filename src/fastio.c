@@ -109,7 +109,7 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
             return FALSE;
         }
         
-        adssize = fcb->adssize;
+        adssize = fcb->adsdata.Length;
         
         fcb2 = ccb->fileref->parent->fcb;
         

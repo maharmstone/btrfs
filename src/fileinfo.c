@@ -1968,6 +1968,8 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
         }
         
         RtlZeroMemory(&fcb->adsdata.Buffer[fcb->adsdata.Length], end - fcb->adsdata.Length);
+        
+        fcb->adsdata.Length = end;
     }
     
     mark_fcb_dirty(fcb);
@@ -2502,7 +2504,7 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
     fnoi->ChangeTime.QuadPart = 0;
     
     if (fcb->ads) {
-        fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adssize;
+        fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fnoi->FileAttributes = fileref->parent->fcb->atts;
     } else {
         fnoi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
@@ -2524,7 +2526,7 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
             return STATUS_INTERNAL_ERROR;
         }
         
-        fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = fcb->adssize;
+        fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fsi->NumberOfLinks = fileref->parent->fcb->inode_item.st_nlink;
         fsi->Directory = S_ISDIR(fileref->parent->fcb->inode_item.st_mode);
     } else {

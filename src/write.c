@@ -7586,7 +7586,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
     nocow = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATACOW;
     
-    newlength = fcb->ads ? fcb->adssize : fcb->inode_item.st_size;
+    newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.st_size;
     
     if (fcb->deleted)
         newlength = 0;
@@ -7627,9 +7627,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 ERR("extend_file returned %08x\n", Status);
                 goto end;
             }
-        } else if (fcb->ads)
-            fcb->adssize = newlength;
-        else
+        } else if (!fcb->ads)
             fcb->inode_item.st_size = newlength;
         
         fcb->Header.FileSize.QuadPart = newlength;

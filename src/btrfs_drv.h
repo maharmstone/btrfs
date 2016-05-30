@@ -146,7 +146,6 @@ typedef struct _fcb {
     BOOL created;
     
     BOOL ads;
-    UINT32 adssize;
     UINT32 adshash;
     ANSI_STRING adsxattr;
     ANSI_STRING adsdata;
