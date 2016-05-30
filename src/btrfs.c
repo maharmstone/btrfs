@@ -455,38 +455,6 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
     return STATUS_SUCCESS;
 }
 
-UINT64 find_next_dir_index(device_extension* Vcb, root* subvol, UINT64 inode) {
-    KEY searchkey;
-    traverse_ptr tp, prev_tp;
-    UINT64 dirpos;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_DIR_INDEX + 1;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return 0;
-    }
-    
-    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
-        if (find_prev_item(Vcb, &tp, &prev_tp, FALSE)) {
-            tp = prev_tp;
-            
-            TRACE("moving back to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        }
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_DIR_INDEX) {
-        dirpos = tp.item->key.offset + 1;
-    } else
-        dirpos = 2;
-    
-    return dirpos;
-}
-
 static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
