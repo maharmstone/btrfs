@@ -1659,7 +1659,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
 
     if (NT_SUCCESS(Status)) {
-        WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
+        TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
         if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->deleted)) {
             if (!ReplaceIfExists) {
@@ -1676,6 +1676,11 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
             }
+        }
+        
+        if (fileref == oldfileref) {
+            free_fileref(oldfileref);
+            oldfileref = NULL;
         }
     }
     
