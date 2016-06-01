@@ -176,8 +176,8 @@ static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 sub
         return STATUS_NOT_FOUND;
 }
 
-NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
-                                             UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
+NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
+                                             root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp, tp2, next_tp;
@@ -185,13 +185,14 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
     NTSTATUS Status;
     ULONG stringlen;
     
-    TRACE("(%p, %.*S, %08x, %p, %llx, %p, %p, %p)\n", Vcb, filename->Length / sizeof(WCHAR), filename->Buffer, crc32, r, parinode, subvol, inode, type);
+    TRACE("(%p, %.*S, %08x, (%llx, %llx), %p, %p, %p)\n", Vcb, filename->Length / sizeof(WCHAR), filename->Buffer, crc32,
+                                                          fr->fcb->subvol->id, fr->fcb->inode, subvol, inode, type);
     
-    searchkey.obj_id = parinode;
+    searchkey.obj_id = fr->fcb->inode;
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = crc32;
     
-    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, fr->fcb->subvol, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -205,7 +206,8 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
         // found by hash
         
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%llx;%llx,%x,%llx) was %u bytes, expected at least %u\n", r->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            WARN("(%llx;%llx,%x,%llx) was %u bytes, expected at least %u\n", fr->fcb->subvol->id, tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                             tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         } else {
             di = (DIR_ITEM*)tp.item->data;
             
@@ -240,6 +242,8 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                         us.Length = us.MaximumLength = (USHORT)stringlen;
                         
                         if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
+                            UINT64 index;
+                            
                             if (di->key.obj_type == TYPE_ROOT_ITEM) {
                                 LIST_ENTRY* le = Vcb->roots.Flink;
                                 
@@ -265,7 +269,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                                     *type = BTRFS_TYPE_DIRECTORY;
                             } else {
                                 if (subvol)
-                                    *subvol = r;
+                                    *subvol = fr->fcb->subvol;
                                 
                                 if (inode)
                                     *inode = di->key.obj_id;
@@ -289,20 +293,20 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                             
                             ExFreePool(utf16);
                             
-                            if (index) {
-                                *index = 0;
+                            index = 0;
                                 
+                            if (fr->fcb->subvol != Vcb->root_root) {
                                 if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                    Status = find_subvol_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("find_subvol_dir_index returned %08x\n", Status);
                                         return Status;
                                     }
                                 } else {
-                                    Status = find_file_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
                                     if (!NT_SUCCESS(Status)) {
                                         if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                                            Status = find_file_dir_index_extref(Vcb, r, di->key.obj_id, parinode, utf8, index);
+                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
                                             
                                             if (!NT_SUCCESS(Status)) {
                                                 ERR("find_file_dir_index_extref returned %08x\n", Status);
@@ -316,7 +320,14 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                                 }
                             }
                             
+                            if (index != 0) {
+                                // FIXME - make sure fileref not renamed or deleted
+                            }
+                            
 //                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
+
+                            if (pindex)
+                                *pindex = index;
                             
                             return STATUS_SUCCESS;
                         }
@@ -330,11 +341,11 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
         }
     }
     
-    searchkey.obj_id = parinode;
+    searchkey.obj_id = fr->fcb->inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
     
-    Status = find_item(Vcb, r, &tp2, &searchkey, FALSE);
+    Status = find_item(Vcb, fr->fcb->subvol, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -352,7 +363,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
         }
     }
     
-    if (tp.item->key.obj_id != parinode || tp.item->key.obj_type != TYPE_DIR_INDEX)
+    if (tp.item->key.obj_id != fr->fcb->inode || tp.item->key.obj_type != TYPE_DIR_INDEX)
         return STATUS_OBJECT_NAME_NOT_FOUND;
     
     b = TRUE;
@@ -411,7 +422,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                                 *type = BTRFS_TYPE_DIRECTORY;
                         } else {
                             if (subvol)
-                                *subvol = r;
+                                *subvol = fr->fcb->subvol;
                             
                             if (inode)
                                 *inode = di->key.obj_id;
@@ -437,8 +448,8 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                         
                         ExFreePool(utf16);
                         
-                        if (index)
-                            *index = tp.item->key.offset;
+                        if (pindex)
+                            *pindex = tp.item->key.offset;
                         
                         return STATUS_SUCCESS;
                     }
@@ -453,7 +464,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
         if (b) {
             tp = next_tp;
             
-            b = tp.item->key.obj_id == parinode && tp.item->key.obj_type == TYPE_DIR_INDEX;
+            b = tp.item->key.obj_id == fr->fcb->inode && tp.item->key.obj_type == TYPE_DIR_INDEX;
         }
     } while (b);
     
@@ -538,8 +549,8 @@ file_ref* create_fileref() {
     return fr;
 }
 
-static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, root* r,
-                                     UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
+static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
+                                         root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     char* fn;
     UINT32 crc32;
     ULONG utf8len;
@@ -569,7 +580,7 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
     TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
     
-    return find_file_in_dir_with_crc32(Vcb, filename, crc32, r, parinode, subvol, inode, type, index, utf8);
+    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8);
 }
 
 static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr) {
@@ -1482,11 +1493,15 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
 #ifdef DEBUG_FCB_REFCOUNTS
                 LONG rc;
 #endif
-                
-                if (!find_file_in_dir(Vcb, &parts[i], sf->fcb->subvol, sf->fcb->inode, &subvol, &inode, &type, &index, &utf8)) {
+      
+                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8);
+                if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
                     Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
+                    goto end;
+                } else if (!NT_SUCCESS(Status)) {
+                    ERR("find_file_in_dir returned %08x\n", Status);
                     goto end;
                 } else {
                     fcb* fcb;

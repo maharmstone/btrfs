@@ -562,6 +562,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     fileref = ccb->fileref;
     
+    if (!fileref) {
+        ERR("fileref was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     if (!(ccb->access & FILE_ADD_SUBDIRECTORY)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
@@ -602,7 +607,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    Status = find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL);
+    Status = find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fileref, NULL, NULL, NULL, NULL, NULL);
         
     if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
@@ -731,6 +736,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         return STATUS_NOT_A_DIRECTORY;
     }
     
+    if (!fileref) {
+        ERR("fileref was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     if (fileref->deleted || fcb->deleted) {
         ERR("parent has been deleted\n");
         return STATUS_FILE_DELETED;
@@ -783,7 +793,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    Status = find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL);
+    Status = find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fileref, NULL, NULL, NULL, NULL, NULL);
     
     if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
