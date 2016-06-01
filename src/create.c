@@ -321,7 +321,21 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                             }
                             
                             if (index != 0) {
-                                // FIXME - make sure fileref not renamed or deleted
+                                LIST_ENTRY* le = fr->children.Flink;
+                                
+                                while (le != &fr->children) {
+                                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+                                    
+                                    if (fr2->index == index) {
+                                        if (fr2->deleted || !FsRtlAreNamesEqual(&fr2->filepart, filename, TRUE, NULL)) {
+                                            goto byindex;
+                                        }
+                                        break;
+                                    } else if (fr2->index > index)
+                                        break;
+                                    
+                                    le = le->Flink;
+                                }
                             }
                             
 //                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
@@ -341,6 +355,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
         }
     }
     
+byindex:
     searchkey.obj_id = fr->fcb->inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
@@ -397,12 +412,35 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                     us.Length = us.MaximumLength = (USHORT)stringlen;
                     
                     if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
-                        if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                            LIST_ENTRY* le = Vcb->roots.Flink;
+                        LIST_ENTRY* le;
+                        BOOL ignore_entry = FALSE;
 
+                        le = fr->children.Flink;
+                        while (le != &fr->children) {
+                            file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+                            
+                            if (fr2->index == tp.item->key.offset) {
+                                if (fr2->deleted || !FsRtlAreNamesEqual(&fr2->filepart, filename, TRUE, NULL)) {
+                                    ignore_entry = TRUE;
+                                    break;
+                                }
+                                break;
+                            } else if (fr2->index > tp.item->key.offset)
+                                break;
+                            
+                            le = le->Flink;
+                        }
+                        
+                        if (ignore_entry) {
+                            ExFreePool(utf16);
+                            goto nextitem;
+                        }
+                        
+                        if (di->key.obj_type == TYPE_ROOT_ITEM) {
                             if (subvol) {
                                 *subvol = NULL;
                                 
+                                le = Vcb->roots.Flink;
                                 while (le != &Vcb->roots) {
                                     root* r2 = CONTAINING_RECORD(le, root, list_entry);
                                     
@@ -432,21 +470,20 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                         }
 //                         TRACE("found %.*S at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
                         
+                        ExFreePool(utf16);
+                        
                         if (utf8) {
                             utf8->MaximumLength = di->n;
                             utf8->Length = utf8->MaximumLength;
                             utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
                             if (!utf8->Buffer) {
                                 ERR("out of memory\n");
-                                ExFreePool(utf16);
                                 
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
                             
                             RtlCopyMemory(utf8->Buffer, di->name, di->n);
                         }
-                        
-                        ExFreePool(utf16);
                         
                         if (pindex)
                             *pindex = tp.item->key.offset;
@@ -459,6 +496,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
             }
         }
         
+nextitem:
         b = find_next_item(Vcb, &tp, &next_tp, FALSE);
          
         if (b) {
