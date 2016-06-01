@@ -524,31 +524,33 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
         }
         
         if (keycmp(&tp.item->key, &searchkey) != -1 && tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            while (fr && fr->index < tp.item->key.offset) {
-                fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
-                
-                if (fr && fr->index <= tp.item->key.offset && !fr->deleted) {
-                    if (fr->fcb->subvol == fileref->fcb->subvol) {
-                        de->key.obj_id = fr->fcb->inode;
-                        de->key.obj_type = TYPE_INODE_ITEM;
-                        de->key.offset = 0;
-                    } else {
-                        de->key.obj_id = fr->fcb->subvol->id;
-                        de->key.obj_type = TYPE_ROOT_ITEM;
-                        de->key.offset = 0;
+            do {
+                if (fr) {
+                    if (fr->index <= tp.item->key.offset && !fr->deleted) {
+                        if (fr->fcb->subvol == fileref->fcb->subvol) {
+                            de->key.obj_id = fr->fcb->inode;
+                            de->key.obj_type = TYPE_INODE_ITEM;
+                            de->key.offset = 0;
+                        } else {
+                            de->key.obj_id = fr->fcb->subvol->id;
+                            de->key.obj_type = TYPE_ROOT_ITEM;
+                            de->key.offset = 0;
+                        }
+                        
+                        de->name = fr->utf8.Buffer;
+                        de->namelen = fr->utf8.Length;
+                        de->type = fr->fcb->type;
+                        de->dir_entry_type = DirEntryType_File;
+                        
+                        *offset = fr->index + 1;
+                        
+                        Status = STATUS_SUCCESS;
+                        goto end;
                     }
                     
-                    de->name = fr->utf8.Buffer;
-                    de->namelen = fr->utf8.Length;
-                    de->type = fr->fcb->type;
-                    de->dir_entry_type = DirEntryType_File;
-                    
-                    *offset = fr->index + 1;
-                    
-                    Status = STATUS_SUCCESS;
-                    goto end;
+                    fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
                 }
-            }
+            } while (fr && fr->index < tp.item->key.offset);
             
             if (fr && fr->index == tp.item->key.offset && fr->deleted) {
                 *offset = fr->index + 1;
