@@ -1565,6 +1565,15 @@ BOOL has_open_children(file_ref* fileref) {
 //     return Status;
 // }
 
+static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    
+    FIXME("FIXME - move file across subvols\n"); // FIXME
+    Status = STATUS_NOT_IMPLEMENTED;
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists) {
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext;
@@ -1584,8 +1593,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     // FIXME - check fri length
     // FIXME - don't ignore fri->RootDirectory
-    
-    // FIXME - work with moving subvols
     
     TRACE("tfo = %p\n", tfo);
     TRACE("ReplaceIfExists = %u\n", ReplaceIfExists);
@@ -1687,12 +1694,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
-        FIXME("FIXME - move file across subvols\n"); // FIXME
-        Status = STATUS_NOT_IMPLEMENTED;
-        goto end;
-    }
-    
     if (oldfileref) {
         // FIXME - check we have permissions for this
         Status = delete_fileref(oldfileref, NULL, &rollback);
@@ -1700,6 +1701,14 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             ERR("delete_fileref returned %08x\n", Status);
             goto end;
         }
+    }
+    
+    if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
+        Status = move_across_subvols(fileref, related, &utf8, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("move_across_subvols returned %08x\n", Status);
+        }
+        goto end;
     }
     
     if (related == fileref->parent) { // keeping file in same directory
