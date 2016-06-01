@@ -3158,29 +3158,68 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
 }
 
 static root* find_default_subvol(device_extension* Vcb) {
-    root* subvol;
-    UNICODE_STRING filename;
     LIST_ENTRY* le;
     
-    static WCHAR fn[] = L"default";
+    static char fn[] = "default";
     static UINT32 crc32 = 0x8dbfc2d2;
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL) {
         NTSTATUS Status;
+        KEY searchkey;
+        traverse_ptr tp;
+        DIR_ITEM* di;
         
-        filename.Buffer = fn;
-        filename.Length = filename.MaximumLength = (USHORT)wcslen(fn) * sizeof(WCHAR);
+        searchkey.obj_id = Vcb->superblock.root_dir_objectid;
+        searchkey.obj_type = TYPE_DIR_ITEM;
+        searchkey.offset = crc32;
         
-        Status = find_file_in_dir_with_crc32(Vcb, &filename, crc32, Vcb->root_root, Vcb->superblock.root_dir_objectid, &subvol, NULL, NULL, NULL, NULL);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
         
-        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
-            WARN("couldn't find default subvol DIR_ITEM, using default tree\n");
-        else if (!NT_SUCCESS(Status))
-            ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
-        else
-            return subvol;
+        if (keycmp(&tp.item->key, &searchkey)) {
+            ERR("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            goto end;
+        }
+        
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            goto end;
+        }
+        
+        di = (DIR_ITEM*)tp.item->data;
+        
+        if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
+            goto end;
+        }
+        
+        if (di->n != strlen(fn) || RtlCompareMemory(di->name, fn, di->n) != di->n) {
+            ERR("root DIR_ITEM had same CRC32, but was not \"default\"\n");
+            goto end;
+        }
+        
+        if (di->key.obj_type != TYPE_ROOT_ITEM) {
+            ERR("default root has key (%llx,%x,%llx), expected subvolume\n", di->key.obj_id, di->key.obj_type, di->key.offset);
+            goto end;
+        }
+        
+        le = Vcb->roots.Flink;
+        while (le != &Vcb->roots) {
+            root* r = CONTAINING_RECORD(le, root, list_entry);
+            
+            if (r->id == di->key.obj_id)
+                return r;
+            
+            le = le->Flink;
+        }
+        
+        ERR("could not find root %llx, using default instead\n", di->key.obj_id);
     }
     
+end:
     le = Vcb->roots.Flink;
     while (le != &Vcb->roots) {
         root* r = CONTAINING_RECORD(le, root, list_entry);
