@@ -602,9 +602,14 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    if (find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL)) {
+    Status = find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL);
+        
+    if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
         Status = STATUS_OBJECT_NAME_COLLISION;
+        goto end2;
+    } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
+        ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
         goto end2;
     }
     
@@ -778,9 +783,14 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
     
-    if (find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL)) {
+    Status = find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fcb->subvol, fcb->inode, NULL, NULL, NULL, NULL, NULL);
+    
+    if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
         Status = STATUS_OBJECT_NAME_COLLISION;
+        goto end;
+    } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
+        ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
         goto end;
     }
     

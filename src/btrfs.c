@@ -3166,11 +3166,17 @@ static root* find_default_subvol(device_extension* Vcb) {
     static UINT32 crc32 = 0x8dbfc2d2;
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL) {
+        NTSTATUS Status;
+        
         filename.Buffer = fn;
         filename.Length = filename.MaximumLength = (USHORT)wcslen(fn) * sizeof(WCHAR);
         
-        if (!find_file_in_dir_with_crc32(Vcb, &filename, crc32, Vcb->root_root, Vcb->superblock.root_dir_objectid, &subvol, NULL, NULL, NULL, NULL))
+        Status = find_file_in_dir_with_crc32(Vcb, &filename, crc32, Vcb->root_root, Vcb->superblock.root_dir_objectid, &subvol, NULL, NULL, NULL, NULL);
+        
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
             WARN("couldn't find default subvol DIR_ITEM, using default tree\n");
+        else if (!NT_SUCCESS(Status))
+            ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
         else
             return subvol;
     }

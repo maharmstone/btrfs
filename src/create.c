@@ -176,8 +176,8 @@ static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 sub
         return STATUS_NOT_FOUND;
 }
 
-BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
-                                         UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
+NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, root* r,
+                                             UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp, tp2, next_tp;
@@ -194,7 +194,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
     Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
+        return Status;
     }
     
     TRACE("found item %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -228,7 +228,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                     
                     if (!utf16) {
                         ERR("out of memory\n");
-                        return FALSE;
+                        return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
                     Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, di->name, di->n);
@@ -281,7 +281,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                 if (!utf8->Buffer) {
                                     ERR("out of memory\n");
                                     ExFreePool(utf16);
-                                    return FALSE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 RtlCopyMemory(utf8->Buffer, di->name, di->n);
@@ -296,7 +296,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                     Status = find_subvol_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("find_subvol_dir_index returned %08x\n", Status);
-                                        return FALSE;
+                                        return Status;
                                     }
                                 } else {
                                     Status = find_file_dir_index(Vcb, r, di->key.obj_id, parinode, utf8, index);
@@ -306,11 +306,11 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                             
                                             if (!NT_SUCCESS(Status)) {
                                                 ERR("find_file_dir_index_extref returned %08x\n", Status);
-                                                return FALSE;
+                                                return Status;
                                             }
                                         } else {
                                             ERR("find_file_dir_index returned %08x\n", Status);
-                                            return FALSE;
+                                            return Status;
                                         }
                                     }
                                 }
@@ -318,7 +318,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                             
 //                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
                             
-                            return TRUE;
+                            return STATUS_SUCCESS;
                         }
                     }
                     
@@ -337,7 +337,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
     Status = find_item(Vcb, r, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
+        return Status;
     }
     
     tp = tp2;
@@ -353,7 +353,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
     }
     
     if (tp.item->key.obj_id != parinode || tp.item->key.obj_type != TYPE_DIR_INDEX)
-        return FALSE;
+        return STATUS_OBJECT_NAME_NOT_FOUND;
     
     b = TRUE;
     do {
@@ -374,7 +374,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                 
                 if (!utf16) {
                     ERR("out of memory\n");
-                    return FALSE;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, di->name, di->n);
@@ -429,7 +429,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                                 ERR("out of memory\n");
                                 ExFreePool(utf16);
                                 
-                                return FALSE;
+                                return STATUS_INSUFFICIENT_RESOURCES;
                             }
                             
                             RtlCopyMemory(utf8->Buffer, di->name, di->n);
@@ -440,7 +440,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
                         if (index)
                             *index = tp.item->key.offset;
                         
-                        return TRUE;
+                        return STATUS_SUCCESS;
                     }
                 }
                 
@@ -457,7 +457,7 @@ BOOL STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING 
         }
     } while (b);
     
-    return FALSE;
+    return STATUS_OBJECT_NAME_NOT_FOUND;
 }
 
 fcb* create_fcb() {
@@ -538,31 +538,30 @@ file_ref* create_fileref() {
     return fr;
 }
 
-static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, root* r,
+static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, root* r,
                                      UINT64 parinode, root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
     char* fn;
     UINT32 crc32;
-    BOOL ret;
     ULONG utf8len;
     NTSTATUS Status;
     
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, filename->Buffer, filename->Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
-        return FALSE;
+        return Status;
     }
     
     fn = ExAllocatePoolWithTag(PagedPool, utf8len, ALLOC_TAG);
     if (!fn) {
         ERR("out of memory\n");
-        return FALSE;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     Status = RtlUnicodeToUTF8N(fn, utf8len, &utf8len, filename->Buffer, filename->Length);
     if (!NT_SUCCESS(Status)) {
         ExFreePool(fn);
         ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
-        return FALSE;
+        return Status;
     }
     
     TRACE("%.*s\n", utf8len, fn);
@@ -570,9 +569,7 @@ static BOOL STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING file
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
     TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
     
-    ret = find_file_in_dir_with_crc32(Vcb, filename, crc32, r, parinode, subvol, inode, type, index, utf8);
-    
-    return ret;
+    return find_file_in_dir_with_crc32(Vcb, filename, crc32, r, parinode, subvol, inode, type, index, utf8);
 }
 
 static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr) {
