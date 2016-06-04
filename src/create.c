@@ -1221,8 +1221,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr,
-                                UINT32 streamhash, fcb* parent, fcb** pfcb) {
+NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr,
+                         UINT32 streamhash, fcb* parent, fcb** pfcb) {
     fcb* fcb;
     UINT8* xattrdata;
     UINT16 xattrlen;
