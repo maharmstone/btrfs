@@ -1705,14 +1705,16 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     return STATUS_SUCCESS;
 }
 
-typedef struct {
+typedef struct _move_entry {
     file_ref* fileref;
 //     UINT32 level;
     fcb* dummyfcb;
+    file_ref* dummyfileref;
+    struct _move_entry* parent;
     LIST_ENTRY list_entry;
 } move_entry;
 
-static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, LIST_ENTRY* rollback) {
+static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
     move_entry* me;
@@ -1731,6 +1733,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     InterlockedIncrement(&me->fileref->refcount);
 //     me->level = 0;
     me->dummyfcb = NULL;
+    me->dummyfileref = NULL;
+    me->parent = NULL;
     
     InsertTailList(&move_list, &me->list_entry);
     
@@ -1809,10 +1813,10 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             mark_fcb_dirty(me->fileref->fcb);
             
             // FIXME - set dummyfcb of subsequent entries if same inode
+            // FIXME - set dummyfcb as deleted if necessary
             
             ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
         } else {
-//             InterlockedIncrement(&me->newfcb->refcount);
             ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, TRUE);
             me->fileref->fcb->inode_item.st_nlink++;
             ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
@@ -1821,7 +1825,112 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         le = le->Flink;
     }
     
-    // FIXME - loop through list, change filerefs, and create dummy deleted ones
+    // loop through list and create new filerefs
+    
+    le = move_list.Flink;
+    while (le != &move_list) {
+        me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        me->dummyfileref = create_fileref();
+        if (!me->dummyfileref) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        me->dummyfileref->fcb = me->dummyfcb;
+        InterlockedIncrement(&me->dummyfcb->refcount);
+
+        me->dummyfileref->filepart = me->fileref->filepart;
+        
+        if (le == move_list.Flink) // first item
+            me->fileref->filepart.Length = me->fileref->filepart.MaximumLength = fnus->Length;
+        else
+            me->fileref->filepart.Length = me->fileref->filepart.MaximumLength = me->fileref->filepart.Length;
+        
+        me->fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart.MaximumLength, ALLOC_TAG);
+        
+        if (!me->fileref->filepart.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(me->fileref->filepart.Buffer, le == move_list.Flink ? fnus->Buffer : me->fileref->filepart.Buffer, me->fileref->filepart.Length);      
+        
+        me->dummyfileref->utf8 = me->fileref->utf8;
+        me->dummyfileref->oldutf8 = me->fileref->oldutf8;
+        
+        if (le == move_list.Flink)
+            me->fileref->utf8.Length = me->fileref->utf8.MaximumLength = utf8->Length;
+        else
+            me->fileref->utf8.Length = me->fileref->utf8.MaximumLength = me->fileref->utf8.Length;
+        
+        me->fileref->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->utf8.MaximumLength, ALLOC_TAG);
+        
+        if (!me->fileref->utf8.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(me->fileref->utf8.Buffer, le == move_list.Flink ? utf8->Buffer : me->fileref->utf8.Buffer, me->fileref->utf8.Length);   
+        
+        me->dummyfileref->delete_on_close = me->fileref->delete_on_close;
+        me->dummyfileref->deleted = me->fileref->deleted;
+        
+        me->dummyfileref->created = me->fileref->created;
+        me->fileref->created = TRUE;
+
+        InsertHeadList(&me->fileref->list_entry, &me->dummyfileref->list_entry);
+        RemoveEntryList(&me->fileref->list_entry);
+        
+        if (me->parent) {
+            // FIXME
+        } else
+            me->fileref->parent = destdir;
+        
+        InterlockedIncrement(&me->fileref->parent->refcount);
+        
+        Status = fcb_get_last_dir_index(me->fileref->parent->fcb, &me->fileref->index);
+        if (!NT_SUCCESS(Status)) {
+            ERR("fcb_get_last_dir_index returned %08x\n", Status);
+            goto end;
+        }
+        
+        insert_fileref_child(me->fileref->parent, me->fileref);
+
+        me->dummyfileref->name_offset = me->fileref->name_offset;
+        me->dummyfileref->full_filename = me->fileref->full_filename;
+        
+        me->fileref->name_offset = me->fileref->parent->full_filename.Length / sizeof(WCHAR);
+        if (me->fileref->parent != me->fileref->fcb->Vcb->root_fileref)
+            me->fileref->name_offset++;
+
+        me->fileref->full_filename.Length = me->fileref->full_filename.MaximumLength = (me->fileref->name_offset * sizeof(WCHAR)) + me->fileref->filepart.Length;
+        me->fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->full_filename.MaximumLength, ALLOC_TAG);
+        if (!me->fileref->full_filename.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(me->fileref->full_filename.Buffer, me->fileref->parent->full_filename.Buffer, me->fileref->parent->full_filename.Length);
+
+        me->fileref->full_filename.Buffer[me->fileref->parent->full_filename.Length / sizeof(WCHAR)] = '\\';
+
+        RtlCopyMemory(&me->fileref->full_filename.Buffer[me->fileref->name_offset], me->fileref->filepart.Buffer, me->fileref->filepart.Length);
+        
+        me->dummyfileref->debug_desc = me->fileref->debug_desc;
+        me->dummyfileref->debug_desc = NULL;
+
+        mark_fileref_dirty(me->dummyfileref);
+        mark_fileref_dirty(me->fileref);
+        
+        le = le->Flink;
+    }
+    
+    // FIXME - delete old filerefs
     
 //     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
 //     fcb->subvol->root_item.ctime = now;
@@ -1832,6 +1941,12 @@ end:
     while (!IsListEmpty(&move_list)) {
         le = RemoveHeadList(&move_list);
         me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        if (me->dummyfcb)
+            free_fcb(me->dummyfcb);
+        
+        if (me->dummyfileref)
+            free_fileref(me->dummyfileref);
         
         free_fileref(me->fileref);
         ExFreePool(me);
@@ -1975,7 +2090,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
-        Status = move_across_subvols(fileref, related, &utf8, &rollback);
+        Status = move_across_subvols(fileref, related, &utf8, &fnus, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
         }
