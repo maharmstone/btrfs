@@ -1463,156 +1463,6 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-// static NTSTATUS delete_subvol(file_ref* fileref, LIST_ENTRY* rollback) {
-//     NTSTATUS Status;
-//     UINT64 index;
-//     KEY searchkey;
-//     traverse_ptr tp;
-//     UINT32 crc32;
-//     ROOT_ITEM* ri;
-//     BOOL no_ref = FALSE;
-//     fcb* fcb = fileref->fcb;
-//     
-//     // delete ROOT_REF in root tree
-//     
-//     Status = delete_root_ref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, &fileref->utf8, &index, rollback);
-//     
-//     // A bug in Linux means that if you create a snapshot of a subvol containing another subvol,
-//     // the ROOT_REF and ROOT_BACKREF items won't be created, nor will num_references of ROOT_ITEM
-//     // be increased. In this case, we just unlink the subvol from its parent, and don't worry
-//     // about anything else.
-//     
-//     if (Status == STATUS_NOT_FOUND)
-//         no_ref = TRUE;
-//     else if (!NT_SUCCESS(Status)) {
-//         ERR("delete_root_ref returned %08x\n", Status);
-//         return Status;
-//     }
-//     
-//     if (!no_ref) {
-//         // delete ROOT_BACKREF in root tree
-//         
-//         Status = update_root_backref(fcb->Vcb, fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("update_root_backref returned %08x\n", Status);
-//             return Status;
-//         }
-//     }
-//     
-//     // delete DIR_ITEM in parent
-//     
-//     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
-//     Status = delete_dir_item(fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, &fileref->utf8, rollback);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("delete_dir_item returned %08x\n", Status);
-//         return Status;
-//     }
-//     
-//     // delete DIR_INDEX in parent
-//     
-//     if (!no_ref) {
-//         searchkey.obj_id = fileref->parent->fcb->inode;
-//         searchkey.obj_type = TYPE_DIR_INDEX;
-//         searchkey.offset = index;
-//         
-//         Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("find_item 1 returned %08x\n", Status);
-//             return Status;
-//         }
-//     
-//         if (!keycmp(&searchkey, &tp.item->key)) {
-//             delete_tree_item(fcb->Vcb, &tp, rollback);
-//             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-//         }
-//     } else {
-//         BOOL b;
-//         traverse_ptr next_tp;
-//         
-//         // If we have no ROOT_REF, we have to look through all the DIR_INDEX entries manually :-(
-//         
-//         searchkey.obj_id = fileref->parent->fcb->inode;
-//         searchkey.obj_type = TYPE_DIR_INDEX;
-//         searchkey.offset = 0;
-//         
-//         Status = find_item(fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("find_item 1 returned %08x\n", Status);
-//             return Status;
-//         }
-//         
-//         do {
-//             if (tp.item->key.obj_type == TYPE_DIR_INDEX && tp.item->size >= sizeof(DIR_ITEM)) {
-//                 DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-//                 
-//                 if (di->key.obj_id == fcb->subvol->id && di->key.obj_type == TYPE_ROOT_ITEM && di->n == fileref->utf8.Length &&
-//                     tp.item->size >= sizeof(DIR_ITEM) - 1 + di->m + di->n && RtlCompareMemory(fileref->utf8.Buffer, di->name, di->n) == di->n) {
-//                     delete_tree_item(fcb->Vcb, &tp, rollback);
-//                     break;
-//                 }
-//             }
-//         
-//             b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
-//             
-//             if (b) {
-//                 tp = next_tp;
-//                 
-//                 if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-//                     break;
-//             }
-//         } while (b);
-//     }
-//     
-//     if (no_ref)
-//         return STATUS_SUCCESS;
-//     
-//     if (fcb->subvol->root_item.num_references > 1) {
-//         UINT64 offset;
-//         
-//         // change ROOT_ITEM num_references
-//         
-//         fcb->subvol->root_item.num_references--;
-//         
-//         searchkey.obj_id = fcb->subvol->id;
-//         searchkey.obj_type = TYPE_ROOT_ITEM;
-//         searchkey.offset = 0xffffffffffffffff;
-//         
-//         Status = find_item(fcb->Vcb, fcb->Vcb->root_root, &tp, &searchkey, FALSE);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("find_item 2 returned %08x\n", Status);
-//             return Status;
-//         }
-//         
-//         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//             delete_tree_item(fcb->Vcb, &tp, rollback);
-//             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-//             offset = tp.item->key.offset;
-//         } else {
-//             ERR("could not find ROOT_ITEM for subvol %llx\n", fcb->subvol->id);
-//             offset = 0;
-//         }
-//         
-//         ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
-//         if (!ri) {
-//             ERR("out of memory\n");
-//             return STATUS_INSUFFICIENT_RESOURCES;
-//         }
-//         
-//         RtlCopyMemory(ri, &fcb->subvol->root_item, sizeof(ROOT_ITEM));
-//         
-//         if (!insert_tree_item(fcb->Vcb, fcb->Vcb->root_root, fcb->subvol->id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
-//             ERR("insert_tree_item failed\n");
-//             return STATUS_INTERNAL_ERROR;
-//         }
-//     } else {
-//         RemoveEntryList(&fcb->subvol->list_entry);
-//         
-//         InsertTailList(&fcb->Vcb->drop_roots, &fcb->subvol->list_entry);
-//     }
-//     
-//     return STATUS_SUCCESS;
-// }
-
 static WCHAR* file_desc_fcb(fcb* fcb) {
     char s[60];
     UNICODE_STRING us;
@@ -2276,10 +2126,6 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     return att;
 }
 
-// static int STDCALL utf8icmp(char* a, char* b) {
-//     return strcmp(a, b); // FIXME - don't treat as ASCII
-// }
-
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer) {
     IO_STATUS_BLOCK* IoStatus;
     LARGE_INTEGER Offset;
@@ -2474,31 +2320,6 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
 
     return Status;
 }
-
-// static void STDCALL find_chunk_root(device_extension* Vcb) {
-//     UINT32 i;
-//     KEY* key;
-//     
-//     i = 0;
-//     while (i < Vcb->superblock.n) {
-//         key = &Vcb->superblock.sys_chunk_array[i];
-//         i += sizeof(KEY);
-//     }
-//     
-//     // FIXME
-// }
-
-// static void STDCALL insert_ltp(device_extension* Vcb, log_to_phys* ltp) {
-//     if (!Vcb->log_to_phys) {
-//         Vcb->log_to_phys = ltp;
-//         ltp->next = NULL;
-//         return;
-//     }
-//     
-//     // FIXME - these should be ordered
-//     ltp->next = Vcb->log_to_phys;
-//     Vcb->log_to_phys = ltp;
-// }
 
 static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, traverse_ptr* tp) {
     root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
@@ -3349,12 +3170,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Stack = IoGetCurrentIrpStackLocation(Irp);
     DeviceToMount = Stack->Parameters.MountVolume.DeviceObject;
 
-//     Status = NtfsHasFileSystem(DeviceToMount);
-//     if (!NT_SUCCESS(Status))
-//     {
-//         goto ByeBye;
-//     }
-
     Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
                        &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -3480,18 +3295,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices_loaded = 1;
     
-    // FIXME - find other devices, if there are any
-    
     TRACE("DeviceToMount = %p\n", DeviceToMount);
     TRACE("Stack->Parameters.MountVolume.Vpb = %p\n", Stack->Parameters.MountVolume.Vpb);
 
     NewDeviceObject->StackSize = DeviceToMount->StackSize + 1;
     NewDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-    
-//     find_chunk_root(Vcb);
-//     Vcb->chunk_root_phys_addr = Vcb->superblock.chunk_tree_addr; // FIXME - map from logical to physical (bootstrapped)
-    
-//     Vcb->root_tree_phys_addr = logical_to_physical(Vcb, Vcb->superblock.root_tree_addr);
     
     InitializeListHead(&Vcb->roots);
     InitializeListHead(&Vcb->drop_roots);
@@ -3499,8 +3307,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->log_to_phys_loaded = FALSE;
     
     Vcb->max_inline = Vcb->superblock.node_size / 2;
-    
-//     Vcb->write_trees = NULL;
 
     add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, NULL);
     
@@ -3678,65 +3484,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 //     root_test(Vcb);
     
-//     Vcb->StreamFileObject = IoCreateStreamFileObject(NULL,
-//                                                      Vcb->StorageDevice);
-// 
-//     InitializeListHead(&Vcb->FcbListHead);
-// 
-//     Fcb = NtfsCreateFCB(NULL, Vcb);
-//     if (Fcb == NULL)
-//     {
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         goto ByeBye;
-//     }
-// 
-//     Ccb = ExAllocatePoolWithTag(NonPagedPool,
-//                                 sizeof(NTFS_CCB),
-//                                 TAG_CCB);
-//     if (Ccb == NULL)
-//     {
-//         Status =  STATUS_INSUFFICIENT_RESOURCES;
-//         goto ByeBye;
-//     }
-// 
-//     RtlZeroMemory(Ccb, sizeof(NTFS_CCB));
-// 
-//     Ccb->Identifier.Type = NTFS_TYPE_CCB;
-//     Ccb->Identifier.Size = sizeof(NTFS_TYPE_CCB);
-// 
-//     Vcb->StreamFileObject->FsContext = Fcb;
-//     Vcb->StreamFileObject->FsContext2 = Ccb;
-//     Vcb->StreamFileObject->SectionObjectPointer = &Fcb->SectionObjectPointers;
-//     Vcb->StreamFileObject->PrivateCacheMap = NULL;
-//     Vcb->StreamFileObject->Vpb = Vcb->Vpb;
-//     Ccb->PtrFileObject = Vcb->StreamFileObject;
-//     Fcb->FileObject = Vcb->StreamFileObject;
-//     Fcb->Vcb = (PDEVICE_EXTENSION)Vcb->StorageDevice;
-// 
-//     Fcb->Flags = FCB_IS_VOLUME_STREAM;
-// 
-//     Fcb->RFCB.FileSize.QuadPart = Vcb->NtfsInfo.SectorCount * Vcb->NtfsInfo.BytesPerSector;
-//     Fcb->RFCB.ValidDataLength.QuadPart = Vcb->NtfsInfo.SectorCount * Vcb->NtfsInfo.BytesPerSector;
-//     Fcb->RFCB.AllocationSize.QuadPart = Vcb->NtfsInfo.SectorCount * Vcb->NtfsInfo.BytesPerSector; /* Correct? */
-// 
-//     CcInitializeCacheMap(Vcb->StreamFileObject,
-//                          (PCC_FILE_SIZES)(&Fcb->RFCB.AllocationSize),
-//                          FALSE,
-//                          &(NtfsGlobalData->CacheMgrCallbacks),
-//                          Fcb);
-// 
-//     ExInitializeResourceLite(&Vcb->LogToPhysLock);
-
     KeInitializeSpinLock(&Vcb->FcbListLock);
-// 
-//     /* Get serial number */
-//     NewDeviceObject->Vpb->SerialNumber = Vcb->NtfsInfo.SerialNumber;
-// 
-//     /* Get volume label */
-//     NewDeviceObject->Vpb->VolumeLabelLength = Vcb->NtfsInfo.VolumeLabelLength;
-//     RtlCopyMemory(NewDeviceObject->Vpb->VolumeLabel,
-//                   Vcb->NtfsInfo.VolumeLabel,
-//                   Vcb->NtfsInfo.VolumeLabelLength);
 
     NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
     Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
@@ -3762,22 +3510,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = STATUS_SUCCESS;
 
 exit:
-//     if (!NT_SUCCESS(Status))
-//     {
-//         /* Cleanup */
-//         if (Vcb && Vcb->StreamFileObject)
-//             ObDereferenceObject(Vcb->StreamFileObject);
-// 
-//         if (Fcb)
-//             ExFreePool(Fcb);
-// 
-//         if (Ccb)
-//             ExFreePool(Ccb);
-// 
-//         if (NewDeviceObject)
-//             IoDeleteDevice(NewDeviceObject);
-//     }
-
     if (Vcb) {
         ExReleaseResourceLite(&Vcb->load_lock);
     }
@@ -3841,14 +3573,7 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
         case IRP_MN_MOUNT_VOLUME:
             TRACE("IRP_MN_MOUNT_VOLUME\n");
             
-//             Irp->IoStatus.Status = STATUS_SUCCESS;
             Status = mount_vol(DeviceObject, Irp);
-//             IrpSp->Parameters.MountVolume.DeviceObject = 0x0badc0de;
-//             IrpSp->Parameters.MountVolume.Vpb = 0xdeadbeef;
-            
-//             IoCompleteRequest( Irp, IO_DISK_INCREMENT );
-            
-//             return Irp->IoStatus.Status;
             break;
             
         case IRP_MN_KERNEL_CALL:
