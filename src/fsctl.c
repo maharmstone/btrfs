@@ -234,8 +234,6 @@ static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
         if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
             CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
         
-        flush_fcb(fcb, FALSE, rollback);
-        
         le = le->Flink;
     }
 }

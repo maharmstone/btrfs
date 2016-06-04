@@ -3462,6 +3462,10 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     // remove free space cache
     if (c->cache) {
         c->cache->deleted = TRUE;
+        
+        if (c->cache->extents_changed)
+            flush_fcb_extents_first(c->cache, rollback);
+        
         flush_fcb(c->cache, TRUE, rollback);
         
         free_fcb(c->cache);
@@ -3947,6 +3951,50 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
     }
 }
 
+void flush_fcb_extents_first(fcb* fcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+        if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+            
+            if (ed2->address != 0) {
+                Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("update_extent_backref returned %08x\n", Status);
+                    return;
+                }
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    // If the refcount of an extent has increased, we handle it here rather than in flush_fcb - 
+    // this prevents corruption when extents have been transferred between inodes, such as when
+    // we move files across subvolumes.
+
+    le = fcb->extent_backrefs.Flink;
+    while (le != &fcb->extent_backrefs) {
+        extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
+        
+        if (backref->new_refcount > backref->refcount) {
+            Status = increase_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode,
+                                                    backref->offset, backref->new_refcount - backref->refcount, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("increase_extent_refcount_data returned %08x\n", Status);
+                return;
+            }
+        }
+        
+        le = le->Flink;
+    }
+}
+
 void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
@@ -4029,41 +4077,10 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             if (!prealloc && ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
                 prealloc = TRUE;
             
-            if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                
-                if (ed2->address != 0) {
-                    Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("update_extent_backref returned %08x\n", Status);
-                        goto end;
-                    }
-                }
-            }
-            
             le = le->Flink;
         }
         
         // update extent backrefs
-        
-        // We tackle the backrefs where the refcount has increased first, so we don't
-        // accidentally delete anything.
-        
-        le = fcb->extent_backrefs.Flink;
-        while (le != &fcb->extent_backrefs) {
-            extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
-            
-            if (backref->new_refcount > backref->refcount) {
-                Status = increase_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode,
-                                                       backref->offset, backref->new_refcount - backref->refcount, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("increase_extent_refcount_data returned %08x\n", Status);
-                    goto end;
-                }
-            }
-            
-            le = le->Flink;
-        }
         
         le = fcb->extent_backrefs.Flink;
         while (le != &fcb->extent_backrefs) {
@@ -4782,7 +4799,16 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     }
     
     le = Vcb->dirty_fcbs.Flink;
+    while (le != &Vcb->dirty_fcbs) {
+        dirty_fcb* dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
+        
+        if (dirt->fcb->subvol != Vcb->root_root && dirt->fcb->extents_changed)
+            flush_fcb_extents_first(dirt->fcb, rollback);
+        
+        le = le->Flink;
+    }
     
+    le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
         dirty_fcb* dirt;
         LIST_ENTRY* le2 = le->Flink;

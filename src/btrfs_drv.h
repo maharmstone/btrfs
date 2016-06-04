@@ -664,6 +664,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+void flush_fcb_extents_first(fcb* fcb, LIST_ENTRY* rollback);
 void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
