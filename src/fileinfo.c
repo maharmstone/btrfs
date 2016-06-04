@@ -1933,6 +1933,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     move_entry* me;
     LARGE_INTEGER time;
     BTRFS_TIME now;
+    file_ref* origparent;
     
     InitializeListHead(&move_list);
     
@@ -1943,6 +1944,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
+    
+    origparent = fileref->parent;
     
     me->fileref = fileref;
     InterlockedIncrement(&me->fileref->refcount);
@@ -2107,8 +2110,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         me->dummyfileref->created = me->fileref->created;
         me->fileref->created = TRUE;
 
-        InsertHeadList(&me->fileref->list_entry, &me->dummyfileref->list_entry);
         RemoveEntryList(&me->fileref->list_entry);
+        
+        me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
+        InterlockedIncrement(&me->dummyfileref->parent->refcount);
+        
+        free_fileref(me->fileref->parent);
         
         if (me->parent)
             me->fileref->parent = me->parent->fileref;
@@ -2117,6 +2124,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         
         InterlockedIncrement(&me->fileref->parent->refcount);
         
+        me->dummyfileref->index = me->fileref->index;
+        
         Status = fcb_get_last_dir_index(me->fileref->parent->fcb, &me->fileref->index);
         if (!NT_SUCCESS(Status)) {
             ERR("fcb_get_last_dir_index returned %08x\n", Status);
@@ -2124,6 +2133,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         }
         
         insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
+        insert_fileref_child(me->dummyfileref->parent, me->dummyfileref, TRUE);
         
         if (!me->parent) {
             me->fileref->parent->fcb->inode_item.st_size += me->fileref->utf8.Length * 2;
@@ -2158,13 +2168,16 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         me->dummyfileref->debug_desc = me->fileref->debug_desc;
         me->dummyfileref->debug_desc = NULL;
 
-        mark_fileref_dirty(me->dummyfileref);
+        Status = delete_fileref(me->dummyfileref, NULL, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_fileref returned %08x\n", Status);
+            goto end;
+        }
+        
         mark_fileref_dirty(me->fileref);
         
         le = le->Flink;
     }
-    
-    // FIXME - delete old filerefs
     
     destdir->fcb->subvol->root_item.ctransid = destdir->fcb->Vcb->superblock.generation;
     destdir->fcb->subvol->root_item.ctime = now;
