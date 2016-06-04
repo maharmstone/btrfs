@@ -502,7 +502,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         LIST_ENTRY* le2 = fcb2->extents.Flink;
         
         while (le2 != &fcb2->extents) {
-            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
             
             ext->unique = FALSE;
             
