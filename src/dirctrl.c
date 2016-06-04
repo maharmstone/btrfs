@@ -551,6 +551,9 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
                         goto end;
                     }
                     
+                    if (fr->index == tp.item->key.offset && fr->deleted)
+                        break;
+                    
                     fr = fr->list_entry.Flink == &fileref->children ? NULL : CONTAINING_RECORD(fr->list_entry.Flink, file_ref, list_entry);
                 }
             } while (fr && fr->index < tp.item->key.offset);
