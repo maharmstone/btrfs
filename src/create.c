@@ -1289,8 +1289,10 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     return STATUS_SUCCESS;
 }
 
-void insert_fileref_child(file_ref* parent, file_ref* child) {
-    ExAcquireResourceExclusiveLite(&parent->nonpaged->children_lock, TRUE);
+void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
+    if (do_lock)
+        ExAcquireResourceExclusiveLite(&parent->nonpaged->children_lock, TRUE);
+    
     if (IsListEmpty(&parent->children))
         InsertTailList(&parent->children, &child->list_entry);
     else {
@@ -1313,7 +1315,9 @@ void insert_fileref_child(file_ref* parent, file_ref* child) {
             }
         }
     }
-    ExReleaseResourceLite(&parent->nonpaged->children_lock);
+    
+    if (do_lock)
+        ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed) {
@@ -1514,7 +1518,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
 
                     sf2->parent = (struct _file_ref*)sf;
-                    insert_fileref_child(sf, sf2);
+                    insert_fileref_child(sf, sf2, TRUE);
                     
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->refcount);
@@ -1619,7 +1623,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->parent = (struct _file_ref*)sf;
                     
-                    insert_fileref_child(sf, sf2);
+                    insert_fileref_child(sf, sf2, TRUE);
                     
 #ifdef DEBUG_FCB_REFCOUNTS
                     rc = InterlockedIncrement(&sf->refcount);

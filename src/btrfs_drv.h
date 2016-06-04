@@ -699,7 +699,7 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                                              UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8);
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb);
-void insert_fileref_child(file_ref* parent, file_ref* child);
+void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock);
 NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index);
 
 // in fsctl.c
