@@ -1565,11 +1565,277 @@ BOOL has_open_children(file_ref* fileref) {
 //     return Status;
 // }
 
+static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
+    fcb* fcb;
+    LIST_ENTRY* le;
+    
+    // FIXME - we can skip a lot of this if the inode is about to be deleted
+    
+    fcb = create_fcb();
+    if (!fcb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    fcb->Vcb = oldfcb->Vcb;
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize = oldfcb->Header.AllocationSize;
+    fcb->Header.FileSize = oldfcb->Header.FileSize;
+    fcb->Header.ValidDataLength = oldfcb->Header.ValidDataLength;
+    
+    fcb->type = oldfcb->type;
+    
+    RtlCopyMemory(&fcb->inode_item, &oldfcb->inode_item, sizeof(INODE_ITEM));
+    
+    if (oldfcb->sd && RtlLengthSecurityDescriptor(oldfcb->sd) > 0) {
+        fcb->sd = ExAllocatePoolWithTag(PagedPool, RtlLengthSecurityDescriptor(oldfcb->sd), ALLOC_TAG);
+        if (!fcb->sd) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(fcb->sd, oldfcb->sd, RtlLengthSecurityDescriptor(oldfcb->sd));
+    }
+    
+    fcb->atts = oldfcb->atts;
+    
+    le = oldfcb->extents.Flink;
+    while (le != &oldfcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+        
+        if (!ext2) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        ext2->offset = ext->offset;
+        ext2->datalen = ext->datalen;
+        
+        if (ext2->datalen > 0) {
+            ext2->data = ExAllocatePoolWithTag(PagedPool, ext2->datalen, ALLOC_TAG);
+            
+            if (!ext2->data) {
+                ERR("out of memory\n");
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(ext2->data, ext->data, ext2->datalen);
+        } else
+            ext2->data = NULL;
+        
+        ext2->unique = FALSE;
+
+        InsertTailList(&fcb->extents, &ext2->list_entry);
+        
+        le = le->Flink;
+    }
+    
+    le = oldfcb->extent_backrefs.Flink;
+    while (le != &oldfcb->extent_backrefs) {
+        extent_backref* extref = CONTAINING_RECORD(le, extent_backref, list_entry);
+        extent_backref* extref2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
+        
+        if (!extref2) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        extref2->address = extref->address;
+        extref2->size = extref->size;
+        extref2->offset = extref->offset;
+        extref2->refcount = extref->refcount;
+        extref2->new_refcount = extref->new_refcount;
+        InsertTailList(&fcb->extent_backrefs, &extref2->list_entry);
+
+        le = le->Flink;
+    }
+    
+    fcb->last_dir_index = oldfcb->last_dir_index;
+    
+    if (oldfcb->reparse_xattr.Buffer && oldfcb->reparse_xattr.Length > 0) {
+        fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = oldfcb->reparse_xattr.Length;
+        
+        fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->reparse_xattr.MaximumLength, ALLOC_TAG);
+        if (!fcb->reparse_xattr.Buffer) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(fcb->reparse_xattr.Buffer, oldfcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
+    }
+    
+    if (oldfcb->ads) {
+        fcb->ads = TRUE;
+        fcb->adshash = oldfcb->adshash;
+        
+        if (oldfcb->adsxattr.Buffer && oldfcb->adsxattr.Length > 0) {
+            fcb->adsxattr.Length = fcb->adsxattr.MaximumLength = oldfcb->adsxattr.Length;
+            fcb->adsxattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.MaximumLength, ALLOC_TAG);
+            if (!fcb->adsxattr.Buffer) {
+                ERR("out of memory\n");
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(fcb->adsxattr.Buffer, oldfcb->adsxattr.Buffer, fcb->adsxattr.Length);
+        }
+        
+        if (oldfcb->adsdata.Buffer && oldfcb->adsdata.Length > 0) {
+            fcb->adsdata.Length = fcb->adsdata.MaximumLength = oldfcb->adsdata.Length;
+            fcb->adsdata.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsdata.MaximumLength, ALLOC_TAG);
+            if (!fcb->adsdata.Buffer) {
+                ERR("out of memory\n");
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(fcb->adsdata.Buffer, oldfcb->adsdata.Buffer, fcb->adsdata.Length);
+        }
+    }
+
+    *pfcb = fcb;
+    
+    return STATUS_SUCCESS;
+}
+
+typedef struct {
+    file_ref* fileref;
+//     UINT32 level;
+    fcb* dummyfcb;
+    LIST_ENTRY list_entry;
+} move_entry;
+
 static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, LIST_ENTRY* rollback) {
     NTSTATUS Status;
+    LIST_ENTRY move_list, *le;
+    move_entry* me;
     
-    FIXME("FIXME - move file across subvols\n"); // FIXME
-    Status = STATUS_NOT_IMPLEMENTED;
+    InitializeListHead(&move_list);
+    
+    me = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
+    
+    if (!me) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    me->fileref = fileref;
+    InterlockedIncrement(&me->fileref->refcount);
+//     me->level = 0;
+    me->dummyfcb = NULL;
+    
+    InsertTailList(&move_list, &me->list_entry);
+    
+    le = move_list.Flink;
+    while (le != &move_list) {
+        me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        ExAcquireResourceSharedLite(me->fileref->fcb->Header.Resource, TRUE);
+        
+        if (me->fileref->fcb->type == BTRFS_TYPE_DIRECTORY && me->fileref->fcb->inode_item.st_size != 0) {
+            // FIXME - add children
+        }
+        
+        ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+        
+        le = le->Flink;
+    }
+    
+    // loop through list and create new inodes
+    
+    le = move_list.Flink;
+    while (le != &move_list) {
+        me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        if (!me->dummyfcb) {
+            ULONG defda;
+            
+            ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, TRUE);
+            
+            Status = duplicate_fcb(me->fileref->fcb, &me->dummyfcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("duplicate_fcb returned %08x\n", Status);
+                ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+                goto end;
+            }
+            
+            me->dummyfcb->subvol = me->fileref->fcb->subvol;
+            me->dummyfcb->inode = me->fileref->fcb->inode;
+            me->dummyfcb->sd_dirty = me->fileref->fcb->sd_dirty;
+            me->dummyfcb->atts_changed = me->fileref->fcb->atts_changed;
+            me->dummyfcb->atts_deleted = me->fileref->fcb->atts_deleted;
+            me->dummyfcb->extents_changed = me->fileref->fcb->extents_changed;
+            me->dummyfcb->reparse_xattr_changed = me->fileref->fcb->reparse_xattr_changed;
+            me->dummyfcb->created = me->fileref->fcb->created;
+            me->dummyfcb->deleted = me->fileref->fcb->deleted;
+            mark_fcb_dirty(me->dummyfcb);
+               
+            if (destdir->fcb->subvol->lastinode == 0)
+                get_last_inode(destdir->fcb->Vcb, destdir->fcb->subvol);
+
+            me->fileref->fcb->subvol = destdir->fcb->subvol;
+            me->fileref->fcb->inode = ++destdir->fcb->subvol->lastinode; // FIXME - do proper function for this
+            me->fileref->fcb->inode_item.st_nlink = 1;
+            
+            defda = get_file_attributes(me->fileref->fcb->Vcb, &me->fileref->fcb->inode_item, me->fileref->fcb->subvol, me->fileref->fcb->inode,
+                                        me->fileref->fcb->type, me->fileref->filepart.Length > 0 && me->fileref->filepart.Buffer[0] == '.', TRUE);
+            
+            me->fileref->fcb->sd_dirty = !!me->fileref->fcb->sd;
+            me->fileref->fcb->atts_changed = defda != me->fileref->fcb->atts;
+            me->fileref->fcb->extents_changed = me->fileref->fcb->extents.Flink != &me->fileref->fcb->extents;
+            me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
+            me->fileref->fcb->created = TRUE;
+            
+            while (!IsListEmpty(&me->fileref->fcb->extent_backrefs)) {
+                LIST_ENTRY* le2 = RemoveHeadList(&me->fileref->fcb->extent_backrefs);
+                extent_backref* extref = CONTAINING_RECORD(le2, extent_backref, list_entry);
+                
+                ExFreePool(extref);
+            }
+            
+            InsertHeadList(&me->fileref->fcb->list_entry, &me->dummyfcb->list_entry);
+            RemoveEntryList(&me->fileref->fcb->list_entry);
+            
+            InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
+            
+            mark_fcb_dirty(me->fileref->fcb);
+            
+            // FIXME - set dummyfcb of subsequent entries if same inode
+            
+            ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+        } else {
+//             InterlockedIncrement(&me->newfcb->refcount);
+            ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, TRUE);
+            me->fileref->fcb->inode_item.st_nlink++;
+            ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+        }
+        
+        le = le->Flink;
+    }
+    
+    // FIXME - loop through list, change filerefs, and create dummy deleted ones
+    
+//     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+//     fcb->subvol->root_item.ctime = now;
+
+    Status = STATUS_SUCCESS;
+    
+end:
+    while (!IsListEmpty(&move_list)) {
+        le = RemoveHeadList(&move_list);
+        me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        free_fileref(me->fileref);
+        ExFreePool(me);
+    }
     
     return Status;
 }
