@@ -438,7 +438,7 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                     ERR("RtlSelfRelativeToAbsoluteSD 1 returned %08x\n", Status);
                 }
                 
-                ERR("sdsize = %u, daclsize = %u, saclsize = %u, ownersize = %u, groupsize = %u\n", sdsize, daclsize, saclsize, ownersize, groupsize);
+                TRACE("sdsize = %u, daclsize = %u, saclsize = %u, ownersize = %u, groupsize = %u\n", sdsize, daclsize, saclsize, ownersize, groupsize);
                 
                 newsd2 = sdsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, sdsize, ALLOC_TAG);
                 dacl = daclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, daclsize, ALLOC_TAG);
@@ -446,7 +446,7 @@ static BOOL get_sd_from_xattr(fcb* fcb) {
                 owner = ownersize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, ownersize, ALLOC_TAG);
                 group = groupsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, groupsize, ALLOC_TAG);
                 
-                if ((sdsize > 0 && !newsd2) || (daclsize > 0 && !dacl) || (saclsize > 0 && !sacl) || (ownersize > 0 && !owner) || (groupsize > 0 || !group)) {
+                if ((sdsize > 0 && !newsd2) || (daclsize > 0 && !dacl) || (saclsize > 0 && !sacl) || (ownersize > 0 && !owner) || (groupsize > 0 && !group)) {
                     ERR("out of memory\n");
                     if (newsd2) ExFreePool(newsd2);
                     if (dacl) ExFreePool(dacl);
