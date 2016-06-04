@@ -1718,6 +1718,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
     move_entry* me;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
     
     InitializeListHead(&move_list);
     
@@ -1825,6 +1827,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         le = le->Flink;
     }
     
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
+    fileref->fcb->subvol->root_item.ctime = now;
+    
     // loop through list and create new filerefs
     
     le = move_list.Flink;
@@ -1899,6 +1907,15 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         }
         
         insert_fileref_child(me->fileref->parent, me->fileref);
+        
+        if (!me->parent) {
+            me->fileref->parent->fcb->inode_item.st_size += me->fileref->utf8.Length * 2;
+            me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
+            me->fileref->parent->fcb->inode_item.sequence++;
+            me->fileref->parent->fcb->inode_item.st_ctime = now;
+            me->fileref->parent->fcb->inode_item.st_mtime = now;
+            mark_fcb_dirty(me->fileref->parent->fcb);
+        }
 
         me->dummyfileref->name_offset = me->fileref->name_offset;
         me->dummyfileref->full_filename = me->fileref->full_filename;
@@ -1932,8 +1949,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     
     // FIXME - delete old filerefs
     
-//     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
-//     fcb->subvol->root_item.ctime = now;
+    destdir->fcb->subvol->root_item.ctransid = destdir->fcb->Vcb->superblock.generation;
+    destdir->fcb->subvol->root_item.ctime = now;
 
     Status = STATUS_SUCCESS;
     
