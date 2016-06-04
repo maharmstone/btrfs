@@ -1879,6 +1879,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->utf8.Buffer = utf8;
     
     fileref->filepart = *fpus;
+    
+    fileref->name_offset = parfileref->full_filename.Length / sizeof(WCHAR);
+    if (parfileref != Vcb->root_fileref)
+        fileref->name_offset++;
 
     fileref->full_filename.Length = parfileref->full_filename.Length + (parfileref->full_filename.Length == sizeof(WCHAR) ? 0 : sizeof(WCHAR)) + fileref->filepart.Length;
     fileref->full_filename.MaximumLength = fileref->full_filename.Length;
