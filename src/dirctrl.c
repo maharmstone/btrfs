@@ -44,11 +44,14 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)
         return 0;
     
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
         return 0;
     }
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
