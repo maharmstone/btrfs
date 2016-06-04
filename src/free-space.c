@@ -95,7 +95,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
                     while (le != &Vcb->chunks) {
                         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
                         
-                        if (c->offset == tp.item->key.offset) {
+                        if (c->offset == tp.item->key.offset && c->cache) {
                             free_fcb(c->cache);
                             c->cache = NULL;
                         }
