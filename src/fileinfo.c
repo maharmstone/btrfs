@@ -2292,7 +2292,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } fileref_list;
 
-static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn) {
+NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset) {
     LIST_ENTRY fr_list, *le;
     file_ref* fr;
     NTSTATUS Status;
@@ -2357,6 +2357,9 @@ static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn) {
             fn->Buffer[i] = frl->fileref->fcb->ads ? ':' : '\\';
             i++;
             
+            if (name_offset && frl->fileref == fileref)
+                *name_offset = i * sizeof(WCHAR);
+            
             RtlCopyMemory(&fn->Buffer[i], frl->fileref->filepart.Buffer, frl->fileref->filepart.Length);
             i += frl->fileref->filepart.Length / sizeof(WCHAR);
         }
@@ -2402,7 +2405,7 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     fni->FileName[0] = 0;
     
-    Status = fileref_get_filename(fileref, &fn);
+    Status = fileref_get_filename(fileref, &fn, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("fileref_get_filename returned %08x\n", Status);
         return Status;
@@ -2443,6 +2446,8 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
             *length = -1;
         }
     }
+    
+    ExFreePool(fn.Buffer);
     
     TRACE("%.*S\n", retlen / sizeof(WCHAR), fni->FileName);
 

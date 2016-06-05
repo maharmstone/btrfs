@@ -964,7 +964,6 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb->fileref;
     NTSTATUS Status;
-//     WCHAR fn[MAX_PATH];
     
     TRACE("IRP_MN_NOTIFY_CHANGE_DIRECTORY\n");
     
@@ -974,6 +973,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     }
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
         Status = STATUS_INVALID_PARAMETER;
@@ -983,14 +983,22 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     // FIXME - raise exception if FCB marked for deletion?
     
     TRACE("%S\n", file_desc(FileObject));
+
+    if (ccb->filename.Length == 0) {
+        Status = fileref_get_filename(fileref, &ccb->filename, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("fileref_get_filename returned %08x\n", Status);
+            goto end;
+        }
+    }
     
-    // FIXME
-    /*FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&fileref->full_filename,
-        IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp, NULL, NULL);*/
-    
+    FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&ccb->filename,
+        IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp, NULL, NULL);
+        
     Status = STATUS_PENDING;
     
 end:
+    ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     return Status;

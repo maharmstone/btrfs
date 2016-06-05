@@ -1525,11 +1525,21 @@ WCHAR* file_desc(PFILE_OBJECT FileObject) {
 }
 
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
+    UNICODE_STRING fn;
+    NTSTATUS Status;
+    USHORT name_offset;
     fcb* fcb = fileref->fcb;
     
-    // FIXME
-//     FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fileref->full_filename, fileref->name_offset * sizeof(WCHAR),
-//                                 NULL, NULL, filter_match, action, NULL);
+    Status = fileref_get_filename(fileref, &fn, &name_offset);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fileref_get_filename returned %08x\n", Status);
+        return;
+    }
+    
+    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, name_offset,
+                                NULL, NULL, filter_match, action, NULL);
+    
+    ExFreePool(fn.Buffer);
 }
 
 void mark_fcb_dirty(fcb* fcb) {
@@ -1734,6 +1744,9 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     if (ccb) {    
         if (ccb->query_string.Buffer)
             RtlFreeUnicodeString(&ccb->query_string);
+        
+        if (ccb->filename.Buffer)
+            ExFreePool(ccb->filename.Buffer);
         
         // FIXME - use refcounts for fileref
         fileref = ccb->fileref;
