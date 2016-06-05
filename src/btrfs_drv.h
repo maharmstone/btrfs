@@ -767,6 +767,22 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
         head->Blink = item;
 }
 
+#ifdef DEBUG_FCB_REFCOUNTS
+#ifdef DEBUG_LONG_MESSAGES
+#define increase_fileref_refcount(fileref) {\
+    LONG rc = InterlockedIncrement(&fileref->refcount);\
+    MSG(funcname, __FILE__, __LINE__, "fileref %p: refcount now %i\n", 1, fileref, rc);\
+}
+#else
+#define increase_fileref_refcount(fileref) {\
+    LONG rc = InterlockedIncrement(&fileref->refcount);\
+    MSG(funcname, "fileref %p: refcount now %i\n", 1, fileref, rc);\
+}
+#endif
+#else
+#define increase_fileref_refcount(fileref) InterlockedIncrement(&fileref->refcount)
+#endif
+
 #ifdef _MSC_VER
 // #define int3 __asm { int 3 }
 #define int3 __debugbreak()

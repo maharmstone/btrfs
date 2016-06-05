@@ -577,7 +577,7 @@ file_ref* create_fileref() {
     fr->refcount = 1;
     
 #ifdef DEBUG_FCB_REFCOUNTS
-    WARN("fileref %p: refcount now %i\n", fr, fr->refcount);
+    WARN("fileref %p: refcount now 1\n", fr);
 #endif
     
     InitializeListHead(&fr->children);
@@ -960,14 +960,8 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
         le = le->Flink;
     }
     
-    if (deleted) {
-#ifdef DEBUG_FCB_REFCOUNTS
-        rc = InterlockedIncrement(&deleted->refcount);
-        WARN("fileref %p: refcount now %i (%S)\n", deleted, rc, file_desc_fileref(deleted));
-#else
-        InterlockedIncrement(&deleted->refcount);
-#endif
-    }
+    if (deleted)
+        increase_fileref_refcount(deleted);
     
     return deleted;
 }
@@ -1341,13 +1335,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     }
     
     if (related && fnus->Length == 0) {
-#ifdef DEBUG_FCB_REFCOUNTS
-        LONG rc = InterlockedIncrement(&related->refcount);
-        WARN("fileref %p: refcount now %i\n", related, rc);
-#else
-        InterlockedIncrement(&related->refcount);
-#endif
-        
+        increase_fileref_refcount(related);
         
         *pfr = related;
         return STATUS_SUCCESS;
@@ -1362,12 +1350,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
-#ifdef DEBUG_FCB_REFCOUNTS
-            LONG rc = InterlockedIncrement(&Vcb->root_fileref->refcount);
-            WARN("fileref %p: refcount now %i (root)\n", Vcb->root_fileref, rc);
-#else
-            InterlockedIncrement(&Vcb->root_fileref->refcount);
-#endif
+            increase_fileref_refcount(Vcb->root_fileref);
             *pfr = Vcb->root_fileref;
             return STATUS_SUCCESS;
         }
@@ -1396,10 +1379,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     }
     
     sf = dir;
-    dir->refcount++;
-#ifdef DEBUG_FCB_REFCOUNTS
-    WARN("fileref %p: refcount now %i (%S)\n", dir, dir->refcount, file_desc_fileref(dir));
-#endif
+    increase_fileref_refcount(dir);
     
     if (parent) {
         num_parts--;
@@ -1449,10 +1429,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     goto end;
                 } else {
                     fcb* fcb;
-#ifdef DEBUG_FCB_REFCOUNTS
-                    LONG rc;
-#endif
-                    
+
                     if (streamhash == EA_DOSATTRIB_HASH && xattr.Length == strlen(EA_DOSATTRIB) &&
                         RtlCompareMemory(xattr.Buffer, EA_DOSATTRIB, xattr.Length) == xattr.Length) {
                         WARN("not allowing user.DOSATTRIB to be opened as stream\n");
@@ -1497,22 +1474,14 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     sf2->parent = (struct _file_ref*)sf;
                     insert_fileref_child(sf, sf2, TRUE);
                     
-#ifdef DEBUG_FCB_REFCOUNTS
-                    rc = InterlockedIncrement(&sf->refcount);
-                    WARN("fileref %p: refcount now %i\n", sf, rc);
-#else
-                    InterlockedIncrement(&sf->refcount);
-#endif
+                    increase_fileref_refcount(sf);
                 }
             } else {
                 root* subvol;
                 UINT64 inode, index;
                 UINT8 type;
                 ANSI_STRING utf8;
-#ifdef DEBUG_FCB_REFCOUNTS
-                LONG rc;
-#endif
-      
+                
                 Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8);
                 if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
@@ -1579,12 +1548,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     insert_fileref_child(sf, sf2, TRUE);
                     
-#ifdef DEBUG_FCB_REFCOUNTS
-                    rc = InterlockedIncrement(&sf->refcount);
-                    WARN("fileref %p: refcount now %i\n", sf, rc);
-#else
-                    InterlockedIncrement(&sf->refcount);
-#endif
+                    increase_fileref_refcount(sf);
                 }
             }
         }
@@ -1878,12 +1842,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
     
-#ifdef DEBUG_FCB_REFCOUNTS
-    rc = InterlockedIncrement(&parfileref->refcount);
-    WARN("fileref %p: refcount now %i\n", parfileref, rc);
-#else
-    InterlockedIncrement(&parfileref->refcount);
-#endif
+    increase_fileref_refcount(parfileref);
  
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     
@@ -2173,12 +2132,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         InsertTailList(&parfileref->children, &fileref->list_entry);
         ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
         
-#ifdef DEBUG_FCB_REFCOUNTS
-        rc = InterlockedIncrement(&parfileref->refcount);
-        WARN("fileref %p: refcount now %i\n", parfileref, rc);
-#else
-        InterlockedIncrement(&parfileref->refcount);
-#endif
+        increase_fileref_refcount(parfileref);
         
         ExFreePool(fpus.Buffer);
         fpus.Buffer = NULL;

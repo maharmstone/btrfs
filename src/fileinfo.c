@@ -529,7 +529,9 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
             }
             
             me2->fileref = fr;
-            InterlockedIncrement(&fr->refcount);
+            
+            increase_fileref_refcount(fr);
+
             me2->dummyfcb = NULL;
             me2->dummyfileref = NULL;
             me2->parent = me;
@@ -839,7 +841,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
                         fr->parent = me->fileref;
 
                         fr->index = tp.item->key.offset;
-                        InterlockedIncrement(&me->fileref->refcount);
+                        increase_fileref_refcount(me->fileref);
                         
                         insert_fileref_child(fr->parent, fr, FALSE);
                         
@@ -904,7 +906,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     origparent = fileref->parent;
     
     me->fileref = fileref;
-    InterlockedIncrement(&me->fileref->refcount);
+    increase_fileref_refcount(me->fileref);
     me->dummyfcb = NULL;
     me->dummyfileref = NULL;
     me->parent = NULL;
@@ -1099,7 +1101,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         RemoveEntryList(&me->fileref->list_entry);
         
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
-        InterlockedIncrement(&me->dummyfileref->parent->refcount);
+        increase_fileref_refcount(me->dummyfileref->parent);
         
         free_fileref(me->fileref->parent);
         
@@ -1108,7 +1110,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         else
             me->fileref->parent = destdir;
         
-        InterlockedIncrement(&me->fileref->parent->refcount);
+        increase_fileref_refcount(me->fileref->parent);
         
         me->dummyfileref->index = me->fileref->index;
         
@@ -1249,7 +1251,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         struct _ccb* relatedccb = tfo->FsContext2;
         
         related = relatedccb->fileref;
-        related->refcount++;
+        increase_fileref_refcount(related);
     }
 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
@@ -1782,7 +1784,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         struct _ccb* relatedccb = tfo->FsContext2;
         
         related = relatedccb->fileref;
-        related->refcount++;
+        increase_fileref_refcount(related);
     }
 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);

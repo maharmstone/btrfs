@@ -1555,6 +1555,9 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
 
 void mark_fcb_dirty(fcb* fcb) {
     if (!fcb->dirty) {
+#ifdef DEBUG_FCB_REFCOUNTS
+        LONG rc;
+#endif
         dirty_fcb* dirt = ExAllocatePoolWithTag(NonPagedPool, sizeof(dirty_fcb), ALLOC_TAG);
         
         if (!dirt) {
@@ -1563,7 +1566,13 @@ void mark_fcb_dirty(fcb* fcb) {
         }
         
         fcb->dirty = TRUE;
-        fcb->refcount++;
+        
+#ifdef DEBUG_FCB_REFCOUNTS
+        rc = InterlockedIncrement(&fcb->refcount);
+        WARN("fcb %p: refcount now %i\n", fcb, rc);
+#else
+        InterlockedIncrement(&fcb->refcount);
+#endif
         
         dirt->fcb = fcb;
         
@@ -1583,7 +1592,7 @@ void mark_fileref_dirty(file_ref* fileref) {
         }
         
         fileref->dirty = TRUE;
-        fileref->refcount++;
+        increase_fileref_refcount(fileref);
         
         dirt->fileref = fileref;
         
