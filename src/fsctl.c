@@ -451,26 +451,26 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     RtlCopyMemory(fr->filepart.Buffer, name->Buffer, name->Length);
     
-    fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
-
-    if (fileref != Vcb->root_fileref)
-        fr->name_offset++;
-    
-    fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
-    fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
-    if (!fr->full_filename.Buffer) {
-        ERR("out of memory\n");
-        free_fileref(fr);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
-    
-    if (fileref != Vcb->root_fileref)
-        fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
-    
-    RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
+//     fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
+// 
+//     if (fileref != Vcb->root_fileref)
+//         fr->name_offset++;
+//     
+//     fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
+//     fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
+//     if (!fr->full_filename.Buffer) {
+//         ERR("out of memory\n");
+//         free_fileref(fr);
+//         Status = STATUS_INSUFFICIENT_RESOURCES;
+//         goto end;
+//     }
+//     
+//     RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+//     
+//     if (fileref != Vcb->root_fileref)
+//         fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
+//     
+//     RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
     
     fr->parent = fileref;
     
@@ -650,36 +650,46 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, crc32, &utf8, &nameus);
     
     if (NT_SUCCESS(Status)) {
-        UNICODE_STRING ffn;
+        file_ref* fr;
+//         UNICODE_STRING ffn;
         
-        ffn.Length = fileref->full_filename.Length + bcs->namelen;
-        if (fcb != fcb->Vcb->root_fileref->fcb)
-            ffn.Length += sizeof(WCHAR);
+//         ffn.Length = fileref->full_filename.Length + bcs->namelen;
+//         if (fcb != fcb->Vcb->root_fileref->fcb)
+//             ffn.Length += sizeof(WCHAR);
+//         
+//         ffn.MaximumLength = ffn.Length;
+//         ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
+//         
+//         if (ffn.Buffer) {
+//             ULONG i;
+//             
+//             RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+//             i = fileref->full_filename.Length;
+//             
+//             if (fcb != fcb->Vcb->root_fileref->fcb) {
+//                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';
+//                 i += sizeof(WCHAR);
+//             }
+//             
+//             RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], bcs->name, bcs->namelen);
+//             
+//             TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
+//             
+//             FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
+//                                         FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
+//             
+//             ExFreePool(ffn.Buffer);
+//         } else
+//             ERR("out of memory\n");
         
-        ffn.MaximumLength = ffn.Length;
-        ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
-        
-        if (ffn.Buffer) {
-            ULONG i;
-            
-            RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
-            i = fileref->full_filename.Length;
-            
-            if (fcb != fcb->Vcb->root_fileref->fcb) {
-                ffn.Buffer[i / sizeof(WCHAR)] = '\\';
-                i += sizeof(WCHAR);
-            }
-            
-            RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], bcs->name, bcs->namelen);
-            
-            TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
-            
-            FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
-                                        FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
-            
-            ExFreePool(ffn.Buffer);
-        } else
-            ERR("out of memory\n");
+        Status = open_fileref(Vcb, &fr, &nameus, fileref, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref returned %08x\n", Status);
+            Status = STATUS_SUCCESS;
+        } else {
+            send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
+            free_fileref(fr);
+        }
     }
     
 end:
@@ -986,26 +996,26 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     RtlCopyMemory(fr->filepart.Buffer, nameus.Buffer, nameus.Length);
     
-    fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
-
-    if (fileref != Vcb->root_fileref)
-        fr->name_offset++;
-    
-    fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
-    fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
-    if (!fr->full_filename.Buffer) {
-        ERR("out of memory\n");
-        free_fileref(fr);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
-    
-    if (fileref != Vcb->root_fileref)
-        fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
-    
-    RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
+//     fr->name_offset = fileref->full_filename.Length / sizeof(WCHAR);
+// 
+//     if (fileref != Vcb->root_fileref)
+//         fr->name_offset++;
+//     
+//     fr->full_filename.Length = fr->full_filename.MaximumLength = (fr->name_offset * sizeof(WCHAR)) + fr->filepart.Length;
+//     fr->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fr->full_filename.MaximumLength, ALLOC_TAG);
+//     if (!fr->full_filename.Buffer) {
+//         ERR("out of memory\n");
+//         free_fileref(fr);
+//         Status = STATUS_INSUFFICIENT_RESOURCES;
+//         goto end;
+//     }
+//     
+//     RtlCopyMemory(fr->full_filename.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+//     
+//     if (fileref != Vcb->root_fileref)
+//         fr->full_filename.Buffer[fileref->full_filename.Length / sizeof(WCHAR)] = '\\';
+//     
+//     RtlCopyMemory(&fr->full_filename.Buffer[fr->name_offset], fr->filepart.Buffer, fr->filepart.Length);
     
     fr->parent = fileref;
     
@@ -1040,39 +1050,44 @@ end:
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (NT_SUCCESS(Status)) {
-        UNICODE_STRING ffn;
+//         UNICODE_STRING ffn;
+//         
+//         ffn.Length = fileref->full_filename.Length + length;
+//         if (fcb != fcb->Vcb->root_fileref->fcb)
+//             ffn.Length += sizeof(WCHAR);
+//         
+//         ffn.MaximumLength = ffn.Length;
+//         ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
+//         
+//         if (ffn.Buffer) {
+//             ULONG i;
+//             
+//             RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
+//             i = fileref->full_filename.Length;
+//             
+//             if (fcb != fcb->Vcb->root_fileref->fcb) {
+//                 ffn.Buffer[i / sizeof(WCHAR)] = '\\';
+//                 i += sizeof(WCHAR);
+//             }
+//             
+//             RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], name, length);
+//             
+//             TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
+//             
+//             FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
+//                                         FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
+//             
+//             ExFreePool(ffn.Buffer);
+//         } else
+//             ERR("out of memory\n");
         
-        ffn.Length = fileref->full_filename.Length + length;
-        if (fcb != fcb->Vcb->root_fileref->fcb)
-            ffn.Length += sizeof(WCHAR);
-        
-        ffn.MaximumLength = ffn.Length;
-        ffn.Buffer = ExAllocatePoolWithTag(PagedPool, ffn.Length, ALLOC_TAG);
-        
-        if (ffn.Buffer) {
-            ULONG i;
-            
-            RtlCopyMemory(ffn.Buffer, fileref->full_filename.Buffer, fileref->full_filename.Length);
-            i = fileref->full_filename.Length;
-            
-            if (fcb != fcb->Vcb->root_fileref->fcb) {
-                ffn.Buffer[i / sizeof(WCHAR)] = '\\';
-                i += sizeof(WCHAR);
-            }
-            
-            RtlCopyMemory(&ffn.Buffer[i / sizeof(WCHAR)], name, length);
-            
-            TRACE("full filename = %.*S\n", ffn.Length / sizeof(WCHAR), ffn.Buffer);
-            
-            FsRtlNotifyFullReportChange(Vcb->NotifySync, &Vcb->DirNotifyList, (PSTRING)&ffn, i, NULL, NULL,
-                                        FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
-            
-            ExFreePool(ffn.Buffer);
-        } else
-            ERR("out of memory\n");
+        if (fr)
+            send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
     }
     
 end2:
+    if (fr)
+        free_fileref(fr);
     
     return Status;
 }

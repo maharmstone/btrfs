@@ -169,8 +169,6 @@ typedef struct _file_ref {
     UNICODE_STRING filepart;
     ANSI_STRING utf8;
     ANSI_STRING oldutf8;
-    UNICODE_STRING full_filename;
-    ULONG name_offset;
     UINT64 index;
     BOOL delete_on_close;
     BOOL deleted;
