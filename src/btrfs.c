@@ -1499,18 +1499,29 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
 }
 
 WCHAR* file_desc_fileref(file_ref* fileref) {
+    NTSTATUS Status;
+    UNICODE_STRING fn;
+    
     if (fileref->debug_desc)
         return fileref->debug_desc;
     
-    return L"FIXME";
-//     fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.Length + sizeof(WCHAR), ALLOC_TAG);
-//     if (!fileref->debug_desc)
-//         return L"(memory error)";
-//     
-//     RtlCopyMemory(fileref->debug_desc, fileref->full_filename.Buffer, fileref->full_filename.Length);
-//     fileref->debug_desc[fileref->full_filename.Length / sizeof(WCHAR)] = 0;
-//     
-//     return fileref->debug_desc;
+    Status = fileref_get_filename(fileref, &fn, NULL);
+    if (!NT_SUCCESS(Status)) {
+        return L"ERROR";
+    }
+    
+    fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, fn.Length + sizeof(WCHAR), ALLOC_TAG);
+    if (!fileref->debug_desc) {
+        ExFreePool(fn.Buffer);
+        return L"(memory error)";
+    }
+    
+    RtlCopyMemory(fileref->debug_desc, fn.Buffer, fn.Length);
+    fileref->debug_desc[fn.Length / sizeof(WCHAR)] = 0;
+    
+    ExFreePool(fn.Buffer);
+    
+    return fileref->debug_desc;
 }
 
 WCHAR* file_desc(PFILE_OBJECT FileObject) {
