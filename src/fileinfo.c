@@ -2314,6 +2314,7 @@ static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn) {
     
     InitializeListHead(&fr_list);
     
+    len = 0;
     fr = fileref;
     
     do {
@@ -2329,22 +2330,13 @@ static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn) {
         frl->fileref = fr;
         InsertTailList(&fr_list, &frl->list_entry);
         
-        fr = fr->parent;
-    } while (fr);
-    
-    len = 0;
-    
-    le = fr_list.Flink;
-    while (le != &fr_list) {
-        fileref_list* frl = CONTAINING_RECORD(le, fileref_list, list_entry);
+        len += fr->filepart.Length;
         
-        len += frl->fileref->filepart.Length;
-        
-        if (frl->fileref != fileref->fcb->Vcb->root_fileref)
+        if (fr != fileref->fcb->Vcb->root_fileref)
             len += sizeof(WCHAR);
         
-        le = le->Flink;
-    }
+        fr = fr->parent;
+    } while (fr);
     
     fn->Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
     if (!fn->Buffer) {
