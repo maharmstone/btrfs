@@ -1137,13 +1137,32 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE)
             me->fileref->fcb->subvol->root_item.num_references++;
 
-        Status = delete_fileref(me->dummyfileref, NULL, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_fileref returned %08x\n", Status);
-            goto end;
+        if (!me->dummyfileref->fcb->ads) {
+            Status = delete_fileref(me->dummyfileref, NULL, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_fileref returned %08x\n", Status);
+                goto end;
+            }
         }
         
         mark_fileref_dirty(me->fileref);
+        
+        le = le->Flink;
+    }
+    
+    // loop through, and only mark streams as deleted if their parent inodes are also deleted
+    
+    le = move_list.Flink;
+    while (le != &move_list) {
+        me = CONTAINING_RECORD(le, move_entry, list_entry);
+        
+        if (me->dummyfileref->fcb->ads && me->parent->dummyfileref->fcb->deleted) {
+            Status = delete_fileref(me->dummyfileref, NULL, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_fileref returned %08x\n", Status);
+                goto end;
+            }
+        }
         
         le = le->Flink;
     }
