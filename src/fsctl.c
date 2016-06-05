@@ -1110,6 +1110,98 @@ end:
     return Status;
 }
 
+static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length) {
+    LIST_ENTRY* le;
+    
+    le = fcb->extents.Flink;
+    
+    while (le != &fcb->extents) {
+        LIST_ENTRY* le2 = le->Flink;
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        EXTENT_DATA* ed = ext->data;
+        EXTENT_DATA2* ed2;
+        UINT64 len;
+        
+        if (ext->datalen < sizeof(EXTENT_DATA)) {
+            ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+            if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            ed2 = (EXTENT_DATA2*)ed->data;
+        }
+        
+        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+        
+        if (ext->offset < start + length && ext->offset + len >= start) {
+            if (ed->compression != BTRFS_COMPRESSION_NONE) {
+                FIXME("FIXME - compression not supported at present\n");
+                return STATUS_NOT_SUPPORTED;
+            }
+            
+            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+                WARN("encryption not supported (type %x)\n", ext->offset, ed->encryption);
+                return STATUS_NOT_SUPPORTED;
+            }
+            
+            if (ed->encoding != BTRFS_ENCODING_NONE) {
+                WARN("other encodings not supported\n");
+                return STATUS_NOT_SUPPORTED;
+            }
+            
+            // We can ignore prealloc and sparse extents - they're already counted as zeroed
+            
+            if (ed->type == EXTENT_TYPE_INLINE) {
+                extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                EXTENT_DATA* data;
+                UINT64 s2, e2;
+                
+                if (!ext2) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                data = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+                
+                if (!data) {
+                    ERR("out of memory\n");
+                    ExFreePool(ext2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(data, ext->data, ext->datalen);
+                
+                s2 = max(ext->offset, start);
+                e2 = min(ext->offset + ed->decoded_size, start + length);
+                RtlZeroMemory((UINT8*)data + sizeof(EXTENT_DATA) - 1 + s2 - ext->offset, e2 - s2);
+                
+                ext2->offset = ext->offset;
+                ext2->data = data;
+                ext2->datalen = ext->datalen;
+                ext2->unique = ext->unique;
+                
+                InsertHeadList(&ext->list_entry, &ext2->list_entry);
+                RemoveEntryList(&ext->list_entry);
+                
+                ExFreePool(ext->data);
+                ExFreePool(ext);
+            } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
+                // FIXME
+            }
+        } else if (ext->offset >= start + length)
+            return STATUS_SUCCESS;
+        
+        le = le2;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
     FILE_ZERO_DATA_INFORMATION* fzdi = data;
     NTSTATUS Status;
@@ -1118,6 +1210,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     LARGE_INTEGER time;
     BTRFS_TIME now;
     UINT64 start, end;
+    extent* ext;
     
     // FIXME - check permissions
     
@@ -1140,6 +1233,8 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         ERR("FCB was NULL\n");
         return STATUS_INVALID_PARAMETER;
     }
+    
+    // FIXME - flush file first
     
     InitializeListHead(&rollback);
     
@@ -1168,28 +1263,58 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
-    // FIXME - check if inline
-    // FIXME - do bits before start
-    // FIXME - do bits after end
+    ext = CONTAINING_RECORD(fcb->extents.Flink, extent, list_entry);
     
-    start = sector_align(fzdi->FileOffset.QuadPart, Vcb->superblock.sector_size);
-    
-    if (fzdi->BeyondFinalZero.QuadPart > fcb->inode_item.st_size)
-        end = sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size);
-    else
-        end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
-    
-    if (end > start) {
-        Status = excise_extents(Vcb, fcb, start, end, &rollback);
+    if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
+        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart);
         if (!NT_SUCCESS(Status)) {
-            ERR("excise_extents returned %08x\n", Status);
+            ERR("zero_data returned %08x\n", Status);
             goto end;
         }
+    } else {
+        start = sector_align(fzdi->FileOffset.QuadPart, Vcb->superblock.sector_size);
         
-        Status = insert_sparse_extent(fcb, start, end - start);
-        if (!NT_SUCCESS(Status)) {
-            ERR("insert_sparse_extent returned %08x\n", Status);
-            goto end;
+        if (fzdi->BeyondFinalZero.QuadPart > fcb->inode_item.st_size)
+            end = sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size);
+        else
+            end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
+        
+        if (end == start) {
+            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart);
+            if (!NT_SUCCESS(Status)) {
+                ERR("zero_data returned %08x\n", Status);
+                goto end;
+            }
+        } else {
+            if (start > fzdi->FileOffset.QuadPart) {
+                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zero_data returned %08x\n", Status);
+                    goto end;
+                }
+            }
+            
+            if (end < fzdi->BeyondFinalZero.QuadPart) {
+                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, end - fzdi->BeyondFinalZero.QuadPart);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zero_data returned %08x\n", Status);
+                    goto end;
+                }
+            }
+            
+            if (end > start) {
+                Status = excise_extents(Vcb, fcb, start, end, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("excise_extents returned %08x\n", Status);
+                    goto end;
+                }
+                
+                Status = insert_sparse_extent(fcb, start, end - start);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_sparse_extent returned %08x\n", Status);
+                    goto end;
+                }
+            }
         }
     }
     
@@ -1201,6 +1326,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fcb->inode_item.st_ctime = now;
     fcb->inode_item.st_mtime = now;
     
+    fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
