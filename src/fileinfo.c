@@ -2287,10 +2287,112 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    file_ref* fileref;
+    LIST_ENTRY list_entry;
+} fileref_list;
+
+static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn) {
+    LIST_ENTRY fr_list, *le;
+    file_ref* fr;
+    NTSTATUS Status;
+    ULONG len, i;
+    
+    // FIXME - we need a lock on filerefs' filepart
+    
+    if (fileref == fileref->fcb->Vcb->root_fileref) {
+        fn->Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
+        if (!fn->Buffer) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        fn->Length = fn->MaximumLength = sizeof(WCHAR);
+        fn->Buffer[0] = '\\';
+        return STATUS_SUCCESS;
+    }
+    
+    InitializeListHead(&fr_list);
+    
+    fr = fileref;
+    
+    do {
+        fileref_list* frl;
+        
+        frl = ExAllocatePoolWithTag(PagedPool, sizeof(fileref_list), ALLOC_TAG);
+        if (!frl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        frl->fileref = fr;
+        InsertTailList(&fr_list, &frl->list_entry);
+        
+        fr = fr->parent;
+    } while (fr);
+    
+    len = 0;
+    
+    le = fr_list.Flink;
+    while (le != &fr_list) {
+        fileref_list* frl = CONTAINING_RECORD(le, fileref_list, list_entry);
+        
+        len += frl->fileref->filepart.Length;
+        
+        if (frl->fileref != fileref->fcb->Vcb->root_fileref)
+            len += sizeof(WCHAR);
+        
+        le = le->Flink;
+    }
+    
+    fn->Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    if (!fn->Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    fn->Length = fn->MaximumLength = len;
+    
+    i = 0;
+    
+    le = fr_list.Blink;
+    while (le != &fr_list) {
+        fileref_list* frl = CONTAINING_RECORD(le, fileref_list, list_entry);
+        
+        if (frl->fileref != fileref->fcb->Vcb->root_fileref) {
+            fn->Buffer[i] = frl->fileref->fcb->ads ? ':' : '\\';
+            i++;
+            
+            RtlCopyMemory(&fn->Buffer[i], frl->fileref->filepart.Buffer, frl->fileref->filepart.Length);
+            i += frl->fileref->filepart.Length / sizeof(WCHAR);
+        }
+        
+        le = le->Blink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    while (!IsListEmpty(&fr_list)) {
+        fileref_list* frl;
+        
+        le = RemoveHeadList(&fr_list);
+        frl = CONTAINING_RECORD(le, fileref_list, list_entry);
+        
+        ExFreePool(frl);
+    }
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, file_ref* fileref, LONG* length) {
 #ifdef _DEBUG
     ULONG retlen = 0;
 #endif
+    UNICODE_STRING fn;
+    NTSTATUS Status;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     ULONG datasuflen = wcslen(datasuf) * sizeof(WCHAR);
     
@@ -2298,9 +2400,7 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
         ERR("called without fileref\n");
         return STATUS_INVALID_PARAMETER;
     }
-    
-    return STATUS_NOT_IMPLEMENTED;
-/*    
+   
     RtlZeroMemory(fni, sizeof(FILE_NAME_INFORMATION));
     
     *length -= (LONG)offsetof(FILE_NAME_INFORMATION, FileName[0]);
@@ -2310,15 +2410,21 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     fni->FileName[0] = 0;
     
-    if (*length >= (LONG)fileref->full_filename.Length) {
-        RtlCopyMemory(fni->FileName, fileref->full_filename.Buffer, fileref->full_filename.Length);
+    Status = fileref_get_filename(fileref, &fn);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fileref_get_filename returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (*length >= (LONG)fn.Length) {
+        RtlCopyMemory(fni->FileName, fn.Buffer, fn.Length);
 #ifdef _DEBUG
-        retlen = fileref->full_filename.Length;
+        retlen = fn.Length;
 #endif
-        *length -= fileref->full_filename.Length;
+        *length -= fn.Length;
     } else {
         if (*length > 0) {
-            RtlCopyMemory(fni->FileName, fileref->full_filename.Buffer, *length);
+            RtlCopyMemory(fni->FileName, fn.Buffer, *length);
 #ifdef _DEBUG
             retlen = *length;
 #endif
@@ -2326,18 +2432,18 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
         *length = -1;
     }
     
-    fni->FileNameLength = fileref->full_filename.Length;
+    fni->FileNameLength = fn.Length;
     
     if (fcb->ads) {
         if (*length >= (LONG)datasuflen) {
-            RtlCopyMemory(&fni->FileName[fileref->full_filename.Length / sizeof(WCHAR)], datasuf, datasuflen);
+            RtlCopyMemory(&fni->FileName[fn.Length / sizeof(WCHAR)], datasuf, datasuflen);
 #ifdef _DEBUG
             retlen += datasuflen;
 #endif
             *length -= datasuflen;
         } else {
             if (*length > 0) {
-                RtlCopyMemory(&fni->FileName[fileref->full_filename.Length / sizeof(WCHAR)], datasuf, *length);
+                RtlCopyMemory(&fni->FileName[fn.Length / sizeof(WCHAR)], datasuf, *length);
 #ifdef _DEBUG
                 retlen += *length;
 #endif
@@ -2348,7 +2454,7 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     TRACE("%.*S\n", retlen / sizeof(WCHAR), fni->FileName);
 
-    return STATUS_SUCCESS;*/
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, file_ref* fileref, LONG* length) {
