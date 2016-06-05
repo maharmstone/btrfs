@@ -1047,8 +1047,11 @@ static NTSTATUS fs_get_statistics(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT File
 
 static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
     FILE_SET_SPARSE_BUFFER* fssb = data;
+    NTSTATUS Status;
     BOOL set;
     fcb* fcb;
+    
+    // FIXME - check permissions
     
     if (data && length < sizeof(FILE_SET_SPARSE_BUFFER))
         return STATUS_INVALID_PARAMETER;
@@ -1065,9 +1068,13 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
         return STATUS_INVALID_PARAMETER;
     }
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
     if (fcb->type != BTRFS_TYPE_FILE) {
         WARN("FileObject did not point to a file\n");
-        return STATUS_INVALID_PARAMETER;
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     if (fssb)
@@ -1094,7 +1101,120 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     
     mark_fcb_dirty(fcb);
     
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
+static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
+    FILE_ZERO_DATA_INFORMATION* fzdi = data;
+    NTSTATUS Status;
+    fcb* fcb;
+    LIST_ENTRY rollback;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    UINT64 start, end;
+    
+    // FIXME - check permissions
+    
+    if (!data || length < sizeof(FILE_ZERO_DATA_INFORMATION))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (fzdi->BeyondFinalZero.QuadPart <= fzdi->FileOffset.QuadPart) {
+        WARN("BeyondFinalZero was less than or equal to FileOffset (%llx <= %llx)\n", fzdi->BeyondFinalZero.QuadPart, fzdi->FileOffset.QuadPart);
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    InitializeListHead(&rollback);
+    
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    if (fcb->type != BTRFS_TYPE_FILE) {
+        WARN("FileObject did not point to a file\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (fcb->ads) {
+        ERR("FileObject is stream\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (fzdi->FileOffset.QuadPart >= fcb->inode_item.st_size) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    if (IsListEmpty(&fcb->extents)) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    // FIXME - check if inline
+    // FIXME - do bits before start
+    // FIXME - do bits after end
+    
+    start = sector_align(fzdi->FileOffset.QuadPart, Vcb->superblock.sector_size);
+    
+    if (fzdi->BeyondFinalZero.QuadPart > fcb->inode_item.st_size)
+        end = sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size);
+    else
+        end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
+    
+    if (end > start) {
+        Status = excise_extents(Vcb, fcb, start, end, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            goto end;
+        }
+        
+        Status = insert_sparse_extent(fcb, start, end - start);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_sparse_extent returned %08x\n", Status);
+            goto end;
+        }
+    }
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
+    fcb->inode_item.st_ctime = now;
+    fcb->inode_item.st_mtime = now;
+    
+    mark_fcb_dirty(fcb);
+    
+    fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    fcb->subvol->root_item.ctime = now;
+
+    Status = STATUS_SUCCESS;
+    
+end:
+    clear_rollback(&rollback);
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
 }
 
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
@@ -1300,12 +1420,13 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_SET_SPARSE:
-            Status = set_sparse(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.InputBufferLength);
+            Status = set_sparse(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                IrpSp->Parameters.DeviceIoControl.InputBufferLength);
             break;
 
         case FSCTL_SET_ZERO_DATA:
-            WARN("STUB: FSCTL_SET_ZERO_DATA\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = set_zero_data(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                   IrpSp->Parameters.DeviceIoControl.InputBufferLength);
             break;
 
         case FSCTL_QUERY_ALLOCATED_RANGES:
