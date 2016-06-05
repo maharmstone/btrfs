@@ -1706,9 +1706,6 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->utf8.Buffer)
         ExFreePool(fr->utf8.Buffer);
     
-//     if (fr->full_filename.Buffer)
-//         ExFreePool(fr->full_filename.Buffer);
-    
     if (fr->debug_desc)
         ExFreePool(fr->debug_desc);
     
@@ -3489,17 +3486,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
     
-//     Vcb->root_fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
-//     
-//     if (!Vcb->root_fileref->full_filename.Buffer) {
-//         ERR("out of memory\n");
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         goto exit;
-//     }
-//     
-//     Vcb->root_fileref->full_filename.Buffer[0] = '\\';
-//     Vcb->root_fileref->full_filename.Length = Vcb->root_fileref->full_filename.MaximumLength = sizeof(WCHAR);
-
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
         if (!NT_SUCCESS(Status)) {

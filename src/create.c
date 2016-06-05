@@ -1448,7 +1448,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     Status = STATUS_OBJECT_NAME_NOT_FOUND;
                     goto end;
                 } else {
-//                     ULONG fnlen;
                     fcb* fcb;
 #ifdef DEBUG_FCB_REFCOUNTS
                     LONG rc;
@@ -1493,28 +1492,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
                     }
                     
-//                     sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
-//                     
-//                     if (sf != Vcb->root_fileref)
-//                         sf2->name_offset++;
-//                     
-//                     fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
-//                     
-//                     sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-//                     if (!sf2->full_filename.Buffer) {
-//                         ERR("out of memory\n");
-//                         free_fileref(sf2);
-//                         Status = STATUS_INSUFFICIENT_RESOURCES;
-//                         goto end;
-//                     }
-//                     
-//                     sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
-//                     RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
-//                     
-//                     sf2->full_filename.Buffer[sf->full_filename.Length / sizeof(WCHAR)] = ':';
-//                     
-//                     RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
-                    
                     // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
 
                     sf2->parent = (struct _file_ref*)sf;
@@ -1547,7 +1524,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     goto end;
                 } else {
                     fcb* fcb;
-                    ULONG strlen/*, fnlen*/;
+                    ULONG strlen;
                     
                     if (type != BTRFS_TYPE_DIRECTORY && !lastpart) {
                         WARN("passed path including file as subdirectory\n");
@@ -1597,29 +1574,6 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         free_fileref(sf2);
                         goto end;
                     }
-                    
-//                     sf2->name_offset = sf->full_filename.Length / sizeof(WCHAR);
-//     
-//                     if (sf != Vcb->root_fileref)
-//                         sf2->name_offset++;
-//                     
-//                     fnlen = (sf2->name_offset * sizeof(WCHAR)) + sf2->filepart.Length;
-//                     
-//                     sf2->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-//                     if (!sf2->full_filename.Buffer) {
-//                         ERR("out of memory\n");
-//                         free_fileref(sf2);
-//                         Status = STATUS_INSUFFICIENT_RESOURCES;
-//                         goto end;
-//                     }
-//                     
-//                     sf2->full_filename.Length = sf2->full_filename.MaximumLength = fnlen;
-//                     RtlCopyMemory(sf2->full_filename.Buffer, sf->full_filename.Buffer, sf->full_filename.Length);
-//                     
-//                     if (sf != Vcb->root_fileref)
-//                         sf2->full_filename.Buffer[sf->full_filename.Length / sizeof(WCHAR)] = '\\';
-//                     
-//                     RtlCopyMemory(&sf2->full_filename.Buffer[sf2->name_offset], sf2->filepart.Buffer, sf2->filepart.Length);
                     
                     sf2->parent = (struct _file_ref*)sf;
                     
@@ -1879,28 +1833,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->utf8.Buffer = utf8;
     
     fileref->filepart = *fpus;
-    
-//     fileref->name_offset = parfileref->full_filename.Length / sizeof(WCHAR);
-//     if (parfileref != Vcb->root_fileref)
-//         fileref->name_offset++;
-// 
-//     fileref->full_filename.Length = parfileref->full_filename.Length + (parfileref->full_filename.Length == sizeof(WCHAR) ? 0 : sizeof(WCHAR)) + fileref->filepart.Length;
-//     fileref->full_filename.MaximumLength = fileref->full_filename.Length;
-//     fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->full_filename.Length, ALLOC_TAG);
-//     if (!fileref->full_filename.Buffer) {
-//         ERR("out of memory\n");
-//         free_fileref(fileref);
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//     
-//     RtlCopyMemory(fileref->full_filename.Buffer, parfileref->full_filename.Buffer, parfileref->full_filename.Length);
-//     
-//     if (parfileref->full_filename.Length > sizeof(WCHAR))
-//         fileref->full_filename.Buffer[parfileref->full_filename.Length / sizeof(WCHAR)] = '\\';
-//     
-//     RtlCopyMemory(&fileref->full_filename.Buffer[(parfileref->full_filename.Length / sizeof(WCHAR)) + (parfileref->full_filename.Length == sizeof(WCHAR) ? 0 : 1)],
-//                   fileref->filepart.Buffer, fileref->filepart.Length);
-    
+        
     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
         
@@ -2065,7 +1998,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         file_ref* newpar;
         fcb* fcb;
         static char xapref[] = "user.";
-        ULONG xapreflen = strlen(xapref)/*, fnlen*/;
+        ULONG xapreflen = strlen(xapref);
         LARGE_INTEGER time;
         BTRFS_TIME now;
         ULONG utf8len;
@@ -2206,10 +2139,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         }
         
         fileref->fcb = fcb;
-        
-//         fileref->name_offset = parfileref->full_filename.Length / sizeof(WCHAR);
-//         if (parfileref != Vcb->root_fileref)
-//             fileref->name_offset++;
 
         fileref->filepart.MaximumLength = fileref->filepart.Length = stream.Length;
         fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.MaximumLength, ALLOC_TAG);
@@ -2221,25 +2150,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         }
         
         RtlCopyMemory(fileref->filepart.Buffer, stream.Buffer, stream.Length);
-        
-//         fnlen = (fileref->name_offset * sizeof(WCHAR)) + fileref->filepart.Length;
-// 
-//         fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-//         if (!fileref->full_filename.Buffer) {
-//             ERR("out of memory\n");
-//             free_fileref(fileref);
-//             Status = STATUS_INSUFFICIENT_RESOURCES;
-//             goto end;
-//         }
-//         
-//         fileref->full_filename.Length = fileref->full_filename.MaximumLength = fnlen;
-//         RtlCopyMemory(fileref->full_filename.Buffer, parfileref->full_filename.Buffer, parfileref->full_filename.Length);
-// 
-//         fileref->full_filename.Buffer[parfileref->full_filename.Length / sizeof(WCHAR)] = ':';
-// 
-//         RtlCopyMemory(&fileref->full_filename.Buffer[fileref->name_offset], fileref->filepart.Buffer, fileref->filepart.Length);
-//         TRACE("full_filename = %.*S\n", fileref->full_filename.Length / sizeof(WCHAR), fileref->full_filename.Buffer);
-        
+       
         mark_fcb_dirty(fcb);
         
         InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
