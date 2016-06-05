@@ -732,11 +732,13 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
                 while (le != &me->fileref->children) {
                     file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
                     
-                    if (fr->index == tp.item->key.offset) {
-                        found = TRUE;
-                        break;
-                    } else if (fr->index > tp.item->key.offset)
-                        break;
+                    if (!fr->fcb->ads) {
+                        if (fr->index == tp.item->key.offset) {
+                            found = TRUE;
+                            break;
+                        } else if (fr->index > tp.item->key.offset)
+                            break;
+                    }
                     
                     le = le->Flink;
                 }
@@ -1037,8 +1039,20 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 
                 mark_fcb_dirty(me->fileref->fcb);
                 
-                // FIXME - set dummyfcb of subsequent entries if same inode
-                // FIXME - set dummyfcb as deleted if necessary
+                if ((!me->dummyfcb->ads && me->dummyfcb->inode_item.st_nlink > 1) || (me->dummyfcb->ads && me->parent->dummyfcb->inode_item.st_nlink > 1)) {
+                    LIST_ENTRY* le2 = le->Flink;
+                    
+                    while (le2 != &move_list) {
+                        move_entry* me2 = CONTAINING_RECORD(le2, move_entry, list_entry);
+                        
+                        if (me2->fileref->fcb == me->fileref->fcb && !me2->fileref->fcb->ads) {
+                            me2->dummyfcb = me->dummyfcb;
+                            InterlockedIncrement(&me->dummyfcb->refcount);
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
+                }
                 
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
             } else {

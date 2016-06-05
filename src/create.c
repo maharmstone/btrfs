@@ -1305,7 +1305,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
             while (le != &parent->children) {
                 file_ref* fr2 = (le->Flink == &parent->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
                 
-                if (child->index > fr1->index && (!fr2 || fr2->index > child->index)) {
+                if (child->index >= fr1->index && (!fr2 || fr2->index > child->index)) {
                     InsertHeadList(&fr1->list_entry, &child->list_entry);
                     break;
                 }
