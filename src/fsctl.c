@@ -1045,6 +1045,58 @@ static NTSTATUS fs_get_statistics(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT File
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
+    FILE_SET_SPARSE_BUFFER* fssb = data;
+    BOOL set;
+    fcb* fcb;
+    
+    if (data && length < sizeof(FILE_SET_SPARSE_BUFFER))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (fcb->type != BTRFS_TYPE_FILE) {
+        WARN("FileObject did not point to a file\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (fssb)
+        set = fssb->SetSparse;
+    else
+        set = TRUE;
+    
+    if (set) {
+        fcb->atts |= FILE_ATTRIBUTE_SPARSE_FILE;
+        fcb->atts_changed = TRUE;
+    } else {
+        ULONG defda;
+        ccb* ccb = FileObject->FsContext2;
+        file_ref* fileref = ccb ? ccb->fileref : NULL;
+        
+        fcb->atts &= ~FILE_ATTRIBUTE_SPARSE_FILE;
+        fcb->atts_changed = TRUE;
+        
+        defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type,
+                                    fileref && fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
+        
+        fcb->atts_deleted = defda == fcb->atts;
+    }
+    
+    mark_fcb_dirty(fcb);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1248,8 +1300,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_SET_SPARSE:
-            WARN("STUB: FSCTL_SET_SPARSE\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = set_sparse(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.InputBufferLength);
             break;
 
         case FSCTL_SET_ZERO_DATA:
