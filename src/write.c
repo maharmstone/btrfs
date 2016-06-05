@@ -6235,7 +6235,7 @@ NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length) {
 //     }
 // }
 
-static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
     UINT64 flags;

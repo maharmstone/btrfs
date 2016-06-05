@@ -1110,7 +1110,7 @@ end:
     return Status;
 }
 
-static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length) {
+static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     
     le = fcb->extents.Flink;
@@ -1191,7 +1191,69 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                 ExFreePool(ext->data);
                 ExFreePool(ext);
             } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
-                // FIXME
+                BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
+                
+                if (nocow) {
+                    // FIXME
+                } else {
+                    NTSTATUS Status;
+                    UINT64 s1 = max(ext->offset, start);
+                    UINT64 e1 = min(ext->offset + len, start + length);
+                    UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
+                    UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
+                    UINT8* data;
+                    UINT64 off = ext->offset;
+                    BOOL cont = FALSE;
+                    
+                    data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
+                    if (!data) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = read_file(fcb, data, s2, e2 - s2, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_file returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
+                    
+                    Status = excise_extents(Vcb, fcb, s2, e2, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("excise_extents returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
+                    
+                    RtlZeroMemory(data + s1 - s2, e1 - s1);
+                    
+                    Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_extent returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
+                    
+                    ExFreePool(data);
+                    
+                    le2 = fcb->extents.Flink;
+                    while (le2 != &fcb->extents) {
+                        extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+                        
+                        if (ext2->offset > off) {
+                            le = le2;
+                            cont = TRUE;
+                            break;
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
+                    
+                    if (cont)
+                        continue;
+                    
+                    return STATUS_SUCCESS;
+                }
             }
         } else if (ext->offset >= start + length)
             return STATUS_SUCCESS;
@@ -1206,11 +1268,12 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     FILE_ZERO_DATA_INFORMATION* fzdi = data;
     NTSTATUS Status;
     fcb* fcb;
-    LIST_ENTRY rollback;
+    LIST_ENTRY rollback, changed_sector_list;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     UINT64 start, end;
     extent* ext;
+    BOOL nocsum;
     
     // FIXME - check permissions
     
@@ -1263,10 +1326,15 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
+    nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
+    
+    if (!nocsum)
+        InitializeListHead(&changed_sector_list);
+    
     ext = CONTAINING_RECORD(fcb->extents.Flink, extent, list_entry);
     
     if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
-        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart);
+        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08x\n", Status);
             goto end;
@@ -1279,15 +1347,15 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         else
             end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
         
-        if (end == start) {
-            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart);
+        if (end <= start) {
+            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("zero_data returned %08x\n", Status);
                 goto end;
             }
         } else {
             if (start > fzdi->FileOffset.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart);
+                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1295,7 +1363,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
             
             if (end < fzdi->BeyondFinalZero.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, end - fzdi->BeyondFinalZero.QuadPart);
+                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, end - fzdi->BeyondFinalZero.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1333,6 +1401,12 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fcb->subvol->root_item.ctime = now;
 
     Status = STATUS_SUCCESS;
+    
+    if (!nocsum) {
+        ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
+        commit_checksum_changes(Vcb, &changed_sector_list);
+        ExReleaseResourceLite(&Vcb->checksum_lock);
+    }
     
 end:
     clear_rollback(&rollback);
