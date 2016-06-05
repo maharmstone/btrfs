@@ -655,6 +655,8 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
                         fr->filepart.Length = fr->filepart.MaximumLength = stringlen;
 
                         fr->parent = (struct _file_ref*)me->fileref;
+                        increase_fileref_refcount(fr->parent);
+                        
                         insert_fileref_child(me->fileref, fr, FALSE);
 
                         me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
@@ -1097,33 +1099,33 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         
         me->dummyfileref->created = me->fileref->created;
         me->fileref->created = TRUE;
-
-        RemoveEntryList(&me->fileref->list_entry);
         
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
         
-        free_fileref(me->fileref->parent);
-        
-        if (me->parent)
-            me->fileref->parent = me->parent->fileref;
-        else
-            me->fileref->parent = destdir;
-        
-        increase_fileref_refcount(me->fileref->parent);
-        
         me->dummyfileref->index = me->fileref->index;
-        
-        Status = fcb_get_last_dir_index(me->fileref->parent->fcb, &me->fileref->index);
-        if (!NT_SUCCESS(Status)) {
-            ERR("fcb_get_last_dir_index returned %08x\n", Status);
-            goto end;
-        }
-        
-        insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
+
         insert_fileref_child(me->dummyfileref->parent, me->dummyfileref, TRUE);
+       
+        me->dummyfileref->debug_desc = me->fileref->debug_desc;
         
         if (!me->parent) {
+            RemoveEntryList(&me->fileref->list_entry);
+            
+            free_fileref(me->fileref->parent);
+            
+            me->fileref->parent = destdir;
+            
+            increase_fileref_refcount(destdir);
+            
+            Status = fcb_get_last_dir_index(me->fileref->parent->fcb, &me->fileref->index);
+            if (!NT_SUCCESS(Status)) {
+                ERR("fcb_get_last_dir_index returned %08x\n", Status);
+                goto end;
+            }
+            
+            insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
+            
             me->fileref->parent->fcb->inode_item.st_size += me->fileref->utf8.Length * 2;
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
@@ -1131,10 +1133,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             me->fileref->parent->fcb->inode_item.st_mtime = now;
             mark_fcb_dirty(me->fileref->parent->fcb);
         }
-       
-        me->dummyfileref->debug_desc = me->fileref->debug_desc;
-        me->dummyfileref->debug_desc = NULL;
-        
+
         if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE)
             me->fileref->fcb->subvol->root_item.num_references++;
 
