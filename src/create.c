@@ -2210,18 +2210,18 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
 //         fileref->name_offset = parfileref->full_filename.Length / sizeof(WCHAR);
 //         if (parfileref != Vcb->root_fileref)
 //             fileref->name_offset++;
-// 
-//         fileref->filepart.MaximumLength = fileref->filepart.Length = stream.Length;
-//         fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.MaximumLength, ALLOC_TAG);
-//         if (!fileref->filepart.Buffer) {
-//             ERR("out of memory\n");
-//             free_fileref(fileref);
-//             Status = STATUS_INSUFFICIENT_RESOURCES;
-//             goto end;
-//         }
-//         
-//         RtlCopyMemory(fileref->filepart.Buffer, stream.Buffer, stream.Length);
-//         
+
+        fileref->filepart.MaximumLength = fileref->filepart.Length = stream.Length;
+        fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.MaximumLength, ALLOC_TAG);
+        if (!fileref->filepart.Buffer) {
+            ERR("out of memory\n");
+            free_fileref(fileref);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(fileref->filepart.Buffer, stream.Buffer, stream.Length);
+        
 //         fnlen = (fileref->name_offset * sizeof(WCHAR)) + fileref->filepart.Length;
 // 
 //         fileref->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
