@@ -1191,32 +1191,73 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                 ExFreePool(ext->data);
                 ExFreePool(ext);
             } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
+                NTSTATUS Status;
                 BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
+                UINT64 s1 = max(ext->offset, start);
+                UINT64 e1 = min(ext->offset + len, start + length);
+                UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
+                UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
+                UINT8* data;
+                
+                data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
+                if (!data) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                Status = read_file(fcb, data, s2, e2 - s2, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_file returned %08x\n", Status);
+                    ExFreePool(data);
+                    return Status;
+                }
+                
+                RtlZeroMemory(data + s1 - s2, e1 - s1);
                 
                 if (nocow) {
-                    // FIXME
-                } else {
-                    NTSTATUS Status;
-                    UINT64 s1 = max(ext->offset, start);
-                    UINT64 e1 = min(ext->offset + len, start + length);
-                    UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
-                    UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
-                    UINT8* data;
-                    UINT64 off = ext->offset;
-                    BOOL cont = FALSE;
-                    
-                    data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
-                    if (!data) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    Status = read_file(fcb, data, s2, e2 - s2, NULL);
+                    UINT64 writeaddr = ed2->address + ed2->offset + s2 - ext->offset;
+
+                    Status = write_data_complete(Vcb, writeaddr, data, e2 - s2);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("read_file returned %08x\n", Status);
+                        ERR("write_data_complete returned %08x\n", Status);
                         ExFreePool(data);
                         return Status;
                     }
+                    
+                    if (changed_sector_list) {
+                        unsigned int i;
+                        changed_sector* sc;
+                        
+                        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                        if (!sc) {
+                            ERR("out of memory\n");
+                            ExFreePool(data);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        sc->ol.key = writeaddr;
+                        sc->length = (e2 - s2) / Vcb->superblock.sector_size;
+                        sc->deleted = FALSE;
+                        
+                        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+                        if (!sc->checksums) {
+                            ERR("out of memory\n");
+                            ExFreePool(sc);
+                            ExFreePool(data);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        for (i = 0; i < sc->length; i++) {
+                            sc->checksums[i] = ~calc_crc32c(0xffffffff, data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                        }
+
+                        insert_into_ordered_list(changed_sector_list, &sc->ol);
+                    }
+                    
+                    ExFreePool(data);
+                } else {
+                    UINT64 off = ext->offset;
+                    BOOL cont = FALSE;
                     
                     Status = excise_extents(Vcb, fcb, s2, e2, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -1224,8 +1265,6 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                         ExFreePool(data);
                         return Status;
                     }
-                    
-                    RtlZeroMemory(data + s1 - s2, e1 - s1);
                     
                     Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, rollback);
                     if (!NT_SUCCESS(Status)) {
