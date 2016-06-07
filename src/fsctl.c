@@ -1402,7 +1402,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
             
             if (end < fzdi->BeyondFinalZero.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, end - fzdi->BeyondFinalZero.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
+                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1424,6 +1424,8 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
         }
     }
+    
+    // FIXME - mark section of cache invalid
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1452,6 +1454,90 @@ end:
     
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
+static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FILE_ALLOCATED_RANGE_BUFFER* inbuf, ULONG inbuflen, void* outbuf, ULONG outbuflen, DWORD* retlen) {
+    NTSTATUS Status;
+    fcb* fcb;
+    LIST_ENTRY* le;
+    FILE_ALLOCATED_RANGE_BUFFER* ranges = outbuf;
+    ULONG i;
+    BOOL sparse, finish_off;
+    UINT64 nonsparse_run_start;
+    
+    TRACE("FSCTL_QUERY_ALLOCATED_RANGES\n");
+    
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!inbuf || inbuflen < sizeof(FILE_ALLOCATED_RANGE_BUFFER) || !outbuf)
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
+    // FIXME - return just one range for non-sparse files
+    // FIXME - handle overflows
+    
+    le = fcb->extents.Flink;
+    
+    sparse = FALSE;
+    nonsparse_run_start = 0;
+    finish_off = TRUE;
+    i = 0;
+    
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        EXTENT_DATA2* ed2 = ext->data->type == EXTENT_TYPE_REGULAR ? (EXTENT_DATA2*)ext->data->data : NULL;
+        
+        if (ed2 && ed2->size == 0) { // sparse
+            if (!sparse) {
+                if (nonsparse_run_start < ext->offset) {
+                    // FIXME - check for overflows
+                    ranges[i].FileOffset.QuadPart = nonsparse_run_start;
+                    ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
+                    i++;
+                }
+                
+                if (ext->offset > inbuf->FileOffset.QuadPart + inbuf->Length.QuadPart) {
+                    finish_off = FALSE;
+                    break;
+                }
+                
+                sparse = TRUE;
+            }
+        } else { // not sparse
+            if (sparse) {
+                sparse = FALSE;
+                nonsparse_run_start = ext->offset;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (finish_off && nonsparse_run_start < fcb->inode_item.st_size) {
+        // FIXME - check for overflows
+        ranges[i].FileOffset.QuadPart = nonsparse_run_start;
+        ranges[i].Length.QuadPart = fcb->inode_item.st_size - nonsparse_run_start;
+        i++;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+    *retlen = i * sizeof(FILE_ALLOCATED_RANGE_BUFFER);
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
     
     return Status;
 }
@@ -1562,7 +1648,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
 
         case FSCTL_FILESYSTEM_GET_STATISTICS:
             Status = fs_get_statistics(DeviceObject, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                       IrpSp->Parameters.DeviceIoControl.OutputBufferLength, &Irp->IoStatus.Information);
+                                       IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_GET_NTFS_VOLUME_DATA:
@@ -1626,7 +1712,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
 
         case FSCTL_GET_REPARSE_POINT:
             Status = get_reparse_point(DeviceObject, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                       IrpSp->Parameters.DeviceIoControl.OutputBufferLength, &Irp->IoStatus.Information);
+                                       IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_DELETE_REPARSE_POINT:
@@ -1660,17 +1746,18 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
 
         case FSCTL_SET_SPARSE:
             Status = set_sparse(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                IrpSp->Parameters.DeviceIoControl.InputBufferLength);
+                                IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         case FSCTL_SET_ZERO_DATA:
             Status = set_zero_data(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                   IrpSp->Parameters.DeviceIoControl.InputBufferLength);
+                                   IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         case FSCTL_QUERY_ALLOCATED_RANGES:
-            WARN("STUB: FSCTL_QUERY_ALLOCATED_RANGES\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = query_ranges(DeviceObject->DeviceExtension, IrpSp->FileObject, IrpSp->Parameters.FileSystemControl.Type3InputBuffer,
+                                  IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->UserBuffer,
+                                  IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_ENABLE_UPGRADE:
@@ -1930,15 +2017,15 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 #endif
         case FSCTL_BTRFS_GET_FILE_IDS:
-            Status = get_file_ids(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.OutputBufferLength);
+            Status = get_file_ids(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_CREATE_SUBVOL:
-            Status = create_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.OutputBufferLength);
+            Status = create_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_CREATE_SNAPSHOT:
-            Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.DeviceIoControl.OutputBufferLength);
+            Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         default:
