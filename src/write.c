@@ -7456,7 +7456,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             } else if (do_cow) {
                 TRACE("doing COW write\n");
                 
-                Status = excise_extents(Vcb, fcb, new_start, new_start + new_end, rollback);
+                Status = excise_extents(Vcb, fcb, new_start, new_end, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - excise_extents returned %08x\n", Status);
