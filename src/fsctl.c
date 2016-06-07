@@ -1561,6 +1561,38 @@ end:
     return Status;
 }
 
+static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FILE_OBJECTID_BUFFER* buf, ULONG buflen, DWORD* retlen) {
+    fcb* fcb;
+    
+    TRACE("(%p, %p, %p, %x, %p)\n", Vcb, FileObject, buf, buflen, retlen);
+    
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!buf || buflen < sizeof(FILE_OBJECTID_BUFFER))
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
+    RtlCopyMemory(&buf->ObjectId[0], &fcb->inode, sizeof(UINT64));
+    RtlCopyMemory(&buf->ObjectId[sizeof(UINT64)], &fcb->subvol->id, sizeof(UINT64));
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+    *retlen = 2 * sizeof(UINT64);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1716,8 +1748,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_GET_OBJECT_ID:
-            WARN("STUB: FSCTL_GET_OBJECT_ID\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = get_object_id(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->UserBuffer,
+                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_DELETE_OBJECT_ID:
@@ -1759,8 +1791,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_CREATE_OR_GET_OBJECT_ID:
-            WARN("STUB: FSCTL_CREATE_OR_GET_OBJECT_ID\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = get_object_id(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->UserBuffer,
+                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_SET_SPARSE:
