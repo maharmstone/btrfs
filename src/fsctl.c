@@ -1487,7 +1487,6 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
     // FIXME - return just one range for non-sparse files
-    // FIXME - handle overflows
     
     le = fcb->extents.Flink;
     
@@ -1503,10 +1502,14 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
         if (ed2 && ed2->size == 0) { // sparse
             if (!sparse) {
                 if (nonsparse_run_start < ext->offset) {
-                    // FIXME - check for overflows
-                    ranges[i].FileOffset.QuadPart = nonsparse_run_start;
-                    ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
-                    i++;
+                    if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
+                        ranges[i].FileOffset.QuadPart = nonsparse_run_start;
+                        ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
+                        i++;
+                    } else {
+                        Status = STATUS_BUFFER_TOO_SMALL;
+                        goto end;
+                    }
                 }
                 
                 if (ext->offset > inbuf->FileOffset.QuadPart + inbuf->Length.QuadPart) {
@@ -1527,14 +1530,19 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     }
     
     if (finish_off && nonsparse_run_start < fcb->inode_item.st_size) {
-        // FIXME - check for overflows
-        ranges[i].FileOffset.QuadPart = nonsparse_run_start;
-        ranges[i].Length.QuadPart = fcb->inode_item.st_size - nonsparse_run_start;
-        i++;
+        if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
+            ranges[i].FileOffset.QuadPart = nonsparse_run_start;
+            ranges[i].Length.QuadPart = fcb->inode_item.st_size - nonsparse_run_start;
+            i++;
+        } else {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            goto end;
+        }
     }
-    
+
     Status = STATUS_SUCCESS;
     
+end:
     *retlen = i * sizeof(FILE_ALLOCATED_RANGE_BUFFER);
     
     ExReleaseResourceLite(fcb->Header.Resource);
