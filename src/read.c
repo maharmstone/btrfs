@@ -854,22 +854,56 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
             if (ext->offset == start)
                 break;
             else if (ext->offset > start) {
-                if (le->Blink == &fcb->extents) {
+                LIST_ENTRY* le2 = le->Blink;
+                
+                ext = NULL;
+                
+                while (le2 != &fcb->extents) {
+                    extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+                    
+                    if (!ext2->ignore) {
+                        le = le2;
+                        ext = ext2;
+                        break;
+                    }
+                    
+                    le2 = le2->Blink;
+                }
+                
+                if (!ext) {
                     ERR("first extent was after offset\n");
                     Status = STATUS_INTERNAL_ERROR;
                     goto exit;
-                }
-                
-                le = le->Blink;
-                break;
+                } else
+                    break;
             }
         }
         
         le = le->Flink;
     }
     
-    if (le == &fcb->extents)
-        le = le->Blink;
+    if (le == &fcb->extents) {
+        LIST_ENTRY* le2 = le->Blink;
+        extent* ext = NULL;
+
+        while (le2 != &fcb->extents) {
+            extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+            
+            if (!ext2->ignore) {
+                le = le2;
+                ext = ext2;
+                break;
+            }
+            
+            le2 = le2->Blink;
+        }
+        
+        if (!ext) {
+            ERR("could not find extent\n");
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+    }
 
     while (le != &fcb->extents) {
         UINT64 len;
