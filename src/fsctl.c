@@ -1463,7 +1463,7 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     fcb* fcb;
     LIST_ENTRY* le;
     FILE_ALLOCATED_RANGE_BUFFER* ranges = outbuf;
-    ULONG i;
+    ULONG i = 0;
     BOOL sparse, finish_off;
     UINT64 nonsparse_run_start;
     
@@ -1486,14 +1486,29 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
-    // FIXME - return just one range for non-sparse files
+    // If file is not marked as sparse, claim the whole thing as an allocated range
+    
+    if (!(fcb->atts & FILE_ATTRIBUTE_SPARSE_FILE)) {
+        if (fcb->inode_item.st_size == 0)
+            Status = STATUS_SUCCESS;
+        else if (outbuflen < sizeof(FILE_ALLOCATED_RANGE_BUFFER))
+            Status = STATUS_BUFFER_TOO_SMALL;
+        else {
+            ranges[i].FileOffset.QuadPart = 0;
+            ranges[i].Length.QuadPart = fcb->inode_item.st_size;
+            i++;
+            Status = STATUS_SUCCESS;
+        }
+        
+        goto end;
+            
+    }
     
     le = fcb->extents.Flink;
     
     sparse = FALSE;
     nonsparse_run_start = 0;
     finish_off = TRUE;
-    i = 0;
     
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
