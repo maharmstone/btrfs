@@ -481,7 +481,8 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         while (le2 != &fcb2->extents) {
             extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
             
-            ext->unique = FALSE;
+            if (!ext->ignore)
+                ext->unique = FALSE;
             
             le2 = le2->Flink;
         }
@@ -1118,184 +1119,164 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     while (le != &fcb->extents) {
         LIST_ENTRY* le2 = le->Flink;
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        EXTENT_DATA* ed = ext->data;
-        EXTENT_DATA2* ed2;
-        UINT64 len;
         
-        if (ext->datalen < sizeof(EXTENT_DATA)) {
-            ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-            if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+        if (!ext->ignore) {
+            EXTENT_DATA* ed = ext->data;
+            EXTENT_DATA2* ed2;
+            UINT64 len;
+            
+            if (ext->datalen < sizeof(EXTENT_DATA)) {
+                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
                 return STATUS_INTERNAL_ERROR;
             }
             
-            ed2 = (EXTENT_DATA2*)ed->data;
+            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                ed2 = (EXTENT_DATA2*)ed->data;
+            }
+            
+            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+            
+            if (ext->offset < start + length && ext->offset + len >= start) {
+                if (ed->compression != BTRFS_COMPRESSION_NONE) {
+                    FIXME("FIXME - compression not supported at present\n");
+                    return STATUS_NOT_SUPPORTED;
+                }
+                
+                if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+                    WARN("encryption not supported (type %x)\n", ext->offset, ed->encryption);
+                    return STATUS_NOT_SUPPORTED;
+                }
+                
+                if (ed->encoding != BTRFS_ENCODING_NONE) {
+                    WARN("other encodings not supported\n");
+                    return STATUS_NOT_SUPPORTED;
+                }
+                
+                // We can ignore prealloc and sparse extents - they're already counted as zeroed
+                
+                if (ed->type == EXTENT_TYPE_INLINE) {
+                    extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+                    EXTENT_DATA* data;
+                    UINT64 s2, e2;
+                    
+                    if (!ext2) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    data = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+                    
+                    if (!data) {
+                        ERR("out of memory\n");
+                        ExFreePool(ext2);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(data, ext->data, ext->datalen);
+                    
+                    s2 = max(ext->offset, start);
+                    e2 = min(ext->offset + ed->decoded_size, start + length);
+                    RtlZeroMemory((UINT8*)data + sizeof(EXTENT_DATA) - 1 + s2 - ext->offset, e2 - s2);
+                    
+                    ext2->offset = ext->offset;
+                    ext2->data = data;
+                    ext2->datalen = ext->datalen;
+                    ext2->unique = ext->unique;
+                    ext2->ignore = FALSE;
+                    
+                    InsertHeadList(&ext->list_entry, &ext2->list_entry);
+                    remove_fcb_extent(ext);
+                } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
+                    NTSTATUS Status;
+                    BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
+                    UINT64 s1 = max(ext->offset, start);
+                    UINT64 e1 = min(ext->offset + len, start + length);
+                    UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
+                    UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
+                    UINT8* data;
+                    
+                    data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
+                    if (!data) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = read_file(fcb, data, s2, e2 - s2, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_file returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
+                    
+                    RtlZeroMemory(data + s1 - s2, e1 - s1);
+                    
+                    if (nocow) {
+                        UINT64 writeaddr = ed2->address + ed2->offset + s2 - ext->offset;
+
+                        Status = write_data_complete(Vcb, writeaddr, data, e2 - s2);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("write_data_complete returned %08x\n", Status);
+                            ExFreePool(data);
+                            return Status;
+                        }
+                        
+                        if (changed_sector_list) {
+                            unsigned int i;
+                            changed_sector* sc;
+                            
+                            sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                            if (!sc) {
+                                ERR("out of memory\n");
+                                ExFreePool(data);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+                            
+                            sc->ol.key = writeaddr;
+                            sc->length = (e2 - s2) / Vcb->superblock.sector_size;
+                            sc->deleted = FALSE;
+                            
+                            sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+                            if (!sc->checksums) {
+                                ERR("out of memory\n");
+                                ExFreePool(sc);
+                                ExFreePool(data);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+                            
+                            for (i = 0; i < sc->length; i++) {
+                                sc->checksums[i] = ~calc_crc32c(0xffffffff, data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            }
+
+                            insert_into_ordered_list(changed_sector_list, &sc->ol);
+                        }
+                        
+                        ExFreePool(data);
+                    } else {
+                        Status = excise_extents(Vcb, fcb, s2, e2, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("excise_extents returned %08x\n", Status);
+                            ExFreePool(data);
+                            return Status;
+                        }
+                        
+                        Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("insert_extent returned %08x\n", Status);
+                            ExFreePool(data);
+                            return Status;
+                        }
+                        
+                        ExFreePool(data);
+                    }
+                }
+            } else if (ext->offset >= start + length)
+                return STATUS_SUCCESS;
         }
-        
-        len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-        
-        if (ext->offset < start + length && ext->offset + len >= start) {
-            if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                FIXME("FIXME - compression not supported at present\n");
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                WARN("encryption not supported (type %x)\n", ext->offset, ed->encryption);
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            if (ed->encoding != BTRFS_ENCODING_NONE) {
-                WARN("other encodings not supported\n");
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            // We can ignore prealloc and sparse extents - they're already counted as zeroed
-            
-            if (ed->type == EXTENT_TYPE_INLINE) {
-                extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                EXTENT_DATA* data;
-                UINT64 s2, e2;
-                
-                if (!ext2) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                data = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                
-                if (!data) {
-                    ERR("out of memory\n");
-                    ExFreePool(ext2);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                RtlCopyMemory(data, ext->data, ext->datalen);
-                
-                s2 = max(ext->offset, start);
-                e2 = min(ext->offset + ed->decoded_size, start + length);
-                RtlZeroMemory((UINT8*)data + sizeof(EXTENT_DATA) - 1 + s2 - ext->offset, e2 - s2);
-                
-                ext2->offset = ext->offset;
-                ext2->data = data;
-                ext2->datalen = ext->datalen;
-                ext2->unique = ext->unique;
-                
-                InsertHeadList(&ext->list_entry, &ext2->list_entry);
-                RemoveEntryList(&ext->list_entry);
-                
-                ExFreePool(ext->data);
-                ExFreePool(ext);
-            } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
-                NTSTATUS Status;
-                BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
-                UINT64 s1 = max(ext->offset, start);
-                UINT64 e1 = min(ext->offset + len, start + length);
-                UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
-                UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
-                UINT8* data;
-                
-                data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
-                if (!data) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                Status = read_file(fcb, data, s2, e2 - s2, NULL);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("read_file returned %08x\n", Status);
-                    ExFreePool(data);
-                    return Status;
-                }
-                
-                RtlZeroMemory(data + s1 - s2, e1 - s1);
-                
-                if (nocow) {
-                    UINT64 writeaddr = ed2->address + ed2->offset + s2 - ext->offset;
-
-                    Status = write_data_complete(Vcb, writeaddr, data, e2 - s2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("write_data_complete returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                    
-                    if (changed_sector_list) {
-                        unsigned int i;
-                        changed_sector* sc;
-                        
-                        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                        if (!sc) {
-                            ERR("out of memory\n");
-                            ExFreePool(data);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        sc->ol.key = writeaddr;
-                        sc->length = (e2 - s2) / Vcb->superblock.sector_size;
-                        sc->deleted = FALSE;
-                        
-                        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-                        if (!sc->checksums) {
-                            ERR("out of memory\n");
-                            ExFreePool(sc);
-                            ExFreePool(data);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        for (i = 0; i < sc->length; i++) {
-                            sc->checksums[i] = ~calc_crc32c(0xffffffff, data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                        }
-
-                        insert_into_ordered_list(changed_sector_list, &sc->ol);
-                    }
-                    
-                    ExFreePool(data);
-                } else {
-                    UINT64 off = ext->offset;
-                    BOOL cont = FALSE;
-                    
-                    Status = excise_extents(Vcb, fcb, s2, e2, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("excise_extents returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                    
-                    Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_extent returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                    
-                    ExFreePool(data);
-                    
-                    le2 = fcb->extents.Flink;
-                    while (le2 != &fcb->extents) {
-                        extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
-                        
-                        if (ext2->offset > off) {
-                            le = le2;
-                            cont = TRUE;
-                            break;
-                        }
-                        
-                        le2 = le2->Flink;
-                    }
-                    
-                    if (cont)
-                        continue;
-                    
-                    return STATUS_SUCCESS;
-                }
-            }
-        } else if (ext->offset >= start + length)
-            return STATUS_SUCCESS;
         
         le = le2;
     }
@@ -1307,7 +1288,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     FILE_ZERO_DATA_INFORMATION* fzdi = data;
     NTSTATUS Status;
     fcb* fcb;
-    LIST_ENTRY rollback, changed_sector_list;
+    LIST_ENTRY rollback, changed_sector_list, *le;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     UINT64 start, end;
@@ -1360,7 +1341,20 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
-    if (IsListEmpty(&fcb->extents)) {
+    ext = NULL;
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext2 = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (!ext2->ignore) {
+            ext = ext2;
+            break;
+        }
+
+        le = le->Flink;
+    }
+    
+    if (!ext) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -1369,8 +1363,6 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     
     if (!nocsum)
         InitializeListHead(&changed_sector_list);
-    
-    ext = CONTAINING_RECORD(fcb->extents.Flink, extent, list_entry);
     
     if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
         Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
@@ -1512,32 +1504,35 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        EXTENT_DATA2* ed2 = ext->data->type == EXTENT_TYPE_REGULAR ? (EXTENT_DATA2*)ext->data->data : NULL;
         
-        if (ed2 && ed2->size == 0) { // sparse
-            if (!sparse) {
-                if (nonsparse_run_start < ext->offset) {
-                    if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
-                        ranges[i].FileOffset.QuadPart = nonsparse_run_start;
-                        ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
-                        i++;
-                    } else {
-                        Status = STATUS_BUFFER_TOO_SMALL;
-                        goto end;
+        if (!ext->ignore) {
+            EXTENT_DATA2* ed2 = ext->data->type == EXTENT_TYPE_REGULAR ? (EXTENT_DATA2*)ext->data->data : NULL;
+            
+            if (ed2 && ed2->size == 0) { // sparse
+                if (!sparse) {
+                    if (nonsparse_run_start < ext->offset) {
+                        if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
+                            ranges[i].FileOffset.QuadPart = nonsparse_run_start;
+                            ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
+                            i++;
+                        } else {
+                            Status = STATUS_BUFFER_TOO_SMALL;
+                            goto end;
+                        }
                     }
+                    
+                    if (ext->offset > inbuf->FileOffset.QuadPart + inbuf->Length.QuadPart) {
+                        finish_off = FALSE;
+                        break;
+                    }
+                    
+                    sparse = TRUE;
                 }
-                
-                if (ext->offset > inbuf->FileOffset.QuadPart + inbuf->Length.QuadPart) {
-                    finish_off = FALSE;
-                    break;
+            } else { // not sparse
+                if (sparse) {
+                    sparse = FALSE;
+                    nonsparse_run_start = ext->offset;
                 }
-                
-                sparse = TRUE;
-            }
-        } else { // not sparse
-            if (sparse) {
-                sparse = FALSE;
-                nonsparse_run_start = ext->offset;
             }
         }
         

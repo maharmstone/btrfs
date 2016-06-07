@@ -1188,6 +1188,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
                 ext->datalen = tp.item->size;
                 ext->unique = unique;
+                ext->ignore = FALSE;
                 
                 InsertTailList(&fcb->extents, &ext->list_entry);
             }

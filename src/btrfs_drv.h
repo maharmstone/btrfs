@@ -102,6 +102,7 @@ typedef struct {
     EXTENT_DATA* data;
     ULONG datalen;
     BOOL unique;
+    BOOL ignore;
     
     LIST_ENTRY list_entry;
 } extent;
@@ -525,6 +526,11 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
     
     *stripe = startoff / stripe_length;
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
+}
+
+static __inline void remove_fcb_extent(extent* ext) {
+    // FIXME - do rollback
+    ext->ignore = TRUE;
 }
 
 // in btrfs.c
