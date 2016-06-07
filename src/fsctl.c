@@ -1294,6 +1294,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     UINT64 start, end;
     extent* ext;
     BOOL nocsum;
+    IO_STATUS_BLOCK iosb;
     
     // FIXME - check permissions
     
@@ -1317,12 +1318,12 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_INVALID_PARAMETER;
     }
     
-    // FIXME - flush file first
-    
     InitializeListHead(&rollback);
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
     
     if (fcb->type != BTRFS_TYPE_FILE) {
         WARN("FileObject did not point to a file\n");
@@ -1417,7 +1418,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         }
     }
     
-    // FIXME - mark section of cache invalid
+    CcPurgeCacheSection(&fcb->nonpaged->segment_object, &fzdi->FileOffset, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, FALSE);
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);

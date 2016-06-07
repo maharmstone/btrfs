@@ -7829,10 +7829,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         else
             tree_lock = TRUE;
         
-        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
-            goto end;
-        else
-            fcb_lock = TRUE;
+        if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
+            if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
+                goto end;
+            else
+                fcb_lock = TRUE;
+        }
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
