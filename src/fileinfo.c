@@ -17,6 +17,11 @@
 
 #include "btrfs_drv.h"
 
+// not currently in mingw - introduced with Windows 10
+#ifndef FileIdInformation
+#define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
+#endif
+
 static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us);
 
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
@@ -3359,6 +3364,14 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             TRACE("FileRemoteProtocolInformation\n");
             Status = STATUS_INVALID_PARAMETER;
             goto exit;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+        case FileIdInformation:
+            WARN("STUB: FileIdInformation\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto exit;
+#pragma GCC diagnostic pop            
         
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.QueryFile.FileInformationClass);
