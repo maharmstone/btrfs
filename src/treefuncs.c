@@ -712,6 +712,13 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
     
+#ifdef DEBUG_PARANOID
+    if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
+        ERR("ERROR - tree_lock not held exclusively\n");
+        int3;
+    }
+#endif
+    
     searchkey.obj_id = obj_id;
     searchkey.obj_type = obj_type;
     searchkey.offset = offset;
@@ -866,6 +873,11 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
     
 #ifdef DEBUG_PARANOID
+    if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
+        ERR("ERROR - tree_lock not held exclusively\n");
+        int3;
+    }
+
     if (tp->item->ignore) {
         ERR("trying to delete already-deleted item %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
         int3;
