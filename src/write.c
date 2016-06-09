@@ -3611,7 +3611,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         ExFreePool(s);
     }
     
-    ExReleaseResourceLite(&c->nonpaged->lock);
+    ExDeleteResourceLite(&c->nonpaged->lock);
     ExFreePool(c->nonpaged);
 
     ExFreePool(c);
