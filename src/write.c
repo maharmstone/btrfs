@@ -239,46 +239,22 @@ typedef struct {
 } stripe;
 
 static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    BOOL b;
     UINT64 lastaddr;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = 0x100;
-    searchkey.obj_type = TYPE_CHUNK_ITEM;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return 0xffffffffffffffff;
-    }
+    LIST_ENTRY* le;
     
     lastaddr = 0;
     
-    do {
-        if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
-            if (tp.item->size < sizeof(CHUNK_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
-            } else {
-                CHUNK_ITEM* ci = (CHUNK_ITEM*)tp.item->data;
-                
-                if (tp.item->key.offset >= lastaddr + size)
-                    return lastaddr;
-                
-                lastaddr = tp.item->key.offset + ci->size;
-            }
-        }
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-        if (b) {
-            tp = next_tp;
-            
-            if (tp.item->key.obj_id > searchkey.obj_id || tp.item->key.obj_type > searchkey.obj_type)
-                break;
-        }
-    } while (b);
+        if (c->offset >= lastaddr + size)
+            return lastaddr;
+        
+        lastaddr = c->offset + c->chunk_item->size;
+        
+        le = le->Flink;
+    }
     
     return lastaddr;
 }
@@ -489,12 +465,14 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
     UINT64 total_size = 0, i, logaddr;
     UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes;
-    stripe* stripes;
+    stripe* stripes = NULL;
     ULONG cisize;
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
     space* s = NULL;
     BOOL success = FALSE;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         total_size += Vcb->devices[i].devitem.num_bytes;
@@ -542,10 +520,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
         type = BLOCK_FLAG_RAID10;
     } else if (flags & BLOCK_FLAG_RAID5) {
         FIXME("RAID5 not yet supported\n");
-        return NULL;
+        goto end;
     } else if (flags & BLOCK_FLAG_RAID6) {
         FIXME("RAID6 not yet supported\n");
-        return NULL;
+        goto end;
     } else { // SINGLE
         min_stripes = 1;
         max_stripes = 1;
@@ -556,7 +534,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
     if (!stripes) {
         ERR("out of memory\n");
-        return NULL;
+        goto end;
     }
     
     num_stripes = 0;
@@ -661,10 +639,6 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     }
     
     logaddr = find_new_chunk_address(Vcb, c->chunk_item->size);
-    if (logaddr == 0xffffffffffffffff) {
-        ERR("find_new_chunk_address failed\n");
-        goto end;
-    }
     
     Vcb->superblock.chunk_root_generation = Vcb->superblock.generation;
     
@@ -698,20 +672,38 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     success = TRUE;
     
 end:
-    ExFreePool(stripes);
+    if (stripes)
+        ExFreePool(stripes);
     
     if (!success) {
         if (c && c->chunk_item) ExFreePool(c->chunk_item);
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
     } else {
-        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-        InsertTailList(&Vcb->chunks, &c->list_entry);
-        ExReleaseResourceLite(&Vcb->chunk_lock);
+        LIST_ENTRY* le;
+        BOOL done = FALSE;
+        
+        le = Vcb->chunks.Flink;
+        while (le != &Vcb->chunks) {
+            chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
+            
+            if (c2->offset > c->offset) {
+                InsertHeadList(le->Blink, &c->list_entry);
+                done = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!done)
+            InsertTailList(&Vcb->chunks, &c->list_entry);
         
         c->created = TRUE;
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     }
+    
+    ExReleaseResourceLite(&Vcb->chunk_lock);
 
     return success ? c : NULL;
 }
