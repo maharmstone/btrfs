@@ -330,6 +330,7 @@ typedef struct {
     LIST_ENTRY space;
     LIST_ENTRY deleting;
     chunk_nonpaged* nonpaged;
+    BOOL created;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

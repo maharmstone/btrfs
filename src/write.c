@@ -283,7 +283,7 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     return lastaddr;
 }
 
-static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64 size, LIST_ENTRY* rollback) {
+static NTSTATUS update_dev_item(device_extension* Vcb, device* device, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
@@ -296,32 +296,30 @@ static BOOL increase_dev_item_used(device_extension* Vcb, device* device, UINT64
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
+        return Status;
     }
     
     if (keycmp(&tp.item->key, &searchkey)) {
         ERR("error - could not find DEV_ITEM for device %llx\n", device->devitem.dev_id);
-        return FALSE;
+        return STATUS_INTERNAL_ERROR;
     }
     
     delete_tree_item(Vcb, &tp, rollback);
     
-    device->devitem.bytes_used += size;
-    
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
-        return FALSE;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
     
     if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, rollback)) {
         ERR("insert_tree_item failed\n");
-        return FALSE;
+        return STATUS_INTERNAL_ERROR;
     }
     
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, ULONG size) {
@@ -493,12 +491,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes;
     stripe* stripes;
     ULONG cisize;
-    CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
     space* s = NULL;
     BOOL success = FALSE;
-    BLOCK_GROUP_ITEM* bgi;
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         total_size += Vcb->devices[i].devitem.num_bytes;
@@ -604,8 +600,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     // add CHUNK_ITEM to tree 3
     
     cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(CHUNK_ITEM_STRIPE));
-    ci = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
-    if (!ci) {
+    c->chunk_item = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
+    if (!c->chunk_item) {
         ERR("out of memory\n");
         goto end;
     }
@@ -631,76 +627,47 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     if (stripe_size % stripe_length > 0)
         stripe_size -= stripe_size % stripe_length;
     
-    if (stripe_size == 0) {
-        ExFreePool(ci);
+    if (stripe_size == 0)
         goto end;
-    }
     
-    ci->size = stripe_size * factor;
-    ci->root_id = Vcb->extent_root->id;
-    ci->stripe_length = stripe_length;
-    ci->type = flags;
-    ci->opt_io_alignment = ci->stripe_length;
-    ci->opt_io_width = ci->stripe_length;
-    ci->sector_size = stripes[0].device->devitem.minimal_io_size;
-    ci->num_stripes = num_stripes;
-    ci->sub_stripes = sub_stripes;
+    c->chunk_item->size = stripe_size * factor;
+    c->chunk_item->root_id = Vcb->extent_root->id;
+    c->chunk_item->stripe_length = stripe_length;
+    c->chunk_item->type = flags;
+    c->chunk_item->opt_io_alignment = c->chunk_item->stripe_length;
+    c->chunk_item->opt_io_width = c->chunk_item->stripe_length;
+    c->chunk_item->sector_size = stripes[0].device->devitem.minimal_io_size;
+    c->chunk_item->num_stripes = num_stripes;
+    c->chunk_item->sub_stripes = sub_stripes;
     
     c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * num_stripes, ALLOC_TAG);
     if (!c->devices) {
         ERR("out of memory\n");
-        ExFreePool(ci);
         goto end;
     }
 
+    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     for (i = 0; i < num_stripes; i++) {
-        if (i == 0)
-            cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-        else
-            cis = &cis[1];
-        
-        cis->dev_id = stripes[i].device->devitem.dev_id;
+        cis[i].dev_id = stripes[i].device->devitem.dev_id;
         
         if (type == BLOCK_FLAG_DUPLICATE && i == 1 && stripes[i].dh == stripes[0].dh)
-            cis->offset = stripes[0].dh->address + stripe_size;
+            cis[i].offset = stripes[0].dh->address + stripe_size;
         else
-            cis->offset = stripes[i].dh->address;
+            cis[i].offset = stripes[i].dh->address;
         
-        cis->dev_uuid = stripes[i].device->devitem.device_uuid;
+        cis[i].dev_uuid = stripes[i].device->devitem.device_uuid;
         
         c->devices[i] = stripes[i].device;
     }
     
-    logaddr = find_new_chunk_address(Vcb, ci->size);
+    logaddr = find_new_chunk_address(Vcb, c->chunk_item->size);
     if (logaddr == 0xffffffffffffffff) {
         ERR("find_new_chunk_address failed\n");
-        ExFreePool(ci);
         goto end;
     }
     
-    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, logaddr, ci, cisize, NULL, rollback)) {
-        ERR("insert_tree_item failed\n");
-        ExFreePool(ci);
-        goto end;
-    }
-    
-    if (flags & BLOCK_FLAG_SYSTEM) {
-        NTSTATUS Status = add_to_bootstrap(Vcb, 0x100, TYPE_CHUNK_ITEM, logaddr, ci, cisize);
-        if (!NT_SUCCESS(Status)) {
-            ERR("add_to_bootstrap returned %08x\n", Status);
-            goto end;
-        }
-    }
-
     Vcb->superblock.chunk_root_generation = Vcb->superblock.generation;
     
-    c->chunk_item = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
-    if (!c->chunk_item) {
-        ERR("out of memory\n");
-        goto end;
-    }
-    
-    RtlCopyMemory(c->chunk_item, ci, cisize);
     c->size = cisize;
     c->offset = logaddr;
     c->used = c->oldused = 0;
@@ -722,59 +689,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     
     protect_superblocks(Vcb, c);
     
-    // add BLOCK_GROUP_ITEM to tree 2
-    
-    bgi = ExAllocatePoolWithTag(PagedPool, sizeof(BLOCK_GROUP_ITEM), ALLOC_TAG);
-    if (!bgi) {
-        ERR("out of memory\n");
-        goto end;
-    }
-        
-    bgi->used = 0;
-    bgi->chunk_tree = 0x100;
-    bgi->flags = flags;
-    
-    if (!insert_tree_item(Vcb, Vcb->extent_root, logaddr, TYPE_BLOCK_GROUP_ITEM, ci->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, rollback)) {
-        ERR("insert_tree_item failed\n");
-        ExFreePool(bgi);
-        goto end;
-    }
-    
-    // add DEV_EXTENTs to tree 4
-    
     for (i = 0; i < num_stripes; i++) {
-        DEV_EXTENT* de;
-        UINT64 physaddr;
+        stripes[i].device->devitem.bytes_used += stripe_size;
         
-        de = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_EXTENT), ALLOC_TAG);
-        if (!de) {
-            ERR("out of memory\n");
-            goto end;
-        }
-        
-        de->chunktree = Vcb->chunk_root->id;
-        de->objid = 0x100;
-        de->address = logaddr;
-        de->length = stripe_size;
-        de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
-        
-        if (type == BLOCK_FLAG_DUPLICATE && i == 1 && stripes[i].dh == stripes[0].dh)
-            physaddr = stripes[0].dh->address + stripe_size;
-        else
-            physaddr = stripes[i].dh->address;
-        
-        if (!insert_tree_item(Vcb, Vcb->dev_root, stripes[i].device->devitem.dev_id, TYPE_DEV_EXTENT, physaddr, de, sizeof(DEV_EXTENT), NULL, rollback)) {
-            ERR("insert_tree_item failed\n");
-            ExFreePool(de);
-            goto end;
-        }
-        
-        if (!increase_dev_item_used(Vcb, stripes[i].device, stripe_size, rollback)) {
-            ERR("increase_dev_item_used failed\n");
-            goto end;
-        }
-        
-        space_list_subtract2(&stripes[i].device->space, physaddr, stripe_size, rollback);
+        space_list_subtract2(&stripes[i].device->space, cis[i].offset, stripe_size, rollback);
     }
     
     success = TRUE;
@@ -783,6 +701,7 @@ end:
     ExFreePool(stripes);
     
     if (!success) {
+        if (c && c->chunk_item) ExFreePool(c->chunk_item);
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
     } else {
@@ -790,6 +709,7 @@ end:
         InsertTailList(&Vcb->chunks, &c->list_entry);
         ExReleaseResourceLite(&Vcb->chunk_lock);
         
+        c->created = TRUE;
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     }
 
@@ -3450,12 +3370,106 @@ static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
+    CHUNK_ITEM* ci;
+    CHUNK_ITEM_STRIPE* cis;
+    BLOCK_GROUP_ITEM* bgi;
+    UINT16 i, factor;
+    NTSTATUS Status;
+    
+    ci = ExAllocatePoolWithTag(PagedPool, c->size, ALLOC_TAG);
+    if (!ci) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(ci, c->chunk_item, c->size);
+    
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(ci);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
+        Status = add_to_bootstrap(Vcb, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_to_bootstrap returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    // add BLOCK_GROUP_ITEM to tree 2
+    
+    bgi = ExAllocatePoolWithTag(PagedPool, sizeof(BLOCK_GROUP_ITEM), ALLOC_TAG);
+    if (!bgi) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    bgi->used = c->used;
+    bgi->chunk_tree = 0x100;
+    bgi->flags = c->chunk_item->type;
+    
+    if (!insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(bgi);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        factor = c->chunk_item->num_stripes;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+    else // SINGLE, DUPLICATE, RAID1
+        factor = 1;
+
+    // add DEV_EXTENTs to tree 4
+    
+    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        DEV_EXTENT* de;
+        
+        de = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_EXTENT), ALLOC_TAG);
+        if (!de) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        de->chunktree = Vcb->chunk_root->id;
+        de->objid = 0x100;
+        de->address = c->offset;
+        de->length = c->chunk_item->size / factor;
+        de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
+
+        if (!insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            ExFreePool(de);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        // FIXME - no point in calling this twice for the same device
+        Status = update_dev_item(Vcb, c->devices[i], rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_dev_item returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    c->created = FALSE;
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     UINT64 i;
     CHUNK_ITEM_STRIPE* cis;
+    
+    // FIXME - handle deleted
     
     TRACE("dropping chunk %llx\n", c->offset);
     
@@ -3619,7 +3633,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks_changed.Flink, *le2;
     NTSTATUS Status;
     UINT64 used_minus_cache;
@@ -3674,6 +3688,14 @@ static NTSTATUS drop_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
             Status = drop_chunk(Vcb, c, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("drop_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
+                return Status;
+            }
+        } else if (c->created) {
+            Status = create_chunk(Vcb, c, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("create_chunk returned %08x\n", Status);
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 return Status;
@@ -4854,10 +4876,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     }
     
     if (!IsListEmpty(&Vcb->chunks_changed)) {
-        Status = drop_chunks(Vcb, rollback);
+        Status = update_chunks(Vcb, rollback);
         
         if (!NT_SUCCESS(Status)) {
-            ERR("drop_chunks returned %08x\n", Status);
+            ERR("update_chunks returned %08x\n", Status);
             return Status;
         }
     }
