@@ -63,6 +63,8 @@
 
 #define READ_AHEAD_GRANULARITY 0x10000 // 64 KB
 
+#define MAX_EXTENT_SIZE 0x8000000 // 128 MB
+
 #ifdef _MSC_VER
 #define try __try
 #define except __except

@@ -6187,55 +6187,67 @@ end:
 }
 
 static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = fcb->Vcb->chunks.Flink;
+    LIST_ENTRY* le;
     chunk* c;
-    UINT64 flags;
+    UINT64 flags, origlength = length;
+    NTSTATUS Status;
     
     flags = fcb->Vcb->data_flags;
     
-    // FIXME - if length is more than max chunk size, loop through and
-    // create the new chunks first
+    // FIXME - try and maximize contiguous ranges first. If we can't do that,
+    // allocate all the free space we find until it's enough.
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    while (le != &fcb->Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+    do {
+        UINT64 extlen = min(MAX_EXTENT_SIZE, length);
         
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
-        
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback)) {
-                ExReleaseResourceLite(&c->nonpaged->lock);
-                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-                return STATUS_SUCCESS;
+        le = fcb->Vcb->chunks.Flink;
+        while (le != &fcb->Vcb->chunks) {
+            c = CONTAINING_RECORD(le, chunk, list_entry);
+            
+            ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+            
+            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, rollback)) {
+                    ExReleaseResourceLite(&c->nonpaged->lock);
+                    goto cont;
+                }
             }
-        }
-        
-        ExReleaseResourceLite(&c->nonpaged->lock);
+            
+            ExReleaseResourceLite(&c->nonpaged->lock);
 
-        le = le->Flink;
-    }
-    
-    if ((c = alloc_chunk(fcb->Vcb, flags, rollback))) {
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
-        
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, TRUE, NULL, NULL, rollback)) {
-                ExReleaseResourceLite(&c->nonpaged->lock);
-                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-                return STATUS_SUCCESS;
-            }
+            le = le->Flink;
         }
         
-        ExReleaseResourceLite(&c->nonpaged->lock);
-    }
+        if ((c = alloc_chunk(fcb->Vcb, flags, rollback))) {
+            ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+            
+            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, rollback)) {
+                    ExReleaseResourceLite(&c->nonpaged->lock);
+                    goto cont;
+                }
+            }
+            
+            ExReleaseResourceLite(&c->nonpaged->lock);
+        }
+        
+        WARN("couldn't find any data chunks with %llx bytes free\n", origlength);
+        Status = STATUS_DISK_FULL;
+        goto end;
+        
+cont:
+        length -= extlen;
+        start += extlen;
+    } while (length > 0);
     
+    Status = STATUS_SUCCESS;
+    
+end:
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-    
-    // FIXME - rebalance chunks if free space elsewhere?
-    WARN("couldn't find any data chunks with %llx bytes free\n", length);
 
-    return STATUS_DISK_FULL;
+    return Status;
 }
 
 NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
