@@ -3458,10 +3458,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 i;
+    UINT64 i, factor;
     CHUNK_ITEM_STRIPE* cis;
-    
-    // FIXME - handle deleted
     
     TRACE("dropping chunk %llx\n", c->offset);
     
@@ -3491,31 +3489,45 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         }
     }
     
+    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        factor = c->chunk_item->num_stripes;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+    else // SINGLE, DUPLICATE, RAID1
+        factor = 1;
+    
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        // remove DEV_EXTENTs from tree 4
-        searchkey.obj_id = cis[i].dev_id;
-        searchkey.obj_type = TYPE_DEV_EXTENT;
-        searchkey.offset = cis[i].offset;
-        
-        Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (!keycmp(&tp.item->key, &searchkey)) {
-            delete_tree_item(Vcb, &tp, rollback);
+        if (!c->created) {
+            // remove DEV_EXTENTs from tree 4
+            searchkey.obj_id = cis[i].dev_id;
+            searchkey.obj_type = TYPE_DEV_EXTENT;
+            searchkey.offset = cis[i].offset;
             
-            if (tp.item->size >= sizeof(DEV_EXTENT)) {
-                DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
-                
-                c->devices[i]->devitem.bytes_used -= de->length;
-                
-                space_list_add2(&c->devices[i]->space, cis[i].offset, de->length, rollback);
+            Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
             }
-        } else
-            WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            
+            if (!keycmp(&tp.item->key, &searchkey)) {
+                delete_tree_item(Vcb, &tp, rollback);
+                
+                if (tp.item->size >= sizeof(DEV_EXTENT)) {
+                    DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+                    
+                    c->devices[i]->devitem.bytes_used -= de->length;
+                    
+                    space_list_add2(&c->devices[i]->space, cis[i].offset, de->length, rollback);
+                }
+            } else
+                WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        } else {
+            UINT64 len = c->chunk_item->size / factor;
+            
+            c->devices[i]->devitem.bytes_used -= len;
+            space_list_add2(&c->devices[i]->space, cis[i].offset, len, rollback);
+        }
     }
     
     // modify DEV_ITEMs in chunk tree
@@ -3561,39 +3573,41 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         }
     }
     
-    // remove CHUNK_ITEM from chunk tree
-    searchkey.obj_id = 0x100;
-    searchkey.obj_type = TYPE_CHUNK_ITEM;
-    searchkey.offset = c->offset;
-    
-    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
+    if (!c->created) {
+        // remove CHUNK_ITEM from chunk tree
+        searchkey.obj_id = 0x100;
+        searchkey.obj_type = TYPE_CHUNK_ITEM;
+        searchkey.offset = c->offset;
+        
+        Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&tp.item->key, &searchkey))
+            delete_tree_item(Vcb, &tp, rollback);
+        else
+            WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
+        
+        // remove BLOCK_GROUP_ITEM from extent tree
+        searchkey.obj_id = c->offset;
+        searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+            delete_tree_item(Vcb, &tp, rollback);
+        else
+            WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
     }
-    
-    if (!keycmp(&tp.item->key, &searchkey))
-        delete_tree_item(Vcb, &tp, rollback);
-    else
-        WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
     
     // FIXME - if SYSTEM, remove from bootstrap
-    
-    // remove BLOCK_GROUP_ITEM from extent tree
-    searchkey.obj_id = c->offset;
-    searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-        delete_tree_item(Vcb, &tp, rollback);
-    else
-        WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
     
     RemoveEntryList(&c->list_entry);
     
