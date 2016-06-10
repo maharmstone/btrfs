@@ -5916,7 +5916,7 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
         if (!oldext->ignore) {
             if (oldext->offset > offset) {
                 InsertHeadList(le->Blink, &ext->list_entry);
-                return TRUE;
+                goto end;
             }
         }
         
@@ -5925,7 +5925,17 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     
     InsertTailList(&fcb->extents, &ext->list_entry);
     
+end:
+    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, ext);
+
     return TRUE;
+}
+
+void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
+    if (!ext->ignore) {
+        ext->ignore = TRUE;
+        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, ext);
+    }
 }
 
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {

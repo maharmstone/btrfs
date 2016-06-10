@@ -19,11 +19,6 @@
 
 // #define DEBUG_TREE_LOCKS
 
-enum rollback_type {
-    ROLLBACK_INSERT_ITEM,
-    ROLLBACK_DELETE_ITEM
-};
-
 typedef struct {
     enum rollback_type type;
     void* ptr;
@@ -682,7 +677,7 @@ void STDCALL free_trees(device_extension* Vcb) {
     }
 }
 
-static void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
+void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     rollback_item* ri;
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
@@ -930,6 +925,9 @@ void clear_rollback(LIST_ENTRY* rollback) {
             case ROLLBACK_DELETE_ITEM:
                 ExFreePool(ri->ptr);
                 break;
+
+            default:
+                break;
         }
         
         ExFreePool(ri);
@@ -940,7 +938,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
     rollback_item* ri;
     
     while (!IsListEmpty(rollback)) {
-        LIST_ENTRY* le = RemoveHeadList(rollback);
+        LIST_ENTRY* le = RemoveTailList(rollback);
         ri = CONTAINING_RECORD(le, rollback_item, list_entry);
         
         switch (ri->type) {
@@ -977,6 +975,22 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 }
                 
                 ExFreePool(tp);
+                break;
+            }
+            
+            case ROLLBACK_INSERT_EXTENT:
+            {
+                extent* ext = ri->ptr;
+                
+                ext->ignore = TRUE;
+                break;
+            }
+            
+            case ROLLBACK_DELETE_EXTENT:
+            {
+                extent* ext = ri->ptr;
+                
+                ext->ignore = FALSE;
                 break;
             }
         }

@@ -529,11 +529,6 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
 
-static __inline void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
-    // FIXME - do rollback
-    ext->ignore = TRUE;
-}
-
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 ULONG sector_align( ULONG NumberToBeAligned, ULONG Alignment );
@@ -624,6 +619,13 @@ void STDCALL init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 // in crc32c.c
 UINT32 STDCALL calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen);
 
+enum rollback_type {
+    ROLLBACK_INSERT_ITEM,
+    ROLLBACK_DELETE_ITEM,
+    ROLLBACK_INSERT_EXTENT,
+    ROLLBACK_DELETE_EXTENT
+};
+
 // in treefuncs.c
 NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, const char* func, const char* file, unsigned int line);
@@ -637,6 +639,7 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
+void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
 
 #define find_item(Vcb, r, tp, searchkey, ignore) _find_item(Vcb, r, tp, searchkey, ignore, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
@@ -675,6 +678,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
