@@ -1487,10 +1487,10 @@ end:
     if (!NT_SUCCESS(Status) && fr2)
         free_fileref(fr2);
     
-//     if (NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
-//     else
-//         do_rollback(Vcb, &rollback);
+    else
+        do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);
@@ -1927,10 +1927,10 @@ end:
     if (!NT_SUCCESS(Status) && fr2)
         free_fileref(fr2);
     
-//     if (NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
-//     else
-//         do_rollback(Vcb, &rollback);
+    else
+        do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);

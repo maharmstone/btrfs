@@ -5492,7 +5492,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                 
                 if (ed->type == EXTENT_TYPE_INLINE) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                         
                         fcb->inode_item.st_blocks -= len;
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
@@ -5533,7 +5533,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - ext->offset;
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
@@ -5574,7 +5574,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                         
                         fcb->inode_item.st_blocks -= ext->offset + len - start_data;
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
@@ -5653,7 +5653,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - start_data;
                     }
@@ -5662,7 +5662,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         if (ed2->address != 0)
                             fcb->inode_item.st_blocks -= len;
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
                         EXTENT_DATA* ned;
                         EXTENT_DATA2* ned2;
@@ -5706,7 +5706,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
                         EXTENT_DATA* ned;
                         EXTENT_DATA2* ned2;
@@ -5750,7 +5750,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
                         EXTENT_DATA *neda, *nedb;
                         EXTENT_DATA2 *neda2, *nedb2;
@@ -5834,7 +5834,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
                         
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext, rollback);
                     }
                 }
             }
@@ -5893,7 +5893,7 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
     return STATUS_SUCCESS;
 }
 
-static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique) {
+static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
     
@@ -5968,7 +5968,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE)) {
+    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, rollback)) {
         ERR("add_extent_to_fcb failed\n");
         ExFreePool(ed);
         return FALSE;
@@ -6032,7 +6032,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
-    remove_fcb_extent(ext);
+    remove_fcb_extent(ext, rollback);
     
     if (changed_sector_list) {
         int i;
@@ -6228,7 +6228,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     return STATUS_DISK_FULL;
 }
 
-NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length) {
+NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     
@@ -6253,7 +6253,7 @@ NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length) {
     ed2->offset = 0;
     ed2->num_bytes = length;
 
-    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE)) {
+    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE, rollback)) {
         ERR("add_extent_to_fcb failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -6322,12 +6322,12 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         
         if (!lastext || !ed || lastext->offset + len < start_data) {
             if (!lastext)
-                Status = insert_sparse_extent(fcb, 0, start_data);
+                Status = insert_sparse_extent(fcb, 0, start_data, rollback);
             else if (!ed) {
                 ERR("extent at %llx was %u bytes, expected at least %u\n", lastext->offset, lastext->datalen, sizeof(EXTENT_DATA));
                 return STATUS_INTERNAL_ERROR;
             } else
-                Status = insert_sparse_extent(fcb, lastext->offset + len, start_data - lastext->offset - len);
+                Status = insert_sparse_extent(fcb, lastext->offset + len, start_data - lastext->offset - len, rollback);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
@@ -6658,7 +6658,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 fcb->inode_item.st_blocks -= origlength;
                 
-                remove_fcb_extent(ext);
+                remove_fcb_extent(ext, rollback);
                 
                 Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
                 if (!NT_SUCCESS(Status)) {
@@ -6695,9 +6695,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                     
                     ed->decoded_size = end - ext->offset;
                     
-                    remove_fcb_extent(ext);
+                    remove_fcb_extent(ext, rollback);
                     
-                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique)) {
+                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, rollback)) {
                         ERR("add_extent_to_fcb failed\n");
                         ExFreePool(ed);
                         return STATUS_INTERNAL_ERROR;
@@ -6726,7 +6726,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                             return Status;
                         }
                     } else {
-                        Status = insert_sparse_extent(fcb, oldalloc, newalloc - oldalloc);
+                        Status = insert_sparse_extent(fcb, oldalloc, newalloc - oldalloc, rollback);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_sparse_extent returned %08x\n", Status);
@@ -6755,7 +6755,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                         return Status;
                     }
                 } else {
-                    Status = insert_sparse_extent(fcb, 0, newalloc);
+                    Status = insert_sparse_extent(fcb, 0, newalloc, rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_sparse_extent returned %08x\n", Status);
@@ -6791,7 +6791,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 RtlZeroMemory(ed->data, end);
                 
-                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE)) {
+                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, rollback)) {
                     ERR("add_extent_to_fcb failed\n");
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
@@ -6983,8 +6983,8 @@ static NTSTATUS merge_data_extents(device_extension* Vcb, fcb* fcb, UINT64 start
                         
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext2);
-                        remove_fcb_extent(ext);
+                        remove_fcb_extent(ext2, rollback);
+                        remove_fcb_extent(ext, rollback);
                         
                         le = &newext->list_entry;
                         ed = buf;
@@ -7109,7 +7109,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext->ignore = FALSE;
                     InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-                    remove_fcb_extent(ext);
+                    remove_fcb_extent(ext, rollback);
                 } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
                     EXTENT_DATA *ned, *nedb;
                     EXTENT_DATA2* ned2;
@@ -7177,7 +7177,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext2->ignore = FALSE;
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
 
-                    remove_fcb_extent(ext);
+                    remove_fcb_extent(ext, rollback);
                 } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
                     EXTENT_DATA *ned, *nedb;
                     EXTENT_DATA2* ned2;
@@ -7250,7 +7250,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext2->ignore = FALSE;
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
 
-                    remove_fcb_extent(ext);
+                    remove_fcb_extent(ext, rollback);
                 } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
                     EXTENT_DATA *ned, *nedb, *nedc;
                     EXTENT_DATA2* ned2;
@@ -7355,7 +7355,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext3->ignore = FALSE;
                     InsertHeadList(&newext2->list_entry, &newext3->list_entry);
 
-                    remove_fcb_extent(ext);
+                    remove_fcb_extent(ext, rollback);
                 }
             }
         }
@@ -8091,7 +8091,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE)) {
+            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, rollback)) {
                 ERR("add_extent_to_fcb failed\n");
                 ExFreePool(data);
                 Status = STATUS_INTERNAL_ERROR;
@@ -8304,10 +8304,10 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
 exit:
 //     if (locked) {
-//         if (NT_SUCCESS(Status))
-//             clear_rollback(&rollback);
-//         else
-//             do_rollback(Vcb, &rollback);
+        if (NT_SUCCESS(Status))
+            clear_rollback(&rollback);
+        else
+            do_rollback(Vcb, &rollback);
 //         
 //         ExReleaseResourceLite(&Vcb->tree_lock);
 //     }

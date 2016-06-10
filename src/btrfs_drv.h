@@ -529,7 +529,7 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
 
-static __inline void remove_fcb_extent(extent* ext) {
+static __inline void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
     // FIXME - do rollback
     ext->ignore = TRUE;
 }
@@ -662,7 +662,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback);
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback);
 void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_list);
-NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length);
+NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc);

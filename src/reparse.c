@@ -332,8 +332,10 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
 end:
-    // FIXME - do rollback if this failed
-    clear_rollback(&rollback);
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(fcb->Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
@@ -488,8 +490,10 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = STATUS_SUCCESS;
     
 end:
-    // FIXME - do rollback if this failed
-    clear_rollback(&rollback);
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(fcb->Vcb, &rollback);
     
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
