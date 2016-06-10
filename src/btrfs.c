@@ -713,8 +713,19 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         }
 
         case FileFsObjectIdInformation:
-            FIXME("STUB: FileFsObjectIdInformation\n");
+        {
+            FILE_FS_OBJECTID_INFORMATION* ffoi = Irp->AssociatedIrp.SystemBuffer;
+            
+            TRACE("FileFsObjectIdInformation\n");
+            
+            RtlCopyMemory(ffoi->ObjectId, &Vcb->superblock.uuid.uuid[0], sizeof(UCHAR) * 16);
+            RtlZeroMemory(ffoi->ExtendedInfo, sizeof(ffoi->ExtendedInfo));
+            
+            BytesCopied = sizeof(FILE_FS_OBJECTID_INFORMATION);
+            Status = STATUS_SUCCESS;
+            
             break;
+        }
 
         case FileFsSizeInformation:
         {
