@@ -1591,7 +1591,9 @@ static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FI
     
     ExReleaseResourceLite(fcb->Header.Resource);
     
-    *retlen = 2 * sizeof(UINT64);
+    RtlZeroMemory(&buf->ExtendedInfo, sizeof(buf->ExtendedInfo));
+    
+    *retlen = sizeof(FILE_OBJECTID_BUFFER);
     
     return STATUS_SUCCESS;
 }
