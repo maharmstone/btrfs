@@ -8360,7 +8360,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             CcMdlWriteComplete(IrpSp->FileObject, &IrpSp->Parameters.Write.ByteOffset, Irp->MdlAddress);
             
             Irp->MdlAddress = NULL;
-            Irp->IoStatus.Status = STATUS_SUCCESS;
+            Status = STATUS_SUCCESS;
         } else {
             Status = write_file(Vcb, Irp, IoIsOperationSynchronous(Irp), FALSE);
         }
