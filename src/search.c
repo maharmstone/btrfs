@@ -650,7 +650,8 @@ void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
                     if (v2->devnum < mountvol->devnum) {
                         remove_drive_letter(mountmgr, mountvol);
                         mountvol = v2;
-                    }
+                    } else if (v2->devnum > mountvol->devnum)
+                        remove_drive_letter(mountmgr, v2);
                 }
                 
                 le2 = le2->Flink;
