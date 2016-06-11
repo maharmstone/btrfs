@@ -3247,6 +3247,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
     ExInitializeResourceLite(&Vcb->DirResource);
+    ExInitializeResourceLite(&Vcb->checksum_lock);
+    ExInitializeResourceLite(&Vcb->chunk_lock);
 
     ExAcquireResourceExclusiveLite(&global_loading_lock, TRUE);
     InsertTailList(&VcbList, &Vcb->list_entry);
@@ -3375,9 +3377,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     KeInitializeSpinLock(&Vcb->dirty_fcbs_lock);
     KeInitializeSpinLock(&Vcb->dirty_filerefs_lock);
-    
-    ExInitializeResourceLite(&Vcb->checksum_lock);
-    ExInitializeResourceLite(&Vcb->chunk_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 
