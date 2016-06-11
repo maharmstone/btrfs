@@ -630,6 +630,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 //     UINT64 num_reads_orig;
     dir_entry de;
     UINT64 newoffset;
+    ANSI_STRING utf8;
     
     TRACE("query directory\n");
     
@@ -641,6 +642,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     fcb = IrpSp->FileObject->FsContext;
     ccb = IrpSp->FileObject->FsContext2;
     fileref = ccb ? ccb->fileref : NULL;
+    
+    utf8.Buffer = NULL;
     
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
@@ -686,50 +689,52 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    if (IrpSp->Parameters.QueryDirectory.FileName) {
-//         int i;
-//         WCHAR* us;
+    if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
+        int i;
         
         TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
         
-//         if (IrpSp->Parameters.QueryDirectory.FileName->Length > 1 || IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
-//             specific_file = TRUE;
-//             for (i = 0; i < IrpSp->Parameters.QueryDirectory.FileName->Length; i++) {
-//                 if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '?' || IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '*') {
-//                     has_wildcard = TRUE;
-//                     specific_file = FALSE;
-//                 }
-//             }
-//         }
-        has_wildcard = TRUE;
+        if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
+            specific_file = TRUE;
+            for (i = 0; i < IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR); i++) {
+                if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '?' || IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '*') {
+                    has_wildcard = TRUE;
+                    specific_file = FALSE;
+                }
+            }
+        }
 
         if (ccb->query_string.Buffer)
             RtlFreeUnicodeString(&ccb->query_string);
         
-//         us = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length + sizeof(WCHAR), ALLOC_TAG);
-//         RtlCopyMemory(us, IrpSp->Parameters.QueryDirectory.FileName->Buffer, IrpSp->Parameters.QueryDirectory.FileName->Length);
-//         us[IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR)] = 0;
-        
-//         ccb->query_string = ExAllocatePoolWithTag(NonPagedPool, utf16_to_utf8_len(us), ALLOC_TAG);
-//         utf16_to_utf8(us, ccb->query_string);
-        
-//         ccb->query_string.Buffer = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length, ALLOC_TAG);
-//         RtlCopyMemory(ccb->query_string.Buffer, IrpSp->Parameters.QueryDirectory.FileName->Buffer,
-//                       IrpSp->Parameters.QueryDirectory.FileName->Length);
-//         ccb->query_string.Length = IrpSp->Parameters.QueryDirectory.FileName->Length;
-//         ccb->query_string.MaximumLength = IrpSp->Parameters.QueryDirectory.FileName->Length;
+        if (has_wildcard)
             RtlUpcaseUnicodeString(&ccb->query_string, IrpSp->Parameters.QueryDirectory.FileName, TRUE);
+        else {
+            ccb->query_string.Buffer = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length, ALLOC_TAG);
+            if (!ccb->query_string.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            ccb->query_string.Length = ccb->query_string.MaximumLength = IrpSp->Parameters.QueryDirectory.FileName->Length;
+            RtlCopyMemory(ccb->query_string.Buffer, IrpSp->Parameters.QueryDirectory.FileName->Buffer, IrpSp->Parameters.QueryDirectory.FileName->Length);
+        }
           
         ccb->has_wildcard = has_wildcard;
         ccb->specific_file = specific_file;
-        
-//         ExFreePool(us);
     } else {
         has_wildcard = ccb->has_wildcard;
         specific_file = ccb->specific_file;
         
-        if (!(IrpSp->Flags & SL_RESTART_SCAN))
+        if (!(IrpSp->Flags & SL_RESTART_SCAN)) {
             initial = FALSE;
+            
+            if (specific_file) {
+                Status = STATUS_NO_MORE_FILES;
+                goto end;
+            }
+        }
     }
     
     if (ccb->query_string.Buffer) {
@@ -747,23 +752,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ccb->query_dir_offset = newoffset;
 
-    // FIXME - make this work
-//     if (specific_file) {
-//         UINT64 filesubvol, fileinode;
-//         WCHAR* us;
-//         
-//         us = ExAllocatePoolWithTag(NonPagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length + sizeof(WCHAR), ALLOC_TAG);
-//         RtlCopyMemory(us, IrpSp->Parameters.QueryDirectory.FileName->Buffer, IrpSp->Parameters.QueryDirectory.FileName->Length);
-//         us[IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR)] = 0;
-//         
-//         if (!find_file_in_dir(fcb->Vcb, us, fcb->subvolume, fcb->inode, &filesubvol, &fileinode)) {
-//             ExFreePool(us);
-//             return STATUS_NO_MORE_FILES;
-//         }
-//         
-//         ExFreePool(us);
-//     }
-    
     buf = map_user_buffer(Irp);
     
     if (Irp->MdlAddress && !buf) {
@@ -774,8 +762,33 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     length = IrpSp->Parameters.QueryDirectory.Length;
     
-//     if (specific_file) {
-    if (has_wildcard) {
+    if (specific_file) {
+        root* found_subvol;
+        UINT64 found_inode, found_index;
+        UINT8 found_type;
+        
+        Status = find_file_in_dir(fcb->Vcb, &ccb->query_string, fileref, &found_subvol, &found_inode, &found_type, &found_index, &utf8);
+        
+        if (!NT_SUCCESS(Status)) {
+            Status = STATUS_NO_SUCH_FILE;
+            goto end;
+        }
+        
+        if (found_subvol == fcb->subvol) {
+            de.key.obj_id = found_inode;
+            de.key.obj_type = TYPE_INODE_ITEM;
+            de.key.offset = 0;
+        } else {
+            de.key.obj_id = found_subvol->id;
+            de.key.obj_type = TYPE_ROOT_ITEM;
+            de.key.offset = 0;
+        }
+        
+        de.name = utf8.Buffer;
+        de.namelen = utf8.Length;
+        de.type = found_type;
+        de.dir_entry_type = DirEntryType_File;
+    } else if (has_wildcard) {
         WCHAR* uni_fn;
         ULONG stringlen;
         UNICODE_STRING di_uni_fn;
@@ -951,8 +964,10 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 end:
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
-//     TRACE("query directory performed %u reads\n", (UINT32)(num_reads-num_reads_orig));
     TRACE("returning %08x\n", Status);
+    
+    if (utf8.Buffer)
+        ExFreePool(utf8.Buffer);
 
     return Status;
 }
