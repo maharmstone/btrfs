@@ -150,7 +150,6 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
             td->treeholder.address = in[i].address;
             td->treeholder.generation = in[i].generation;
             td->treeholder.tree = NULL;
-            init_tree_holder(&td->treeholder);
 //             td->treeholder.nonpaged->status = tree_holder_unloaded;
             td->ignore = FALSE;
             td->inserted = FALSE;

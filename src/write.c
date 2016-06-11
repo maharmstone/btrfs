@@ -2609,7 +2609,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
         td->ignore = FALSE;
         td->inserted = TRUE;
         td->treeholder.tree = nt;
-        init_tree_holder(&td->treeholder);
 //         td->treeholder.nonpaged->status = tree_holder_loaded;
         nt->paritem = td;
         
@@ -2667,7 +2666,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     td->treeholder.address = 0;
     td->treeholder.generation = Vcb->superblock.generation;
     td->treeholder.tree = t;
-    init_tree_holder(&td->treeholder);
 //     td->treeholder.nonpaged->status = tree_holder_loaded;
     InsertTailList(&pt->itemlist, &td->list_entry);
     t->paritem = td;
@@ -2684,7 +2682,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     td->treeholder.address = 0;
     td->treeholder.generation = Vcb->superblock.generation;
     td->treeholder.tree = nt;
-    init_tree_holder(&td->treeholder);
 //     td->treeholder.nonpaged->status = tree_holder_loaded;
     InsertTailList(&pt->itemlist, &td->list_entry);
     nt->paritem = td;

@@ -2375,7 +2375,6 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->path.Buffer = NULL;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
-    init_tree_holder(&r->treeholder);
     InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);

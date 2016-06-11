@@ -475,12 +475,6 @@ typedef struct {
 
 // #pragma pack(pop)
 
-static __inline void init_tree_holder(tree_holder* th) {
-//     th->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_holder_nonpaged), ALLOC_TAG);
-//     KeInitializeSpinLock(&th->nonpaged->spin_lock);
-//     ExInitializeResourceLite(&th->nonpaged->lock); // FIXME - delete this later
-}
-
 static __inline void* map_user_buffer(PIRP Irp) {
     if (!Irp->MdlAddress) {
         return Irp->UserBuffer;
