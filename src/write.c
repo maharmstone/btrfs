@@ -708,7 +708,7 @@ end:
     return success ? c : NULL;
 }
 
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc) {
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc) {
     NTSTATUS Status;
     UINT32 i;
     chunk* c;
@@ -716,7 +716,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     write_data_stripe* stripe;
     UINT64 *stripestart = NULL, *stripeend = NULL;
     UINT8** stripedata = NULL;
-    BOOL need_free;
+    BOOL need_free2;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
@@ -829,8 +829,11 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         }
 
         ExFreePool(stripeoff);
+        
+        if (need_free)
+            ExFreePool(data);
 
-        need_free = TRUE;
+        need_free2 = TRUE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
         UINT64 startoff, endoff;
         UINT16 startoffstripe, endoffstripe, stripenum;
@@ -913,15 +916,18 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         }
 
         ExFreePool(stripeoff);
+        
+        if (need_free)
+            ExFreePool(data);
 
-        need_free = TRUE;
+        need_free2 = TRUE;
     } else {
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             stripestart[i] = address - c->offset;
             stripeend[i] = stripestart[i] + length;
             stripedata[i] = data;
         }
-        need_free = FALSE;
+        need_free2 = need_free;
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -943,7 +949,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
         } else {
             stripe->context = (struct write_data_context*)wtc;
             stripe->buf = stripedata[i];
-            stripe->need_free = need_free;
+            stripe->need_free = need_free2;
             stripe->device = c->devices[i];
             RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
             stripe->status = WriteDataStatus_Pending;
@@ -1019,7 +1025,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     wtc->tree = FALSE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, address, data, length, wtc);
+    Status = write_data(Vcb, address, data, FALSE, length, wtc);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         free_write_data_stripes(wtc);
@@ -2184,7 +2190,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             *((UINT32*)data) = crc32;
             TRACE("setting crc32 to %08x\n", crc32);
             
-            Status = write_data(Vcb, t->new_address, data, Vcb->superblock.node_size, wtc);
+            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
                 goto end;

@@ -664,7 +664,7 @@ void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_l
 NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc);
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc);
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length);
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
