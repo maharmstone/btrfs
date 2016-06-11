@@ -2813,6 +2813,12 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
     UINT16 i = 0, j;
     UINT64 off_start, off_end;
     
+    // The Linux driver also protects all the space before the first superblock.
+    // I realize this confuses physical and logical addresses, but this is what btrfs-progs does - 
+    // evidently Linux assumes the chunk at 0 is always SINGLE.
+    if (c->offset < superblock_addrs[0])
+        space_list_subtract(Vcb, c, FALSE, c->offset, superblock_addrs[0] - c->offset, NULL);
+    
     while (superblock_addrs[i] != 0) {
         CHUNK_ITEM* ci = c->chunk_item;
         CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
