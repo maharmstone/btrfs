@@ -95,6 +95,7 @@ typedef struct _fcb_nonpaged {
     SECTION_OBJECT_POINTERS segment_object;
     ERESOURCE resource;
     ERESOURCE paging_resource;
+    ERESOURCE index_lock;
 } fcb_nonpaged;
 
 struct _root;
@@ -119,6 +120,16 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_backref;
 
+typedef struct {
+    KEY key;
+    UINT8 type;
+    UINT64 index;
+    ANSI_STRING utf8;
+    UNICODE_STRING filepart_uc;
+
+    LIST_ENTRY list_entry;
+} index_entry;
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -140,6 +151,9 @@ typedef struct _fcb {
     LIST_ENTRY extent_backrefs;
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
+    
+    BOOL index_loaded;
+    LIST_ENTRY index_list;
     
     BOOL dirty;
     BOOL sd_dirty;

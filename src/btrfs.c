@@ -1637,6 +1637,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
+    ExDeleteResourceLite(&fcb->nonpaged->index_lock);
     ExFreePool(fcb->nonpaged);
     
     if (fcb->list_entry.Flink)
@@ -1670,6 +1671,15 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         extent_backref* extref = CONTAINING_RECORD(le, extent_backref, list_entry);
         
         ExFreePool(extref);
+    }
+    
+    while (!IsListEmpty(&fcb->index_list)) {
+        LIST_ENTRY* le = RemoveHeadList(&fcb->index_list);
+        index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
+
+        if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
+        if (ie->filepart_uc.Buffer) ExFreePool(ie->filepart_uc.Buffer);
+        ExFreePool(ie);
     }
     
     FsRtlUninitializeFileLock(&fcb->lock);
