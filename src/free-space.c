@@ -246,6 +246,13 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         return Status;
     }
     
+    if (c->cache->inode_item.st_size == 0) {
+        WARN("cache had zero length\n");
+        free_fcb(c->cache);
+        c->cache = NULL;
+        return STATUS_NOT_FOUND;
+    }
+    
     c->cache->inode_item.flags |= BTRFS_INODE_NODATACOW;
     
     size = sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
