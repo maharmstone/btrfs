@@ -365,11 +365,16 @@ typedef struct {
     drv_thread* threads;
 } drv_threads;
 
+typedef struct {
+    BOOL ignore;
+} mount_options;
+
 #define VCB_TYPE_VOLUME     1
 #define VCB_TYPE_PARTITION0 2
 
 typedef struct _device_extension {
     UINT32 type;
+    mount_options options;
     device* devices;
     UINT64 devices_loaded;
 //     DISK_GEOMETRY geometry;
@@ -756,6 +761,7 @@ void do_write_job(device_extension* Vcb, PIRP Irp);
 void STDCALL read_registry(PUNICODE_STRING regpath);
 NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid);
 NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid);
+NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

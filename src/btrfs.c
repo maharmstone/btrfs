@@ -3323,7 +3323,17 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         TRACE("btrfs magic found\n");
     }
     
-    // FIXME - check not marked ignore
+    Status = registry_load_volume_options(&Vcb->superblock.uuid, &Vcb->options);
+    if (!NT_SUCCESS(Status)) {
+        ERR("registry_load_volume_options returned %08x\n", Status);
+        goto exit;
+    }
+    
+    if (Vcb->options.ignore) {
+        TRACE("ignoring volume\n");
+        Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit;
+    }
 
     if (Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED) {
         WARN("cannot mount because of unsupported incompat flags (%llx)\n", Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED);

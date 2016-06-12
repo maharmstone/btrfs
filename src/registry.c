@@ -2,9 +2,101 @@
 
 extern UNICODE_STRING log_device, log_file, registry_path;
 
-static WCHAR mounted[] = L"Mounted";
+static WCHAR option_mounted[] = L"Mounted";
+static WCHAR option_ignore[] = L"Ignore";
 
 #define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
+
+NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) {
+    UNICODE_STRING path, ignoreus;
+    OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+    ULONG i, j, kvfilen, index, retlen;
+    KEY_VALUE_FULL_INFORMATION* kvfi = NULL;
+    HANDLE h;
+    
+    path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
+    path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
+    
+    if (!path.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(path.Buffer, registry_path.Buffer, registry_path.Length);
+    i = registry_path.Length / sizeof(WCHAR);
+    
+    path.Buffer[i] = '\\';
+    i++;
+    
+    for (j = 0; j < 16; j++) {
+        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        
+        i += 2;
+        
+        if (j == 3 || j == 5 || j == 7 || j == 9) {
+            path.Buffer[i] = '-';
+            i++;
+        }
+    }
+    
+    kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) - sizeof(WCHAR) + (255 * sizeof(WCHAR));
+    kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+    if (!kvfi) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = ZwOpenKey(&h, KEY_QUERY_VALUE, &oa);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwOpenKey returned %08x\n", Status);
+        goto end;
+    }
+    
+    index = 0;
+    
+    ignoreus.Buffer = option_ignore;
+    ignoreus.Length = ignoreus.MaximumLength = wcslen(option_ignore) * sizeof(WCHAR);
+    
+    do {
+        Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
+        
+        index++;
+        
+        if (NT_SUCCESS(Status)) {
+            UNICODE_STRING us;
+            
+            us.Length = us.MaximumLength = kvfi->NameLength;
+            us.Buffer = kvfi->Name;
+            
+            if (FsRtlAreNamesEqual(&ignoreus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->ignore = *val != 0 ? TRUE : FALSE;
+            }
+        } else if (Status != STATUS_NO_MORE_ENTRIES) {
+            ERR("ZwEnumerateValueKey returned %08x\n", Status);
+            goto end2;
+        }
+    } while (NT_SUCCESS(Status));
+
+    Status = STATUS_SUCCESS;
+    
+end2:
+    ZwClose(h);
+
+end:
+    ExFreePool(path.Buffer);
+    
+    if (kvfi)
+        ExFreePool(kvfi);
+
+    return Status;
+}
 
 NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
     UNICODE_STRING path, mountedus;
@@ -48,8 +140,8 @@ NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
         goto end;
     }
     
-    mountedus.Buffer = mounted;
-    mountedus.Length = mountedus.MaximumLength = wcslen(mounted) * sizeof(WCHAR);
+    mountedus.Buffer = option_mounted;
+    mountedus.Length = mountedus.MaximumLength = wcslen(option_mounted) * sizeof(WCHAR);
     
     data = 1;
     
@@ -98,8 +190,8 @@ static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
     
     index = 0;
     
-    mountedus.Buffer = mounted;
-    mountedus.Length = mountedus.MaximumLength = wcslen(mounted) * sizeof(WCHAR);
+    mountedus.Buffer = option_mounted;
+    mountedus.Length = mountedus.MaximumLength = wcslen(option_mounted) * sizeof(WCHAR);
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueBasicInformation, kvbi, kvbilen, &retlen);
