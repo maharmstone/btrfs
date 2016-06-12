@@ -52,7 +52,10 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
     Status = ZwOpenKey(&h, KEY_QUERY_VALUE, &oa);
-    if (!NT_SUCCESS(Status)) {
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    } else if (!NT_SUCCESS(Status)) {
         ERR("ZwOpenKey returned %08x\n", Status);
         goto end;
     }
