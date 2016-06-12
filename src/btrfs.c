@@ -1726,6 +1726,9 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->filepart.Buffer)
         ExFreePool(fr->filepart.Buffer);
     
+    if (fr->filepart_uc.Buffer)
+        ExFreePool(fr->filepart_uc.Buffer);
+    
     if (fr->utf8.Buffer)
         ExFreePool(fr->utf8.Buffer);
     

@@ -1470,6 +1470,13 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
                     }
                     
+                    Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                        free_fileref(sf2);
+                        goto end;
+                    }
+                    
                     // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
 
                     sf2->parent = (struct _file_ref*)sf;
@@ -1541,6 +1548,13 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     Status = RtlUTF8ToUnicodeN(sf2->filepart.Buffer, strlen, &strlen, utf8.Buffer, utf8.Length);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        free_fileref(sf2);
+                        goto end;
+                    }
+                    
+                    Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                         free_fileref(sf2);
                         goto end;
                     }
@@ -1798,6 +1812,13 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->utf8.Buffer = utf8;
     
     fileref->filepart = *fpus;
+    
+    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        free_fileref(fileref);
+        return Status;
+    }
         
     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
@@ -2110,6 +2131,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         }
         
         RtlCopyMemory(fileref->filepart.Buffer, stream.Buffer, stream.Length);
+        
+        Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            free_fileref(fileref);
+            goto end;
+        }
        
         mark_fcb_dirty(fcb);
         

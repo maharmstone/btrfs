@@ -662,6 +662,13 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
                         }
                         
                         fr->filepart.Length = fr->filepart.MaximumLength = stringlen;
+                        
+                        Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                            free_fileref(fr);
+                            goto end;
+                        }
 
                         fr->parent = (struct _file_ref*)me->fileref;
                         increase_fileref_refcount(fr->parent);
@@ -848,6 +855,14 @@ static NTSTATUS add_children_to_move_list(move_entry* me) {
                         }
                         
                         fr->filepart.Length = fr->filepart.MaximumLength = stringlen;
+                        
+                        Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
+                        
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                            free_fileref(fr);
+                            goto end;
+                        }
                         
                         fr->parent = me->fileref;
 
@@ -1082,6 +1097,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         }
         
         RtlCopyMemory(me->fileref->filepart.Buffer, le == move_list.Flink ? fnus->Buffer : me->dummyfileref->filepart.Buffer, me->fileref->filepart.Length);
+        
+        Status = RtlUpcaseUnicodeString(&me->fileref->filepart_uc, &me->fileref->filepart, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            goto end;
+        }
         
         me->dummyfileref->utf8 = me->fileref->utf8;
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
@@ -1365,6 +1386,15 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fileref->utf8 = utf8;
         fileref->filepart = fnus2;
         
+        if (fileref->filepart_uc.Buffer)
+            ExFreePool(fileref->filepart_uc.Buffer);
+        
+        Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            goto end;
+        }
+        
         mark_fileref_dirty(fileref);
         
         KeQuerySystemTime(&time);
@@ -1399,6 +1429,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->fcb->refcount++;
     
     fr2->filepart = fileref->filepart;
+    fr2->filepart_uc = fileref->filepart_uc;
     fr2->utf8 = fileref->utf8;
     fr2->oldutf8 = fileref->oldutf8;
     fr2->index = fileref->index;
@@ -1422,6 +1453,12 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fileref->filepart.Length = fileref->filepart.MaximumLength = fnus.Length;
     RtlCopyMemory(fileref->filepart.Buffer, fnus.Buffer, fnus.Length);
+    
+    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        goto end;
+    }
     
     fileref->utf8 = utf8;
     fileref->oldutf8.Buffer = NULL;
@@ -1886,6 +1923,12 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     fr2->filepart.Length = fr2->filepart.MaximumLength = fnus.Length;
     RtlCopyMemory(fr2->filepart.Buffer, fnus.Buffer, fnus.Length);
+    
+    Status = RtlUpcaseUnicodeString(&fr2->filepart_uc, &fr2->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        goto end;
+    }
       
     insert_fileref_child(related, fr2, TRUE);
     

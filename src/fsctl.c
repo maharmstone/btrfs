@@ -451,6 +451,13 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     RtlCopyMemory(fr->filepart.Buffer, name->Buffer, name->Length);
     
+    Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        free_fileref(fr);
+        goto end;
+    }
+    
     fr->parent = fileref;
     
     insert_fileref_child(fileref, fr, TRUE);
@@ -945,6 +952,13 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     }
     
     RtlCopyMemory(fr->filepart.Buffer, nameus.Buffer, nameus.Length);
+    
+    Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        free_fileref(fr);
+        goto end;
+    }
     
     fr->parent = fileref;
     
