@@ -217,6 +217,8 @@ static NTSTATUS load_index_list(fcb* fcb) {
             index_entry* ie;
             ULONG stringlen;
             UNICODE_STRING us;
+            LIST_ENTRY* le;
+            BOOL inserted;
             
             ie = ExAllocatePoolWithTag(PagedPool, sizeof(index_entry), ALLOC_TAG);
             if (!ie) {
@@ -287,7 +289,24 @@ static NTSTATUS load_index_list(fcb* fcb) {
             ie->type = di->type;
             ie->index = tp.item->key.offset;
             
-            InsertTailList(&fcb->index_list, &ie->list_entry);
+            ie->hash = calc_crc32c(0xfffffffe, (UINT8*)ie->filepart_uc.Buffer, (ULONG)ie->filepart_uc.Length);
+            inserted = FALSE;
+            
+            le = fcb->index_list.Flink;
+            while (le != &fcb->index_list) {
+                index_entry* ie2 = CONTAINING_RECORD(le, index_entry, list_entry);
+                
+                if (ie2->hash >= ie->hash) {
+                    InsertHeadList(le->Blink, &ie->list_entry);
+                    inserted = TRUE;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+            
+            if (!inserted)
+                InsertTailList(&fcb->index_list, &ie->list_entry);
         }
         
 nextitem:
@@ -323,12 +342,15 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
     LIST_ENTRY* le;
     NTSTATUS Status;
     UNICODE_STRING us;
+    UINT32 hash;
         
     Status = RtlUpcaseUnicodeString(&us, filename, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
         return Status;
     }
+    
+    hash = calc_crc32c(0xfffffffe, (UINT8*)us.Buffer, (ULONG)us.Length);
     
     ExAcquireResourceExclusiveLite(&fr->fcb->nonpaged->index_lock, TRUE);
     
@@ -348,7 +370,7 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
     while (le != &fr->fcb->index_list) {
         index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
         
-        if (ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+        if (ie->hash == hash && ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
             LIST_ENTRY* le;
             BOOL ignore_entry = FALSE;
 
@@ -421,6 +443,9 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
                 *pindex = ie->index;
             
             Status = STATUS_SUCCESS;
+            goto end;
+        } else if (ie->hash > hash) {
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
             goto end;
         }
         

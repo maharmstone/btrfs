@@ -121,6 +121,7 @@ typedef struct {
 } extent_backref;
 
 typedef struct {
+    UINT32 hash;
     KEY key;
     UINT8 type;
     UINT64 index;
