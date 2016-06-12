@@ -3866,7 +3866,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
 
-    ERR("shutdown\n");
+    TRACE("shutdown\n");
     
     FsRtlEnterFileSystem();
 
