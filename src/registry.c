@@ -1,19 +1,113 @@
 #include "btrfs_drv.h"
 
-extern UNICODE_STRING log_device, log_file;
+extern UNICODE_STRING log_device, log_file, registry_path;
 
-void STDCALL read_registry(PUNICODE_STRING regpath) {
+static WCHAR mounted[] = L"Mounted";
+
+#define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
+
+NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
+    UNICODE_STRING path, mountedus;
+    ULONG i, j;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
     HANDLE h;
+    DWORD data;
+    
+    path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
+    path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
+    
+    if (!path.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(path.Buffer, registry_path.Buffer, registry_path.Length);
+    i = registry_path.Length / sizeof(WCHAR);
+    
+    path.Buffer[i] = '\\';
+    i++;
+    
+    for (j = 0; j < 16; j++) {
+        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        
+        i += 2;
+        
+        if (j == 3 || j == 5 || j == 7 || j == 9) {
+            path.Buffer[i] = '-';
+            i++;
+        }
+    }
+
+    InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = ZwCreateKey(&h, KEY_SET_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwCreateKey returned %08x\n", Status);
+        goto end;
+    }
+    
+    mountedus.Buffer = mounted;
+    mountedus.Length = mountedus.MaximumLength = wcslen(mounted) * sizeof(WCHAR);
+    
+    data = 1;
+    
+    Status = ZwSetValueKey(h, &mountedus, 0, REG_DWORD, &data, sizeof(DWORD));
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwSetValueKey returned %08x\n", Status);
+        goto end2;
+    }
+        
+    Status = STATUS_SUCCESS;
+
+end2:
+    ZwClose(h);
+    
+end:
+    ExFreePool(path.Buffer);
+    
+    return Status;
+}
+
+static void reset_subkeys(HANDLE h) {
+    NTSTATUS Status;
+    KEY_BASIC_INFORMATION* kbi;
+    ULONG kbilen = sizeof(KEY_BASIC_INFORMATION) - sizeof(WCHAR) + (255 * sizeof(WCHAR)), retlen, index = 0;
+    
+    kbi = ExAllocatePoolWithTag(PagedPool, kbilen, ALLOC_TAG);
+    if (!kbi) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    do {
+        Status = ZwEnumerateKey(h, index, KeyBasicInformation, kbi, kbilen, &retlen);
+        
+        index++;
+        
+        if (NT_SUCCESS(Status)) {
+            ERR("key: %.*S\n", kbi->NameLength / sizeof(WCHAR), kbi->Name);
+            // FIXME - check name is GUID
+            // FIXME - if any options there, set "Mounted" to 0. Otherwise delete whole key.
+        } else if (Status != STATUS_NO_MORE_ENTRIES)
+            ERR("ZwEnumerateKey returned %08x\n", Status);
+    } while (NT_SUCCESS(Status));
+    
+    ExFreePool(kbi);
+}
+
+static void read_mappings(PUNICODE_STRING regpath) {
+    WCHAR* path;
     UNICODE_STRING us;
+    HANDLE h;
     OBJECT_ATTRIBUTES oa;
     ULONG dispos;
     NTSTATUS Status;
-    WCHAR* path;
     ULONG kvfilen, retlen, i;
     KEY_VALUE_FULL_INFORMATION* kvfi;
     
     const WCHAR mappings[] = L"\\Mappings";
-    static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
     
     path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
     if (!path) {
@@ -70,17 +164,33 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     ZwClose(h);
 
     ExFreePool(path);
+}
+
+void STDCALL read_registry(PUNICODE_STRING regpath) {
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+    HANDLE h;
+    ULONG dispos;
+    ULONG kvfilen;
+    KEY_VALUE_FULL_INFORMATION* kvfi;
     
-#ifdef _DEBUG
+    static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
+    
+    read_mappings(regpath);
+    
     InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
-    Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+    Status = ZwCreateKey(&h, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
     
     if (!NT_SUCCESS(Status)) {
         ERR("ZwCreateKey returned %08x\n", Status);
         return;
     }
     
+    reset_subkeys(h);
+    
+#ifdef _DEBUG
     RtlInitUnicodeString(&us, L"DebugLogLevel");
     
     kvfi = NULL;
@@ -239,7 +349,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
         
         RtlCopyMemory(log_file.Buffer, def_log_file, log_file.Length);
     }
+#endif
     
     ZwClose(h);
-#endif
 }

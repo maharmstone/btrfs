@@ -46,7 +46,7 @@ LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
 BOOL log_started = FALSE;
-UNICODE_STRING log_device, log_file;
+UNICODE_STRING log_device, log_file, registry_path;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -300,6 +300,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (log_file.Buffer)
         ExFreePool(log_file.Buffer);
+    
+    if (registry_path.Buffer)
+        ExFreePool(registry_path.Buffer);
 }
 
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r) {
@@ -3300,6 +3303,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else {
         TRACE("btrfs magic found\n");
     }
+    
+    // FIXME - check not marked ignore
 
     if (Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED) {
         WARN("cannot mount because of unsupported incompat flags (%llx)\n", Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED);
@@ -3543,6 +3548,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         ERR("create_worker_threads returned %08x\n", Status);
         goto exit;
     }
+    
+    Status = registry_mark_volume_mounted(&Vcb->superblock.uuid);
+    if (!NT_SUCCESS(Status))
+        WARN("registry_mark_volume_mounted returned %08x\n", Status);
     
     Status = STATUS_SUCCESS;
 
@@ -4024,6 +4033,16 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
 #endif
 
     TRACE("DriverEntry\n");
+    
+    registry_path.Length = registry_path.MaximumLength = RegistryPath->Length;
+    registry_path.Buffer = ExAllocatePoolWithTag(PagedPool, registry_path.Length, ALLOC_TAG);
+    
+    if (!registry_path.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(registry_path.Buffer, RegistryPath->Buffer, registry_path.Length);
    
     check_cpu();
    

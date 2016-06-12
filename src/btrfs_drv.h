@@ -754,6 +754,7 @@ void do_write_job(device_extension* Vcb, PIRP Irp);
 
 // in registry.c
 void STDCALL read_registry(PUNICODE_STRING regpath);
+NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
