@@ -1800,10 +1800,11 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
 }
 
 void STDCALL uninit(device_extension* Vcb, BOOL flush) {
-    chunk* c;
     space* s;
     UINT64 i;
     LIST_ENTRY rollback;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
     
     if (flush) {
         InitializeListHead(&rollback);
@@ -1824,6 +1825,18 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     free_fcb(Vcb->volume_fcb);
     free_fileref(Vcb->root_fileref);
+    
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (c->cache) {
+            free_fcb(c->cache);
+            c->cache = NULL;
+        }
+        
+        le = le->Flink;
+    }
 
     while (!IsListEmpty(&Vcb->roots)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->roots);
@@ -1835,7 +1848,9 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     }
     
     while (!IsListEmpty(&Vcb->chunks)) {
-        LIST_ENTRY* le = RemoveHeadList(&Vcb->chunks);
+        chunk* c;
+        
+        le = RemoveHeadList(&Vcb->chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
         while (!IsListEmpty(&c->space)) {
