@@ -70,10 +70,116 @@ end:
     return Status;
 }
 
-static void reset_subkeys(HANDLE h) {
+static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+    ULONG index, kvbilen = sizeof(KEY_VALUE_BASIC_INFORMATION) - sizeof(WCHAR) + (255 * sizeof(WCHAR)), retlen;
+    KEY_VALUE_BASIC_INFORMATION* kvbi;
+    BOOL has_options = FALSE;
+    UNICODE_STRING mountedus;
+    
+    // If a volume key has any options in it, we set Mounted to 0 and return. Otherwise,
+    // we delete the whole thing.
+    
+    kvbi = ExAllocatePoolWithTag(PagedPool, kvbilen, ALLOC_TAG);
+    if (!kvbi) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    InitializeObjectAttributes(&oa, path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = ZwOpenKey(&h, KEY_QUERY_VALUE | KEY_SET_VALUE | DELETE, &oa);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwOpenKey returned %08x\n", Status);
+        goto end;
+    }
+    
+    index = 0;
+    
+    mountedus.Buffer = mounted;
+    mountedus.Length = mountedus.MaximumLength = wcslen(mounted) * sizeof(WCHAR);
+    
+    do {
+        Status = ZwEnumerateValueKey(h, index, KeyValueBasicInformation, kvbi, kvbilen, &retlen);
+        
+        index++;
+        
+        if (NT_SUCCESS(Status)) {
+            UNICODE_STRING us;
+            
+            us.Length = us.MaximumLength = kvbi->NameLength;
+            us.Buffer = kvbi->Name;
+            
+            if (!FsRtlAreNamesEqual(&mountedus, &us, TRUE, NULL)) {
+                has_options = TRUE;
+                break;
+            }
+        } else if (Status != STATUS_NO_MORE_ENTRIES) {
+            ERR("ZwEnumerateValueKey returned %08x\n", Status);
+            goto end2;
+        }
+    } while (NT_SUCCESS(Status));
+  
+    if (has_options) {
+        DWORD data = 0;
+        
+        Status = ZwSetValueKey(h, &mountedus, 0, REG_DWORD, &data, sizeof(DWORD));
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwSetValueKey returned %08x\n", Status);
+            goto end2;
+        }
+    } else {
+        Status = ZwDeleteKey(h);
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwDeleteKey returned %08x\n", Status);
+            goto end2;
+        }
+    }
+        
+    Status = STATUS_SUCCESS;
+
+end2:
+    ZwClose(h);
+    
+end:
+    ExFreePool(kvbi);
+    
+    return Status;
+}
+
+#define is_hex(c) ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+
+static BOOL is_uuid(ULONG namelen, WCHAR* name) {
+    ULONG i;
+    
+    if (namelen != 36 * sizeof(WCHAR))
+        return FALSE;
+    
+    for (i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (name[i] != '-')
+                return FALSE;
+        } else if (!is_hex(name[i]))
+            return FALSE;
+    }
+    
+    return TRUE;
+}
+
+typedef struct {
+    UNICODE_STRING name;
+    LIST_ENTRY list_entry;
+} key_name;
+
+static void reset_subkeys(HANDLE h, PUNICODE_STRING reg_path) {
     NTSTATUS Status;
     KEY_BASIC_INFORMATION* kbi;
     ULONG kbilen = sizeof(KEY_BASIC_INFORMATION) - sizeof(WCHAR) + (255 * sizeof(WCHAR)), retlen, index = 0;
+    LIST_ENTRY key_names, *le;
+    
+    InitializeListHead(&key_names);
     
     kbi = ExAllocatePoolWithTag(PagedPool, kbilen, ALLOC_TAG);
     if (!kbi) {
@@ -87,13 +193,73 @@ static void reset_subkeys(HANDLE h) {
         index++;
         
         if (NT_SUCCESS(Status)) {
+            key_name* kn;
+            
             ERR("key: %.*S\n", kbi->NameLength / sizeof(WCHAR), kbi->Name);
-            // FIXME - check name is GUID
-            // FIXME - if any options there, set "Mounted" to 0. Otherwise delete whole key.
+            
+            if (is_uuid(kbi->NameLength, kbi->Name)) {
+                kn = ExAllocatePoolWithTag(PagedPool, sizeof(key_name), ALLOC_TAG);
+                if (!kn) {
+                    ERR("out of memory\n");
+                    goto end;
+                }
+                
+                kn->name.Length = kn->name.MaximumLength = kbi->NameLength;
+                kn->name.Buffer = ExAllocatePoolWithTag(PagedPool, kn->name.Length, ALLOC_TAG);
+                
+                if (!kn->name.Buffer) {
+                    ERR("out of memory\n");
+                    ExFreePool(kn);
+                    goto end;
+                }
+                
+                RtlCopyMemory(kn->name.Buffer, kbi->Name, kbi->NameLength);
+                
+                InsertTailList(&key_names, &kn->list_entry);
+            }
         } else if (Status != STATUS_NO_MORE_ENTRIES)
             ERR("ZwEnumerateKey returned %08x\n", Status);
     } while (NT_SUCCESS(Status));
     
+    le = key_names.Flink;
+    while (le != &key_names) {
+        key_name* kn = CONTAINING_RECORD(le, key_name, list_entry);
+        UNICODE_STRING path;
+        
+        path.Length = path.MaximumLength = reg_path->Length + sizeof(WCHAR) + kn->name.Length;
+        path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
+        
+        if (!path.Buffer) {
+            ERR("out of memory\n");
+            goto end;
+        }
+        
+        RtlCopyMemory(path.Buffer, reg_path->Buffer, reg_path->Length);
+        path.Buffer[reg_path->Length / sizeof(WCHAR)] = '\\';
+        RtlCopyMemory(&path.Buffer[(reg_path->Length / sizeof(WCHAR)) + 1], kn->name.Buffer, kn->name.Length);
+        
+        Status = registry_mark_volume_unmounted_path(&path);
+        if (!NT_SUCCESS(Status))
+            WARN("registry_mark_volume_unmounted_path returned %08x\n", Status);
+        
+        ExFreePool(path.Buffer);
+        
+        le = le->Flink;
+    }
+    
+end:
+    while (!IsListEmpty(&key_names)) {
+        key_name* kn;
+        
+        le = RemoveHeadList(&key_names);
+        kn = CONTAINING_RECORD(le, key_name, list_entry);
+        
+        if (kn->name.Buffer)
+            ExFreePool(kn->name.Buffer);
+        
+        ExFreePool(kn);
+    }
+
     ExFreePool(kbi);
 }
 
@@ -188,7 +354,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
         return;
     }
     
-    reset_subkeys(h);
+    reset_subkeys(h, regpath);
     
 #ifdef _DEBUG
     RtlInitUnicodeString(&us, L"DebugLogLevel");
