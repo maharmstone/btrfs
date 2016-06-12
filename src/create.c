@@ -935,15 +935,24 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
 static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     LIST_ENTRY* le;
     file_ref *c, *deleted = NULL;
+    NTSTATUS Status;
+    UNICODE_STRING ucus;
 #ifdef DEBUG_FCB_REFCOUNTS
     ULONG rc;
 #endif
+
+    Status = RtlUpcaseUnicodeString(&ucus, name, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        return NULL;
+    }
     
     le = dir->children.Flink;
     while (le != &dir->children) {
         c = CONTAINING_RECORD(le, file_ref, list_entry);
         
-        if (c->refcount > 0 && FsRtlAreNamesEqual(&c->filepart, name, TRUE, NULL)) {
+        if (c->refcount > 0 && c->filepart_uc.Length == ucus.Length &&
+            RtlCompareMemory(c->filepart_uc.Buffer, ucus.Buffer, ucus.Length) == ucus.Length) {
             if (c->deleted) {
                 deleted = c;
             } else {
@@ -953,6 +962,8 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
 #else
                 InterlockedIncrement(&c->refcount);
 #endif
+                ExFreePool(ucus.Buffer);
+                
                 return c;
             }
         }
@@ -962,6 +973,8 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     
     if (deleted)
         increase_fileref_refcount(deleted);
+    
+    ExFreePool(ucus.Buffer);
     
     return deleted;
 }
