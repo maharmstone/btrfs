@@ -5008,6 +5008,37 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         
+#ifdef DEBUG_PARANOID
+        KEY searchkey;
+        traverse_ptr tp;
+        
+        searchkey.obj_id = t->header.address;
+        searchkey.obj_type = TYPE_METADATA_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            int3;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+            searchkey.obj_id = t->header.address;
+            searchkey.obj_type = TYPE_EXTENT_ITEM;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                int3;
+            }
+            
+            if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                ERR("error - could not find entry in extent tree for tree at %llx\n", t->header.address);
+            }
+        }
+#endif
+        
         t->write = FALSE;
         
         le = le->Flink;
