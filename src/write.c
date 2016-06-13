@@ -4036,6 +4036,10 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     INODE_ITEM* ii;
     UINT64 ii_offset;
+#ifdef DEBUG_PARANOID
+    UINT64 old_size = 0;
+    BOOL extents_changed;
+#endif
     
 //     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
@@ -4060,6 +4064,10 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         }
         goto end;
     }
+    
+#ifdef DEBUG_PARANOID
+    extents_changed = fcb->extents_changed;
+#endif
     
     if (fcb->extents_changed) {
         BOOL b;
@@ -4206,8 +4214,15 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
                 goto end;
             }
-        } else
+        } else {
+#ifdef DEBUG_PARANOID
+            INODE_ITEM* ii2 = (INODE_ITEM*)tp.item->data;
+            
+            old_size = ii2->st_size;
+#endif
+            
             ii_offset = tp.item->key.offset;
+        }
         
         if (!cache)
             delete_tree_item(fcb->Vcb, &tp, rollback);
@@ -4230,6 +4245,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         }
     } else
         ii_offset = 0;
+    
+#ifdef DEBUG_PARANOID
+    if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.st_size) {
+        ERR("error - size has changed but extents not marked as changed\n");
+        int3;
+    }
+#endif
     
     fcb->created = FALSE;
         
