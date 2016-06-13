@@ -5035,6 +5035,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             
             if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                 ERR("error - could not find entry in extent tree for tree at %llx\n", t->header.address);
+                int3;
             }
         }
 #endif
