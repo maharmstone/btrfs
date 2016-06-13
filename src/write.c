@@ -6699,7 +6699,20 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
     if (fcb->ads)
         return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE, rollback);
     else {
-        extent* ext = IsListEmpty(&fcb->extents) ? NULL : CONTAINING_RECORD(fcb->extents.Blink, extent, list_entry);
+        extent* ext = NULL;
+        LIST_ENTRY* le;
+        
+        le = fcb->extents.Blink;
+        while (le != &fcb->extents) {
+            extent* ext2 = CONTAINING_RECORD(le, extent, list_entry);
+            
+            if (!ext2->ignore) {
+                ext = ext2;
+                break;
+            }
+            
+            le = le->Blink;
+        }
         
         oldalloc = 0;
         if (ext) {
@@ -6789,6 +6802,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                         ExFreePool(ed);
                         return STATUS_INTERNAL_ERROR;
                     }
+                    
+                    fcb->extents_changed = TRUE;
+                    mark_fcb_dirty(fcb);
                 }
                 
                 TRACE("extending inline file (oldalloc = %llx, end = %llx)\n", oldalloc, end);
@@ -6820,6 +6836,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                             return Status;
                         }
                     }
+                    
+                    fcb->extents_changed = TRUE;
+                    mark_fcb_dirty(fcb);
                 }
                 
                 fcb->inode_item.st_size = end;
@@ -6849,6 +6868,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                         return Status;
                     }
                 }
+                
+                fcb->extents_changed = TRUE;
+                mark_fcb_dirty(fcb);
                 
                 fcb->inode_item.st_size = end;
                 TRACE("setting st_size to %llx\n", end);
@@ -6883,6 +6905,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
                 }
+                
+                fcb->extents_changed = TRUE;
+                mark_fcb_dirty(fcb);
                 
                 fcb->inode_item.st_size = end;
                 TRACE("setting st_size to %llx\n", end);
