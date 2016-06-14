@@ -752,6 +752,9 @@ void STDCALL worker_thread(void* context);
 void do_read_job(PIRP Irp);
 void do_write_job(device_extension* Vcb, PIRP Irp);
 
+// in registry.c
+void STDCALL read_registry(PUNICODE_STRING regpath);
+
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {

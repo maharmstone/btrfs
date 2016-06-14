@@ -445,6 +445,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\registry.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\reparse.c"
 				>
 			</File>
