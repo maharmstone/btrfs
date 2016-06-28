@@ -21,6 +21,8 @@
 // this be a constant number of sectors, a constant 256 KB, or what?
 #define CACHE_INCREMENTS    64
 
+// #define DEBUG_SPACE_LISTS
+
 static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
@@ -814,9 +816,13 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
     return STATUS_SUCCESS;
 }
 
-void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void _space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY* le;
     space *s, *s2;
+    
+#ifdef DEBUG_SPACE_LISTS
+    _debug_message(func, "called space_list_add (%p, %llx, %llx, %p)\n", list, address, length, rollback);
+#endif
     
     if (IsListEmpty(list)) {
         s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
@@ -1124,7 +1130,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void _space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY* list;
     
     TRACE("(%p, %p, %u, %llx, %llx, %p)\n", Vcb, c, deleting, address, length, rollback);
@@ -1134,12 +1140,16 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
-    space_list_add2(list, address, length, rollback);
+    _space_list_add2(list, address, length, rollback, func);
 }
 
-void space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void _space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY *le, *le2;
     space *s, *s2;
+    
+#ifdef DEBUG_SPACE_LISTS
+    _debug_message(func, "called space_list_subtract (%p, %llx, %llx, %p)\n", list, address, length, rollback);
+#endif
     
     if (IsListEmpty(list))
         return;
@@ -1188,7 +1198,7 @@ void space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_
     }
 }
 
-void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void _space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY* list;
     
     list = deleting ? &c->deleting : &c->space;
@@ -1196,5 +1206,5 @@ void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
-    space_list_subtract2(list, address, length, rollback);
+    _space_list_subtract2(list, address, length, rollback, func);
 }

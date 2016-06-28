@@ -756,10 +756,15 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback);
 NTSTATUS add_space_entry(LIST_ENTRY* list, UINT64 offset, UINT64 size);
-void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
-void space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
-void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
-void space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void _space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func);
+void _space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func);
+void _space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func);
+void _space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func);
+
+#define space_list_add(Vcb, c, deleting, address, length, rollback) _space_list_add(Vcb, c, deleting, address, length, rollback, funcname)
+#define space_list_add2(list, address, length, rollback) _space_list_add2(list, address, length, rollback, funcname)
+#define space_list_subtract(Vcb, c, deleting, address, length, rollback) _space_list_subtract(Vcb, c, deleting, address, length, rollback, funcname)
+#define space_list_subtract2(list, address, length, rollback) _space_list_subtract2(list, address, length, rollback, funcname)
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
