@@ -2335,6 +2335,8 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
             return Status;
         }
         
+        // FIXME - check checksum before accepting?
+        
         TRACE("got superblock %u!\n", i);
 
         if (i == 0 || sb->generation > Vcb->superblock.generation)
