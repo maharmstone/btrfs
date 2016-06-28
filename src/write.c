@@ -8046,6 +8046,16 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     if (changed_length) {
         if (newlength > fcb->Header.AllocationSize.QuadPart) {
+            if (!tree_lock) {
+                // We need to acquire the tree lock if we don't have it already - 
+                // we can't give an inline file proper extents at the same as we're
+                // doing a flush.
+                if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait))
+                    goto end;
+                else
+                    tree_lock = TRUE;
+            }
+            
             Status = extend_file(fcb, fileref, newlength, FALSE, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("extend_file returned %08x\n", Status);
