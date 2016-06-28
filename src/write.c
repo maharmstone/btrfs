@@ -19,6 +19,8 @@
 
 #define MAX_CSUM_SIZE (4096 - sizeof(tree_header) - sizeof(leaf_node))
 
+// #define DEBUG_WRITE_LOOPS
+
 // BOOL did_split;
 BOOL chunk_test = FALSE;
 
@@ -1106,14 +1108,26 @@ static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         
         if (t->write) {
-            if (t->header.num_items == 0 && t->parent)
+            if (t->header.num_items == 0 && t->parent) {
+#ifdef DEBUG_WRITE_LOOPS
+                ERR("empty tree found, looping again\n");
+#endif
                 return FALSE;
+            }
             
-            if (t->size > maxsize)
+            if (t->size > maxsize) {
+#ifdef DEBUG_WRITE_LOOPS
+                ERR("overlarge tree found (%u > %u), looping again\n", t->size, maxsize);
+#endif
                 return FALSE;
+            }
             
-            if (!t->has_new_address)
+            if (!t->has_new_address) {
+#ifdef DEBUG_WRITE_LOOPS
+                ERR("tree found without new address, looping again\n");
+#endif
                 return FALSE;
+            }
         }
         
         le = le->Flink;
@@ -4858,6 +4872,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     BOOL cache_changed = FALSE;
     
+#ifdef DEBUG_WRITE_LOOPS
+    UINT loops = 0;
+#endif
+    
     TRACE("(%p)\n", Vcb);
     
     while (!IsListEmpty(&Vcb->dirty_filerefs)) {
@@ -4974,7 +4992,18 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             ERR("allocate_cache returned %08x\n", Status);
             goto end;
         }
+
+#ifdef DEBUG_WRITE_LOOPS
+        loops++;
+        
+        if (cache_changed)
+            ERR("cache has changed, looping again\n");
+#endif        
     } while (cache_changed || !trees_consistent(Vcb, rollback));
+    
+#ifdef DEBUG_WRITE_LOOPS
+    ERR("%u loops\n", loops);
+#endif
     
     TRACE("trees consistent\n");
     
