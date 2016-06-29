@@ -7987,22 +7987,25 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (paging_io) {
-        if (!ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, wait))
+        if (!ExAcquireResourceSharedLite(fcb->Header.PagingIoResource, wait)) {
+            Status = STATUS_PENDING;
             goto end;
-        else
+        } else
             paging_lock = TRUE;
     }
     
     if (no_cache) {
-        if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait))
+        if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
+            Status = STATUS_PENDING;
             goto end;
-        else
+        } else
             tree_lock = TRUE;
         
         if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
-            if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait))
+            if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
+                Status = STATUS_PENDING;
                 goto end;
-            else
+            } else
                 fcb_lock = TRUE;
         }
     }
@@ -8050,9 +8053,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 // We need to acquire the tree lock if we don't have it already - 
                 // we can't give an inline file proper extents at the same as we're
                 // doing a flush.
-                if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait))
+                if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
+                    Status = STATUS_PENDING;
                     goto end;
-                else
+                } else
                     tree_lock = TRUE;
             }
             
