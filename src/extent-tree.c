@@ -454,7 +454,7 @@ static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        if (address >= c->offset && address + size < c->offset + c->chunk_item->size)
+        if (address >= c->offset && address + size <= c->offset + c->chunk_item->size)
             break;
         
         le = le->Flink;
