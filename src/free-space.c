@@ -222,6 +222,30 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offse
     }
 }
 
+static void order_space_entry(space* s, LIST_ENTRY* list_size) {
+    LIST_ENTRY* le;
+    
+    if (IsListEmpty(list_size)) {
+        InsertHeadList(list_size, &s->list_entry_size);
+        return;
+    }
+    
+    le = list_size->Flink;
+    
+    while (le != list_size) {
+        space* s2 = CONTAINING_RECORD(le, space, list_entry_size);
+        
+        if (s2->size <= s->size) {
+            InsertHeadList(le->Blink, &s->list_entry_size);
+            return;
+        }
+        
+        le = le->Flink;
+    }
+    
+    InsertTailList(list_size, &s->list_entry_size);
+}
+
 static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     KEY searchkey;
     traverse_ptr tp;
@@ -433,16 +457,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     ExFreePool(data);
     
-//     le = c->space_size.Flink;
-//     while (le != &c->space_size) {
-//         space* s = CONTAINING_RECORD(le, space, list_entry_size);
-//         
-//         ERR("(%llx, %llx)\n", s->address, s->size);
-//         
-//         le = le->Flink;
-//     }
-//     ERR("---\n");
-    
     return STATUS_SUCCESS;
 }
 
@@ -453,6 +467,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
     BOOL b;
     space* s;
     NTSTATUS Status;
+//     LIST_ENTRY* le;
     
     if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
         Status = load_stored_free_space_cache(Vcb, c);
@@ -496,6 +511,8 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
                     s->size = tp.item->key.obj_id - lastaddr;
                     InsertTailList(&c->space, &s->list_entry);
                     
+                    order_space_entry(s, &c->space_size);
+                    
                     TRACE("(%llx,%llx)\n", s->address, s->size);
                 }
                 
@@ -522,9 +539,21 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
             s->size = c->offset + c->chunk_item->size - lastaddr;
             InsertTailList(&c->space, &s->list_entry);
             
+            order_space_entry(s, &c->space_size);
+            
             TRACE("(%llx,%llx)\n", s->address, s->size);
         }
     }
+    
+//     le = c->space_size.Flink;
+//     while (le != &c->space_size) {
+//         space* s = CONTAINING_RECORD(le, space, list_entry_size);
+//         
+//         ERR("(%llx, %llx)\n", s->address, s->size);
+//         
+//         le = le->Flink;
+//     }
+//     ERR("---\n");
 
     return STATUS_SUCCESS;
 }
