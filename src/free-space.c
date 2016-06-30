@@ -937,7 +937,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                         s2->size += s3->size;
                         
                         RemoveEntryList(&s3->list_entry);
-                        RemoveEntryList(&s3->list_entry_size);
+                        
+                        if (list_size)
+                            RemoveEntryList(&s3->list_entry_size);
+                        
                         ExFreePool(s3);
                     } else
                         break;
@@ -955,7 +958,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                         s2->size = max(s2->size, s3->address + s3->size - s2->address);
                         
                         RemoveEntryList(&s3->list_entry);
-                        RemoveEntryList(&s3->list_entry_size);
+                        
+                        if (list_size)
+                            RemoveEntryList(&s3->list_entry_size);
+                        
                         ExFreePool(s3);
                     } else
                         break;
@@ -984,7 +990,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                     s2->size += s3->size;
                     
                     RemoveEntryList(&s3->list_entry);
-                    RemoveEntryList(&s3->list_entry_size);
+                    
+                    if (list_size)
+                        RemoveEntryList(&s3->list_entry_size);
+                    
                     ExFreePool(s3);
                 } else
                     break;
@@ -1010,7 +1019,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                     s2->size = max(s2->size, s3->address + s3->size - s2->address);
                     
                     RemoveEntryList(&s3->list_entry);
-                    RemoveEntryList(&s3->list_entry_size);
+                    
+                    if (list_size)
+                        RemoveEntryList(&s3->list_entry_size);
+                    
                     ExFreePool(s3);
                 } else
                     break;
