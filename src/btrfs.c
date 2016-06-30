@@ -2533,7 +2533,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
                 
                 if (tp.item->key.offset > lastaddr) {
-                    Status = add_space_entry(&dev->space, lastaddr, tp.item->key.offset - lastaddr);
+                    Status = add_space_entry(&dev->space, NULL, lastaddr, tp.item->key.offset - lastaddr);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_space_entry returned %08x\n", Status);
                         return Status;
@@ -2556,7 +2556,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev) {
     } while (b);
     
     if (lastaddr < dev->devitem.num_bytes) {
-        Status = add_space_entry(&dev->space, lastaddr, dev->devitem.num_bytes - lastaddr);
+        Status = add_space_entry(&dev->space, NULL, lastaddr, dev->devitem.num_bytes - lastaddr);
         if (!NT_SUCCESS(Status)) {
             ERR("add_space_entry returned %08x\n", Status);
             return Status;
@@ -2824,6 +2824,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 ExInitializeResourceLite(&c->nonpaged->lock);
                 
                 InitializeListHead(&c->space);
+                InitializeListHead(&c->space_size);
                 InitializeListHead(&c->deleting);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);

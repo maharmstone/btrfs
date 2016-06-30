@@ -649,6 +649,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->used = c->oldused = 0;
     c->cache = NULL;
     InitializeListHead(&c->space);
+    InitializeListHead(&c->space_size);
     InitializeListHead(&c->deleting);
     
     ExInitializeResourceLite(&c->nonpaged->lock);
@@ -662,13 +663,14 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     s->address = c->offset;
     s->size = c->chunk_item->size;
     InsertTailList(&c->space, &s->list_entry);
+    InsertTailList(&c->space_size, &s->list_entry_size);
     
     protect_superblocks(Vcb, c);
     
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
         
-        space_list_subtract2(&stripes[i].device->space, cis[i].offset, stripe_size, rollback);
+        space_list_subtract2(&stripes[i].device->space, NULL, cis[i].offset, stripe_size, rollback);
     }
     
     success = TRUE;
@@ -3535,7 +3537,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
                     
                     c->devices[i]->devitem.bytes_used -= de->length;
                     
-                    space_list_add2(&c->devices[i]->space, cis[i].offset, de->length, rollback);
+                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, rollback);
                 }
             } else
                 WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
@@ -3543,7 +3545,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             UINT64 len = c->chunk_item->size / factor;
             
             c->devices[i]->devitem.bytes_used -= len;
-            space_list_add2(&c->devices[i]->space, cis[i].offset, len, rollback);
+            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, rollback);
         }
     }
     

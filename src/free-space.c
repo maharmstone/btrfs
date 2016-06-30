@@ -126,7 +126,7 @@ end:
     return Status;
 }
 
-NTSTATUS add_space_entry(LIST_ENTRY* list, UINT64 offset, UINT64 size) {
+NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 offset, UINT64 size) {
     space* s;
     
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
@@ -155,6 +155,34 @@ NTSTATUS add_space_entry(LIST_ENTRY* list, UINT64 offset, UINT64 size) {
                 
                 if (s2->address > offset) {
                     InsertTailList(le, &s->list_entry);
+                    goto size;
+                }
+                
+                le = le->Flink;
+            }
+        }
+    }
+    
+size:
+    if (!list_size)
+        return STATUS_SUCCESS;
+    
+    if (IsListEmpty(list_size))
+        InsertTailList(list_size, &s->list_entry_size);
+    else {
+        space* s2 = CONTAINING_RECORD(list_size->Blink, space, list_entry_size);
+        
+        if (s2->size >= size)
+            InsertTailList(list_size, &s->list_entry_size);
+        else {
+            LIST_ENTRY* le;
+            
+            le = list_size->Flink;
+            while (le != list_size) {
+                s2 = CONTAINING_RECORD(le, space, list_entry_size);
+                
+                if (s2->size <= size) {
+                    InsertHeadList(le->Blink, &s->list_entry_size);
                     return STATUS_SUCCESS;
                 }
                 
@@ -187,7 +215,7 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offse
         addr = offset + (index * Vcb->superblock.sector_size);
         length = Vcb->superblock.sector_size * runlength;
         
-        add_space_entry(&c->space, addr, length);
+        add_space_entry(&c->space, &c->space_size, addr, length);
         index += runlength;
        
         runlength = RtlFindNextForwardRunClear(&bmph, index, &index);
@@ -349,7 +377,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         fse = (FREE_SPACE_ENTRY*)&data[off];
         
         if (fse->type == FREE_SPACE_EXTENT) {
-            Status = add_space_entry(&c->space, fse->offset, fse->size);
+            Status = add_space_entry(&c->space, &c->space_size, fse->offset, fse->size);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08x\n", Status);
                 ExFreePool(data);
@@ -404,6 +432,16 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     }
     
     ExFreePool(data);
+    
+//     le = c->space_size.Flink;
+//     while (le != &c->space_size) {
+//         space* s = CONTAINING_RECORD(le, space, list_entry_size);
+//         
+//         ERR("(%llx, %llx)\n", s->address, s->size);
+//         
+//         le = le->Flink;
+//     }
+//     ERR("---\n");
     
     return STATUS_SUCCESS;
 }
@@ -816,7 +854,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
     return STATUS_SUCCESS;
 }
 
-void _space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
+void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY* le;
     space *s, *s2;
     
@@ -970,7 +1008,7 @@ void _space_list_add2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTR
     // FIXME - insert rollback
 }
 
-static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* deleting) {
+static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
     LIST_ENTRY* le;
     
     if (!IsListEmpty(deleting)) {
@@ -978,7 +1016,7 @@ static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* deleting) {
         while (le != deleting) {
             space* s = CONTAINING_RECORD(le, space, list_entry);
             
-            space_list_add2(spacelist, s->address, s->size, NULL);
+            space_list_add2(spacelist, spacelist_size, s->address, s->size, NULL);
             
             le = le->Flink;
         }
@@ -996,7 +1034,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     UINT32* checksums;
     LIST_ENTRY* le;
     
-    space_list_merge(&c->space, &c->deleting);
+    space_list_merge(&c->space, &c->space_size, &c->deleting);
     
     data = ExAllocatePoolWithTag(NonPagedPool, c->cache->inode_item.st_size, ALLOC_TAG);
     if (!data) {
@@ -1140,10 +1178,10 @@ void _space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addr
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
-    _space_list_add2(list, address, length, rollback, func);
+    _space_list_add2(list, deleting ? NULL : &c->space_size, address, length, rollback, func);
 }
 
-void _space_list_subtract2(LIST_ENTRY* list, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
+void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY *le, *le2;
     space *s, *s2;
     
@@ -1206,5 +1244,5 @@ void _space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
-    _space_list_subtract2(list, address, length, rollback, func);
+    _space_list_subtract2(list, deleting ? NULL : &c->space_size, address, length, rollback, func);
 }
