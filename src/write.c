@@ -3736,7 +3736,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset) {
+static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset, BOOL zero) {
     extent_backref* extref;
     
     if (!IsListEmpty(&fcb->extent_backrefs)) {
@@ -3746,7 +3746,8 @@ static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UIN
             extref = CONTAINING_RECORD(le, extent_backref, list_entry);
             
             if (extref->address == address && extref->size == size && extref->offset == offset) {
-                extref->new_refcount++;
+                if (!zero)
+                    extref->new_refcount++;
                 return STATUS_SUCCESS;
             }
             
@@ -3764,7 +3765,7 @@ static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UIN
     extref->size = size;
     extref->offset = offset;
     extref->refcount = 0;
-    extref->new_refcount = 1;
+    extref->new_refcount = zero ? 0 : 1;
     InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
     
     return STATUS_SUCCESS;
@@ -4006,12 +4007,12 @@ void flush_fcb_extents_first(fcb* fcb, LIST_ENTRY* rollback) {
     while (le != &fcb->extents) {
         extent* ext =  CONTAINING_RECORD(le, extent, list_entry);
 
-        if (!ext->ignore) {
+        if (!ext->ignore || ext->new_extent) {
             if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
                 
                 if (ed2->address != 0) {
-                    Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset);
+                    Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset, ext->ignore && ext->new_extent);
                     if (!NT_SUCCESS(Status)) {
                         ERR("update_extent_backref returned %08x\n", Status);
                         return;
@@ -4145,6 +4146,8 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                 
                 if (!prealloc && ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
                     prealloc = TRUE;
+                
+                ext->new_extent = FALSE;
             } else {
                 RemoveEntryList(&ext->list_entry);
                 ExFreePool(ext->data);
@@ -4166,6 +4169,15 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                                                        backref->refcount - backref->new_refcount, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("decrease_extent_refcount_data returned %08x\n", Status);
+                    goto end;
+                }
+            } else if (backref->new_refcount == 0 && backref->refcount == 0) {
+                // We have allocated an extent and then freed it before the flush
+                
+                Status = remove_extent(fcb->Vcb, backref->address, backref->size, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("remove_extent returned %08x\n", Status);
                     goto end;
                 }
             }
@@ -5563,7 +5575,7 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
     return STATUS_SUCCESS;
 }
 
-static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, LIST_ENTRY* rollback) {
+static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, BOOL new_extent, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
     
@@ -5577,6 +5589,7 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     ext->data = ed;
     ext->datalen = edsize;
     ext->unique = unique;
+    ext->new_extent = new_extent;
     ext->ignore = FALSE;
     
     le = fcb->extents.Flink;
@@ -5648,7 +5661,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, rollback)) {
+    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, TRUE, rollback)) {
         ERR("add_extent_to_fcb failed\n");
         ExFreePool(ed);
         return FALSE;
@@ -5712,6 +5725,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
+    ext->new_extent = FALSE;
     remove_fcb_extent(ext, rollback);
     
     if (changed_sector_list) {
@@ -5945,7 +5959,7 @@ NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY*
     ed2->offset = 0;
     ed2->num_bytes = length;
 
-    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE, rollback)) {
+    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE, FALSE, rollback)) {
         ERR("add_extent_to_fcb failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -6402,7 +6416,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                     
                     remove_fcb_extent(ext, rollback);
                     
-                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, rollback)) {
+                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, FALSE, rollback)) {
                         ERR("add_extent_to_fcb failed\n");
                         ExFreePool(ed);
                         return STATUS_INTERNAL_ERROR;
@@ -6505,7 +6519,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 RtlZeroMemory(ed->data, end);
                 
-                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, rollback)) {
+                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, FALSE, rollback)) {
                     ERR("add_extent_to_fcb failed\n");
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
@@ -7822,7 +7836,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, rollback)) {
+            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, FALSE, rollback)) {
                 ERR("add_extent_to_fcb failed\n");
                 ExFreePool(data);
                 Status = STATUS_INTERNAL_ERROR;

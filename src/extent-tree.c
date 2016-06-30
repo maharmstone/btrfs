@@ -426,7 +426,7 @@ void decrease_chunk_usage(chunk* c, UINT64 delta) {
     TRACE("decreasing size of chunk %llx by %llx\n", c->offset, delta);
 }
 
-static NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     chunk* c;
     LIST_ENTRY* le;
     

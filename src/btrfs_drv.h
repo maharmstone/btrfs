@@ -106,6 +106,7 @@ typedef struct {
     ULONG datalen;
     BOOL unique;
     BOOL ignore;
+    BOOL new_extent;
     
     LIST_ENTRY list_entry;
 } extent;
@@ -772,6 +773,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
+NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 
 // in worker-thread.c
 void STDCALL worker_thread(void* context);
