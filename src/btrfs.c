@@ -1097,6 +1097,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     i = 0;
 //     while (tests[i].length > 0) {
 //         InitializeListHead(&c->space);
+//         InitializeListHead(&c->space_size);
 //         ERR("test %u\n", i);
 //         
 //         j = 0;
@@ -1105,6 +1106,9 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //             s->address = entries[j].address;
 //             s->size = entries[j].length;
 //             InsertTailList(&c->space, &s->list_entry);
+//             
+//             order_space_entry(s, &c->space_size);
+//             
 //             j++;
 //         }
 //         
@@ -1116,6 +1120,17 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //         le = c->space.Flink;
 //         while (le != &c->space) {
 //             space* s = CONTAINING_RECORD(le, space, list_entry);
+//             
+//             ERR("(%llx,%llx)\n", s->address, s->size);
+//             
+//             le = le->Flink;
+//         }
+//         
+//         ERR("--\n");
+//         
+//         le = c->space_size.Flink;
+//         while (le != &c->space_size) {
+//             space* s = CONTAINING_RECORD(le, space, list_entry_size);
 //             
 //             ERR("(%llx,%llx)\n", s->address, s->size);
 //             

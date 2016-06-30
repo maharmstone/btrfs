@@ -906,6 +906,9 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
         s->size = length;
         InsertTailList(list, &s->list_entry);
         
+        if (list_size)
+            InsertTailList(list_size, &s->list_entry_size);
+        
         // FIXME - insert rollback entry
         
         return;
@@ -934,6 +937,7 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                         s2->size += s3->size;
                         
                         RemoveEntryList(&s3->list_entry);
+                        RemoveEntryList(&s3->list_entry_size);
                         ExFreePool(s3);
                     } else
                         break;
@@ -951,10 +955,16 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                         s2->size = max(s2->size, s3->address + s3->size - s2->address);
                         
                         RemoveEntryList(&s3->list_entry);
+                        RemoveEntryList(&s3->list_entry_size);
                         ExFreePool(s3);
                     } else
                         break;
                 }
+            }
+            
+            if (list_size) {
+                RemoveEntryList(&s2->list_entry_size);
+                order_space_entry(s2, list_size);
             }
             
             return;
@@ -974,10 +984,17 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                     s2->size += s3->size;
                     
                     RemoveEntryList(&s3->list_entry);
+                    RemoveEntryList(&s3->list_entry_size);
                     ExFreePool(s3);
                 } else
                     break;
             }
+            
+            if (list_size) {
+                RemoveEntryList(&s2->list_entry_size);
+                order_space_entry(s2, list_size);
+            }
+            
             return;
         }
         
@@ -993,10 +1010,17 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                     s2->size = max(s2->size, s3->address + s3->size - s2->address);
                     
                     RemoveEntryList(&s3->list_entry);
+                    RemoveEntryList(&s3->list_entry_size);
                     ExFreePool(s3);
                 } else
                     break;
             }
+            
+            if (list_size) {
+                RemoveEntryList(&s2->list_entry_size);
+                order_space_entry(s2, list_size);
+            }
+            
             return;
         }
         
@@ -1013,6 +1037,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
             s->address = address;
             s->size = length;
             InsertHeadList(s2->list_entry.Blink, &s->list_entry);
+            
+            if (list_size)
+                order_space_entry(s, list_size);
+            
             return;
         }
         
@@ -1023,6 +1051,12 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
     if (s2->address + s2->size == address) {
         s2->size += length;
         // FIXME - insert rollback
+        
+        if (list_size) {
+            RemoveEntryList(&s2->list_entry_size);
+            order_space_entry(s2, list_size);
+        }
+        
         return;
     }
     
@@ -1037,6 +1071,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
     s->address = address;
     s->size = length;
     InsertTailList(list, &s->list_entry);
+    
+    if (list_size)
+        order_space_entry(s, list_size);
+    
     // FIXME - insert rollback
 }
 
@@ -1235,6 +1273,10 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
         if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
             // FIXME - insert rollback
             RemoveEntryList(&s2->list_entry);
+            
+            if (list_size)
+                RemoveEntryList(&s2->list_entry_size);
+            
             ExFreePool(s2);
         } else if (address + length > s2->address && address + length < s2->address + s2->size) {
             if (address > s2->address) { // cut out hole
@@ -1253,15 +1295,32 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
                 
                 s2->size = s2->address + s2->size - address - length;
                 s2->address = address + length;
+                
+                if (list_size) {
+                    RemoveEntryList(&s2->list_entry_size);
+                    order_space_entry(s2, list_size);
+                    order_space_entry(s, list_size);
+                }
+                
                 return;
             } else { // remove start of entry
                 s2->size -= address + length - s2->address;
                 s2->address = address + length;
                 // FIXME - insert rollback
+                
+                if (list_size) {
+                    RemoveEntryList(&s2->list_entry_size);
+                    order_space_entry(s2, list_size);
+                }
             }
         } else if (address > s2->address && address < s2->address + s2->size) { // remove end of entry
             // FIXME - insert rollback
             s2->size = address - s2->address;
+            
+            if (list_size) {
+                RemoveEntryList(&s2->list_entry_size);
+                order_space_entry(s2, list_size);
+            }
         }
         
         le = le2;
