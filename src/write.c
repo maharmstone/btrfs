@@ -182,28 +182,37 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
 
 static BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
     LIST_ENTRY* le;
-    space *s, *bestfit = NULL;
+    space* s;
     
     TRACE("(%p, %llx, %llx, %p)\n", Vcb, c->offset, length, address);
     
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
+    if (IsListEmpty(&c->space_size))
+        return FALSE;
+    
+    le = c->space_size.Flink;
+    while (le != &c->space_size) {
+        s = CONTAINING_RECORD(le, space, list_entry_size);
         
         if (s->size == length) {
             *address = s->address;
-            TRACE("returning exact fit at %llx\n", s->address);
             return TRUE;
-        } else if (s->size > length && (!bestfit || bestfit->size > s->size)) {
-            bestfit = s;
+        } else if (s->size < length) {
+            if (le == c->space_size.Flink)
+                return FALSE;
+            
+            s = CONTAINING_RECORD(le->Blink, space, list_entry_size);
+            
+            *address = s->address;
+            return TRUE;
         }
         
         le = le->Flink;
     }
     
-    if (bestfit) {
-        TRACE("returning best fit at %llx\n", bestfit->address);
-        *address = bestfit->address;
+    s = CONTAINING_RECORD(c->space_size.Blink, space, list_entry_size);
+    
+    if (s->size > length) {
+        *address = s->address;
         return TRUE;
     }
     
