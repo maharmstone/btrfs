@@ -2841,6 +2841,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 InitializeListHead(&c->space);
                 InitializeListHead(&c->space_size);
                 InitializeListHead(&c->deleting);
+                InitializeListHead(&c->changed_extents);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 

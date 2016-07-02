@@ -660,6 +660,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);
     InitializeListHead(&c->deleting);
+    InitializeListHead(&c->changed_extents);
     
     ExInitializeResourceLite(&c->nonpaged->lock);
     
@@ -2375,8 +2376,31 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce) {
+    // FIXME
+    
+    while (!IsListEmpty(&ce->refs)) {
+        changed_extent_ref* cer = CONTAINING_RECORD(ce->refs.Flink, changed_extent_ref, list_entry);
+        
+        RemoveEntryList(&cer->list_entry);
+        ExFreePool(cer);
+    }
+    
+    while (!IsListEmpty(&ce->old_refs)) {
+        changed_extent_ref* cer = CONTAINING_RECORD(ce->old_refs.Flink, changed_extent_ref, list_entry);
+        
+        RemoveEntryList(&cer->list_entry);
+        ExFreePool(cer);
+    }
+    
+    RemoveEntryList(&ce->list_entry);
+    ExFreePool(ce);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks.Flink;
+    LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
     KEY searchkey;
     traverse_ptr tp;
@@ -2391,6 +2415,20 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
         ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
+        le2 = c->changed_extents.Flink;
+        while (le2 != &c->changed_extents) {
+            LIST_ENTRY* le3 = le2->Flink;
+            changed_extent* ce = CONTAINING_RECORD(le2, changed_extent, list_entry);
+            
+            Status = flush_changed_extent(Vcb, ce);
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_changed_extent returned %08x\n", Status);
+                return Status;
+            }
+            
+            le2 = le3;
+        }
         
         if (c->used != c->oldused) {
             searchkey.obj_id = c->offset;
@@ -5640,6 +5678,80 @@ void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
+static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 size) {
+    LIST_ENTRY* le;
+    changed_extent* ce;
+    
+    le = c->changed_extents.Flink;
+    while (le != &c->changed_extents) {
+        ce = CONTAINING_RECORD(le, changed_extent, list_entry);
+        
+        if (ce->address == address && ce->size == size)
+            return ce;
+        
+        le = le->Flink;
+    }
+    
+    ce = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent), ALLOC_TAG);
+    if (!ce) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
+    ce->address = address;
+    ce->size = size;
+    ce->count = 0;
+    ce->old_count = 0;
+    InitializeListHead(&ce->refs);
+    InitializeListHead(&ce->old_refs);
+    
+    InsertTailList(&c->changed_extents, &ce->list_entry);
+    
+    return ce;
+}
+
+static void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count) {
+    changed_extent* ce;
+    changed_extent_ref* cer;
+    LIST_ENTRY* le;
+    
+    ce = get_changed_extent_item(c, address, size);
+    
+    if (!ce) {
+        ERR("get_changed_extent_item failed\n");
+        return;
+    }
+    
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        
+        if (cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+            ce->count += count;
+            cer->edr.count += count;
+            return;
+        }
+        
+        le = le->Flink;
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+    if (!cer) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    cer->edr.root = root;
+    cer->edr.objid = objid;
+    cer->edr.offset = offset;
+    cer->edr.count = count;
+    
+    InsertTailList(&ce->refs, &cer->list_entry);
+    
+    ce->count += count;
+}
+
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
@@ -5711,6 +5823,8 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
+    
+    add_changed_extent_ref(c, address, length, fcb->subvol->id, fcb->inode, start_data, 1);
     
     return TRUE;
 }

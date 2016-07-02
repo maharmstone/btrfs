@@ -350,12 +350,28 @@ typedef struct {
     LIST_ENTRY space;
     LIST_ENTRY space_size;
     LIST_ENTRY deleting;
+    LIST_ENTRY changed_extents;
     chunk_nonpaged* nonpaged;
     BOOL created;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
 } chunk;
+
+typedef struct {
+    UINT64 address;
+    UINT64 size;
+    UINT64 count;
+    UINT64 old_count;
+    LIST_ENTRY refs;
+    LIST_ENTRY old_refs;
+    LIST_ENTRY list_entry;
+} changed_extent;
+
+typedef struct {
+    EXTENT_DATA_REF edr;
+    LIST_ENTRY list_entry;
+} changed_extent_ref;
 
 typedef struct {
     KEY key;
