@@ -6985,6 +6985,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     UINT64 last_written = start_data;
     extent* ext = NULL;
     LIST_ENTRY* le;
+    chunk* c;
     
     le = fcb->extents.Flink;
     
@@ -7150,6 +7151,13 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext2->unique = FALSE;
                     newext2->ignore = FALSE;
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                    
+                    c = get_chunk_from_address(Vcb, ed2->address);
+                    
+                    if (!c)
+                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                    else
+                        add_changed_extent_ref(c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1);
 
                     remove_fcb_extent(ext, rollback);
                 } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
@@ -7223,6 +7231,13 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext2->unique = FALSE;
                     newext2->ignore = FALSE;
                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                    
+                    c = get_chunk_from_address(Vcb, ed2->address);
+                    
+                    if (!c)
+                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                    else
+                        add_changed_extent_ref(c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1);
 
                     remove_fcb_extent(ext, rollback);
                 } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
@@ -7328,6 +7343,13 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     newext3->unique = FALSE;
                     newext3->ignore = FALSE;
                     InsertHeadList(&newext2->list_entry, &newext3->list_entry);
+                    
+                    c = get_chunk_from_address(Vcb, ed2->address);
+                    
+                    if (!c)
+                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                    else
+                        add_changed_extent_ref(c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2);
 
                     remove_fcb_extent(ext, rollback);
                 }
