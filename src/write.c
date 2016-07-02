@@ -5178,6 +5178,153 @@ static __inline BOOL entry_in_ordered_list(LIST_ENTRY* list, UINT64 value) {
     return FALSE;
 }
 
+static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 size) {
+    LIST_ENTRY* le;
+    changed_extent* ce;
+    
+    le = c->changed_extents.Flink;
+    while (le != &c->changed_extents) {
+        ce = CONTAINING_RECORD(le, changed_extent, list_entry);
+        
+        if (ce->address == address && ce->size == size)
+            return ce;
+        
+        le = le->Flink;
+    }
+    
+    ce = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent), ALLOC_TAG);
+    if (!ce) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
+    ce->address = address;
+    ce->size = size;
+    ce->count = 0;
+    ce->old_count = 0;
+    InitializeListHead(&ce->refs);
+    InitializeListHead(&ce->old_refs);
+    
+    InsertTailList(&c->changed_extents, &ce->list_entry);
+    
+    return ce;
+}
+
+static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count) {
+    LIST_ENTRY* le;
+    changed_extent* ce;
+    changed_extent_ref* cer;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 old_count;
+    
+    ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+    
+    ce = get_changed_extent_item(c, address, size);
+    
+    if (!ce) {
+        ERR("get_changed_extent_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    if (IsListEmpty(&ce->refs) && IsListEmpty(&ce->old_refs)) { // new entry
+        searchkey.obj_id = address;
+        searchkey.obj_type = TYPE_EXTENT_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+            ERR("could not find address %llx in extent tree\n", address);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (tp.item->key.offset != size) {
+            ERR("extent %llx had size %llx, not %llx as expected\n", address, tp.item->key.offset, size);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+            EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+            
+            ce->old_count = eiv0->refcount;
+        } else if (tp.item->size >= sizeof(EXTENT_ITEM)) {
+            EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+            
+            ce->old_count = ei->refcount;
+        } else {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+    }
+    
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        
+        if (cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+            ce->count += count;
+            cer->edr.count += count;
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    old_count = find_extent_data_refcount(Vcb, address, size, root, objid, offset);
+    
+    if (old_count > 0) {
+        cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+        if (!cer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        cer->edr.root = root;
+        cer->edr.objid = objid;
+        cer->edr.offset = offset;
+        cer->edr.count = old_count;
+        
+        InsertTailList(&ce->old_refs, &cer->list_entry);
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+    if (!cer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    cer->edr.root = root;
+    cer->edr.objid = objid;
+    cer->edr.offset = offset;
+    cer->edr.count = count;
+    
+    InsertTailList(&ce->refs, &cer->list_entry);
+    
+    ce->count += count;
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&c->nonpaged->lock);
+    
+    return Status;
+}
+
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -5398,8 +5545,23 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     }
                 } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        if (ed2->address != 0)
+                        if (ed2->address != 0) {
+                            chunk* c;
+                            
                             fcb->inode_item.st_blocks -= len;
+                            
+                            c = get_chunk_from_address(Vcb, ed2->address);
+                            
+                            if (!c) {
+                                ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                            } else {
+                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("update_changed_extent_ref returned %08x\n", Status);
+                                    goto end;
+                                }
+                            }
+                        }
                         
                         remove_fcb_extent(ext, rollback);
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
@@ -5495,8 +5657,23 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2 *neda2, *nedb2;
                         extent *newext1, *newext2;
                         
-                        if (ed2->address != 0)
+                        if (ed2->address != 0) {
+                            chunk* c;
+                            
                             fcb->inode_item.st_blocks -= end_data - start_data;
+                            
+                            c = get_chunk_from_address(Vcb, ed2->address);
+                            
+                            if (!c) {
+                                ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                            } else {
+                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("update_changed_extent_ref returned %08x\n", Status);
+                                    goto end;
+                                }
+                            }
+                        }
                         
                         neda = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
                         if (!neda) {
@@ -5676,38 +5853,6 @@ void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
         ext->ignore = TRUE;
         add_rollback(rollback, ROLLBACK_DELETE_EXTENT, ext);
     }
-}
-
-static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 size) {
-    LIST_ENTRY* le;
-    changed_extent* ce;
-    
-    le = c->changed_extents.Flink;
-    while (le != &c->changed_extents) {
-        ce = CONTAINING_RECORD(le, changed_extent, list_entry);
-        
-        if (ce->address == address && ce->size == size)
-            return ce;
-        
-        le = le->Flink;
-    }
-    
-    ce = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent), ALLOC_TAG);
-    if (!ce) {
-        ERR("out of memory\n");
-        return NULL;
-    }
-    
-    ce->address = address;
-    ce->size = size;
-    ce->count = 0;
-    ce->old_count = 0;
-    InitializeListHead(&ce->refs);
-    InitializeListHead(&ce->old_refs);
-    
-    InsertTailList(&c->changed_extents, &ce->list_entry);
-    
-    return ce;
 }
 
 static void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count) {

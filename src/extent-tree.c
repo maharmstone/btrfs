@@ -61,14 +61,18 @@ static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
     }
 }
 
-static UINT64 get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
+static UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset) {
     UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
 
-    high_crc = calc_crc32c(high_crc, (UINT8*)&edr->root, sizeof(UINT64));
-    low_crc = calc_crc32c(low_crc, (UINT8*)&edr->objid, sizeof(UINT64));
-    low_crc = calc_crc32c(low_crc, (UINT8*)&edr->offset, sizeof(UINT64));
+    high_crc = calc_crc32c(high_crc, (UINT8*)&root, sizeof(UINT64));
+    low_crc = calc_crc32c(low_crc, (UINT8*)&objid, sizeof(UINT64));
+    low_crc = calc_crc32c(low_crc, (UINT8*)&offset, sizeof(UINT64));
     
     return ((UINT64)high_crc << 31) ^ (UINT64)low_crc;
+}
+
+static __inline UINT64 get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
+    return get_extent_data_ref_hash2(edr->root, edr->objid, edr->offset);
 }
 
 static UINT64 get_extent_hash(UINT8 type, void* data) {
@@ -1243,4 +1247,102 @@ NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 s
     free_extent_refs(&extent_refs);
     
     return STATUS_SUCCESS;
+}
+
+UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    EXTENT_DATA_REF* edr;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        ERR("could not find address %llx in extent tree\n", address);
+        return 0;
+    }
+    
+    if (tp.item->key.offset != size) {
+        ERR("extent %llx had size %llx, not %llx as expected\n", address, tp.item->key.offset, size);
+        return 0;
+    }
+    
+    if (tp.item->size >= sizeof(EXTENT_ITEM)) {
+        EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+        UINT32 len = tp.item->size - sizeof(EXTENT_ITEM);
+        UINT8* ptr = (UINT8*)&ei[1];
+        
+        while (len > 0) {
+            UINT8 secttype = *ptr;
+            ULONG sectlen = get_extent_data_len(secttype);
+            UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+            
+            len--;
+            
+            if (sectlen > len) {
+                ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                return 0;
+            }
+
+            if (sectlen == 0) {
+                ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+                return 0;
+            }
+            
+            // FIXME - work with shared data refs
+//             if (secttype == TYPE_SHARED_DATA_REF) {
+//                 TRACE("found shared data extent at %llx, converting\n", tp.item->key.obj_id);
+//                 
+//                 Status = convert_shared_data_extent(Vcb, address, size, rollback);
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("convert_shared_data_extent returned %08x\n", Status);
+//                     return Status;
+//                 }
+//                 
+//                 return increase_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
+//             }
+            
+            if (secttype == TYPE_EXTENT_DATA_REF) {
+                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(UINT8));
+                
+                if (sectedr->root == root && sectedr->objid == objid && sectedr->offset == offset)
+                    return sectcount;
+            }
+            
+            len -= sectlen;
+            ptr += sizeof(UINT8) + sectlen;
+        }
+    }
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_DATA_REF;
+    searchkey.offset = get_extent_data_ref_hash2(root, objid, offset);
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (keycmp(&searchkey, &tp.item->key)) {
+        WARN("could not find refcount for (%llx,%llx,%llx) in extent (%llx,%llx)\n", root, objid, offset, address, size);
+        return 0;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
+        ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+        return 0;
+    }
+    
+    edr = (EXTENT_DATA_REF*)tp.item->data;
+    
+    return edr->count;
 }
