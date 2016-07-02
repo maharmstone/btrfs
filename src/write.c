@@ -5646,11 +5646,29 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+#ifdef DEBUG_PARANOID
+    traverse_ptr tp;
+    KEY searchkey;
+#endif
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, changed_sector_list, rollback);
     
     if (!find_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
+    
+#ifdef DEBUG_PARANOID
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+    } else if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        ERR("address %llx already allocated\n", address);
+        int3;
+    }
+#endif
     
     if (data) {
         Status = do_write_data(Vcb, address, data, length, changed_sector_list);
