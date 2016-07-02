@@ -3117,6 +3117,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
                                 return Status;
                             }
+                            
+                            t->has_new_address = FALSE;
                         } else if (t->has_address) {
                             Status = reduce_tree_extent(Vcb,t->header.address, t, rollback);
                             
@@ -3124,6 +3126,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
                                 return Status;
                             }
+                            
+                            t->has_address = FALSE;
                         }
                         
                         if (!t->paritem->ignore) {
@@ -3226,6 +3230,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
                                 return Status;
                             }
+                            
+                            t->has_new_address = FALSE;
                         } else if (t->has_address) {
                             Status = reduce_tree_extent(Vcb,t->header.address, t, rollback);
                             
@@ -3233,6 +3239,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
                                 return Status;
                             }
+                            
+                            t->has_address = FALSE;
                         }
                         
                         if (!td->treeholder.tree) { // load first item if not already loaded
