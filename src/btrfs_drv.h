@@ -112,16 +112,6 @@ typedef struct {
 } extent;
 
 typedef struct {
-    UINT64 address;
-    UINT64 size;
-    UINT64 offset;
-    UINT32 refcount;
-    UINT32 new_refcount;
-    
-    LIST_ENTRY list_entry;
-} extent_backref;
-
-typedef struct {
     UINT32 hash;
     KEY key;
     UINT8 type;
@@ -150,7 +140,6 @@ typedef struct _fcb {
     SHARE_ACCESS share_access;
     WCHAR* debug_desc;
     LIST_ENTRY extents;
-    LIST_ENTRY extent_backrefs;
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
     
@@ -709,7 +698,6 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void flush_fcb_extents_first(fcb* fcb, LIST_ENTRY* rollback);
 void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
@@ -786,8 +774,8 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
 #define space_list_subtract2(list, list_size, address, length, rollback) _space_list_subtract2(list, list_size, address, length, rollback, funcname)
 
 // in extent-tree.c
-NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
-NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
+NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
+NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback);
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);

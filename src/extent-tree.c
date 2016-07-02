@@ -413,10 +413,10 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback) {
+NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback) {
     EXTENT_DATA_REF edr;
     
-    edr.root = subvol->id;
+    edr.root = root;
     edr.objid = inode;
     edr.offset = offset;
     edr.count = refcount;
@@ -758,11 +758,11 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
     }
 }
 
-NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, root* subvol, UINT64 inode,
+NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode,
                                        UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
     EXTENT_DATA_REF edr;
     
-    edr.root = subvol->id;
+    edr.root = root;
     edr.objid = inode;
     edr.offset = offset;
     edr.count = refcount;

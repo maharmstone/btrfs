@@ -433,27 +433,6 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         le = le->Flink;
     }
     
-    le = oldfcb->extent_backrefs.Flink;
-    while (le != &oldfcb->extent_backrefs) {
-        extent_backref* extref = CONTAINING_RECORD(le, extent_backref, list_entry);
-        extent_backref* extref2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
-        
-        if (!extref2) {
-            ERR("out of memory\n");
-            free_fcb(fcb);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        extref2->address = extref->address;
-        extref2->size = extref->size;
-        extref2->offset = extref->offset;
-        extref2->refcount = extref->refcount;
-        extref2->new_refcount = extref->new_refcount;
-        InsertTailList(&fcb->extent_backrefs, &extref2->list_entry);
-
-        le = le->Flink;
-    }
-    
     fcb->last_dir_index = oldfcb->last_dir_index;
     
     if (oldfcb->reparse_xattr.Buffer && oldfcb->reparse_xattr.Length > 0) {
@@ -1014,13 +993,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 }
                 
                 me->fileref->fcb->created = TRUE;
-                
-                while (!IsListEmpty(&me->fileref->fcb->extent_backrefs)) {
-                    LIST_ENTRY* le2 = RemoveHeadList(&me->fileref->fcb->extent_backrefs);
-                    extent_backref* extref = CONTAINING_RECORD(le2, extent_backref, list_entry);
-                    
-                    ExFreePool(extref);
-                }
                 
                 InsertHeadList(&me->fileref->fcb->list_entry, &me->dummyfcb->list_entry);
                 RemoveEntryList(&me->fileref->fcb->list_entry);

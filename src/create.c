@@ -695,7 +695,6 @@ fcb* create_fcb() {
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     
     InitializeListHead(&fcb->extents);
-    InitializeListHead(&fcb->extent_backrefs);
     InitializeListHead(&fcb->index_list);
     
     return fcb;
@@ -1124,40 +1123,6 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     return deleted;
 }
 
-static NTSTATUS add_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset) {
-    extent_backref* extref;
-    
-    if (!IsListEmpty(&fcb->extent_backrefs)) {
-        LIST_ENTRY* le = fcb->extent_backrefs.Flink;
-        
-        while (le != &fcb->extent_backrefs) {
-            extref = CONTAINING_RECORD(le, extent_backref, list_entry);
-            
-            if (extref->address == address && extref->size == size && extref->offset == offset) {
-                extref->refcount++;
-                return STATUS_SUCCESS;
-            }
-            
-            le = le->Flink;
-        }
-    }
-    
-    extref = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
-    if (!extref) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    extref->address = address;
-    extref->size = size;
-    extref->offset = offset;
-    extref->refcount = 1;
-    extref->new_refcount = 0;
-    InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
-    
-    return STATUS_SUCCESS;
-}
-
 static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size) {
     KEY searchkey;
     traverse_ptr tp;
@@ -1315,16 +1280,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         return STATUS_INTERNAL_ERROR;
                     }
                     
-                    if (ed2->size != 0) {
-                        Status = add_extent_backref(fcb, ed2->address, ed2->size, tp.item->key.offset - ed2->offset);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("add_extent_backref returned %08x\n", Status);
-                            free_fcb(fcb);
-                            return Status;
-                        }
-                        
+                    if (ed2->size != 0)
                         unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size) == 1;
-                    }
                 }
                 
                 ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);

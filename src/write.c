@@ -2376,23 +2376,63 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce) {
-    // FIXME
+static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce, LIST_ENTRY* rollback) {
+    LIST_ENTRY *le, *le2;
+    NTSTATUS Status;
     
-    while (!IsListEmpty(&ce->refs)) {
-        changed_extent_ref* cer = CONTAINING_RECORD(ce->refs.Flink, changed_extent_ref, list_entry);
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        LIST_ENTRY* le3 = le->Flink;
+        UINT64 old_count = 0;
         
+        le2 = ce->old_refs.Flink;
+        while (le2 != &ce->old_refs) {
+            changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+            
+            if (cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
+                old_count = cer2->edr.count;
+                
+                RemoveEntryList(&cer2->list_entry);
+                ExFreePool(cer2);
+                break;
+            }
+            
+            le2 = le2->Flink;
+        }
+        
+        if (cer->edr.count > old_count) {
+            Status = increase_extent_refcount_data(Vcb, ce->address, ce->size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
+                        
+            if (!NT_SUCCESS(Status)) {
+                ERR("increase_extent_refcount_data returned %08x\n", Status);
+                return Status;
+            }
+        } else if (cer->edr.count < old_count) {
+            Status = decrease_extent_refcount_data(Vcb, ce->address, ce->size, cer->edr.root, cer->edr.objid, cer->edr.offset,
+                                                   old_count - cer->edr.count, /*(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list*/NULL, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("decrease_extent_refcount_data returned %08x\n", Status);
+                return Status;
+            }
+        } else if (cer->edr.count == old_count && cer->edr.count == 0) {
+            FIXME("FIXME - old_count == new_count == 0\n"); // FIXME?
+        }
+       
         RemoveEntryList(&cer->list_entry);
         ExFreePool(cer);
-    }
-    
-    while (!IsListEmpty(&ce->old_refs)) {
-        changed_extent_ref* cer = CONTAINING_RECORD(ce->old_refs.Flink, changed_extent_ref, list_entry);
         
-        RemoveEntryList(&cer->list_entry);
-        ExFreePool(cer);
+        le = le3;
     }
     
+#ifdef DEBUG_PARANOID
+    if (!IsListEmpty(&ce->old_refs))
+        WARN("old_refs not empty\n");
+#endif
+    
+    // FIXME - if new count is 0, delete csum entries
+
     RemoveEntryList(&ce->list_entry);
     ExFreePool(ce);
     
@@ -2421,10 +2461,11 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             LIST_ENTRY* le3 = le2->Flink;
             changed_extent* ce = CONTAINING_RECORD(le2, changed_extent, list_entry);
             
-            Status = flush_changed_extent(Vcb, ce);
+            Status = flush_changed_extent(Vcb, ce, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent returned %08x\n", Status);
-                return Status;
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                goto end;
             }
             
             le2 = le3;
@@ -3541,9 +3582,6 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     if (c->cache) {
         c->cache->deleted = TRUE;
         
-        if (c->cache->extents_changed)
-            flush_fcb_extents_first(c->cache, rollback);
-        
         flush_fcb(c->cache, TRUE, rollback);
         
         free_fcb(c->cache);
@@ -3793,41 +3831,6 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_extent_backref(fcb* fcb, UINT64 address, UINT64 size, UINT64 offset, BOOL zero) {
-    extent_backref* extref;
-    
-    if (!IsListEmpty(&fcb->extent_backrefs)) {
-        LIST_ENTRY* le = fcb->extent_backrefs.Flink;
-        
-        while (le != &fcb->extent_backrefs) {
-            extref = CONTAINING_RECORD(le, extent_backref, list_entry);
-            
-            if (extref->address == address && extref->size == size && extref->offset == offset) {
-                if (!zero)
-                    extref->new_refcount++;
-                return STATUS_SUCCESS;
-            }
-            
-            le = le->Flink;
-        }
-    }
-    
-    extref = ExAllocatePoolWithTag(PagedPool, sizeof(extent_backref), ALLOC_TAG);
-    if (!extref) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    extref->address = address;
-    extref->size = size;
-    extref->offset = offset;
-    extref->refcount = 0;
-    extref->new_refcount = zero ? 0 : 1;
-    InsertTailList(&fcb->extent_backrefs, &extref->list_entry);
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
@@ -4056,52 +4059,6 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
     }
 }
 
-void flush_fcb_extents_first(fcb* fcb, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
-    NTSTATUS Status;
-    
-    le = fcb->extents.Flink;
-    while (le != &fcb->extents) {
-        extent* ext =  CONTAINING_RECORD(le, extent, list_entry);
-
-        if (!ext->ignore || ext->new_extent) {
-            if (ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) && (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
-                
-                if (ed2->address != 0) {
-                    Status = update_extent_backref(fcb, ed2->address, ed2->size, ext->offset - ed2->offset, ext->ignore && ext->new_extent);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("update_extent_backref returned %08x\n", Status);
-                        return;
-                    }
-                }
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    // If the refcount of an extent has increased, we handle it here rather than in flush_fcb - 
-    // this prevents corruption when extents have been transferred between inodes, such as when
-    // we move files across subvolumes.
-
-    le = fcb->extent_backrefs.Flink;
-    while (le != &fcb->extent_backrefs) {
-        extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
-        
-        if (backref->new_refcount > backref->refcount) {
-            Status = increase_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode,
-                                                    backref->offset, backref->new_refcount - backref->refcount, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("increase_extent_refcount_data returned %08x\n", Status);
-                return;
-            }
-        }
-        
-        le = le->Flink;
-    }
-}
-
 void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
@@ -4216,45 +4173,45 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         
         // update extent backrefs
         
-        le = fcb->extent_backrefs.Flink;
-        while (le != &fcb->extent_backrefs) {
-            extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
-            LIST_ENTRY* le2 = le->Flink;
-            
-            if (backref->new_refcount < backref->refcount) {
-                Status = decrease_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode, backref->offset,
-                                                       backref->refcount - backref->new_refcount, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("decrease_extent_refcount_data returned %08x\n", Status);
-                    goto end;
-                }
-            } else if (backref->new_refcount == 0 && backref->refcount == 0) {
-                // We have allocated an extent and then freed it before the flush
-                
-                Status = remove_extent(fcb->Vcb, backref->address, backref->size, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("remove_extent returned %08x\n", Status);
-                    goto end;
-                }
-            }
-            
-            backref->refcount = backref->new_refcount;
-            
-            if (backref->refcount == 0) {
-                RemoveEntryList(&backref->list_entry);
-                ExFreePool(backref);
-            } else
-                backref->new_refcount = 0;
-            
-            le = le2;
-        }
-        
-        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) && !IsListEmpty(&changed_sector_list)) {
-            ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
-            commit_checksum_changes(fcb->Vcb, &changed_sector_list);
-            ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
-        }
+//         le = fcb->extent_backrefs.Flink;
+//         while (le != &fcb->extent_backrefs) {
+//             extent_backref* backref = CONTAINING_RECORD(le, extent_backref, list_entry);
+//             LIST_ENTRY* le2 = le->Flink;
+//             
+//             if (backref->new_refcount < backref->refcount) {
+//                 Status = decrease_extent_refcount_data(fcb->Vcb, backref->address, backref->size, fcb->subvol, fcb->inode, backref->offset,
+//                                                        backref->refcount - backref->new_refcount, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("decrease_extent_refcount_data returned %08x\n", Status);
+//                     goto end;
+//                 }
+//             } else if (backref->new_refcount == 0 && backref->refcount == 0) {
+//                 // We have allocated an extent and then freed it before the flush
+//                 
+//                 Status = remove_extent(fcb->Vcb, backref->address, backref->size, (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list, rollback);
+//                 
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("remove_extent returned %08x\n", Status);
+//                     goto end;
+//                 }
+//             }
+//             
+//             backref->refcount = backref->new_refcount;
+//             
+//             if (backref->refcount == 0) {
+//                 RemoveEntryList(&backref->list_entry);
+//                 ExFreePool(backref);
+//             } else
+//                 backref->new_refcount = 0;
+//             
+//             le = le2;
+//         }
+//         
+//         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) && !IsListEmpty(&changed_sector_list)) {
+//             ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+//             commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+//             ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+//         }
         
         // update prealloc flag in INODE_ITEM
         
@@ -4957,16 +4914,6 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         flush_fileref(dirt->fileref, rollback);
         free_fileref(dirt->fileref);
         ExFreePool(dirt);
-    }
-    
-    le = Vcb->dirty_fcbs.Flink;
-    while (le != &Vcb->dirty_fcbs) {
-        dirty_fcb* dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
-        
-        if (dirt->fcb->subvol != Vcb->root_root && dirt->fcb->extents_changed)
-            flush_fcb_extents_first(dirt->fcb, rollback);
-        
-        le = le->Flink;
     }
     
     le = Vcb->dirty_fcbs.Flink;
