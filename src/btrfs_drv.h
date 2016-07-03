@@ -352,6 +352,7 @@ typedef struct {
     UINT64 size;
     UINT64 count;
     UINT64 old_count;
+    BOOL no_csum;
     LIST_ENTRY refs;
     LIST_ENTRY old_refs;
     LIST_ENTRY list_entry;
