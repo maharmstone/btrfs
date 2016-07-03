@@ -5027,7 +5027,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
         
-        if (dirt->fcb->subvol != Vcb->root_root) {
+        if (dirt->fcb->subvol != Vcb->root_root || dirt->fcb->deleted) {
             RemoveEntryList(le);
             
             flush_fcb(dirt->fcb, FALSE, rollback);

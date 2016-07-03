@@ -255,7 +255,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     UINT32 *checksums, crc32;
     FREE_SPACE_ENTRY* fse;
     UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum, off;
-    LIST_ENTRY* le;
+    LIST_ENTRY *le, rollback;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
     // FIXME - remove INODE_ITEM etc. if cache invalid for whatever reason
@@ -341,14 +341,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (*generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
-        ExFreePool(data);
-        
-        c->cache->deleted = TRUE;
-        mark_fcb_dirty(c->cache);
-        
-        free_fcb(c->cache);
-        c->cache = NULL;
-        return STATUS_NOT_FOUND;
+        goto clearcache;
     }
     
     extent_length = (num_sectors * sizeof(UINT32)) + sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
@@ -357,14 +350,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
-        ExFreePool(data);
-        
-        c->cache->deleted = TRUE;
-        mark_fcb_dirty(c->cache);
-        
-        free_fcb(c->cache);
-        c->cache = NULL;
-        return STATUS_NOT_FOUND;
+        goto clearcache;
     }
     
     checksums = (UINT32*)data;
@@ -379,14 +365,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         
         if (crc32 != checksums[i]) {
             WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
-            ExFreePool(data);
-            
-            c->cache->deleted = TRUE;
-            mark_fcb_dirty(c->cache);
-            
-            free_fcb(c->cache);
-            c->cache = NULL;
-            return STATUS_NOT_FOUND;
+            goto clearcache;
         }
     }
     
@@ -461,6 +440,27 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     ExFreePool(data);
     
     return STATUS_SUCCESS;
+    
+clearcache:
+    ExFreePool(data);
+    
+    InitializeListHead(&rollback);
+    
+    Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        do_rollback(Vcb, &rollback);
+        return Status;
+    }
+    
+    clear_rollback(&rollback);
+    
+    c->cache->deleted = TRUE;
+    mark_fcb_dirty(c->cache);
+    
+    free_fcb(c->cache);
+    c->cache = NULL;
+    return STATUS_NOT_FOUND;
 }
 
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
