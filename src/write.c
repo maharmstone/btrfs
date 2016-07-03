@@ -2402,14 +2402,14 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
         }
         
         if (cer->edr.count > old_count) {
-            Status = increase_extent_refcount_data(Vcb, ce->address, ce->size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
+            Status = increase_extent_refcount_data(Vcb, ce->address, ce->old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
                         
             if (!NT_SUCCESS(Status)) {
                 ERR("increase_extent_refcount_data returned %08x\n", Status);
                 return Status;
             }
         } else if (cer->edr.count < old_count) {
-            Status = decrease_extent_refcount_data(Vcb, ce->address, ce->size, cer->edr.root, cer->edr.objid, cer->edr.offset,
+            Status = decrease_extent_refcount_data(Vcb, ce->address, ce->old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
                                                    old_count - cer->edr.count, rollback);
             
             if (!NT_SUCCESS(Status)) {
@@ -2418,6 +2418,46 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             }
         } else if (cer->edr.count == old_count && cer->edr.count == 0) {
             FIXME("FIXME - old_count == new_count == 0\n"); // FIXME?
+        }
+        
+        if (ce->size != ce->old_size) {
+            KEY searchkey;
+            traverse_ptr tp;
+            void* data;
+            
+            searchkey.obj_id = ce->address;
+            searchkey.obj_type = TYPE_EXTENT_ITEM;
+            searchkey.offset = ce->old_size;
+            
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (keycmp(&searchkey, &tp.item->key)) {
+                ERR("could not find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size > 0) {
+                data = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                
+                if (!data) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(data, tp.item->data, tp.item->size);
+            } else
+                data = NULL;
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            delete_tree_item(Vcb, &tp, rollback);
         }
        
         RemoveEntryList(&cer->list_entry);
@@ -5137,6 +5177,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
     
     ce->address = address;
     ce->size = size;
+    ce->old_size = size;
     ce->count = 0;
     ce->old_count = 0;
     ce->no_csum = no_csum;
@@ -5148,7 +5189,8 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
     return ce;
 }
 
-static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count, BOOL no_csum) {
+static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
+                                          BOOL no_csum, UINT64 new_size) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -5204,6 +5246,8 @@ static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT6
             goto end;
         }
     }
+    
+    ce->size = new_size;
     
     le = ce->refs.Flink;
     while (le != &ce->refs) {
@@ -5494,7 +5538,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -5607,7 +5651,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -5961,6 +6005,14 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
     remove_fcb_extent(ext, rollback);
+    
+    Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size - length, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 0,
+                                       fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_changed_extent_ref returned %08x\n", Status);
+        return FALSE;
+    }
     
     if (changed_sector_list) {
         int i;
@@ -7149,7 +7201,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                     else {
                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -7236,7 +7288,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                     else {
                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -7355,7 +7407,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                     else {
                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
-                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08x\n", Status);

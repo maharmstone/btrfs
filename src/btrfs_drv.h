@@ -349,6 +349,7 @@ typedef struct {
 typedef struct {
     UINT64 address;
     UINT64 size;
+    UINT64 old_size;
     UINT64 count;
     UINT64 old_count;
     BOOL no_csum;
