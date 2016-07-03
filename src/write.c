@@ -2376,7 +2376,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce, LIST_ENTRY* rollback) {
+static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     
@@ -2410,7 +2410,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce, 
             }
         } else if (cer->edr.count < old_count) {
             Status = decrease_extent_refcount_data(Vcb, ce->address, ce->size, cer->edr.root, cer->edr.objid, cer->edr.offset,
-                                                   old_count - cer->edr.count, /*(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list*/NULL, rollback);
+                                                   old_count - cer->edr.count, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("decrease_extent_refcount_data returned %08x\n", Status);
@@ -2431,7 +2431,29 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, changed_extent* ce, 
         WARN("old_refs not empty\n");
 #endif
     
-    // FIXME - if new count is 0, delete csum entries
+    if (ce->count == 0) {
+        // FIXME - delete csum entries
+        /*(fcb->inode_item.flags & BTRFS_INODE_NODATASUM) ? NULL : &changed_sector_list*/
+//         if (changed_sector_list) {
+//             changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+//             if (!sc) {
+//                 ERR("out of memory\n");
+//                 return STATUS_INSUFFICIENT_RESOURCES;
+//             }
+//             
+//             sc->ol.key = address;
+//             sc->checksums = NULL;
+//             sc->length = size / Vcb->superblock.sector_size;
+// 
+//             sc->deleted = TRUE;
+//             
+//             insert_into_ordered_list(changed_sector_list, &sc->ol);
+//         }
+        
+        decrease_chunk_usage(c, ce->size);
+        
+        space_list_add(Vcb, c, TRUE, ce->address, ce->size, rollback);
+    }
 
     RemoveEntryList(&ce->list_entry);
     ExFreePool(ce);
@@ -2461,7 +2483,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             LIST_ENTRY* le3 = le2->Flink;
             changed_extent* ce = CONTAINING_RECORD(le2, changed_extent, list_entry);
             
-            Status = flush_changed_extent(Vcb, ce, rollback);
+            Status = flush_changed_extent(Vcb, c, ce, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent returned %08x\n", Status);
                 ExReleaseResourceLite(&c->nonpaged->lock);
@@ -5202,11 +5224,11 @@ static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT6
         if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
             EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
             
-            ce->old_count = eiv0->refcount;
+            ce->count = ce->old_count = eiv0->refcount;
         } else if (tp.item->size >= sizeof(EXTENT_ITEM)) {
             EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
             
-            ce->old_count = ei->refcount;
+            ce->count = ce->old_count = ei->refcount;
         } else {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
             Status = STATUS_INTERNAL_ERROR;
@@ -5258,7 +5280,7 @@ static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT6
     cer->edr.root = root;
     cer->edr.objid = objid;
     cer->edr.offset = offset;
-    cer->edr.count = count;
+    cer->edr.count = old_count + count;
     
     InsertTailList(&ce->refs, &cer->list_entry);
     

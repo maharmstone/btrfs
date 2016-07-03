@@ -430,56 +430,8 @@ void decrease_chunk_usage(chunk* c, UINT64 delta) {
     TRACE("decreasing size of chunk %llx by %llx\n", c->offset, delta);
 }
 
-NTSTATUS remove_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
-    chunk* c;
-    LIST_ENTRY* le;
-    
-    if (changed_sector_list) {
-        changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-        if (!sc) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        sc->ol.key = address;
-        sc->checksums = NULL;
-        sc->length = size / Vcb->superblock.sector_size;
-
-        sc->deleted = TRUE;
-        
-        insert_into_ordered_list(changed_sector_list, &sc->ol);
-    }
-    
-    c = NULL;
-    
-    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
-    
-    le = Vcb->chunks.Flink;
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
-        
-        if (address >= c->offset && address + size <= c->offset + c->chunk_item->size)
-            break;
-        
-        le = le->Flink;
-    }
-    if (le == &Vcb->chunks) c = NULL;
-    
-    ExReleaseResourceLite(&Vcb->chunk_lock);
-    
-    if (c) {
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
-        decrease_chunk_usage(c, size);
-        
-        space_list_add(Vcb, c, TRUE, address, size, rollback);
-        ExReleaseResourceLite(&c->nonpaged->lock);
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
-                                         UINT8 level, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+                                         UINT8 level, LIST_ENTRY* rollback) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
@@ -521,7 +473,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
             return Status;
         }
         
-        return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, changed_sector_list, rollback);
+        return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
     }
     
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
@@ -579,7 +531,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                 return Status;
             }
             
-            return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, changed_sector_list, rollback);
+            return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
         }
         
         if (secttype == type) {
@@ -591,12 +543,6 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
                     if (ei->refcount == edr->count) {
-                        Status = remove_extent(Vcb, address, size, changed_sector_list, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("remove_extent returned %08x\n", Status);
-                            return Status;
-                        }
-                        
                         delete_tree_item(Vcb, &tp, rollback);
                         return STATUS_SUCCESS;
                     }
@@ -690,12 +636,6 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         
         if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
             if (ei->refcount == edr->count) {
-                Status = remove_extent(Vcb, address, size, changed_sector_list, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("remove_extent returned %08x\n", Status);
-                    return Status;
-                }
-                
                 delete_tree_item(Vcb, &tp, rollback);
                 delete_tree_item(Vcb, &tp2, rollback);
                 return STATUS_SUCCESS;
@@ -759,7 +699,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
 }
 
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode,
-                                       UINT64 offset, UINT32 refcount, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+                                       UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback) {
     EXTENT_DATA_REF edr;
     
     edr.root = root;
@@ -767,7 +707,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
     edr.offset = offset;
     edr.count = refcount;
     
-    return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, changed_sector_list, rollback);
+    return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, rollback);
 }
 
 typedef struct {
