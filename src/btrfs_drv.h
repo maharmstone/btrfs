@@ -106,7 +106,6 @@ typedef struct {
     ULONG datalen;
     BOOL unique;
     BOOL ignore;
-    BOOL new_extent;
     
     LIST_ENTRY list_entry;
 } extent;
