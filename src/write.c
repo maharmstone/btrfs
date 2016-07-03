@@ -665,6 +665,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     InitializeListHead(&c->changed_extents);
     
     ExInitializeResourceLite(&c->nonpaged->lock);
+    ExInitializeResourceLite(&c->nonpaged->changed_extents_lock);
     
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
@@ -3824,6 +3825,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     }
     
     ExDeleteResourceLite(&c->nonpaged->lock);
+    ExDeleteResourceLite(&c->nonpaged->changed_extents_lock);
     ExFreePool(c->nonpaged);
 
     ExFreePool(c);
@@ -5254,7 +5256,7 @@ static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT6
     traverse_ptr tp;
     UINT64 old_count;
     
-    ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+    ExAcquireResourceExclusiveLite(&c->nonpaged->changed_extents_lock, TRUE);
     
     ce = get_changed_extent_item(c, address, size, no_csum);
     
@@ -5357,7 +5359,7 @@ static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT6
     Status = STATUS_SUCCESS;
     
 end:
-    ExReleaseResourceLite(&c->nonpaged->lock);
+    ExReleaseResourceLite(&c->nonpaged->changed_extents_lock);
     
     return Status;
 }
@@ -6007,7 +6009,11 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
     
+    ExAcquireResourceExclusiveLite(&c->nonpaged->changed_extents_lock, TRUE);
+    
     add_changed_extent_ref(c, address, length, fcb->subvol->id, fcb->inode, start_data, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+    
+    ExReleaseResourceLite(&c->nonpaged->changed_extents_lock);
 
     return TRUE;
 }

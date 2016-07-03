@@ -1899,6 +1899,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
             free_fcb(c->cache);
         
         ExDeleteResourceLite(&c->nonpaged->lock);
+        ExDeleteResourceLite(&c->nonpaged->changed_extents_lock);
         
         ExFreePool(c->nonpaged);
         ExFreePool(c->chunk_item);
@@ -2830,6 +2831,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     c->devices = NULL;
                 
                 ExInitializeResourceLite(&c->nonpaged->lock);
+                ExInitializeResourceLite(&c->nonpaged->changed_extents_lock);
                 
                 InitializeListHead(&c->space);
                 InitializeListHead(&c->space_size);

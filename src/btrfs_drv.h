@@ -325,6 +325,7 @@ typedef struct {
 
 typedef struct {
     ERESOURCE lock;
+    ERESOURCE changed_extents_lock;
 } chunk_nonpaged;
 
 typedef struct {
