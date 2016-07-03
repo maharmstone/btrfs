@@ -689,7 +689,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->Header.ValidDataLength.QuadPart = 0;
         
         c->cache->subvol = Vcb->root_root;
+        
+        if (Vcb->root_root->lastinode == 0)
+            get_last_inode(Vcb, Vcb->root_root);
+        
         c->cache->inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+        
         c->cache->type = BTRFS_TYPE_FILE;
         c->cache->created = TRUE;
         
