@@ -149,7 +149,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf) {
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -170,6 +170,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         ci = c->chunk_item;
         offset = c->offset;
         devices = c->devices;
+           
+        if (pc)
+            *pc = c;
     } else {
         LIST_ENTRY* le = Vcb->sys_chunks.Flink;
         
@@ -1011,7 +1014,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         } else
                             csum = NULL;
                         
-                        Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf);
+                        Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL);
                         if (!NT_SUCCESS(Status)) {
                             ERR("read_data returned %08x\n", Status);
                             ExFreePool(buf);

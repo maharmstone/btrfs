@@ -41,7 +41,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, &c);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned 0x%08x\n", Status);
         ExFreePool(buf);
@@ -70,8 +70,6 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->new_address = 0;
     t->has_new_address = FALSE;
     t->write = FALSE;
-    
-    c = get_chunk_from_address(Vcb, addr);
     
     if (c)
         t->flags = c->chunk_item->type;
