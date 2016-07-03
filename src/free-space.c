@@ -445,6 +445,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
                 s->size += s2->size;
                 
                 RemoveEntryList(&s2->list_entry);
+                RemoveEntryList(&s2->list_entry_size);
                 ExFreePool(s2);
                 
                 RemoveEntryList(&s->list_entry_size);
