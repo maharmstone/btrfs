@@ -973,6 +973,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 mark_fcb_dirty(me->dummyfcb);
                 
                 if (!me->fileref->fcb->ads) {
+                    LIST_ENTRY* le2;
+                    
                     if (destdir->fcb->subvol->lastinode == 0)
                         get_last_inode(destdir->fcb->Vcb, destdir->fcb->subvol);
 
@@ -987,6 +989,36 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->fcb->atts_changed = defda != me->fileref->fcb->atts;
                     me->fileref->fcb->extents_changed = !IsListEmpty(&me->fileref->fcb->extents);
                     me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
+                    
+                    le2 = me->fileref->fcb->extents.Flink;
+                    while (le2 != &me->fileref->fcb->extents) {
+                        extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+                        
+                        if (!ext->ignore && ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) &&
+                            (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
+                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                                        
+                            if (ed2->size != 0) {
+                                chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ed2->address);
+                                
+                                if (!c) {
+                                    ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                                } else {
+                                    Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ed2->address, ed2->size, me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
+                                                                       ext->offset - ed2->offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                    
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("update_changed_extent_ref returned %08x\n", Status);
+                                        ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+                                        goto end;
+                                    }
+                                }
+                            
+                            }
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
                 } else {
                     me->fileref->fcb->subvol = me->parent->fileref->fcb->subvol;
                     me->fileref->fcb->inode = me->parent->fileref->fcb->inode;

@@ -50,8 +50,6 @@ typedef struct {
 // static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback);
-static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
-                                          signed long long count, BOOL no_csum, UINT64 new_size);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -5263,8 +5261,8 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
     return ce;
 }
 
-static NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
-                                          BOOL no_csum, UINT64 new_size) {
+NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
+                                   BOOL no_csum, UINT64 new_size) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
