@@ -461,6 +461,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->parent = fileref;
     
     insert_fileref_child(fileref, fr, TRUE);
+    increase_fileref_refcount(fileref);
     
     fr->created = TRUE;
     mark_fileref_dirty(fr);
@@ -963,6 +964,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fr->parent = fileref;
     
     insert_fileref_child(fileref, fr, TRUE);
+    increase_fileref_refcount(fileref);
     
     fr->created = TRUE;
     mark_fileref_dirty(fr);
