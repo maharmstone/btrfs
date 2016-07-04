@@ -1273,7 +1273,7 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
     }
     
     if (keycmp(&searchkey, &tp.item->key)) {
-        WARN("could not find refcount for (%llx,%llx,%llx) in extent (%llx,%llx)\n", root, objid, offset, address, size);
+        TRACE("could not find refcount for (%llx,%llx,%llx) in extent (%llx,%llx)\n", root, objid, offset, address, size);
         return 0;
     }
     
