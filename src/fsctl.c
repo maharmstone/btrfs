@@ -1519,7 +1519,7 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     le = fcb->extents.Flink;
     
     sparse = FALSE;
-    nonsparse_run_start = 0;
+    nonsparse_run_start = 0xffffffffffffffff;
     finish_off = TRUE;
     
     while (le != &fcb->extents) {
