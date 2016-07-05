@@ -576,7 +576,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
         ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 return STATUS_SUCCESS;
@@ -592,7 +592,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
         ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 return STATUS_SUCCESS;
@@ -1211,7 +1211,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     
     // write cache
     
-    Status = do_nocow_write(Vcb, c->cache, 0, c->cache->inode_item.st_size, data, NULL, rollback);
+    Status = do_nocow_write(Vcb, c->cache, 0, c->cache->inode_item.st_size, data, NULL, NULL, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("do_nocow_write returned %08x\n", Status);
         return Status;

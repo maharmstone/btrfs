@@ -723,7 +723,7 @@ end:
     return success ? c : NULL;
 }
 
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc) {
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp) {
     NTSTATUS Status;
     UINT32 i;
     chunk* c;
@@ -969,12 +969,22 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
             stripe->status = WriteDataStatus_Pending;
             
-            stripe->Irp = IoAllocateIrp(stripe->device->devobj->StackSize, FALSE);
-        
-            if (!stripe->Irp) {
-                ERR("IoAllocateIrp failed\n");
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
+            if (!Irp) {
+                stripe->Irp = IoAllocateIrp(stripe->device->devobj->StackSize, FALSE);
+            
+                if (!stripe->Irp) {
+                    ERR("IoAllocateIrp failed\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
+            } else {
+                stripe->Irp = IoMakeAssociatedIrp(Irp, stripe->device->devobj->StackSize);
+                
+                if (!stripe->Irp) {
+                    ERR("IoMakeAssociatedIrp failed\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
             }
             
             IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
@@ -1025,7 +1035,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length) {
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp) {
     write_data_context* wtc;
     NTSTATUS Status;
     
@@ -1040,7 +1050,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     wtc->tree = FALSE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, address, data, FALSE, length, wtc);
+    Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         free_write_data_stripes(wtc);
@@ -2234,7 +2244,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             *((UINT32*)data) = crc32;
             TRACE("setting crc32 to %08x\n", crc32);
             
-            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc);
+            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
                 goto end;
@@ -5826,12 +5836,12 @@ end:
     return Status;
 }
 
-static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, LIST_ENTRY* changed_sector_list) {
+static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, LIST_ENTRY* changed_sector_list, PIRP Irp) {
     NTSTATUS Status;
     changed_sector* sc;
     int i;
     
-    Status = write_data_complete(Vcb, address, data, length);
+    Status = write_data_complete(Vcb, address, data, length, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         return Status;
@@ -5952,7 +5962,8 @@ static void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64
     ce->count += count;
 }
 
-BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
+                         LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
@@ -5983,7 +5994,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 // #endif
     
     if (data) {
-        Status = do_write_data(Vcb, address, data, length, changed_sector_list);
+        Status = do_write_data(Vcb, address, data, length, changed_sector_list, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
             return FALSE;
@@ -6034,7 +6045,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 }
 
 static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                        LIST_ENTRY* changed_sector_list, extent* ext, chunk* c, LIST_ENTRY* rollback) {
+                        LIST_ENTRY* changed_sector_list, extent* ext, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     extent* newext;
@@ -6064,7 +6075,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     addr = ed2->address + ed2->size;
      
-    Status = write_data_complete(Vcb, addr, data, length);
+    Status = write_data_complete(Vcb, addr, data, length, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         ExFreePool(newext);
@@ -6125,7 +6136,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 }
 
 static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+                            LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     BOOL success = FALSE;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -6216,7 +6227,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         
         if (s->address == ed2->address + ed2->size) {
             if (s->size >= length) {
-                success = extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, ext, c, rollback);
+                success = extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, ext, c, Irp, rollback);
             }
             break;
         } else if (s->address > ed2->address + ed2->size)
@@ -6255,7 +6266,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, rollback)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback)) {
                     ExReleaseResourceLite(&c->nonpaged->lock);
                     goto cont;
                 }
@@ -6270,7 +6281,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, rollback)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback)) {
                     ExReleaseResourceLite(&c->nonpaged->lock);
                     goto cont;
                 }
@@ -6341,7 +6352,7 @@ NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY*
 //     }
 // }
 
-NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
     UINT64 flags;
@@ -6350,7 +6361,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     
     // FIXME - split data up if not enough space for just one extent
     
-    if (start_data > 0 && try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, rollback))
+    if (start_data > 0 && try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, rollback))
         return STATUS_SUCCESS;
     
     // if there is a gap before start_data, plug it with a sparse extent
@@ -6415,7 +6426,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback)) {
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, Irp, rollback)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
@@ -6431,7 +6442,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, rollback)) {
+            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, Irp, rollback)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 return STATUS_SUCCESS;
@@ -6670,7 +6681,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIST_ENTRY* rollback) {
+NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIRP Irp, LIST_ENTRY* rollback) {
     UINT64 oldalloc, newalloc;
     BOOL cur_inline;
     NTSTATUS Status;
@@ -6741,7 +6752,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, LIS
                 
                 remove_fcb_extent(ext, rollback);
                 
-                Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, rollback);
+                Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_extent returned %08x\n", Status);
                     ExFreePool(data);
@@ -6960,7 +6971,7 @@ static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
     return FALSE;
 }
 
-static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
@@ -6969,7 +6980,7 @@ static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data,
         goto end;
     }
     
-    Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, changed_sector_list, rollback);
+    Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, changed_sector_list, Irp, rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("error - insert_extent returned %08x\n", Status);
@@ -6982,7 +6993,7 @@ end:
     return Status;
 }
 
-static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 last_written = start_data;
     extent* ext = NULL;
@@ -7008,7 +7019,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     }
     
     if (!ext)
-        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, rollback);
+        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
     
     le = &ext->list_entry;
     
@@ -7040,7 +7051,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
             
             if (ed->type == EXTENT_TYPE_PREALLOC) {
                 if (ext->offset > last_written) {
-                    Status = do_cow_write(Vcb, fcb, last_written, ext->offset, (UINT8*)data + last_written - start_data, changed_sector_list, rollback);
+                    Status = do_cow_write(Vcb, fcb, last_written, ext->offset, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_cow_write returned %08x\n", Status);                    
@@ -7071,7 +7082,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     
                     ned->type = EXTENT_TYPE_REGULAR;
                     
-                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, changed_sector_list);
+                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, changed_sector_list, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_data returned %08x\n", Status);
                         return Status;
@@ -7132,7 +7143,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     ned2->offset += end_data - ext->offset;
                     ned2->num_bytes -= end_data - ext->offset;
                     
-                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, changed_sector_list);
+                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, changed_sector_list, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_data returned %08x\n", Status);
                         return Status;
@@ -7218,7 +7229,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     ned2->offset += start_data - ext->offset;
                     ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
                     
-                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list);
+                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_data returned %08x\n", Status);
                         
@@ -7331,7 +7342,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
                     ned2->num_bytes -= end_data - ext->offset;
                     
                     ned2 = (EXTENT_DATA2*)nedb->data;
-                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list);
+                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_data returned %08x\n", Status);
                         return Status;
@@ -7383,7 +7394,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     }
     
     if (last_written < end_data) {
-        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, rollback);
+        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
                 
         if (!NT_SUCCESS(Status)) {
             ERR("do_cow_write returned %08x\n", Status);
@@ -7397,7 +7408,7 @@ static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 size, new_start, new_end, last_written = start_data;
     extent* ext = NULL;
@@ -7424,7 +7435,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     }
     
     if (!ext)
-        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, rollback);
+        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
     
     le = &ext->list_entry;
     
@@ -7488,7 +7499,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             TRACE("new_end = %llx\n", new_end);
             
             if (ed->type == EXTENT_TYPE_PREALLOC) {
-                Status = do_prealloc_write(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, rollback);
+                Status = do_prealloc_write(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_prealloc_write returned %08x\n", Status);
@@ -7504,7 +7515,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     return Status;
                 }
                 
-                Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, rollback);
+                Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - insert_extent returned %08x\n", Status);
@@ -7515,7 +7526,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                 
                 TRACE("doing non-COW write to %llx\n", writeaddr);
                 
-                Status = write_data_complete(Vcb, writeaddr, (UINT8*)data + new_start - start_data, new_end - new_start);
+                Status = write_data_complete(Vcb, writeaddr, (UINT8*)data + new_start - start_data, new_end - new_start, Irp);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - write_data returned %08x\n", Status);
@@ -7558,7 +7569,7 @@ NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     }
     
     if (last_written < end_data) {
-        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, rollback);
+        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
                 
         if (!NT_SUCCESS(Status)) {
             ERR("do_cow_write returned %08x\n", Status);
@@ -7931,7 +7942,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     tree_lock = TRUE;
             }
             
-            Status = extend_file(fcb, fileref, newlength, FALSE, rollback);
+            Status = extend_file(fcb, fileref, newlength, FALSE, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("extend_file returned %08x\n", Status);
                 goto end;
@@ -8128,7 +8139,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             fcb->inode_item.st_blocks += newlength;
         } else if (!nocow) {
             if (is_file_prealloc(fcb, start_data, end_data)) {
-                Status = do_prealloc_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+                Status = do_prealloc_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - do_prealloc_write returned %08x\n", Status);
@@ -8136,7 +8147,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     goto end;
                 }
             } else {
-                Status = do_cow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+                Status = do_cow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - do_cow_write returned %08x\n", Status);
@@ -8147,7 +8158,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             ExFreePool(data);
         } else {
-            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, rollback);
+            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("error - do_nocow_write returned %08x\n", Status);

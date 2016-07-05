@@ -1936,7 +1936,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
         
     if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-        Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+        Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
@@ -2894,7 +2894,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
             
             if (Irp->Overlay.AllocationSize.QuadPart > 0) {
-                Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, rollback);
+                Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("extend_file returned %08x\n", Status);

@@ -1703,7 +1703,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
-        Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, TRUE, &rollback);
+        Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, TRUE, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - extend_file failed\n");
             goto end;

@@ -173,7 +173,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     wtc->tree = TRUE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc);
+    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         goto end;
@@ -1127,7 +1127,7 @@ end:
     return Status;
 }
 
-static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* changed_sector_list, LIST_ENTRY* rollback) {
+static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     
     le = fcb->extents.Flink;
@@ -1234,7 +1234,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                     if (nocow) {
                         UINT64 writeaddr = ed2->address + ed2->offset + s2 - ext->offset;
 
-                        Status = write_data_complete(Vcb, writeaddr, data, e2 - s2);
+                        Status = write_data_complete(Vcb, writeaddr, data, e2 - s2, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("write_data_complete returned %08x\n", Status);
                             ExFreePool(data);
@@ -1280,7 +1280,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                             return Status;
                         }
                         
-                        Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, rollback);
+                        Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, Irp, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_extent returned %08x\n", Status);
                             ExFreePool(data);
@@ -1300,7 +1300,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
+static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length, PIRP Irp) {
     FILE_ZERO_DATA_INFORMATION* fzdi = data;
     NTSTATUS Status;
     fcb* fcb;
@@ -1382,7 +1382,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         InitializeListHead(&changed_sector_list);
     
     if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
-        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
+        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08x\n", Status);
             goto end;
@@ -1396,14 +1396,14 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
         
         if (end <= start) {
-            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
+            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("zero_data returned %08x\n", Status);
                 goto end;
             }
         } else {
             if (start > fzdi->FileOffset.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, &rollback);
+                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1411,7 +1411,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
             
             if (end < fzdi->BeyondFinalZero.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, &rollback);
+                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1823,7 +1823,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
 
         case FSCTL_SET_ZERO_DATA:
             Status = set_zero_data(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                   IrpSp->Parameters.FileSystemControl.InputBufferLength);
+                                   IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
 
         case FSCTL_QUERY_ALLOCATED_RANGES:
