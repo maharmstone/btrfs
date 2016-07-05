@@ -319,7 +319,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_file(c->cache, data, 0, c->cache->inode_item.st_size, NULL);
+    Status = read_file(c->cache, data, 0, c->cache->inode_item.st_size, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
         ExFreePool(data);

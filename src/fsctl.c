@@ -85,7 +85,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned %08x\n", Status);
         goto end;
@@ -1222,7 +1222,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    Status = read_file(fcb, data, s2, e2 - s2, NULL);
+                    Status = read_file(fcb, data, s2, e2 - s2, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_file returned %08x\n", Status);
                         ExFreePool(data);

@@ -42,7 +42,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         }
         
         TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
-        Status = read_file(fcb, (UINT8*)data, 0, fcb->inode_item.st_size, NULL);
+        Status = read_file(fcb, (UINT8*)data, 0, fcb->inode_item.st_size, NULL, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
@@ -102,7 +102,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         Status = STATUS_SUCCESS;
     } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
         if (fcb->type == BTRFS_TYPE_FILE) {
-            Status = read_file(fcb, buffer, 0, buflen, retlen);
+            Status = read_file(fcb, buffer, 0, buflen, retlen, NULL);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);

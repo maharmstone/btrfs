@@ -149,7 +149,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc) {
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -369,12 +369,22 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 context->stripes[i].stripenum = i / ci->sub_stripes;
             }
 
-            context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
-            
-            if (!context->stripes[i].Irp) {
-                ERR("IoAllocateIrp failed\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto exit;
+            if (!Irp) {
+                context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
+                
+                if (!context->stripes[i].Irp) {
+                    ERR("IoAllocateIrp failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
+            } else {
+                context->stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
+                
+                if (!context->stripes[i].Irp) {
+                    ERR("IoMakeAssociatedIrp failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
             }
             
             IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
@@ -837,7 +847,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr) {
+NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     UINT64 bytes_read = 0;
@@ -1014,7 +1024,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         } else
                             csum = NULL;
                         
-                        Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL);
+                        Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("read_data returned %08x\n", Status);
                             ExFreePool(buf);
@@ -1189,7 +1199,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
-            Status = read_file(fcb, data, start, length, bytes_read);
+            Status = read_file(fcb, data, start, length, bytes_read, Irp);
         
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         

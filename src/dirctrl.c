@@ -64,7 +64,7 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
         
         RtlCopyMemory(&tag, fcb->reparse_xattr.Buffer, sizeof(ULONG));
     } else {
-        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br);
+        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
             goto end;
