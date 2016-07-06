@@ -472,7 +472,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // unlike when we create a file normally, the seq of the parent doesn't appear to change
     fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.st_size += utf8->Length * 2;
     fcb->inode_item.st_ctime = now;
     fcb->inode_item.st_mtime = now;
     
@@ -978,7 +977,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // unlike when we create a file normally, the times and seq of the parent don't appear to change
     fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.st_size += utf8.Length * 2;
     
     mark_fcb_dirty(fcb);
     
