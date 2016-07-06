@@ -2447,8 +2447,6 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 ERR("decrease_extent_refcount_data returned %08x\n", Status);
                 return Status;
             }
-        } else if (cer->edr.count == old_count && cer->edr.count == 0) {
-            FIXME("FIXME - old_count == new_count == 0\n"); // FIXME?
         }
         
         if (ce->size != ce->old_size && ce->old_count > 0) {
