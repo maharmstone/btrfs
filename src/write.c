@@ -4191,6 +4191,8 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         ExFreePool(ie);
     }
     
+    fcb->index_loaded = FALSE;
+    
     if (fcb->ads) {
         if (fcb->deleted)
             delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, rollback);
