@@ -25,6 +25,7 @@ enum DirEntryType {
 
 typedef struct {
     KEY key;
+    BOOL name_alloc;
     char* name;
     ULONG namelen;
     UINT8 type;
@@ -433,6 +434,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     NTSTATUS Status;
     file_ref* fr;
     LIST_ENTRY* le;
+    char* name;
     
     if (fileref->parent) { // don't return . and .. if root directory
         if (*offset == 0) {
@@ -441,6 +443,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             de->key.offset = 0;
             de->dir_entry_type = DirEntryType_Self;
             de->name = ".";
+            de->name_alloc = FALSE;
             de->namelen = 1;
             de->type = BTRFS_TYPE_DIRECTORY;
             
@@ -453,6 +456,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             de->key.offset = 0;
             de->dir_entry_type = DirEntryType_Parent;
             de->name = "..";
+            de->name_alloc = FALSE;
             de->namelen = 2;
             de->type = BTRFS_TYPE_DIRECTORY;
             
@@ -495,7 +499,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
                     de->key.offset = 0;
                 }
                 
-                de->name = fr->utf8.Buffer;
+                name = fr->utf8.Buffer;
                 de->namelen = fr->utf8.Length;
                 de->type = fr->fcb->type;
                 de->dir_entry_type = DirEntryType_File;
@@ -540,7 +544,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
                             de->key.offset = 0;
                         }
                         
-                        de->name = fr->utf8.Buffer;
+                        name = fr->utf8.Buffer;
                         de->namelen = fr->utf8.Length;
                         de->type = fr->fcb->type;
                         de->dir_entry_type = DirEntryType_File;
@@ -575,7 +579,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             }
             
             de->key = di->key;
-            de->name = di->name;
+            name = di->name;
             de->namelen = di->n;
             de->type = di->type;
             de->dir_entry_type = DirEntryType_File;
@@ -594,7 +598,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
                     de->key.offset = 0;
                 }
                 
-                de->name = fr->utf8.Buffer;
+                name = fr->utf8.Buffer;
                 de->namelen = fr->utf8.Length;
                 de->type = fr->fcb->type;
                 de->dir_entry_type = DirEntryType_File;
@@ -612,6 +616,19 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     
 end:
     ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+    
+    if (NT_SUCCESS(Status)) {
+        de->name_alloc = TRUE;
+        
+        de->name = ExAllocatePoolWithTag(PagedPool, de->namelen, ALLOC_TAG);
+        if (!de->name) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(de->name, name, de->namelen);
+    } else
+        de->name_alloc = FALSE;
     
     return Status;
 }
@@ -787,6 +804,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
         
         de.name = utf8.Buffer;
+        de.name_alloc = FALSE;
         de.namelen = utf8.Length;
         de.type = found_type;
         de.dir_entry_type = DirEntryType_File;
@@ -819,6 +837,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         di_uni_fn.Buffer = uni_fn;
         
         while (!FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, TRUE, NULL)) {
+            if (de.name_alloc)
+                ExFreePool(de.name);
+            
             newoffset = ccb->query_dir_offset;
             Status = next_dir_entry(fileref, &newoffset, &de);
             
@@ -865,6 +886,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     Status = query_dir_item(fcb, fileref, buf, &length, Irp, &de, fcb->subvol);
     
+    if (de.name_alloc)
+        ExFreePool(de.name);
+    
     count = 0;
     if (NT_SUCCESS(Status) && !(IrpSp->Flags & SL_RETURN_SINGLE_ENTRY) && !specific_file) {
         lastitem = (UINT8*)buf;
@@ -900,6 +924,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de.name, de.namelen);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                            if (de.name_alloc) ExFreePool(de.name);
                             goto end;
                         }
                         
@@ -907,6 +932,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         if (!uni_fn) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
+                            if (de.name_alloc) ExFreePool(de.name);
                             goto end;
                         }
                         
@@ -915,6 +941,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
                             ExFreePool(uni_fn);
+                            if (de.name_alloc) ExFreePool(de.name);
                             goto end;
                         }
                         
@@ -940,7 +967,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                             lastitem = curitem;
                         } else {
                             if (uni_fn) ExFreePool(uni_fn);
-
+                            if (de.name_alloc) ExFreePool(de.name);
                             break;
                         }
                     } else
@@ -950,6 +977,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         ExFreePool(uni_fn);
                         uni_fn = NULL;
                     }
+                    
+                    if (de.name_alloc)
+                        ExFreePool(de.name);
                 } else {
                     if (Status == STATUS_NO_MORE_FILES)
                         Status = STATUS_SUCCESS;
