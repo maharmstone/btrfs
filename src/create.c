@@ -380,7 +380,7 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
                 
                 if (fr2->index == ie->index) {
                     if (fr2->deleted || fr2->filepart_uc.Length != us.Length ||
-                        RtlCompareMemory(fr->filepart_uc.Buffer, us.Buffer, us.Length) != us.Length) {
+                        RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) != us.Length) {
                         ignore_entry = TRUE;
                         break;
                     }
