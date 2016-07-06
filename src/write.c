@@ -2407,6 +2407,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
 static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
+    UINT64 old_size;
     
     le = ce->refs.Flink;
     while (le != &ce->refs) {
@@ -2429,15 +2430,17 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             le2 = le2->Flink;
         }
         
+        old_size = ce->old_count > 0 ? ce->old_size : ce->size;
+        
         if (cer->edr.count > old_count) {
-            Status = increase_extent_refcount_data(Vcb, ce->address, ce->old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
+            Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
                         
             if (!NT_SUCCESS(Status)) {
                 ERR("increase_extent_refcount_data returned %08x\n", Status);
                 return Status;
             }
         } else if (cer->edr.count < old_count) {
-            Status = decrease_extent_refcount_data(Vcb, ce->address, ce->old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
+            Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
                                                    old_count - cer->edr.count, rollback);
             
             if (!NT_SUCCESS(Status)) {
@@ -2448,7 +2451,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             FIXME("FIXME - old_count == new_count == 0\n"); // FIXME?
         }
         
-        if (ce->size != ce->old_size) {
+        if (ce->size != ce->old_size && ce->old_count > 0) {
             KEY searchkey;
             traverse_ptr tp;
             void* data;
