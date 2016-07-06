@@ -1512,6 +1512,8 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         goto end2;
     }
     
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    
     for (i = 0; i < num_parts; i++) {
         BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
         
@@ -1704,6 +1706,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     *pfr = sf2;
     
 end:
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     free_fileref(sf);
     
 end2:
@@ -2022,9 +2025,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     } else
         related = NULL;
     
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL);
-    ExReleaseResourceLite(&Vcb->fcb_lock);
     if (!NT_SUCCESS(Status))
         goto end;
     
@@ -2105,9 +2106,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         TRACE("fpus = %.*S\n", fpus.Length / sizeof(WCHAR), fpus.Buffer);
         TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
         
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         Status = open_fileref(Vcb, &newpar, &fpus, parfileref, FALSE, NULL);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             UNICODE_STRING fpus2;
@@ -2704,9 +2703,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     } else
         related = NULL;
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
-    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     if (Status == STATUS_REPARSE) {
         REPARSE_DATA_BUFFER* data;
