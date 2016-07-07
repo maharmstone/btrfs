@@ -447,6 +447,7 @@ typedef struct _device_extension {
     LIST_ENTRY sector_checksums;
     HANDLE flush_thread_handle;
     drv_threads threads;
+    PFILE_OBJECT root_file;
     LIST_ENTRY list_entry;
 } device_extension;
 

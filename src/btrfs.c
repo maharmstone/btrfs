@@ -1839,7 +1839,9 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     // FIXME - stop async threads
     
     free_fcb(Vcb->volume_fcb);
-    free_fileref(Vcb->root_fileref);
+    
+    if (Vcb->root_file)
+        ObDereferenceObject(Vcb->root_file);
     
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
@@ -3245,6 +3247,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     fcb* root_fcb = NULL;
+    ccb* root_ccb = NULL;
     
     TRACE("mount_vol called\n");
     
@@ -3561,6 +3564,22 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
     
+    root_ccb = ExAllocatePoolWithTag(PagedPool, sizeof(ccb), ALLOC_TAG);
+    if (!root_ccb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
+    Vcb->root_file = IoCreateStreamFileObject(NULL, DeviceToMount);
+    Vcb->root_file->FsContext = root_fcb;
+    
+    RtlZeroMemory(root_ccb, sizeof(ccb));
+    root_ccb->NodeType = BTRFS_NODE_TYPE_CCB;
+    root_ccb->NodeSize = sizeof(ccb);
+    
+    Vcb->root_file->FsContext = root_ccb;
+    
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
         if (!NT_SUCCESS(Status)) {
@@ -3607,7 +3626,9 @@ exit:
 
     if (!NT_SUCCESS(Status)) {
         if (Vcb) {
-            if (Vcb->root_fileref)
+            if (Vcb->root_file)
+                ObDereferenceObject(Vcb->root_file);
+            else if (Vcb->root_fileref)
                 free_fileref(Vcb->root_fileref);
             else if (root_fcb)
                 free_fcb(root_fcb);
@@ -3630,7 +3651,8 @@ exit:
 
         if (NewDeviceObject)
             IoDeleteDevice(NewDeviceObject);
-    }
+    } else
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_MOUNT);
 
     TRACE("mount_vol done (status: %lx)\n", Status);
 
