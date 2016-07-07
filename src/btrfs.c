@@ -1576,9 +1576,8 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
         return;
     }
     
-    FsRtlNotifyFullReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, name_offset,
-                                NULL, NULL, filter_match, action, NULL);
-    
+    FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, name_offset,
+                                  NULL, (PSTRING)&fn, filter_match, action, NULL, NULL);
     ExFreePool(fn.Buffer);
 }
 
@@ -1781,8 +1780,6 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     ccb = FileObject->FsContext2;
     
     TRACE("close called for %S (fcb == %p)\n", file_desc(FileObject), fcb);
-    
-    FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);
     
     // FIXME - make sure notification gets sent if file is being deleted
     
@@ -2063,6 +2060,8 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         TRACE("fcb %p (%S), refcount = %u, open_count = %u\n", fcb, file_desc(FileObject), fcb->refcount, fcb->open_count);
         
         IoRemoveShareAccess(FileObject, &fcb->share_access);
+        
+        FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);    
         
         oc = InterlockedDecrement(&fcb->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS

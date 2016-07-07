@@ -1039,9 +1039,10 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
         }
     }
     
-    FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&ccb->filename,
-        IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp, NULL, NULL);
-        
+    FsRtlNotifyFilterChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&ccb->filename,
+                                     IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp,
+                                     NULL, NULL, NULL);
+    
     Status = STATUS_PENDING;
     
 end:
@@ -1090,15 +1091,18 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
             Irp->IoStatus.Status = Status;
             break;
     }
-
-    if (func != IRP_MN_NOTIFY_CHANGE_DIRECTORY || Status != STATUS_PENDING) {
-        Irp->IoStatus.Status = Status;
-        
-        if (Irp->UserIosb)
-            *Irp->UserIosb = Irp->IoStatus;
-        
-        IoCompleteRequest( Irp, IO_DISK_INCREMENT );
+    
+    Irp->IoStatus.Status = Status;
+    
+    if (Status == STATUS_PENDING) {
+        IoMarkIrpPending(Irp);
+        goto exit;
     }
+
+//     if (Irp->UserIosb)
+//         *Irp->UserIosb = Irp->IoStatus;
+        
+    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     
 exit:
     if (top_level) 
