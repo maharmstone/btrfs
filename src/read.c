@@ -210,6 +210,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ERR("could not find chunk for %llx in bootstrap\n", addr);
             return STATUS_INTERNAL_ERROR;
         }
+        
+        if (pc)
+            *pc = NULL;
     }
     
     if (ci->type & BLOCK_FLAG_DUPLICATE) {
