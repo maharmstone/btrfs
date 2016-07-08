@@ -1577,7 +1577,7 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     }
     
     FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, name_offset,
-                                  NULL, (PSTRING)&fn, filter_match, action, NULL, NULL);
+                                  NULL, NULL, filter_match, action, NULL, NULL);
     ExFreePool(fn.Buffer);
 }
 
