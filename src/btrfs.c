@@ -2082,6 +2082,8 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             InitializeListHead(&rollback);
             
             if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
+                send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+                
                 ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                 
                 Status = delete_fileref(fileref, FileObject, &rollback);
