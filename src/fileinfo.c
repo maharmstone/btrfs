@@ -1366,12 +1366,19 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (related == fileref->parent) { // keeping file in same directory
-        UNICODE_STRING fnus2;
+        UNICODE_STRING fnus2, oldfn, newfn;
+        USHORT name_offset;
         
         fnus2.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
         if (!fnus2.Buffer) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        Status = fileref_get_filename(fileref, &oldfn, &name_offset);
+        if (!NT_SUCCESS(Status)) {
+            ERR("fileref_get_filename returned %08x\n", Status);
             goto end;
         }
         
@@ -1386,12 +1393,21 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fileref->utf8 = utf8;
         fileref->filepart = fnus2;
         
+        Status = fileref_get_filename(fileref, &newfn, &name_offset);
+        if (!NT_SUCCESS(Status)) {
+            ERR("fileref_get_filename returned %08x\n", Status);
+            ExFreePool(oldfn.Buffer);
+            goto end;
+        }
+        
         if (fileref->filepart_uc.Buffer)
             ExFreePool(fileref->filepart_uc.Buffer);
         
         Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
         if (!NT_SUCCESS(Status)) {
             ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ExFreePool(oldfn.Buffer);
+            ExFreePool(newfn.Buffer);
             goto end;
         }
         
@@ -1414,6 +1430,14 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         related->fcb->inode_item.st_mtime = now;
         
         mark_fcb_dirty(related->fcb);
+        
+        FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&oldfn, name_offset, NULL, NULL,
+                                      fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_OLD_NAME, NULL, NULL);
+        FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&newfn, name_offset, NULL, NULL,
+                                      fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_NEW_NAME, NULL, NULL);
+        
+        ExFreePool(oldfn.Buffer);
+        ExFreePool(newfn.Buffer);
         
         Status = STATUS_SUCCESS;
         goto end;
