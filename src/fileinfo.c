@@ -3262,6 +3262,27 @@ end:
     return Status;
 }
 
+#ifdef __MINGW32__
+typedef struct _FILE_ID_128 {
+    UCHAR Identifier[16];
+} FILE_ID_128, *PFILE_ID_128; 
+
+typedef struct _FILE_ID_INFORMATION {
+    ULONGLONG VolumeSerialNumber;
+    FILE_ID_128 FileId;
+} FILE_ID_INFORMATION, *PFILE_ID_INFORMATION;
+#endif
+
+static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
+    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(UINT64));
+    RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(UINT64));
+    RtlCopyMemory(&fii->FileId.Identifier[sizeof(UINT64)], &fcb->subvol->id, sizeof(UINT64));
+    
+    *length -= sizeof(FILE_ID_INFORMATION);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
@@ -3495,9 +3516,21 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
         case FileIdInformation:
-            WARN("STUB: FileIdInformation\n");
-            Status = STATUS_INVALID_PARAMETER;
-            goto exit;
+        {
+            FILE_ID_INFORMATION* fii = Irp->AssociatedIrp.SystemBuffer;
+            
+            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_ID_INFORMATION)) {
+                WARN("overflow\n");
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto exit;
+            }
+            
+            TRACE("FileIdInformation\n");
+            
+            Status = fill_in_file_id_information(fii, fcb, &length);  
+            
+            break;
+        }
 #pragma GCC diagnostic pop            
         
         default:
