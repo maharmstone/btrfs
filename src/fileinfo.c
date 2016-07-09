@@ -3176,9 +3176,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
             } else if (!parfr->deleted) {
                 LIST_ENTRY* le2;
                 BOOL found = FALSE, deleted = FALSE;
-                UNICODE_STRING fn;
-                
-                fn.Buffer = NULL;
+                UNICODE_STRING* fn;
                 
                 le2 = parfr->children.Flink;
                 while (le2 != &parfr->children) {
@@ -3188,15 +3186,8 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                         found = TRUE;
                         deleted = fr2->deleted;
                         
-                        if (!deleted) {
-                            Status = fileref_get_filename(fr2, &fn, NULL);
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("fileref_get_filename returned %08x\n", Status);
-                                free_fileref(parfr);
-                                ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-                                goto end;
-                            }
-                        }
+                        if (!deleted)
+                            fn = &fr2->filepart;
                         
                         break;
                     }
@@ -3204,38 +3195,16 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                     le2 = le2->Flink;
                 }
                 
-                if (!found) {
-                    UNICODE_STRING fn2;
-                    ULONG len;
-                    
-                    Status = fileref_get_filename(parfr, &fn2, NULL);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("fileref_get_filename returned %08x\n", Status);
-                        free_fileref(parfr);
-                        ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-                        goto end;
-                    }
-                    
-                    len = fn2.Length + hl->name.Length;
-                    if (parfr->fcb->inode != SUBVOL_ROOT_INODE) len += sizeof(WCHAR);
-                    
-                    fn.Length = fn.MaximumLength = len;
-                    fn.Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-                    
-                    RtlCopyMemory(fn.Buffer, fn2.Buffer, fn2.Length);
-                    if (parfr->fcb->inode != SUBVOL_ROOT_INODE) fn.Buffer[fn2.Length / sizeof(WCHAR)] = '\\';
-                    RtlCopyMemory(&fn.Buffer[(fn2.Length / sizeof(WCHAR)) + (parfr->fcb->inode != SUBVOL_ROOT_INODE ? 1 : 0)], hl->name.Buffer, hl->name.Length);
-                    
-                    ExFreePool(fn2.Buffer);
-                }
+                if (!found)
+                    fn = &hl->name;
                 
                 if (!deleted) {
-                    TRACE("fn = %.*S (found = %u)\n", fn.Length / sizeof(WCHAR), fn.Buffer, found);
+                    TRACE("fn = %.*S (found = %u)\n", fn->Length / sizeof(WCHAR), fn->Buffer, found);
                     
                     if (feli)
                         bytes_needed = sector_align(bytes_needed, 8);
                     
-                    bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fn.Length - sizeof(WCHAR);
+                    bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fn->Length - sizeof(WCHAR);
                     
                     if (bytes_needed > *length)
                         overflow = TRUE;
@@ -3249,17 +3218,14 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                         
                         feli->NextEntryOffset = 0;
                         feli->ParentFileId = parfr->fcb->inode;
-                        feli->FileNameLength = fn.Length / sizeof(WCHAR);
-                        RtlCopyMemory(feli->FileName, fn.Buffer, fn.Length);
+                        feli->FileNameLength = fn->Length / sizeof(WCHAR);
+                        RtlCopyMemory(feli->FileName, fn->Buffer, fn->Length);
                         
                         fli->EntriesReturned++;
                         
                         len = bytes_needed;
                     }
                 }
-                
-                if (fn.Buffer)
-                    ExFreePool(fn.Buffer);
                 
                 free_fileref(parfr);
             }
@@ -3276,7 +3242,6 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
 
     Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
     
-end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     return Status;
