@@ -1981,7 +1981,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     mark_fcb_dirty(parfcb);
     
-    // FIXME - notification
+    send_notification_fileref(fr2, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
 
     Status = STATUS_SUCCESS;
     
