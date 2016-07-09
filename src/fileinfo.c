@@ -1320,7 +1320,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (NT_SUCCESS(Status)) {
         TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
-        if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->deleted)) {
+        if (fileref != oldfileref && !oldfileref->deleted) {
             if (!ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
@@ -1337,7 +1337,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             }
         }
         
-        if (fileref == oldfileref) {
+        if (fileref == oldfileref || !oldfileref->deleted) {
             free_fileref(oldfileref);
             oldfileref = NULL;
         }
