@@ -3141,114 +3141,134 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
-    
-    le = fcb->hardlinks.Flink;
-    while (le != &fcb->hardlinks) {
-        hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
-        file_ref* parfr;
-        
-        TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
-        
-        Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr);
-        
-        if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_by_inode returned %08x\n", Status);
-        } else if (!parfr->deleted) {
-            LIST_ENTRY* le2;
-            BOOL found = FALSE, deleted = FALSE;
-            UNICODE_STRING fn;
-            
-            fn.Buffer = NULL;
-            
-            le2 = parfr->children.Flink;
-            while (le2 != &parfr->children) {
-                file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
-                
-                if (fr2->index == hl->index) {
-                    found = TRUE;
-                    deleted = fr2->deleted;
+    if (fcb == fcb->Vcb->root_fileref->fcb) {
+        bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION);
                     
-                    if (!deleted) {
-                        Status = fileref_get_filename(fr2, &fn, NULL);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("fileref_get_filename returned %08x\n", Status);
-                            free_fileref(parfr);
-                            ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-                            goto end;
+        if (bytes_needed > *length)
+            overflow = TRUE;
+        
+        if (!overflow) {
+            feli = &fli->Entry;
+                        
+            feli->NextEntryOffset = 0;
+            feli->ParentFileId = fcb->inode;
+            feli->FileNameLength = 1;
+            feli->FileName[0] = '.';
+            
+            fli->EntriesReturned++;
+            
+            len = bytes_needed;
+        }
+    } else {
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
+    
+        le = fcb->hardlinks.Flink;
+        while (le != &fcb->hardlinks) {
+            hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+            file_ref* parfr;
+            
+            TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+            
+            Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("open_fileref_by_inode returned %08x\n", Status);
+            } else if (!parfr->deleted) {
+                LIST_ENTRY* le2;
+                BOOL found = FALSE, deleted = FALSE;
+                UNICODE_STRING fn;
+                
+                fn.Buffer = NULL;
+                
+                le2 = parfr->children.Flink;
+                while (le2 != &parfr->children) {
+                    file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
+                    
+                    if (fr2->index == hl->index) {
+                        found = TRUE;
+                        deleted = fr2->deleted;
+                        
+                        if (!deleted) {
+                            Status = fileref_get_filename(fr2, &fn, NULL);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("fileref_get_filename returned %08x\n", Status);
+                                free_fileref(parfr);
+                                ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+                                goto end;
+                            }
                         }
+                        
+                        break;
                     }
                     
-                    break;
+                    le2 = le2->Flink;
                 }
                 
-                le2 = le2->Flink;
-            }
-            
-            if (!found) {
-                UNICODE_STRING fn2;
-                ULONG len;
-                
-                Status = fileref_get_filename(parfr, &fn2, NULL);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("fileref_get_filename returned %08x\n", Status);
-                    free_fileref(parfr);
-                    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-                    goto end;
+                if (!found) {
+                    UNICODE_STRING fn2;
+                    ULONG len;
+                    
+                    Status = fileref_get_filename(parfr, &fn2, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("fileref_get_filename returned %08x\n", Status);
+                        free_fileref(parfr);
+                        ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+                        goto end;
+                    }
+                    
+                    len = fn2.Length + hl->name.Length;
+                    if (parfr->fcb->inode != SUBVOL_ROOT_INODE) len += sizeof(WCHAR);
+                    
+                    fn.Length = fn.MaximumLength = len;
+                    fn.Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+                    
+                    RtlCopyMemory(fn.Buffer, fn2.Buffer, fn2.Length);
+                    if (parfr->fcb->inode != SUBVOL_ROOT_INODE) fn.Buffer[fn2.Length / sizeof(WCHAR)] = '\\';
+                    RtlCopyMemory(&fn.Buffer[(fn2.Length / sizeof(WCHAR)) + (parfr->fcb->inode != SUBVOL_ROOT_INODE ? 1 : 0)], hl->name.Buffer, hl->name.Length);
+                    
+                    ExFreePool(fn2.Buffer);
                 }
                 
-                len = fn2.Length + hl->name.Length;
-                if (parfr->fcb->inode != SUBVOL_ROOT_INODE) len += sizeof(WCHAR);
-                
-                fn.Length = fn.MaximumLength = len;
-                fn.Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-                
-                RtlCopyMemory(fn.Buffer, fn2.Buffer, fn2.Length);
-                if (parfr->fcb->inode != SUBVOL_ROOT_INODE) fn.Buffer[fn2.Length / sizeof(WCHAR)] = '\\';
-                RtlCopyMemory(&fn.Buffer[(fn2.Length / sizeof(WCHAR)) + (parfr->fcb->inode != SUBVOL_ROOT_INODE ? 1 : 0)], hl->name.Buffer, hl->name.Length);
-                
-                ExFreePool(fn2.Buffer);
-            }
-            
-            if (!deleted) {
-                TRACE("fn = %.*S (found = %u)\n", fn.Length / sizeof(WCHAR), fn.Buffer, found);
-                
-                if (feli)
-                    bytes_needed = sector_align(bytes_needed, 8);
-                
-                bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fn.Length - sizeof(WCHAR);
-                
-                if (bytes_needed > *length)
-                    overflow = TRUE;
-                
-                if (!overflow) {
-                    if (feli) {
-                        feli->NextEntryOffset = sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
-                        feli = (FILE_LINK_ENTRY_INFORMATION*)((UINT8*)feli + feli->NextEntryOffset);
-                    } else
-                        feli = &fli->Entry;
+                if (!deleted) {
+                    TRACE("fn = %.*S (found = %u)\n", fn.Length / sizeof(WCHAR), fn.Buffer, found);
                     
-                    feli->NextEntryOffset = 0;
-                    feli->ParentFileId = parfr->fcb->inode;
-                    feli->FileNameLength = fn.Length / sizeof(WCHAR);
-                    RtlCopyMemory(feli->FileName, fn.Buffer, fn.Length);
+                    if (feli)
+                        bytes_needed = sector_align(bytes_needed, 8);
                     
-                    fli->EntriesReturned++;
+                    bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fn.Length - sizeof(WCHAR);
                     
-                    len = bytes_needed;
+                    if (bytes_needed > *length)
+                        overflow = TRUE;
+                    
+                    if (!overflow) {
+                        if (feli) {
+                            feli->NextEntryOffset = sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
+                            feli = (FILE_LINK_ENTRY_INFORMATION*)((UINT8*)feli + feli->NextEntryOffset);
+                        } else
+                            feli = &fli->Entry;
+                        
+                        feli->NextEntryOffset = 0;
+                        feli->ParentFileId = parfr->fcb->inode;
+                        feli->FileNameLength = fn.Length / sizeof(WCHAR);
+                        RtlCopyMemory(feli->FileName, fn.Buffer, fn.Length);
+                        
+                        fli->EntriesReturned++;
+                        
+                        len = bytes_needed;
+                    }
                 }
+                
+                if (fn.Buffer)
+                    ExFreePool(fn.Buffer);
+                
+                free_fileref(parfr);
             }
             
-            if (fn.Buffer)
-                ExFreePool(fn.Buffer);
-            
-            free_fileref(parfr);
+            le = le->Flink;
         }
         
-        le = le->Flink;
+        ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
     }
-    
-    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
     
     fli->BytesNeeded = bytes_needed;
     
