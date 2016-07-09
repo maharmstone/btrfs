@@ -3026,13 +3026,13 @@ end:
     return Status;
 }
 
-static NTSTATUS open_fileref_dir_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr) {
+NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr) {
     NTSTATUS Status;
     fcb* fcb;
     hardlink* hl;
     file_ref *parfr, *fr;
     
-    Status = open_fcb(Vcb, subvol, inode, BTRFS_TYPE_DIRECTORY, NULL, NULL, &fcb);
+    Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return Status;
@@ -3057,9 +3057,9 @@ static NTSTATUS open_fileref_dir_by_inode(device_extension* Vcb, root* subvol, U
     if (hl->parent == inode) // root of subvol
         parfr = NULL;
     else {
-        Status = open_fileref_dir_by_inode(Vcb, subvol, hl->parent, &parfr);
+        Status = open_fileref_by_inode(Vcb, subvol, hl->parent, &parfr);
         if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_dir_by_inode returned %08x\n", Status);
+            ERR("open_fileref_by_inode returned %08x\n", Status);
             free_fcb(fcb);
             return Status;
         }
@@ -3150,10 +3150,10 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
         
         TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
         
-        Status = open_fileref_dir_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr);
+        Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr);
         
         if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_dir_by_inode returned %08x\n", Status);
+            ERR("open_fileref_by_inode returned %08x\n", Status);
         } else if (!parfr->deleted) {
             LIST_ENTRY* le2;
             BOOL found = FALSE, deleted = FALSE;

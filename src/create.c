@@ -1212,11 +1212,28 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
         free_fcb(fcb);
-        return STATUS_INTERNAL_ERROR;
+        return STATUS_NOT_FOUND;
     }
     
     if (tp.item->size > 0)
         RtlCopyMemory(&fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+    
+    if (fcb->type == 0) { // guess the type from the inode mode, if the caller doesn't know already
+        if (fcb->inode_item.st_mode & __S_IFDIR)
+            fcb->type = BTRFS_TYPE_DIRECTORY;
+        else if (fcb->inode_item.st_mode & __S_IFCHR)
+            fcb->type = BTRFS_TYPE_CHARDEV;
+        else if (fcb->inode_item.st_mode & __S_IFBLK)
+            fcb->type = BTRFS_TYPE_BLOCKDEV;
+        else if (fcb->inode_item.st_mode & __S_IFIFO)
+            fcb->type = BTRFS_TYPE_FIFO;
+        else if (fcb->inode_item.st_mode & __S_IFLNK)
+            fcb->type = BTRFS_TYPE_SYMLINK;
+        else if (fcb->inode_item.st_mode & __S_IFSOCK)
+            fcb->type = BTRFS_TYPE_SOCKET;
+        else
+            fcb->type = BTRFS_TYPE_FILE;
+    }
     
     fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE);
     
@@ -2742,15 +2759,16 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         Status = STATUS_INVALID_PARAMETER;
         goto exit;
     }
-    
-    if (options & FILE_OPEN_BY_FILE_ID) {
-        WARN("FILE_OPEN_BY_FILE_ID not supported\n");
-        Status = STATUS_NOT_IMPLEMENTED;
-        goto exit;
-    }
 
     FileObject = Stack->FileObject;
-
+    
+    if (FileObject->RelatedFileObject && FileObject->RelatedFileObject->FsContext2) {
+        struct _ccb* relatedccb = FileObject->RelatedFileObject->FsContext2;
+        
+        related = relatedccb->fileref;
+    } else
+        related = NULL;
+    
     debug_create_options(options);
     
     switch (RequestedDisposition) {
@@ -2794,14 +2812,20 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     
     // FIXME - if Vcb->readonly or subvol readonly, don't allow the write ACCESS_MASK flags
     
-    if (FileObject->RelatedFileObject && FileObject->RelatedFileObject->FsContext2) {
-        struct _ccb* relatedccb = FileObject->RelatedFileObject->FsContext2;
-        
-        related = relatedccb->fileref;
+    if (options & FILE_OPEN_BY_FILE_ID) {
+        if (FileObject->FileName.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
+            UINT64 inode;
+            
+            RtlCopyMemory(&inode, FileObject->FileName.Buffer, sizeof(UINT64));
+            
+            Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref);
+        } else {
+            WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            goto exit;
+        }
     } else
-        related = NULL;
-
-    Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
+        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
     
     if (Status == STATUS_REPARSE) {
         REPARSE_DATA_BUFFER* data;
