@@ -1956,6 +1956,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     ULONG defda;
     file_ref* fileref;
+    hardlink* hl;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2093,6 +2094,42 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     fcb->sd_dirty = TRUE;
+    
+    hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+    if (!hl) {
+        ERR("out of memory\n");
+        free_fcb(fcb);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    hl->parent = parfileref->fcb->inode;
+    hl->index = dirpos;
+    
+    hl->utf8.Length = hl->utf8.MaximumLength = utf8len;
+    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8len, ALLOC_TAG);
+    
+    if (!hl->utf8.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl);
+        free_fcb(fcb);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlCopyMemory(hl->utf8.Buffer, utf8, utf8len);
+    
+    hl->name.Length = hl->name.MaximumLength = fpus->Length;
+    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, fpus->Length, ALLOC_TAG);
+    
+    if (!hl->name.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl->utf8.Buffer);
+        ExFreePool(hl);
+        free_fcb(fcb);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(hl->name.Buffer, fpus->Buffer, fpus->Length);
+    
+    InsertTailList(&fcb->hardlinks, &hl->list_entry);
     
     fileref = create_fileref();
     if (!fileref) {
