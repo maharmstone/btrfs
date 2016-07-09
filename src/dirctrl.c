@@ -782,32 +782,87 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     length = IrpSp->Parameters.QueryDirectory.Length;
     
     if (specific_file) {
+        BOOL found = FALSE;
         root* found_subvol;
         UINT64 found_inode, found_index;
         UINT8 found_type;
+        UNICODE_STRING us;
+        LIST_ENTRY* le;
         
-        Status = find_file_in_dir(fcb->Vcb, &ccb->query_string, fileref, &found_subvol, &found_inode, &found_type, &found_index, &utf8);
-        
+        Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, TRUE);
         if (!NT_SUCCESS(Status)) {
-            Status = STATUS_NO_SUCH_FILE;
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
             goto end;
         }
         
-        if (found_subvol == fcb->subvol) {
-            de.key.obj_id = found_inode;
-            de.key.obj_type = TYPE_INODE_ITEM;
-            de.key.offset = 0;
-        } else {
-            de.key.obj_id = found_subvol->id;
-            de.key.obj_type = TYPE_ROOT_ITEM;
-            de.key.offset = 0;
+        ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
+        
+        le = fileref->children.Flink;
+        while (le != &fileref->children) {
+            file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+                
+            if (!fr2->deleted && fr2->filepart_uc.Length == us.Length &&
+                RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+                found = TRUE;
+            
+                if (fr2->fcb->subvol == fcb->subvol) {
+                    de.key.obj_id = fr2->fcb->inode;
+                    de.key.obj_type = TYPE_INODE_ITEM;
+                    de.key.offset = 0;
+                } else {
+                    de.key.obj_id = fr2->fcb->subvol->id;
+                    de.key.obj_type = TYPE_ROOT_ITEM;
+                    de.key.offset = 0;
+                }
+                
+                de.name = ExAllocatePoolWithTag(PagedPool, fr2->utf8.Length, ALLOC_TAG);
+                if (!de.name) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(de.name, fr2->utf8.Buffer, fr2->utf8.Length);
+                
+                de.name_alloc = TRUE;
+                de.namelen = fr2->utf8.Length;
+                de.type = fr2->fcb->type;
+                de.dir_entry_type = DirEntryType_File;
+                break;
+            }
+                
+            le = le->Flink;
         }
         
-        de.name = utf8.Buffer;
-        de.name_alloc = FALSE;
-        de.namelen = utf8.Length;
-        de.type = found_type;
-        de.dir_entry_type = DirEntryType_File;
+        ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+        
+        if (us.Buffer)
+            ExFreePool(us.Buffer);
+        
+        if (!found) {
+            Status = find_file_in_dir(fcb->Vcb, &ccb->query_string, fileref, &found_subvol, &found_inode, &found_type, &found_index, &utf8);
+            
+            if (!NT_SUCCESS(Status)) {
+                Status = STATUS_NO_SUCH_FILE;
+                goto end;
+            }
+            
+            if (found_subvol == fcb->subvol) {
+                de.key.obj_id = found_inode;
+                de.key.obj_type = TYPE_INODE_ITEM;
+                de.key.offset = 0;
+            } else {
+                de.key.obj_id = found_subvol->id;
+                de.key.obj_type = TYPE_ROOT_ITEM;
+                de.key.offset = 0;
+            }
+            
+            de.name = utf8.Buffer;
+            de.name_alloc = FALSE;
+            de.namelen = utf8.Length;
+            de.type = found_type;
+            de.dir_entry_type = DirEntryType_File;
+        }
     } else if (has_wildcard) {
         WCHAR* uni_fn;
         ULONG stringlen;
