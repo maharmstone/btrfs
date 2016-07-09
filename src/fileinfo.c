@@ -1806,6 +1806,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     LARGE_INTEGER time;
     BTRFS_TIME now;
     LIST_ENTRY rollback;
+    hardlink* hl;
     
     InitializeListHead(&rollback);
     
@@ -1966,6 +1967,43 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
       
     insert_fileref_child(related, fr2, TRUE);
+    
+    hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+    if (!hl) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    hl->parent = related->fcb->inode;
+    hl->index = index;
+    
+    hl->name.Length = hl->name.MaximumLength = fnus.Length;
+    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+    
+    if (!hl->name.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(hl->name.Buffer, fnus.Buffer, fnus.Length);
+    
+    hl->utf8.Length = hl->utf8.MaximumLength = utf8.Length;
+    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
+    
+    if (!hl->utf8.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl->name.Buffer);
+        ExFreePool(hl);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(hl->utf8.Buffer, utf8.Buffer, utf8.Length);
+    
+    InsertTailList(&fcb->hardlinks, &hl->list_entry);
     
     mark_fileref_dirty(fr2);
     free_fileref(fr2);
