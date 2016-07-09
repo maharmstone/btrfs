@@ -1210,9 +1210,9 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
+        WARN("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
         free_fcb(fcb);
-        return STATUS_NOT_FOUND;
+        return STATUS_INVALID_PARAMETER;
     }
     
     if (tp.item->size > 0)
