@@ -1689,6 +1689,13 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(ie);
     }
     
+    while (!IsListEmpty(&fcb->hardlinks)) {
+        LIST_ENTRY* le = RemoveHeadList(&fcb->hardlinks);
+        hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+
+        ExFreePool(hl);
+    }
+    
     FsRtlUninitializeFileLock(&fcb->lock);
     
     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);

@@ -696,6 +696,7 @@ fcb* create_fcb() {
     
     InitializeListHead(&fcb->extents);
     InitializeListHead(&fcb->index_list);
+    InitializeListHead(&fcb->hardlinks);
     
     return fcb;
 }

@@ -121,6 +121,12 @@ typedef struct {
     LIST_ENTRY list_entry;
 } index_entry;
 
+typedef struct {
+    UINT64 parent;
+    UINT64 index;
+    LIST_ENTRY list_entry;
+} hardlink;
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -141,6 +147,7 @@ typedef struct _fcb {
     LIST_ENTRY extents;
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
+    LIST_ENTRY hardlinks;
     
     BOOL index_loaded;
     LIST_ENTRY index_list;
