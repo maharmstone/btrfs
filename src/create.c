@@ -1161,6 +1161,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     traverse_ptr tp;
     NTSTATUS Status;
     fcb* fcb;
+    BOOL b;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1242,7 +1243,6 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     } else {
         EXTENT_DATA* ed = NULL;
         traverse_ptr next_tp;
-        BOOL b;
         
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_EXTENT_DATA;
@@ -1327,6 +1327,100 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
         fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
     }
+    
+    // FIXME - only do if st_nlink > 1?
+    // FIXME - do extirefs
+    
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_INODE_REF;
+    searchkey.offset = 0;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        free_fcb(fcb);
+        return Status;
+    }
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            ULONG len;
+            INODE_REF* ir;
+            
+            len = tp.item->size;
+            ir = (INODE_REF*)tp.item->data;
+            
+            while (len >= sizeof(INODE_REF) - 1) {
+                hardlink* hl;
+                ULONG stringlen;
+                
+                hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+                if (!hl) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                hl->parent = tp.item->key.offset;
+                hl->index = ir->index;
+                
+                hl->utf8.Length = hl->utf8.MaximumLength = ir->n;
+                
+                if (hl->utf8.Length > 0) {
+                    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
+                    RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
+                }
+                
+                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    ExFreePool(hl);
+                    free_fcb(fcb);
+                    return Status;
+                }
+                
+                hl->name.Length = hl->name.MaximumLength = stringlen;
+                
+                if (stringlen == 0)
+                    hl->name.Buffer = NULL;
+                else {
+                    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+                    
+                    if (!hl->name.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ExFreePool(hl->name.Buffer);
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                }
+                
+                InsertTailList(&fcb->hardlinks, &hl->list_entry);
+                
+                len -= sizeof(INODE_REF) - 1 + ir->n;
+                ir = (INODE_REF*)&ir->name[ir->n];
+            }
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        
+        if (b) {
+            tp = next_tp;
+            
+            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                break;
+        }
+    } while (b);
     
     *pfcb = fcb;
     return STATUS_SUCCESS;
@@ -1643,6 +1737,9 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     }
                     
                     sf2->fcb = fcb;
+                    
+                    if (type == BTRFS_TYPE_DIRECTORY)
+                        fcb->fileref = sf2;
                     
                     sf2->index = index;
                     sf2->utf8 = utf8;
@@ -1985,6 +2082,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     
     *pfr = fileref;
+    
+    if (type == BTRFS_TYPE_DIRECTORY)
+        fileref->fcb->fileref = fileref;
     
     TRACE("created new file %S in subvol %llx, inode %llx\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
     

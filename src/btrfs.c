@@ -1692,6 +1692,12 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     while (!IsListEmpty(&fcb->hardlinks)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->hardlinks);
         hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+        
+        if (hl->name.Buffer)
+            ExFreePool(hl->name.Buffer);
+        
+        if (hl->utf8.Buffer)
+            ExFreePool(hl->utf8.Buffer);
 
         ExFreePool(hl);
     }
@@ -1757,6 +1763,9 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     ExFreePool(fr->nonpaged);
     
     // FIXME - throw error if children not empty
+    
+    if (fr->fcb->fileref == fr)
+        fr->fcb->fileref = NULL;
     
     free_fcb(fr->fcb);
     
@@ -3572,6 +3581,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
+    
+    root_fcb->fileref = Vcb->root_fileref;
     
     root_ccb = ExAllocatePoolWithTag(PagedPool, sizeof(ccb), ALLOC_TAG);
     if (!root_ccb) {

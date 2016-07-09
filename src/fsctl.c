@@ -466,6 +466,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->created = TRUE;
     mark_fileref_dirty(fr);
     
+    if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
+        fr->fcb->fileref = fr;
+    
     free_fileref(fr);
 
     // change fcb's INODE_ITEM
@@ -964,6 +967,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);
+    
+    if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
+        fr->fcb->fileref = fr;
     
     fr->created = TRUE;
     mark_fileref_dirty(fr);

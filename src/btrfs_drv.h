@@ -124,8 +124,12 @@ typedef struct {
 typedef struct {
     UINT64 parent;
     UINT64 index;
+    UNICODE_STRING name;
+    ANSI_STRING utf8;
     LIST_ENTRY list_entry;
 } hardlink;
+
+struct _file_ref;
 
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
@@ -148,6 +152,7 @@ typedef struct _fcb {
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
     LIST_ENTRY hardlinks;
+    struct _file_ref* fileref;
     
     BOOL index_loaded;
     LIST_ENTRY index_list;
@@ -171,8 +176,6 @@ typedef struct {
     fcb* fcb;
     LIST_ENTRY list_entry;
 } dirty_fcb;
-
-struct _file_ref;
 
 typedef struct {
     ERESOURCE children_lock;
