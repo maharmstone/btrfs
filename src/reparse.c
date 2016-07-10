@@ -274,7 +274,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (fcb->type == BTRFS_TYPE_FILE && tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) {
         Status = set_symlink(Irp, fileref, rdb, buflen, &rollback);
-        fileref->fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
+        fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {
         LARGE_INTEGER offset, time;
         BTRFS_TIME now;
@@ -330,6 +330,8 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         mark_fcb_dirty(fcb);
     }
+    
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED);
     
 end:
     if (NT_SUCCESS(Status))
