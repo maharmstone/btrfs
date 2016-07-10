@@ -2921,7 +2921,15 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             
             RtlCopyMemory(&inode, FileObject->FileName.Buffer, sizeof(UINT64));
             
-            Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref);
+            if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
+                inode = Vcb->root_fileref->fcb->inode;
+            
+            if (inode == 0) { // we use 0 to mean the parent of a subvolume
+                fileref = related->parent;
+                increase_fileref_refcount(fileref);
+                Status = STATUS_SUCCESS;
+            } else
+                Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref);
         } else {
             WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
             Status = STATUS_NOT_IMPLEMENTED;

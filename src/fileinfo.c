@@ -3225,12 +3225,13 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, fcb* fcb, LONG* length) {
+static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_ref* fileref, LONG* length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     ULONG bytes_needed;
     FILE_LINK_ENTRY_INFORMATION* feli;
     BOOL overflow = FALSE;
+    fcb* fcb = fileref->fcb;
     ULONG len;
     
     if (fcb->ads)
@@ -3247,9 +3248,16 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
-    if (fcb == fcb->Vcb->root_fileref->fcb) {
-        bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION);
+    if (fcb->inode == SUBVOL_ROOT_INODE) {
+        ULONG namelen;
+        
+        if (fcb == fcb->Vcb->root_fileref->fcb)
+            namelen = sizeof(WCHAR);
+        else
+            namelen = fileref->filepart.Length;
                     
+        bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + namelen;
+        
         if (bytes_needed > *length)
             overflow = TRUE;
         
@@ -3257,9 +3265,15 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
             feli = &fli->Entry;
                         
             feli->NextEntryOffset = 0;
-            feli->ParentFileId = fcb->inode;
-            feli->FileNameLength = 1;
-            feli->FileName[0] = '.';
+            feli->ParentFileId = 0; // we use an inode of 0 to mean the parent of a subvolume
+            
+            if (fcb == fcb->Vcb->root_fileref->fcb) {
+                feli->FileNameLength = 1;
+                feli->FileName[0] = '.';
+            } else {
+                feli->FileNameLength = fileref->filepart.Length / sizeof(WCHAR);
+                RtlCopyMemory(feli->FileName, fileref->filepart.Buffer, fileref->filepart.Length);
+            }
             
             fli->EntriesReturned++;
             
@@ -3572,7 +3586,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileHardLinkInformation\n");
             
-            Status = fill_in_hard_link_information(fli, fcb, &length);
+            Status = fill_in_hard_link_information(fli, fileref, &length);
             
             break;
         }
