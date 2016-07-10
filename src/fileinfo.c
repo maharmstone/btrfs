@@ -1890,14 +1890,17 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
 
     if (NT_SUCCESS(Status)) {
-        WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
+        if (!oldfileref->deleted) {
+            WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
-        if (fileref != oldfileref && !(oldfileref->fcb->open_count == 0 && oldfileref->deleted)) {
             if (!fli->ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
             } else if (oldfileref->fcb->open_count >= 1 && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            } else if (fileref == oldfileref) {
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
             }
@@ -1907,6 +1910,9 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
             }
+        } else {
+            free_fileref(oldfileref);
+            oldfileref = NULL;
         }
     }
     
