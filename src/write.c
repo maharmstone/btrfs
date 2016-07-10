@@ -7830,6 +7830,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     ccb* ccb;
     file_ref* fileref;
     BOOL paging_lock = FALSE, fcb_lock = FALSE, tree_lock = FALSE;
+    ULONG filter = 0;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
     
@@ -8224,9 +8225,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     origii->st_ctime = now;
     
     if (!fcb->ads) {
-        TRACE("setting st_size to %llx\n", newlength);
-        origii->st_size = newlength;
+        if (changed_length) {
+            TRACE("setting st_size to %llx\n", newlength);
+            origii->st_size = newlength;
+            filter |= FILE_NOTIFY_CHANGE_SIZE;
+        }
+        
         origii->st_mtime = now;
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
     
     mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
@@ -8258,6 +8264,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb->subvol->root_item.ctime = now;
     
     Status = STATUS_SUCCESS;
+    
+    if (filter != 0)
+        send_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, FILE_ACTION_MODIFIED);
     
 end:
     if (NT_SUCCESS(Status) && FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {

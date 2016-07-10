@@ -589,6 +589,7 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
                            ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
 BOOL is_file_name_valid(PUNICODE_STRING us);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action);
+void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);

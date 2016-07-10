@@ -1147,12 +1147,10 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
             break;
     }
     
-    Irp->IoStatus.Status = Status;
-    
-    if (Status == STATUS_PENDING) {
-        IoMarkIrpPending(Irp);
+    if (Status == STATUS_PENDING)
         goto exit;
-    }
+    
+    Irp->IoStatus.Status = Status;
 
 //     if (Irp->UserIosb)
 //         *Irp->UserIosb = Irp->IoStatus;

@@ -1581,6 +1581,88 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     ExFreePool(fn.Buffer);
 }
 
+void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) {
+    fcb* fcb = fileref->fcb;
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    // FIXME - call send_notification_fileref instead if st_nlink == 1
+    
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
+    
+    le = fcb->hardlinks.Flink;
+    while (le != &fcb->hardlinks) {
+        hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+        file_ref* parfr;
+        
+        Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref_by_inode returned %08x\n", Status);
+        } else if (!parfr->deleted) {
+            LIST_ENTRY* le2;
+            BOOL found = FALSE, deleted = FALSE;
+            UNICODE_STRING* fn;
+            
+            le2 = parfr->children.Flink;
+            while (le2 != &parfr->children) {
+                file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
+                
+                if (fr2->index == hl->index) {
+                    found = TRUE;
+                    deleted = fr2->deleted;
+                    
+                    if (!deleted)
+                        fn = &fr2->filepart;
+                    
+                    break;
+                }
+                
+                le2 = le2->Flink;
+            }
+            
+            if (!found)
+                fn = &hl->name;
+            
+            if (!deleted) {
+                UNICODE_STRING path;
+                
+                Status = fileref_get_filename(parfr, &path, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("fileref_get_filename returned %08x\n", Status);
+                } else {
+                    UNICODE_STRING fn2;
+                    ULONG name_offset;
+                    
+                    name_offset = path.Length;
+                    if (parfr != fileref->fcb->Vcb->root_fileref) name_offset += sizeof(WCHAR);
+                    
+                    fn2.Length = fn2.MaximumLength = fn->Length + name_offset;
+                    fn2.Buffer = ExAllocatePoolWithTag(PagedPool, fn2.MaximumLength, ALLOC_TAG);
+                    
+                    RtlCopyMemory(fn2.Buffer, path.Buffer, path.Length);
+                    if (parfr != fileref->fcb->Vcb->root_fileref) fn2.Buffer[path.Length / sizeof(WCHAR)] = '\\';
+                    RtlCopyMemory(&fn2.Buffer[name_offset / sizeof(WCHAR)], fn->Buffer, fn->Length);
+                    
+                    TRACE("%.*S\n", fn2.Length / sizeof(WCHAR), fn2.Buffer);
+                    
+                    FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn2, name_offset,
+                                                  NULL, NULL, filter_match, action, NULL, NULL);
+                    
+                    ExFreePool(fn2.Buffer);
+                    ExFreePool(path.Buffer);
+                }
+            }
+            
+            free_fileref(parfr);
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+}
+
 void mark_fcb_dirty(fcb* fcb) {
     if (!fcb->dirty) {
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -2142,8 +2224,10 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     ERR("CcFlushCache returned %08x\n", iosb.Status);
                 }
 
-                ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
-                ExReleaseResourceLite(fcb->Header.PagingIoResource);
+                if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
+                    ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+                    ExReleaseResourceLite(fcb->Header.PagingIoResource);
+                }
 
                 CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
                 
