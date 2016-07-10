@@ -1586,7 +1586,11 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
     LIST_ENTRY* le;
     NTSTATUS Status;
     
-    // FIXME - call send_notification_fileref instead if st_nlink == 1
+    // no point looking for hardlinks if st_nlink == 1
+    if (fileref->fcb->inode_item.st_nlink == 1) {
+        send_notification_fileref(fileref, filter_match, action);
+        return;
+    }
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
     
