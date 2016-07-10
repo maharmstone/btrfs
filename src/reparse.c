@@ -356,7 +356,6 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     file_ref* fileref;
     LIST_ENTRY rollback;
     
-    // FIXME - send notification if this succeeds? The attributes will have changed.
     // FIXME - check permissions
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
@@ -490,6 +489,8 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     Status = STATUS_SUCCESS;
+    
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED);
     
 end:
     if (NT_SUCCESS(Status))
