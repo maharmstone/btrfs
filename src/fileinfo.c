@@ -29,7 +29,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
-    ULONG defda;
+    ULONG defda, filter = 0;
     BOOL inode_item_changed = FALSE;
     NTSTATUS Status;
     
@@ -85,6 +85,8 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         fcb->subvol->root_item.ctime = now;
         
         inode_item_changed = TRUE;
+        
+        filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
     }
     
 //     FIXME - CreationTime
@@ -98,6 +100,9 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         
         mark_fcb_dirty(fcb);
     }
+    
+    if (filter != 0)
+        send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
 
     Status = STATUS_SUCCESS;
 
