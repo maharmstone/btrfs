@@ -433,6 +433,51 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         le = le->Flink;
     }
     
+    le = oldfcb->hardlinks.Flink;
+    while (le != &oldfcb->hardlinks) {
+        hardlink *hl = CONTAINING_RECORD(le, hardlink, list_entry), *hl2;
+        
+        hl2 = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+        
+        if (!hl2) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        hl2->parent = hl->parent;
+        hl2->index = hl->index;
+        
+        hl2->name.Length = hl2->name.MaximumLength = hl->name.Length;
+        hl2->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->name.MaximumLength, ALLOC_TAG);
+        
+        if (!hl2->name.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(hl2);
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(hl2->name.Buffer, hl->name.Buffer, hl->name.Length);
+        
+        hl2->utf8.Length = hl2->utf8.MaximumLength = hl->utf8.Length;
+        hl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->utf8.MaximumLength, ALLOC_TAG);
+        
+        if (!hl2->utf8.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(hl2->name.Buffer);
+            ExFreePool(hl2);
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(hl2->utf8.Buffer, hl->utf8.Buffer, hl->utf8.Length);
+        
+        InsertTailList(&fcb->hardlinks, &hl2->list_entry);
+        
+        le = le->Flink;
+    }
+    
     fcb->last_dir_index = oldfcb->last_dir_index;
     
     if (oldfcb->reparse_xattr.Buffer && oldfcb->reparse_xattr.Length > 0) {
