@@ -1246,7 +1246,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     NTSTATUS Status;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    LIST_ENTRY rollback;
+    LIST_ENTRY rollback, *le;
+    hardlink* hl;
     
     InitializeListHead(&rollback);
     
@@ -1512,6 +1513,67 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
+    
+    // add new hardlink entry to fcb
+    
+    hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+    if (!hl) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    hl->parent = related->fcb->inode;
+    hl->index = index;
+    
+    hl->name.Length = hl->name.MaximumLength = fileref->filepart.Length;
+    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+    
+    if (!hl->name.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(hl->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
+    
+    hl->utf8.Length = hl->utf8.MaximumLength = fileref->utf8.Length;
+    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
+    
+    if (!hl->utf8.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(hl->name.Buffer);
+        ExFreePool(hl);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlCopyMemory(hl->utf8.Buffer, fileref->utf8.Buffer, fileref->utf8.Length);
+    
+    InsertTailList(&fcb->hardlinks, &hl->list_entry);
+    
+    // delete old hardlink entry from fcb
+    
+    le = fcb->hardlinks.Flink;
+    while (le != &fcb->hardlinks) {
+        hl = CONTAINING_RECORD(le, hardlink, list_entry);
+        
+        if (hl->parent == fr2->parent->fcb->inode && hl->index == fr2->index) {
+            RemoveEntryList(&hl->list_entry);
+            
+            if (hl->utf8.Buffer)
+                ExFreePool(hl->utf8.Buffer);
+            
+            if (hl->name.Buffer)
+                ExFreePool(hl->name.Buffer);
+            
+            ExFreePool(hl);
+            break;
+        }
+        
+        le = le->Flink;
+    }
 
     // update inode's INODE_ITEM
     
