@@ -3100,7 +3100,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
-            ULONG defda;
+            ULONG defda, oldatts, filter;
+            LARGE_INTEGER time;
+            BTRFS_TIME now;
             
             if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
                 WARN("cannot overwrite readonly file\n");
@@ -3135,7 +3137,11 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 }
             }
             
+            filter = FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
+            
             mark_fcb_dirty(fileref->fcb);
+            
+            oldatts = fileref->fcb->atts;
             
             defda = get_file_attributes(Vcb, &fileref->fcb->inode_item, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
                                         fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
@@ -3145,12 +3151,24 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             else
                 fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
             
-            fileref->fcb->atts_changed = TRUE;
-            fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
+            if (fileref->fcb->atts != oldatts) {
+                fileref->fcb->atts_changed = TRUE;
+                fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
+                filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
+            }
+            
+            KeQuerySystemTime(&time);
+            win_time_to_unix(time, &now);
+            
+            fileref->fcb->inode_item.transid = Vcb->superblock.generation;
+            fileref->fcb->inode_item.sequence++;
+            fileref->fcb->inode_item.st_ctime = now;
+            fileref->fcb->inode_item.st_mtime = now;
 
             // FIXME - truncate streams
             // FIXME - do we need to alter parent directory's times?
-            // FIXME - send notifications
+            
+            send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
         }
     
         if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
