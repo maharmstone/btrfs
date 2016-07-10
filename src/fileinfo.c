@@ -1079,6 +1079,19 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 
                 InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
                 
+                while (!IsListEmpty(&me->fileref->fcb->hardlinks)) {
+                    LIST_ENTRY* le = RemoveHeadList(&me->fileref->fcb->hardlinks);
+                    hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+                    
+                    if (hl->name.Buffer)
+                        ExFreePool(hl->name.Buffer);
+                    
+                    if (hl->utf8.Buffer)
+                        ExFreePool(hl->utf8.Buffer);
+
+                    ExFreePool(hl);
+                }
+                
                 mark_fcb_dirty(me->fileref->fcb);
                 
                 if ((!me->dummyfcb->ads && me->dummyfcb->inode_item.st_nlink > 1) || (me->dummyfcb->ads && me->parent->dummyfcb->inode_item.st_nlink > 1)) {
@@ -1117,6 +1130,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     
     le = move_list.Flink;
     while (le != &move_list) {
+        hardlink* hl;
+        
         me = CONTAINING_RECORD(le, move_entry, list_entry);
         
         me->dummyfileref = create_fileref();
@@ -1228,6 +1243,41 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 goto end;
             }
         }
+        
+        hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+        if (!hl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        hl->parent = me->fileref->parent->fcb->inode;
+        hl->index = me->fileref->index;
+        
+        hl->utf8.Length = hl->utf8.MaximumLength = me->fileref->utf8.Length;
+        hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
+        if (!hl->utf8.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            ExFreePool(hl);
+            goto end;
+        }
+        
+        RtlCopyMemory(hl->utf8.Buffer, me->fileref->utf8.Buffer, me->fileref->utf8.Length);
+        
+        hl->name.Length = hl->name.MaximumLength = me->fileref->filepart.Length;
+        hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+        if (!hl->name.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            ExFreePool(hl->utf8.Buffer);
+            ExFreePool(hl);
+            goto end;
+        }
+        
+        RtlCopyMemory(hl->name.Buffer, me->fileref->filepart.Buffer, me->fileref->filepart.Length);
+        
+        InsertTailList(&me->fileref->fcb->hardlinks, &hl->list_entry);
         
         mark_fileref_dirty(me->fileref);
         
