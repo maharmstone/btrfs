@@ -981,8 +981,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // change fcb's INODE_ITEM
     
-    // unlike when we create a file normally, the times and seq of the parent don't appear to change
     fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
+    fcb->inode_item.st_ctime = now;
+    fcb->inode_item.st_mtime = now;
     
     mark_fcb_dirty(fcb);
     
@@ -999,8 +1001,8 @@ end:
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (NT_SUCCESS(Status)) {
-        if (fr)
-            send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
+        send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
+        send_notification_fileref(fr->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     }
     
 end2:
