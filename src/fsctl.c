@@ -473,8 +473,8 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     // change fcb's INODE_ITEM
     
-    // unlike when we create a file normally, the seq of the parent doesn't appear to change
     fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
     fcb->inode_item.st_ctime = now;
     fcb->inode_item.st_mtime = now;
     
@@ -482,6 +482,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fcb->subvol->root_item.ctime = now;
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    
+    send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
+    send_notification_fileref(fr->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     
     le = subvol->fcbs.Flink;
     while (le != &subvol->fcbs) {
