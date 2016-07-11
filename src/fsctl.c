@@ -1071,6 +1071,8 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     NTSTATUS Status;
     BOOL set;
     fcb* fcb;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
     
     // FIXME - check permissions
     
@@ -1086,6 +1088,11 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     
     if (!fcb) {
         ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!fileref) {
+        ERR("no fileref\n");
         return STATUS_INVALID_PARAMETER;
     }
     
@@ -1108,8 +1115,6 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
         fcb->atts_changed = TRUE;
     } else {
         ULONG defda;
-        ccb* ccb = FileObject->FsContext2;
-        file_ref* fileref = ccb ? ccb->fileref : NULL;
         
         fcb->atts &= ~FILE_ATTRIBUTE_SPARSE_FILE;
         fcb->atts_changed = TRUE;
@@ -1121,6 +1126,7 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     }
     
     mark_fcb_dirty(fcb);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED);
     
     Status = STATUS_SUCCESS;
     
