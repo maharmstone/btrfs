@@ -1314,6 +1314,8 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     FILE_ZERO_DATA_INFORMATION* fzdi = data;
     NTSTATUS Status;
     fcb* fcb;
+    ccb* ccb;
+    file_ref* fileref;
     LIST_ENTRY rollback, changed_sector_list, *le;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -1341,6 +1343,14 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     
     if (!fcb) {
         ERR("FCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    ccb = FileObject->FsContext2;
+    fileref = ccb ? ccb->fileref : NULL;
+    
+    if (!fileref) {
+        ERR("fileref was NULL\n");
         return STATUS_INVALID_PARAMETER;
     }
     
@@ -1456,6 +1466,8 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
+    
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
