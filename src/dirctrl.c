@@ -78,7 +78,10 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     free_fcb(fcb);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+    
     return tag;
 }
 
