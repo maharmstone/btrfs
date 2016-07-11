@@ -1847,6 +1847,11 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     CC_FILE_SIZES ccfs;
     LIST_ENTRY rollback;
     
+    if (!fileref) {
+        ERR("fileref is NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     InitializeListHead(&rollback);
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
@@ -1915,6 +1920,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     win_time_to_unix(time, &fcb->inode_item.st_mtime);
     
     mark_fcb_dirty(fcb);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED);
 
     Status = STATUS_SUCCESS;
 
