@@ -32,7 +32,7 @@ typedef struct {
     enum DirEntryType dir_entry_type;
 } dir_entry;
 
-ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type) {
+static ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts) {
     fcb* fcb;
     ULONG tag = 0, br;
     NTSTATUS Status;
@@ -45,6 +45,9 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)
         return 0;
     
+    if (!(atts & FILE_ATTRIBUTE_REPARSE_POINT))
+        return 0;
+    
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb);
     if (!NT_SUCCESS(Status)) {
@@ -55,9 +58,6 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
-    
-    if (!(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT))
-        goto end;
     
     if (type == BTRFS_TYPE_DIRECTORY) {
         if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
@@ -245,7 +245,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = stringlen;
-            fbdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
+            fbdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts);
             fbdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             
@@ -320,7 +320,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = stringlen;
-            ffdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
+            ffdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts);
             
             Status = RtlUTF8ToUnicodeN(ffdi->FileName, stringlen, &stringlen, de->name, de->namelen);
 
@@ -360,7 +360,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = stringlen;
-            fibdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type);
+            fibdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts);
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             fibdi->FileId.QuadPart = inode;

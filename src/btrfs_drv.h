@@ -723,7 +723,6 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type);
 
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
