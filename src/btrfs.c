@@ -1734,14 +1734,16 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         return;
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
+    
+    if (fcb->list_entry.Flink)
+        RemoveEntryList(&fcb->list_entry);
+    
+    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->index_lock);
     ExFreePool(fcb->nonpaged);
-    
-    if (fcb->list_entry.Flink)
-        RemoveEntryList(&fcb->list_entry);
     
     if (fcb->sd)
         ExFreePool(fcb->sd);
@@ -1789,8 +1791,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     }
     
     FsRtlUninitializeFileLock(&fcb->lock);
-    
-    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
     
     ExFreePool(fcb);
 #ifdef DEBUG_FCB_REFCOUNTS
