@@ -930,12 +930,12 @@ exit:
     return Status;
 }
 
-NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* fileref, ACCESS_STATE* as) {
+NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
     NTSTATUS Status;
     PSID owner;
     BOOLEAN defaulted;
     
-    Status = SeAssignSecurityEx((fileref && fileref->parent) ? fileref->parent->fcb->sd : NULL, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
                                 SEF_SACL_AUTO_INHERIT, &as->SubjectSecurityContext, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {
