@@ -3732,7 +3732,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
     Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
-    Stack->Parameters.MountVolume.Vpb->RealDevice = DeviceToMount;
     Stack->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
     NewDeviceObject->Vpb->VolumeLabelLength = 4; // FIXME
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';

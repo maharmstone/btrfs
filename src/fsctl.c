@@ -25,6 +25,9 @@
 
 #define DOTDOT ".."
 
+extern LIST_ENTRY VcbList;
+extern ERESOURCE global_loading_lock;
+
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
     fcb* fcb;
@@ -1734,6 +1737,115 @@ static NTSTATUS unlock_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS invalidate_volumes(PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    LUID TcbPrivilege = {SE_TCB_PRIVILEGE, 0};
+    NTSTATUS Status;
+    HANDLE h;
+    PFILE_OBJECT fileobj;
+    PDEVICE_OBJECT devobj;
+    LIST_ENTRY* le;
+    
+    TRACE("FSCTL_INVALIDATE_VOLUMES\n");
+    
+    if (!SeSinglePrivilegeCheck(TcbPrivilege, Irp->RequestorMode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+
+#if defined(_WIN64)
+    if (IoIs32bitProcess(Irp)) {
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength != sizeof(UINT32))
+            return STATUS_INVALID_PARAMETER;
+
+        h = (HANDLE)LongToHandle((*(PUINT32)Irp->AssociatedIrp.SystemBuffer));
+    } else {
+#endif
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength != sizeof(HANDLE))
+            return STATUS_INVALID_PARAMETER;
+
+        h = *(PHANDLE)Irp->AssociatedIrp.SystemBuffer;
+#if defined(_WIN64)
+    }
+#endif
+
+    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, KernelMode, (void**)&fileobj, NULL);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+        return Status;
+    }
+    
+    devobj = fileobj->DeviceObject;
+    ObDereferenceObject(fileobj);
+
+    ExAcquireResourceSharedLite(&global_loading_lock, TRUE);
+    
+    le = VcbList.Flink;
+    
+    while (le != &VcbList) {
+        device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        
+        if (Vcb->Vpb->RealDevice == devobj) {
+            int3;
+            
+            // FIXME - flush files
+            
+            if (Vcb->Vpb == devobj->Vpb) {
+                KIRQL irql;
+                PVPB newvpb;
+                BOOL free_newvpb = FALSE;
+                
+                newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
+                if (!newvpb) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlZeroMemory(newvpb, sizeof(VPB));
+                
+                IoAcquireVpbSpinLock(&irql);
+                devobj->Vpb->Flags &= ~VPB_MOUNTED;
+                IoReleaseVpbSpinLock(irql);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE); // avoid unmounted while flush is going on
+                ExReleaseResourceLite(&Vcb->tree_lock);
+                    
+                IoAcquireVpbSpinLock(&irql);
+
+                if (devobj->Vpb->Flags & VPB_MOUNTED) {
+                    newvpb->Type = IO_TYPE_VPB;
+                    newvpb->Size = sizeof(VPB);
+                    newvpb->RealDevice = devobj;
+                    newvpb->Flags = devobj->Vpb->Flags & VPB_REMOVE_PENDING;
+                    
+                    devobj->Vpb = newvpb;
+                    
+                    Vcb->removing = TRUE;
+                } else
+                    free_newvpb = TRUE;
+
+                IoReleaseVpbSpinLock(irql);
+                
+                if (free_newvpb)
+                    ExFreePool(newvpb);
+                
+                uninit(Vcb, FALSE);
+            }
+            
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&global_loading_lock);
+    
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1822,8 +1934,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_INVALIDATE_VOLUMES:
-            WARN("STUB: FSCTL_INVALIDATE_VOLUMES\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = invalidate_volumes(Irp);
             break;
 
         case FSCTL_QUERY_FAT_BPB:
