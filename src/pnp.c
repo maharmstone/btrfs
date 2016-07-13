@@ -200,6 +200,11 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
+        Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
+        if (!NT_SUCCESS(Status)) {
+            WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
+        }
+        
         uninit(Vcb, FALSE);
         DeviceObject->Vpb->Flags &= ~VPB_MOUNTED;
     }
