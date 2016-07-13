@@ -1641,6 +1641,82 @@ static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FI
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    NTSTATUS Status;
+    LIST_ENTRY rollback;
+    KIRQL irql;
+    
+    TRACE("FSCTL_LOCK_VOLUME\n");
+    
+    TRACE("locking volume\n");
+    
+    FsRtlNotifyVolumeEvent(IrpSp->FileObject, FSRTL_VOLUME_LOCK);
+    
+    if (Vcb->locked)
+        return STATUS_SUCCESS;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    
+    if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->fcb->open_count > 0 || has_open_children(Vcb->root_fileref))) {
+        Status = STATUS_ACCESS_DENIED;
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        goto end;
+    }
+    
+    Vcb->locked = TRUE;
+    
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+    
+    InitializeListHead(&rollback);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    // FIXME - flush file caches
+    
+    if (Vcb->need_write)
+        do_write(Vcb, &rollback);
+    
+    free_trees(Vcb);
+    
+    clear_rollback(&rollback);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    IoAcquireVpbSpinLock(&irql);
+
+    if (!(Vcb->Vpb->Flags & VPB_LOCKED)) { 
+        Vcb->Vpb->Flags |= VPB_LOCKED;
+        Vcb->locked_fileobj = IrpSp->FileObject;
+    } else {
+        Status = STATUS_ACCESS_DENIED;
+        IoReleaseVpbSpinLock(irql);
+        goto end;
+    }
+
+    IoReleaseVpbSpinLock(irql);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (!NT_SUCCESS(Status))
+        FsRtlNotifyVolumeEvent(IrpSp->FileObject, FSRTL_VOLUME_LOCK_FAILED);
+    
+    return Status;
+}
+
+void do_unlock_volume(device_extension* Vcb) {
+    KIRQL irql;
+
+    IoAcquireVpbSpinLock(&irql);
+
+    Vcb->locked = FALSE;
+    Vcb->Vpb->Flags &= ~VPB_LOCKED;
+    Vcb->locked_fileobj = NULL;
+
+    IoReleaseVpbSpinLock(irql);
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1677,8 +1753,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_LOCK_VOLUME:
-            WARN("STUB: FSCTL_LOCK_VOLUME\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = lock_volume(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_UNLOCK_VOLUME:

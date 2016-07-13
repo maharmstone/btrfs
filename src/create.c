@@ -1618,7 +1618,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     
     TRACE("(%p, %p, %p, %u, %p)\n", Vcb, pfr, related, parent, unparsed);
     
-    if (Vcb->removing)
+    if (Vcb->removing || Vcb->locked)
         return STATUS_ACCESS_DENIED;
     
     fnus2 = *fnus;

@@ -1213,7 +1213,7 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
         goto end;
     }
     
-    if (Vcb->removing) {
+    if (Vcb->removing || Vcb->locked) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -2201,6 +2201,12 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         
         if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
             fileref->delete_on_close = FALSE;
+        
+        if (Vcb->locked && Vcb->locked_fileobj == FileObject) {
+            TRACE("unlocking volume\n");
+            do_unlock_volume(Vcb);
+            FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
+        }
         
         if (oc == 0) {
             LIST_ENTRY rollback;

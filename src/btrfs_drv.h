@@ -419,6 +419,8 @@ typedef struct _device_extension {
 //     WCHAR label[MAX_LABEL_SIZE];
     BOOL readonly;
     BOOL removing;
+    BOOL locked;
+    PFILE_OBJECT locked_fileobj;
     fcb* volume_fcb;
     file_ref* root_fileref;
     ERESOURCE DirResource;
@@ -762,6 +764,7 @@ NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
+void do_unlock_volume(device_extension* Vcb);
 
 // in flushthread.c
 void STDCALL flush_thread(void* context);
