@@ -1717,6 +1717,23 @@ void do_unlock_volume(device_extension* Vcb) {
     IoReleaseVpbSpinLock(irql);
 }
 
+static NTSTATUS unlock_volume(device_extension* Vcb, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    
+    TRACE("FSCTL_UNLOCK_VOLUME\n");
+    
+    if (!Vcb->locked || IrpSp->FileObject != Vcb->locked_fileobj)
+        return STATUS_NOT_LOCKED;
+    
+    TRACE("unlocking volume\n");
+    
+    do_unlock_volume(Vcb);
+    
+    FsRtlNotifyVolumeEvent(IrpSp->FileObject, FSRTL_VOLUME_UNLOCK);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1757,8 +1774,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_UNLOCK_VOLUME:
-            WARN("STUB: FSCTL_UNLOCK_VOLUME\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = unlock_volume(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_DISMOUNT_VOLUME:
