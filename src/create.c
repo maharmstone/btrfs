@@ -17,6 +17,7 @@
 
 #include <sys/stat.h>
 #include "btrfs_drv.h"
+#include <winioctl.h>
 
 extern PDEVICE_OBJECT devobj;
 
@@ -1644,6 +1645,16 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
+            if (Vcb->root_fileref->fcb->open_count == 0) { // don't allow root to be opened on unmounted FS
+                ULONG cc;
+                IO_STATUS_BLOCK iosb;
+                
+                Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+                
+                if (!NT_SUCCESS(Status))
+                    return Status;
+            }
+            
             increase_fileref_refcount(Vcb->root_fileref);
             *pfr = Vcb->root_fileref;
             return STATUS_SUCCESS;
