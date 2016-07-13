@@ -206,7 +206,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
         
         uninit(Vcb, FALSE);
-        DeviceObject->Vpb->Flags &= ~VPB_MOUNTED;
+        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
     }
 
     return STATUS_SUCCESS;

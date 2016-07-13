@@ -411,6 +411,7 @@ typedef struct {
 typedef struct _device_extension {
     UINT32 type;
     mount_options options;
+    PVPB Vpb;
     device* devices;
     UINT64 devices_loaded;
 //     DISK_GEOMETRY geometry;

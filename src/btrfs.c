@@ -3732,6 +3732,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
+    Vcb->Vpb = NewDeviceObject->Vpb;
     
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
