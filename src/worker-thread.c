@@ -94,12 +94,15 @@ void STDCALL worker_thread(void* context) {
             do_job(thread, le);
         }
         
+        FsRtlExitFileSystem();
+        
         if (thread->quit)
             break;
-
-        FsRtlExitFileSystem();
     }
     
     ObDereferenceObject(thread->DeviceObject);
+    
+    KeSetEvent(&thread->finished, 0, FALSE);
+    
     PsTerminateSystemThread(STATUS_SUCCESS);
 }

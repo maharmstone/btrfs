@@ -1938,7 +1938,16 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
     
-    // FIXME - stop async threads
+    for (i = 0; i < Vcb->threads.num_threads; i++) {
+        Vcb->threads.threads[i].quit = TRUE;
+        KeSetEvent(&Vcb->threads.threads[i].event, 0, FALSE);
+        
+        KeWaitForSingleObject(&Vcb->threads.threads[i].finished, Executive, KernelMode, FALSE, NULL);
+        
+        ZwClose(Vcb->threads.threads[i].handle);
+    }
+    
+    ExFreePool(Vcb->threads.threads);
     
     free_fcb(Vcb->volume_fcb);
     
@@ -3292,13 +3301,12 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    // FIXME - free Vcb->threads.threads etc. in uninit
-    
     RtlZeroMemory(Vcb->threads.threads, sizeof(drv_thread) * Vcb->threads.num_threads);
     
     for (i = 0; i < Vcb->threads.num_threads; i++) {
         Vcb->threads.threads[i].DeviceObject = DeviceObject;
         KeInitializeEvent(&Vcb->threads.threads[i].event, SynchronizationEvent, FALSE);
+        KeInitializeEvent(&Vcb->threads.threads[i].finished, NotificationEvent, FALSE);
         InitializeListHead(&Vcb->threads.threads[i].jobs);
         KeInitializeSpinLock(&Vcb->threads.threads[i].spin_lock);
         

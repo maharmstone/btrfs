@@ -389,7 +389,7 @@ typedef struct {
 typedef struct {
     PDEVICE_OBJECT DeviceObject;
     HANDLE handle;
-    KEVENT event;
+    KEVENT event, finished;
     BOOL quit;
     LIST_ENTRY jobs;
     KSPIN_LOCK spin_lock;
