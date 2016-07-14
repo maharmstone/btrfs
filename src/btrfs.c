@@ -3284,7 +3284,7 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
     ULONG i;
     NTSTATUS Status;
     
-    Vcb->threads.num_threads = 3; // FIXME - number of processors?
+    Vcb->threads.num_threads = max(3, KeQueryActiveProcessorCount(NULL)); // FIXME - number of processors?
     
     Vcb->threads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_thread) * Vcb->threads.num_threads, ALLOC_TAG);
     if (!Vcb->threads.threads) {
