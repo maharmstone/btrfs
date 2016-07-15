@@ -309,10 +309,31 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, LIST_ENTR
     return STATUS_SUCCESS;
 }
 
+static void regen_bootstrap(device_extension* Vcb) {
+    sys_chunk* sc2;
+    USHORT i = 0;
+    LIST_ENTRY* le;
+    
+    i = 0;
+    le = Vcb->sys_chunks.Flink;
+    while (le != &Vcb->sys_chunks) {
+        sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
+        
+        TRACE("%llx,%x,%llx\n", sc2->key.obj_id, sc2->key.obj_type, sc2->key.offset);
+        
+        RtlCopyMemory(&Vcb->superblock.sys_chunk_array[i], &sc2->key, sizeof(KEY));
+        i += sizeof(KEY);
+        
+        RtlCopyMemory(&Vcb->superblock.sys_chunk_array[i], sc2->data, sc2->size);
+        i += sc2->size;
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, ULONG size) {
     sys_chunk *sc, *sc2;
     LIST_ENTRY* le;
-    USHORT i;
     
     if (Vcb->superblock.n + sizeof(KEY) + size > SYS_CHUNK_ARRAY_SIZE) {
         ERR("error - bootstrap is full\n");
@@ -351,21 +372,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     
     Vcb->superblock.n += sizeof(KEY) + size;
     
-    i = 0;
-    le = Vcb->sys_chunks.Flink;
-    while (le != &Vcb->sys_chunks) {
-        sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
-        
-        TRACE("%llx,%x,%llx\n", sc2->key.obj_id, sc2->key.obj_type, sc2->key.offset);
-        
-        RtlCopyMemory(&Vcb->superblock.sys_chunk_array[i], &sc2->key, sizeof(KEY));
-        i += sizeof(KEY);
-        
-        RtlCopyMemory(&Vcb->superblock.sys_chunk_array[i], sc2->data, sc2->size);
-        i += sc2->size;
-        
-        le = le->Flink;
-    }
+    regen_bootstrap(Vcb);
     
     return STATUS_SUCCESS;
 }
@@ -3676,6 +3683,29 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollba
     return STATUS_SUCCESS;
 }
 
+static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset) {
+    sys_chunk* sc2;
+    LIST_ENTRY* le;
+
+    le = Vcb->sys_chunks.Flink;
+    while (le != &Vcb->sys_chunks) {
+        sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
+        
+        if (sc2->key.obj_id == obj_id && sc2->key.obj_type == obj_type && sc2->key.offset == offset) {
+            RemoveEntryList(&sc2->list_entry);
+            
+            Vcb->superblock.n -= sizeof(KEY) + sc2->size;
+            
+            ExFreePool(sc2->data);
+            ExFreePool(sc2);
+            regen_bootstrap(Vcb);
+            return;
+        }
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
@@ -3826,7 +3856,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
     }
     
-    // FIXME - if SYSTEM, remove from bootstrap
+    if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
+        remove_from_bootstrap(Vcb, 0x100, TYPE_CHUNK_ITEM, c->offset);
     
     RemoveEntryList(&c->list_entry);
     
