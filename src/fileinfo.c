@@ -3533,6 +3533,11 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
     if (fcb == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
     
+    if (!ccb) {
+        ERR("ccb is NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     switch (IrpSp->Parameters.QueryFile.FileInformationClass) {
         case FileAllInformation:
         {
@@ -3540,6 +3545,12 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             INODE_ITEM* ii;
             
             TRACE("FileAllInformation\n");
+            
+            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
             
             if (fcb->ads) {
                 if (!fileref || !fileref->parent) {
@@ -3590,6 +3601,12 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileAttributeTagInformation\n");
             
+            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
+            
             Status = fill_in_file_attribute_information(ati, fcb, fileref, &length);
             
             break;
@@ -3601,6 +3618,12 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             INODE_ITEM* ii;
             
             TRACE("FileBasicInformation\n");
+            
+            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
             
             if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_BASIC_INFORMATION)) {
                 WARN("overflow\n");
@@ -3667,6 +3690,12 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileNetworkOpenInformation\n");
             
+            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
+            
             Status = fill_in_file_network_open_information(fnoi, fcb, fileref, &length);
 
             break;
@@ -3677,6 +3706,12 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             FILE_POSITION_INFORMATION* fpi = Irp->AssociatedIrp.SystemBuffer;
             
             TRACE("FilePositionInformation\n");
+            
+            if (!(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA)) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
             
             Status = fill_in_file_position_information(fpi, FileObject, &length);
             
