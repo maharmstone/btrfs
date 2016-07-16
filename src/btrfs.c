@@ -2134,13 +2134,16 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     // update INODE_ITEM of parent
     
-    TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
+    TRACE("delete file %.*S\n", fileref->filepart.Length / sizeof(WCHAR), fileref->filepart.Buffer);
+    ExAcquireResourceExclusiveLite(fileref->parent->fcb->Header.Resource, TRUE);
+    TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
     fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
-    TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
+    TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
     fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
     fileref->parent->fcb->inode_item.sequence++;
     fileref->parent->fcb->inode_item.st_ctime = now;
     fileref->parent->fcb->inode_item.st_mtime = now;
+    ExReleaseResourceLite(fileref->parent->fcb->Header.Resource);
 
     mark_fcb_dirty(fileref->parent->fcb);
     

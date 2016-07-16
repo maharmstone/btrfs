@@ -2000,13 +2000,16 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    TRACE("parfileref->fcb->inode_item.st_size was %llx\n", parfileref->fcb->inode_item.st_size);
+    TRACE("create file %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
+    ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+    TRACE("parfileref->fcb->inode_item.st_size (inode %llx) was %llx\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.st_size += utf8len * 2;
-    TRACE("parfileref->fcb->inode_item.st_size was %llx\n", parfileref->fcb->inode_item.st_size);
+    TRACE("parfileref->fcb->inode_item.st_size (inode %llx) now %llx\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
     parfileref->fcb->inode_item.sequence++;
     parfileref->fcb->inode_item.st_ctime = now;
     parfileref->fcb->inode_item.st_mtime = now;
+    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
     
     mark_fcb_dirty(parfileref->fcb);
     
