@@ -2048,6 +2048,11 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 
     ExAcquireResourceExclusiveLite(fileref->fcb->Header.Resource, TRUE);
     
+    if (fileref->deleted) {
+        ExReleaseResourceLite(fileref->fcb->Header.Resource);
+        return STATUS_SUCCESS;
+    }
+    
     fileref->deleted = TRUE;
     mark_fileref_dirty(fileref);
     
