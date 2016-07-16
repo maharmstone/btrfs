@@ -1229,6 +1229,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     fcb* fcb;
+    ccb* ccb;
     BOOL tree_lock = FALSE, fcb_lock = FALSE;
     
     FsRtlEnterFileSystem();
@@ -1259,6 +1260,20 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (!fcb) {
         ERR("fcb was NULL\n");
         Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
+    if (!(ccb->access & FILE_READ_DATA)) {
+        WARN("insufficient privileges\n");
+        Status = STATUS_ACCESS_DENIED;
         goto exit;
     }
     
