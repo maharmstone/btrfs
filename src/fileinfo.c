@@ -1231,6 +1231,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             
             insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
             
+            me->fileref->parent->fcb->inode_item.st_size += me->fileref->utf8.Length * 2;
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
             me->fileref->parent->fcb->inode_item.st_ctime = now;
@@ -1481,6 +1482,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (related == fileref->parent) { // keeping file in same directory
         UNICODE_STRING fnus2, oldfn, newfn;
         USHORT name_offset;
+        ULONG oldutf8len;
         
         fnus2.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
         if (!fnus2.Buffer) {
@@ -1497,6 +1499,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         fnus2.Length = fnus2.MaximumLength = fnus.Length;
         RtlCopyMemory(fnus2.Buffer, fnus.Buffer, fnus.Length);
+        
+        oldutf8len = fileref->utf8.Length;
         
         if (!fileref->created && !fileref->oldutf8.Buffer)
             fileref->oldutf8 = fileref->utf8;
@@ -1538,6 +1542,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         // update parent's INODE_ITEM
         
         related->fcb->inode_item.transid = Vcb->superblock.generation;
+        related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2* oldutf8len);
         related->fcb->inode_item.sequence++;
         related->fcb->inode_item.st_ctime = now;
         related->fcb->inode_item.st_mtime = now;
@@ -1692,6 +1697,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     // update new parent's INODE_ITEM
     
     related->fcb->inode_item.transid = Vcb->superblock.generation;
+    related->fcb->inode_item.st_size += 2 * utf8len;
     related->fcb->inode_item.sequence++;
     related->fcb->inode_item.st_ctime = now;
     related->fcb->inode_item.st_mtime = now;
@@ -1701,6 +1707,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     // update old parent's INODE_ITEM
     
     fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
+    fr2->parent->fcb->inode_item.st_size -= 2 * fr2->utf8.Length;
     fr2->parent->fcb->inode_item.sequence++;
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
@@ -2202,6 +2209,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     // update parent's INODE_ITEM
     
     parfcb->inode_item.transid = Vcb->superblock.generation;
+    parfcb->inode_item.st_size += 2 * utf8len;
     parfcb->inode_item.sequence++;
     parfcb->inode_item.st_ctime = now;
     

@@ -2134,6 +2134,9 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
     
     // update INODE_ITEM of parent
     
+    TRACE("fileref->parent->fcb->inode_item.st_size was %llx\n", fileref->parent->fcb->inode_item.st_size);
+    fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
+    TRACE("fileref->parent->fcb->inode_item.st_size now %llx\n", fileref->parent->fcb->inode_item.st_size);
     fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
     fileref->parent->fcb->inode_item.sequence++;
     fileref->parent->fcb->inode_item.st_ctime = now;

@@ -4823,11 +4823,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             }
         }
         
-        if (fileref->parent) {
-            fileref->parent->fcb->inode_item.st_size += fileref->utf8.Length * 2;
-            mark_fcb_dirty(fileref->parent->fcb);
-        }
-        
         fileref->created = FALSE;
     } else if (fileref->deleted) {
         UINT32 crc32;
@@ -4889,11 +4884,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         if (!keycmp(&searchkey, &tp.item->key)) {
             delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        }
-        
-        if (fileref->parent) {
-            fileref->parent->fcb->inode_item.st_size -= (fileref->oldutf8.Buffer ? fileref->oldutf8.Length : fileref->utf8.Length) * 2;
-            mark_fcb_dirty(fileref->parent->fcb);
         }
         
         if (fileref->oldutf8.Buffer) {
@@ -5037,11 +5027,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
                 ERR("insert_tree_item failed\n");
                 Status = STATUS_INTERNAL_ERROR;
                 return Status;
-            }
-            
-            if (fileref->parent) {
-                fileref->parent->fcb->inode_item.st_size += (fileref->utf8.Length - fileref->oldutf8.Length) * 2;
-                mark_fcb_dirty(fileref->parent->fcb);
             }
 
             ExFreePool(fileref->oldutf8.Buffer);

@@ -2000,6 +2000,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
+    TRACE("parfileref->fcb->inode_item.st_size was %llx\n", parfileref->fcb->inode_item.st_size);
+    parfileref->fcb->inode_item.st_size += utf8len * 2;
+    TRACE("parfileref->fcb->inode_item.st_size was %llx\n", parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
     parfileref->fcb->inode_item.sequence++;
     parfileref->fcb->inode_item.st_ctime = now;
