@@ -2257,6 +2257,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     fcb* fcb = IrpSp->FileObject->FsContext;
+    ccb* ccb = IrpSp->FileObject->FsContext2;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
@@ -2273,6 +2274,18 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto end;
     }
     
+    if (!fcb) {
+        ERR("no fcb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (!ccb) {
+        ERR("no ccb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
     if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -2286,24 +2299,63 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
     switch (IrpSp->Parameters.SetFile.FileInformationClass) {
         case FileAllocationInformation:
+        {
             TRACE("FileAllocationInformation\n");
+            
+            if (!(ccb->access & FILE_WRITE_DATA)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+            
             Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, FALSE);
             break;
+        }
 
         case FileBasicInformation:
+        {
             TRACE("FileBasicInformation\n");
+            
+            if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+            
             Status = set_basic_information(Vcb, Irp, IrpSp->FileObject);
+            
             break;
+        }
 
         case FileDispositionInformation:
+        {
             TRACE("FileDispositionInformation\n");
+            
+            if (!(ccb->access & DELETE)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+            
             Status = set_disposition_information(Vcb, Irp, IrpSp->FileObject);
+            
             break;
+        }
 
         case FileEndOfFileInformation:
+        {
             TRACE("FileEndOfFileInformation\n");
+            
+            if (!(ccb->access & FILE_WRITE_DATA)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+            
             Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly);
+            
             break;
+        }
 
         case FileLinkInformation:
             TRACE("FileLinkInformation\n");
@@ -2311,9 +2363,19 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
             break;
 
         case FilePositionInformation:
+        {
             TRACE("FilePositionInformation\n");
+            
+            if (!(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA)) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
+            
             Status = set_position_information(Vcb, Irp, IrpSp->FileObject);
+            
             break;
+        }
 
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
@@ -2344,7 +2406,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 end:
     Irp->IoStatus.Status = Status;
 
-    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
 exit:
     if (top_level) 
