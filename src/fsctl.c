@@ -1089,8 +1089,6 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
     
-    // FIXME - check permissions
-    
     if (data && length < sizeof(FILE_SET_SPARSE_BUFFER))
         return STATUS_INVALID_PARAMETER;
     
@@ -1104,6 +1102,16 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     if (!fcb) {
         ERR("FCB was NULL\n");
         return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!ccb) {
+        ERR("CCB was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
     }
     
     if (!fileref) {
