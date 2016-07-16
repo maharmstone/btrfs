@@ -6266,6 +6266,11 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         goto end;
     }
     
+    if (ed2->size >= MAX_EXTENT_SIZE) {
+        TRACE("extent size was too large to extend (%llx >= %llx)\n", ed2->size, (UINT64)MAX_EXTENT_SIZE);
+        goto end;
+    }
+    
     c = get_chunk_from_address(Vcb, ed2->address);
     
     ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
@@ -6275,7 +6280,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         s = CONTAINING_RECORD(le, space, list_entry);
         
         if (s->address == ed2->address + ed2->size) {
-            UINT64 newlen = min(s->size, length);
+            UINT64 newlen = min(min(s->size, length), MAX_EXTENT_SIZE - ed2->size);
             
             success = extend_data(Vcb, fcb, start_data, newlen, data, changed_sector_list, ext, c, Irp, rollback);
             
