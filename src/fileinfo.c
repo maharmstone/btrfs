@@ -3608,7 +3608,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileAllInformation\n");
             
-            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+            if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto exit;
@@ -3663,7 +3663,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileAttributeTagInformation\n");
             
-            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+            if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto exit;
@@ -3681,7 +3681,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileBasicInformation\n");
             
-            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+            if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto exit;
@@ -3752,7 +3752,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileNetworkOpenInformation\n");
             
-            if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+            if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto exit;

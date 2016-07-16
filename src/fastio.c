@@ -47,7 +47,7 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
     if (!ccb)
         return FALSE;
     
-    if (!(ccb->access & FILE_READ_ATTRIBUTES))
+    if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)))
         return FALSE;
     
     if (fcb->ads) {
