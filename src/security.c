@@ -730,6 +730,8 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG buflen;
     BOOL top_level;
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
 
     TRACE("query security\n");
     
@@ -739,6 +741,17 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
+    if (!ccb) {
+        ERR("no ccb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
+    if (!(ccb->access & READ_CONTROL)) {
+        Status = STATUS_ACCESS_DENIED;
         goto exit;
     }
     
