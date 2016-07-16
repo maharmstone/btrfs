@@ -6185,7 +6185,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 }
 
 static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+                            LIST_ENTRY* changed_sector_list, PIRP Irp, UINT64* written, LIST_ENTRY* rollback) {
     BOOL success = FALSE;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -6275,9 +6275,13 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         s = CONTAINING_RECORD(le, space, list_entry);
         
         if (s->address == ed2->address + ed2->size) {
-            if (s->size >= length) {
-                success = extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, ext, c, Irp, rollback);
-            }
+            UINT64 newlen = min(s->size, length);
+            
+            success = extend_data(Vcb, fcb, start_data, newlen, data, changed_sector_list, ext, c, Irp, rollback);
+            
+            if (success)
+                *written += newlen;
+            
             break;
         } else if (s->address > ed2->address + ed2->size)
             break;
@@ -6404,14 +6408,23 @@ NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY*
 NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
-    UINT64 flags;
+    UINT64 flags, orig_length = length, written = 0;
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data, changed_sector_list);
     
     // FIXME - split data up if not enough space for just one extent
     
-    if (start_data > 0 && try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, rollback))
-        return STATUS_SUCCESS;
+    if (start_data > 0) {
+        try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, &written, rollback);
+        
+        if (written == length)
+            return STATUS_SUCCESS;
+        else if (written > 0) {
+            start_data += written;
+            length -= written;
+            data = &((UINT8*)data)[written];
+        }
+    }
     
     // if there is a gap before start_data, plug it with a sparse extent
     // FIXME - don't do this if no_holes set
@@ -6468,42 +6481,77 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
     
-    le = Vcb->chunks.Flink;
-    while (le != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+    while (written < orig_length) {
+        UINT64 newlen = min(length, MAX_EXTENT_SIZE);
+        BOOL done = FALSE;
         
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        // Rather than necessarily writing the whole extent at once, we deal with it in blocks of 128 MB.
+        // First, see if we can write the extent part to an existing chunk.
         
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, Irp, rollback)) {
-                ExReleaseResourceLite(&c->nonpaged->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                return STATUS_SUCCESS;
+        le = Vcb->chunks.Flink;
+        while (le != &Vcb->chunks) {
+            c = CONTAINING_RECORD(le, chunk, list_entry);
+            
+            ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+            
+            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
+                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback)) {
+                    written += newlen;
+                    
+                    if (written == orig_length) {
+                        ExReleaseResourceLite(&c->nonpaged->lock);
+                        ExReleaseResourceLite(&Vcb->chunk_lock);
+                        return STATUS_SUCCESS;
+                    } else {
+                        done = TRUE;
+                        start_data += newlen;
+                        length -= newlen;
+                        data = &((UINT8*)data)[newlen];
+                        break;
+                    }
+                }
             }
-        }
-        
-        ExReleaseResourceLite(&c->nonpaged->lock);
+            
+            ExReleaseResourceLite(&c->nonpaged->lock);
 
-        le = le->Flink;
-    }
-    
-    if ((c = alloc_chunk(Vcb, flags, rollback))) {
-        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
-        
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(Vcb, fcb, c, start_data, length, FALSE, data, changed_sector_list, Irp, rollback)) {
-                ExReleaseResourceLite(&c->nonpaged->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                return STATUS_SUCCESS;
-            }
+            le = le->Flink;
         }
         
-        ExReleaseResourceLite(&c->nonpaged->lock);
+        if (done) continue;
+        
+        // Otherwise, see if we can put it in a new chunk.
+        
+        if ((c = alloc_chunk(Vcb, flags, rollback))) {
+            ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+            
+            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
+                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback)) {
+                    written += newlen;
+                    
+                    if (written == orig_length) {
+                        ExReleaseResourceLite(&c->nonpaged->lock);
+                        ExReleaseResourceLite(&Vcb->chunk_lock);
+                        return STATUS_SUCCESS;
+                    } else {
+                        done = TRUE;
+                        start_data += newlen;
+                        length -= newlen;
+                        data = &((UINT8*)data)[newlen];
+                    }
+                }
+            }
+            
+            ExReleaseResourceLite(&c->nonpaged->lock);
+        }
+        
+        if (!done) {
+            FIXME("FIXME - not enough room to write whole extent part, try to write bits and pieces\n"); // FIXME
+            break;
+        }
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
     
-    // FIXME - rebalance chunks if free space elsewhere?
     WARN("couldn't find any data chunks with %llx bytes free\n", length);
 
     return STATUS_DISK_FULL;
