@@ -1997,6 +1997,8 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     BTRFS_TIME now;
     LIST_ENTRY rollback;
     hardlink* hl;
+    ACCESS_MASK access;
+    SECURITY_SUBJECT_CONTEXT subjcont;
     
     InitializeListHead(&rollback);
     
@@ -2115,6 +2117,17 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
+    SeCaptureSubjectContext(&subjcont);
+
+    if (!SeAccessCheck(related->fcb->sd, &subjcont, FALSE, FILE_ADD_FILE, 0, NULL,
+                       IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+        SeReleaseSubjectContext(&subjcont);
+        WARN("SeAccessCheck failed, returning %08x\n", Status);
+        goto end;
+    }
+
+    SeReleaseSubjectContext(&subjcont);
+    
     if (fcb->subvol != parfcb->subvol) {
         WARN("can't create hard link over subvolume boundary\n");
         Status = STATUS_INVALID_PARAMETER;
@@ -2122,7 +2135,17 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
     
     if (oldfileref) {
-        // FIXME - check we have permissions for this
+        SeCaptureSubjectContext(&subjcont);
+
+        if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, FALSE, DELETE, 0, NULL,
+                           IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+            SeReleaseSubjectContext(&subjcont);
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto end;
+        }
+
+        SeReleaseSubjectContext(&subjcont);
+        
         Status = delete_fileref(oldfileref, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_fileref returned %08x\n", Status);
