@@ -665,6 +665,16 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
+
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!(ccb->access & FILE_LIST_DIRECTORY)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     
