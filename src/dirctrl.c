@@ -1080,9 +1080,19 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     
     TRACE("IRP_MN_NOTIFY_CHANGE_DIRECTORY\n");
     
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     if (!fileref) {
         ERR("no fileref\n");
         return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!(ccb->access & FILE_LIST_DIRECTORY)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
     }
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
