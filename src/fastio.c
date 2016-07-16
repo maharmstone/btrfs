@@ -30,6 +30,7 @@ static void STDCALL release_file_for_create_section(PFILE_OBJECT FileObject) {
 static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFILE_BASIC_INFORMATION fbi,
                                              PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
+    ccb* ccb;
     
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fbi, IoStatus, DeviceObject);
     
@@ -41,9 +42,15 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
     if (!fcb)
         return FALSE;
     
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb)
+        return FALSE;
+    
+    if (!(ccb->access & FILE_READ_ATTRIBUTES))
+        return FALSE;
+    
     if (fcb->ads) {
-        ccb* ccb = FileObject->FsContext2;
-        
         if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb)
             return FALSE;
         
