@@ -261,6 +261,11 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         return STATUS_INTERNAL_ERROR;
     }
     
+    if (!(ccb->access & FILE_ADD_SUBDIRECTORY)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
     fileref = ccb->fileref;
     
     InitializeListHead(&rollback);
