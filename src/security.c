@@ -892,7 +892,10 @@ end:
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    ULONG access_req = 0;
     BOOL top_level;
 
     TRACE("set security\n");
@@ -906,35 +909,52 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
+    if (!ccb) {
+        ERR("no ccb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
     Status = STATUS_SUCCESS;
     
     Irp->IoStatus.Information = 0;
     
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & OWNER_SECURITY_INFORMATION)
+    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & OWNER_SECURITY_INFORMATION) {
         TRACE("OWNER_SECURITY_INFORMATION\n");
+        access_req |= WRITE_OWNER;
+    }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & GROUP_SECURITY_INFORMATION)
+    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & GROUP_SECURITY_INFORMATION) {
         TRACE("GROUP_SECURITY_INFORMATION\n");
+        access_req |= WRITE_OWNER;
+    }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & DACL_SECURITY_INFORMATION)
+    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & DACL_SECURITY_INFORMATION) {
         TRACE("DACL_SECURITY_INFORMATION\n");
+        access_req |= WRITE_DAC;
+    }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & SACL_SECURITY_INFORMATION)
+    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & SACL_SECURITY_INFORMATION) {
         TRACE("SACL_SECURITY_INFORMATION\n");
+        access_req |= ACCESS_SYSTEM_SECURITY;
+    }
     
-    Status = set_file_security(DeviceObject->DeviceExtension, IrpSp->FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
+    if ((ccb->access & access_req) != access_req) {
+        Status = STATUS_ACCESS_DENIED;
+        WARN("insufficient privileges\n");
+        goto exit;
+    }
+    
+    Status = set_file_security(DeviceObject->DeviceExtension, FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
                                IrpSp->Parameters.SetSecurity.SecurityInformation);
     
+exit:
     Irp->IoStatus.Status = Status;
 
-    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-    if (top_level) 
-        IoSetTopLevelIrp(NULL);
-
     TRACE("returning %08x\n", Status);
 
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
 
