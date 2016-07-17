@@ -374,6 +374,8 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
         if (ie->hash == hash && ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
             LIST_ENTRY* le;
             BOOL ignore_entry = FALSE;
+            
+            ExAcquireResourceSharedLite(&fr->nonpaged->children_lock, TRUE);
 
             le = fr->children.Flink;
             while (le != &fr->children) {
@@ -391,6 +393,8 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
                 
                 le = le->Flink;
             }
+            
+            ExReleaseResourceLite(&fr->nonpaged->children_lock);
             
             if (ignore_entry)
                 goto nextitem;
