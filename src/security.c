@@ -747,12 +747,12 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     if (!ccb) {
         ERR("no ccb\n");
         Status = STATUS_INVALID_PARAMETER;
-        goto exit;
+        goto end;
     }
     
     if (!(ccb->access & READ_CONTROL)) {
         Status = STATUS_ACCESS_DENIED;
-        goto exit;
+        goto end;
     }
     
     Status = STATUS_SUCCESS;
@@ -779,7 +779,8 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     if (Irp->MdlAddress && !sd) {
         ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
     
     buflen = IrpSp->Parameters.QuerySecurity.Length;
@@ -794,11 +795,12 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     } else
         Irp->IoStatus.Information = 0;
     
+end:
     TRACE("Irp->IoStatus.Information = %u\n", Irp->IoStatus.Information);
     
     Irp->IoStatus.Status = Status;
 
-    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
 exit:
     if (top_level) 
