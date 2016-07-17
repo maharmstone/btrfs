@@ -1089,7 +1089,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
     UINT8* data;
-    ULONG length;
+    ULONG length, addon = 0;
     UINT64 start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
     length = IrpSp->Parameters.Read.Length;
     *bytes_read = 0;
@@ -1138,7 +1138,8 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         }
         
         if (length + start > fcb->Header.ValidDataLength.QuadPart) {
-            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), length - (fcb->Header.ValidDataLength.QuadPart - start));
+            addon = min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart;
+            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), addon);
             length = fcb->Header.ValidDataLength.QuadPart - start;
         }
     }
@@ -1180,6 +1181,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         
         if (NT_SUCCESS(Status)) {
             Status = Irp->IoStatus.Status;
+            Irp->IoStatus.Information += addon;
             *bytes_read = Irp->IoStatus.Information;
         } else
             ERR("EXCEPTION - %08x\n", Status);
@@ -1213,6 +1215,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         
+        *bytes_read += addon;
         TRACE("read %u bytes\n", *bytes_read);
         
         Irp->IoStatus.Information = *bytes_read;
