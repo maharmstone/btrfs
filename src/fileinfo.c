@@ -2325,7 +2325,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FileAllocationInformation\n");
             
-            if (!(ccb->access & FILE_WRITE_DATA)) {
+            if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_DATA)) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 break;
@@ -2339,7 +2339,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FileBasicInformation\n");
             
-            if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+            if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_ATTRIBUTES)) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 break;
@@ -2354,7 +2354,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FileDispositionInformation\n");
             
-            if (!(ccb->access & DELETE)) {
+            if (Irp->RequestorMode == UserMode && !(ccb->access & DELETE)) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 break;
@@ -2369,7 +2369,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FileEndOfFileInformation\n");
             
-            if (!(ccb->access & FILE_WRITE_DATA)) {
+            if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 break;
@@ -2389,7 +2389,8 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FilePositionInformation\n");
             
-            if (!(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA)) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))) {
+            if (Irp->RequestorMode == UserMode &&
+                (!(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA)) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT)))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
                 break;
