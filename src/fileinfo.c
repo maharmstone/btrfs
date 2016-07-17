@@ -2392,7 +2392,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
             if (!(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA)) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))) {
                 WARN("insufficient privileges\n");
                 Status = STATUS_ACCESS_DENIED;
-                goto exit;
+                break;
             }
             
             Status = set_position_information(Vcb, Irp, IrpSp->FileObject);
