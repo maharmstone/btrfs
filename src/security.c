@@ -914,7 +914,7 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (!ccb) {
         ERR("no ccb\n");
         Status = STATUS_INVALID_PARAMETER;
-        goto exit;
+        goto end;
     }
     
     Status = STATUS_SUCCESS;
@@ -944,19 +944,20 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if ((ccb->access & access_req) != access_req) {
         Status = STATUS_ACCESS_DENIED;
         WARN("insufficient privileges\n");
-        goto exit;
+        goto end;
     }
     
     Status = set_file_security(DeviceObject->DeviceExtension, FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
                                IrpSp->Parameters.SetSecurity.SecurityInformation);
     
-exit:
+end:
     Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
     TRACE("returning %08x\n", Status);
 
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
 
