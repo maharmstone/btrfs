@@ -7964,7 +7964,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             paging_lock = TRUE;
     }
     
-    if (no_cache) {
+    if (no_cache && !ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
             Status = STATUS_PENDING;
             goto end;
