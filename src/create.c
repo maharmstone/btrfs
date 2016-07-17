@@ -2238,7 +2238,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    ULONG access;
     PACCESS_STATE access_state = IrpSp->Parameters.Create.SecurityContext->AccessState;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
@@ -2346,12 +2345,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             UNICODE_STRING fpus2;
             
-            if (!SeAccessCheck(parfileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
-                               IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
-                WARN("SeAccessCheck failed, returning %08x\n", Status);
-                goto end;
-            }
-            
             if (!is_file_name_valid(&fpus))
                 return STATUS_OBJECT_NAME_INVALID;
             
@@ -2383,12 +2376,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         free_fileref(parfileref);
         parfileref = newpar;
-        
-        if (!SeAccessCheck(parfileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
-                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
-            goto end;
-        }
         
         if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK) {
             WARN("parent not file or symlink\n");
@@ -2516,12 +2503,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         ExFreePool(fpus.Buffer);
         fpus.Buffer = NULL;
     } else {
-        if (!SeAccessCheck(parfileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
-                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
-            goto end;
-        }
-        
         if (!is_file_name_valid(&fpus)) {
             Status = STATUS_OBJECT_NAME_INVALID;
             goto end;
@@ -2560,7 +2541,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     RtlInitUnicodeString(&ccb->query_string, NULL);
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
-    ccb->access = access;
+    ccb->access = access_state->OriginalDesiredAccess;
     
 #ifdef DEBUG_FCB_REFCOUNTS
     oc = InterlockedIncrement(&fileref->fcb->open_count);
@@ -2863,8 +2844,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     ccb* ccb;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
-    ULONG access;
-    PACCESS_STATE access_state = Stack->Parameters.Create.SecurityContext->AccessState;
     USHORT unparsed;
     file_ref *related, *fileref;
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -3044,16 +3023,10 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             sf = sf->parent;
         }
         
-        access = access_state->OriginalDesiredAccess;
-        
-        if (options & FILE_DELETE_ON_CLOSE) {
-            if (fileref == Vcb->root_fileref || Vcb->readonly || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
-                Status = STATUS_CANNOT_DELETE;
-                free_fileref(fileref);
-                goto exit;
-            }
-            
-            access |= DELETE;
+        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+            Status = STATUS_CANNOT_DELETE;
+            free_fileref(fileref);
+            goto exit;
         }
         
         if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
@@ -3087,18 +3060,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access, 0, NULL,
-            IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
-        
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-            goto exit;
-        }
-        
         if (fileref->fcb->open_count > 0) {
-            Status = IoCheckShareAccess(access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
+            Status = IoCheckShareAccess(Stack->Parameters.Create.SecurityContext->DesiredAccess,
+                                        Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
             
             if (!NT_SUCCESS(Status)) {
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
@@ -3109,10 +3073,11 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 goto exit;
             }
         } else {
-            IoSetShareAccess(access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
+            IoSetShareAccess(Stack->Parameters.Create.SecurityContext->DesiredAccess,
+                             Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
         }
 
-        if (access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
+        if (Stack->Parameters.Create.SecurityContext->DesiredAccess & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fileref->fcb->nonpaged->segment_object, MmFlushForWrite)) {
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
                 
@@ -3237,7 +3202,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         RtlInitUnicodeString(&ccb->query_string, NULL);
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
-        ccb->access = access;
+        ccb->access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
         
         ccb->fileref = fileref;
         
