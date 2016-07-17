@@ -8369,12 +8369,6 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
     InitializeListHead(&rollback);
     
-    if (Vcb->readonly)
-        return STATUS_MEDIA_WRITE_PROTECTED;
-    
-    if (fcb && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
-        return STATUS_ACCESS_DENIED;
-    
 //     time1 = KeQueryPerformanceCounter(&freq);
     
     TRACE("write\n");
@@ -8458,6 +8452,9 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     BOOL top_level;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb = FileObject ? FileObject->FsContext : NULL;
+    ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
 
     FsRtlEnterFileSystem();
 
@@ -8466,6 +8463,34 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    }
+    
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
+    if (Vcb->readonly) {
+        Status = STATUS_MEDIA_WRITE_PROTECTED;
+        goto end;
+    }
+    
+    if (!(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
+        WARN("insufficient permissions\n");
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
     }
     
 //     ERR("recursive = %s\n", Irp != IoGetTopLevelIrp() ? "TRUE" : "FALSE");
@@ -8483,6 +8508,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = GetExceptionCode();
     }
     
+end:
     Irp->IoStatus.Status = Status;
 
     TRACE("wrote %u bytes\n", Irp->IoStatus.Information);
