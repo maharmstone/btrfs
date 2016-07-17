@@ -2933,8 +2933,14 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_NOT_IMPLEMENTED;
             goto exit;
         }
-    } else
+    } else {
+        if (related && FileObject->FileName.Length != 0 && FileObject->FileName.Buffer[0] == '\\') {
+            Status = STATUS_OBJECT_NAME_INVALID;
+            goto exit;
+        }
+        
         Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
+    }
     
     if (Status == STATUS_REPARSE) {
         REPARSE_DATA_BUFFER* data;
