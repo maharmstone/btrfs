@@ -750,7 +750,8 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         goto end;
     }
     
-    if (!(ccb->access & READ_CONTROL)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & READ_CONTROL)) {
+        WARN("insufficient permissions\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
