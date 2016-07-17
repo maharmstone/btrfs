@@ -3014,17 +3014,18 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     if (NT_SUCCESS(Status)) { // file already exists
         file_ref* sf;
         
-        if (Vcb->readonly && RequestedDisposition == FILE_OVERWRITE_IF) {
-            Status = STATUS_MEDIA_WRITE_PROTECTED;
-            free_fileref(fileref);
-            goto exit;
-        }
-        
-        if (fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && (RequestedDisposition == FILE_SUPERSEDE ||
-            RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF)) {
-            Status = STATUS_ACCESS_DENIED;
-            free_fileref(fileref);
-            goto exit;
+        if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
+            if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+                Status = STATUS_ACCESS_DENIED;
+                free_fileref(fileref);
+                goto exit;
+            }
+            
+            if (Vcb->readonly) {
+                Status = STATUS_MEDIA_WRITE_PROTECTED;
+                free_fileref(fileref);
+                goto exit;
+            }
         }
         
         TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");
@@ -3043,10 +3044,16 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             sf = sf->parent;
         }
         
-        if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF)) {
-            Status = STATUS_ACCESS_DENIED;
-            free_fileref(fileref);
-            goto exit;
+        access = access_state->OriginalDesiredAccess;
+        
+        if (options & FILE_DELETE_ON_CLOSE) {
+            if (fileref == Vcb->root_fileref || Vcb->readonly || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+                Status = STATUS_CANNOT_DELETE;
+                free_fileref(fileref);
+                goto exit;
+            }
+            
+            access |= DELETE;
         }
         
         if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
@@ -3080,7 +3087,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access_state->OriginalDesiredAccess, 0, NULL,
+        if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd, &access_state->SubjectSecurityContext, FALSE, access, 0, NULL,
             IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode, &access, &Status)) {
             WARN("SeAccessCheck failed, returning %08x\n", Status);
         
