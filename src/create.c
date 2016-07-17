@@ -1255,6 +1255,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     }
     
     InsertTailList(&subvol->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     
@@ -1576,6 +1577,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
     TRACE("stream found: size = %x, hash = %08x\n", xattrlen, fcb->adshash);
     
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     *pfcb = fcb;
     
@@ -2221,6 +2223,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     increase_fileref_refcount(parfileref);
  
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     *pfr = fileref;
     
@@ -2483,6 +2486,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         mark_fcb_dirty(fcb);
         
         InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+        InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
         
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);

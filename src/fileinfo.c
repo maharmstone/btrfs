@@ -1084,6 +1084,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 
                 InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
                 
+                InsertTailList(&me->fileref->fcb->Vcb->all_fcbs, &me->dummyfcb->list_entry_all);
+                
                 while (!IsListEmpty(&me->fileref->fcb->hardlinks)) {
                     LIST_ENTRY* le = RemoveHeadList(&me->fileref->fcb->hardlinks);
                     hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);

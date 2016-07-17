@@ -1738,6 +1738,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
     
+    if (fcb->list_entry_all.Flink)
+        RemoveEntryList(&fcb->list_entry_all);
+    
     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
@@ -3584,6 +3587,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->chunks);
     InitializeListHead(&Vcb->chunks_changed);
     InitializeListHead(&Vcb->trees);
+    InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
     InitializeListHead(&Vcb->sector_checksums);
@@ -3717,6 +3721,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &root_fcb->list_entry_all);
     
     root_fcb->fileref = Vcb->root_fileref;
     

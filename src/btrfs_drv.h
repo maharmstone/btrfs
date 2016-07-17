@@ -170,6 +170,7 @@ typedef struct _fcb {
     ANSI_STRING adsdata;
     
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_all;
 } fcb;
 
 typedef struct {
@@ -451,6 +452,7 @@ typedef struct _device_extension {
     LIST_ENTRY chunks;
     LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
+    LIST_ENTRY all_fcbs;
     LIST_ENTRY dirty_fcbs;
     KSPIN_LOCK dirty_fcbs_lock;
     LIST_ENTRY dirty_filerefs;

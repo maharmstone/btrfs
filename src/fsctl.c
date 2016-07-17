@@ -905,6 +905,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     rootfcb->sd_dirty = TRUE;
 
     InsertTailList(&r->fcbs, &rootfcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &rootfcb->list_entry_all);
     
     rootfcb->Header.IsFastIoPossible = fast_io_possible(rootfcb);
     rootfcb->Header.AllocationSize.QuadPart = 0;
