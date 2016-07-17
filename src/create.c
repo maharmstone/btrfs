@@ -3029,11 +3029,30 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             sf = sf->parent;
         }
         
-        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+        if (fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+            ACCESS_MASK allowed = DELETE | READ_CONTROL | WRITE_OWNER | WRITE_DAC |
+                                    SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
+                                    FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES |
+                                    FILE_WRITE_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
+                                    FILE_TRAVERSE;
+
+            if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
+                allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
+            
+            if (Stack->Parameters.Create.SecurityContext->DesiredAccess & ~allowed) {
+                Status = STATUS_ACCESS_DENIED;
+                free_fileref(fileref);
+                goto exit;
+            }
+        }
+        
+        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
+            fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
             Status = STATUS_CANNOT_DELETE;
             free_fileref(fileref);
             goto exit;
         }
+        
         
         if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
             UINT8* data;
