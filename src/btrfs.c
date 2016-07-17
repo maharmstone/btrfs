@@ -1853,8 +1853,6 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->fcb->fileref == fr)
         fr->fcb->fileref = NULL;
     
-    free_fcb(fr->fcb);
-    
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
     
@@ -1863,6 +1861,7 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
         free_fileref(fr->parent);
     }
     
+    free_fcb(fr->fcb);
     ExFreePool(fr);
 }
 
