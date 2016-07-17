@@ -44,28 +44,30 @@ void STDCALL flush_thread(void* context) {
     DEVICE_OBJECT* devobj = context;
     device_extension* Vcb = devobj->DeviceExtension;
     LARGE_INTEGER due_time;
-    KTIMER flush_thread_timer;
     
     ObReferenceObject(devobj);
     
-    KeInitializeTimer(&flush_thread_timer);
+    KeInitializeTimer(&Vcb->flush_thread_timer);
     
     due_time.QuadPart = -INTERVAL * 10000;
     
-    KeSetTimer(&flush_thread_timer, due_time, NULL);
+    KeSetTimer(&Vcb->flush_thread_timer, due_time, NULL);
     
     while (TRUE) {
-        KeWaitForSingleObject(&flush_thread_timer, Executive, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&Vcb->flush_thread_timer, Executive, KernelMode, FALSE, NULL);
 
         if (!(devobj->Vpb->Flags & VPB_MOUNTED))
             break;
             
         do_flush(Vcb);
         
-        KeSetTimer(&flush_thread_timer, due_time, NULL);
+        KeSetTimer(&Vcb->flush_thread_timer, due_time, NULL);
     }
     
     ObDereferenceObject(devobj);
-    KeCancelTimer(&flush_thread_timer);
+    KeCancelTimer(&Vcb->flush_thread_timer);
+    
+    KeSetEvent(&Vcb->flush_thread_finished, 0, FALSE);
+    
     PsTerminateSystemThread(STATUS_SUCCESS);
 }

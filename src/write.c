@@ -7964,20 +7964,20 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             paging_lock = TRUE;
     }
     
-    if (no_cache && !ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
+    if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
             Status = STATUS_PENDING;
             goto end;
         } else
             tree_lock = TRUE;
+    }
         
-        if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
-            if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
-                Status = STATUS_PENDING;
-                goto end;
-            } else
-                fcb_lock = TRUE;
-        }
+    if (no_cache && !ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
+        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
+            Status = STATUS_PENDING;
+            goto end;
+        } else
+            fcb_lock = TRUE;
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;

@@ -1660,6 +1660,21 @@ static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FI
     return STATUS_SUCCESS;
 }
 
+static void flush_fcb_caches(device_extension* Vcb) {
+    LIST_ENTRY* le;
+    
+    le = Vcb->all_fcbs.Flink;
+    while (le != &Vcb->all_fcbs) {
+        struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_all);
+        IO_STATUS_BLOCK iosb;
+        
+        if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
+            CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -1691,7 +1706,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
-    // FIXME - flush file caches
+    flush_fcb_caches(Vcb);
     
     if (Vcb->need_write)
         do_write(Vcb, &rollback);
@@ -1801,14 +1816,11 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
         
         if (Vcb->Vpb->RealDevice == devobj) {
-            int3;
-            
-            // FIXME - flush files
-            
             if (Vcb->Vpb == devobj->Vpb) {
                 KIRQL irql;
                 PVPB newvpb;
                 BOOL free_newvpb = FALSE;
+                LIST_ENTRY rollback;
                 
                 newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
                 if (!newvpb) {
@@ -1823,7 +1835,29 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 devobj->Vpb->Flags &= ~VPB_MOUNTED;
                 IoReleaseVpbSpinLock(irql);
                 
-                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE); // avoid unmounted while flush is going on
+                InitializeListHead(&rollback);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+                
+                Vcb->removing = TRUE;
+                
+                ExReleaseResourceLite(&Vcb->tree_lock);
+                
+                CcWaitForCurrentLazyWriterActivity();
+                
+                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+                
+                flush_fcb_caches(Vcb);
+                
+                if (Vcb->need_write)
+                    do_write(Vcb, &rollback);
+                
+                free_trees(Vcb);
+                
+                clear_rollback(&rollback);
+                
+                flush_fcb_caches(Vcb);
+                
                 ExReleaseResourceLite(&Vcb->tree_lock);
                     
                 IoAcquireVpbSpinLock(&irql);
@@ -1835,8 +1869,6 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                     newvpb->Flags = devobj->Vpb->Flags & VPB_REMOVE_PENDING;
                     
                     devobj->Vpb = newvpb;
-                    
-                    Vcb->removing = TRUE;
                 } else
                     free_newvpb = TRUE;
 

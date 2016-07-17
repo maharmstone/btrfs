@@ -1920,6 +1920,9 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     LIST_ENTRY rollback;
     NTSTATUS Status;
     LIST_ENTRY* le;
+    LARGE_INTEGER time;
+    
+    RemoveEntryList(&Vcb->list_entry);
     
     Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
     if (!NT_SUCCESS(Status))
@@ -1950,6 +1953,10 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     }
     
     ExFreePool(Vcb->threads.threads);
+    
+    time.QuadPart = 0;
+    KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
+    KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
     
     free_fcb(Vcb->volume_fcb);
     
@@ -2231,42 +2238,44 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         }
         
         if (oc == 0) {
-            LIST_ENTRY rollback;
-    
-            InitializeListHead(&rollback);
+            if (!Vcb->removing) {
+                LIST_ENTRY rollback;
+        
+                InitializeListHead(&rollback);
             
-            if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
-                
-                ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-                
-                Status = delete_fileref(fileref, FileObject, &rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("delete_fileref returned %08x\n", Status);
-                    do_rollback(Vcb, &rollback);
+                if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
+                    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+                    
+                    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+                    
+                    Status = delete_fileref(fileref, FileObject, &rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_fileref returned %08x\n", Status);
+                        do_rollback(Vcb, &rollback);
+                        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                        goto exit;
+                    }
+                    
                     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                    goto exit;
-                }
-                
-                ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                clear_rollback(&rollback);
-            } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
-                IO_STATUS_BLOCK iosb;
-                CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
-                
-                if (!NT_SUCCESS(iosb.Status)) {
-                    ERR("CcFlushCache returned %08x\n", iosb.Status);
-                }
+                    clear_rollback(&rollback);
+                } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
+                    IO_STATUS_BLOCK iosb;
+                    CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+                    
+                    if (!NT_SUCCESS(iosb.Status)) {
+                        ERR("CcFlushCache returned %08x\n", iosb.Status);
+                    }
 
-                if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
-                    ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
-                    ExReleaseResourceLite(fcb->Header.PagingIoResource);
-                }
+                    if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
+                        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+                        ExReleaseResourceLite(fcb->Header.PagingIoResource);
+                    }
 
-                CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
-                
-                TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
-                      FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                    
+                    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
+                        FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                }
             }
             
             if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
@@ -3761,6 +3770,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
     Vcb->Vpb = NewDeviceObject->Vpb;
+    
+    KeInitializeEvent(&Vcb->flush_thread_finished, NotificationEvent, FALSE);
     
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {

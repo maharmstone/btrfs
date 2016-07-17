@@ -461,6 +461,8 @@ typedef struct _device_extension {
     ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;
     HANDLE flush_thread_handle;
+    KTIMER flush_thread_timer;
+    KEVENT flush_thread_finished;
     drv_threads threads;
     PFILE_OBJECT root_file;
     LIST_ENTRY list_entry;
