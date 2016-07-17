@@ -1271,7 +1271,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (!(ccb->access & FILE_READ_DATA)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_READ_DATA)) {
         WARN("insufficient privileges\n");
         Status = STATUS_ACCESS_DENIED;
         goto exit;
