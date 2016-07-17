@@ -3046,6 +3046,24 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
+        if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fileref(fileref);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            
+            Status = STATUS_FILE_IS_A_DIRECTORY;
+            goto exit;
+        } else if (options & FILE_DIRECTORY_FILE && fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+            TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u, %S)\n", fileref->fcb->type, file_desc_fileref(fileref));
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fileref(fileref);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            
+            Status = STATUS_NOT_A_DIRECTORY;
+            goto exit;
+        }
+        
         if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
             fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
             Status = STATUS_CANNOT_DELETE;
@@ -3183,24 +3201,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             // FIXME - do we need to alter parent directory's times?
             
             send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
-        }
-    
-        if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-            
-            Status = STATUS_FILE_IS_A_DIRECTORY;
-            goto exit;
-        } else if (options & FILE_DIRECTORY_FILE && fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
-            TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u, %S)\n", fileref->fcb->type, file_desc_fileref(fileref));
-            
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-            
-            Status = STATUS_NOT_A_DIRECTORY;
-            goto exit;
         }
     
         FileObject->FsContext = fileref->fcb;
