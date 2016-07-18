@@ -637,17 +637,20 @@ void free_trees_root(device_extension* Vcb, root* r) {
             LIST_ENTRY* nextle = le->Flink;
             tree* t = CONTAINING_RECORD(le, tree, list_entry);
             
-            if (t->root == r && t->header.level == level) {
-                BOOL top = !t->paritem;
-                
-                empty = FALSE;
-                
-                free_tree2(t, funcname, __FILE__, __LINE__);
-                if (top && r->treeholder.tree == t)
-                    r->treeholder.tree = NULL;
-                
-                if (IsListEmpty(&Vcb->trees))
-                    return;
+            if (t->root == r) {
+                if (t->header.level == level) {
+                    BOOL top = !t->paritem;
+                    
+                    empty = FALSE;
+                    
+                    free_tree2(t, funcname, __FILE__, __LINE__);
+                    if (top && r->treeholder.tree == t)
+                        r->treeholder.tree = NULL;
+                    
+                    if (IsListEmpty(&Vcb->trees))
+                        return;
+                } else if (t->header.level > level)
+                    empty = FALSE;
             }
             
             le = nextle;
