@@ -1237,24 +1237,39 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
                 return 0;
             }
             
-            // FIXME - work with shared data refs
-//             if (secttype == TYPE_SHARED_DATA_REF) {
-//                 TRACE("found shared data extent at %llx, converting\n", tp.item->key.obj_id);
-//                 
-//                 Status = convert_shared_data_extent(Vcb, address, size, rollback);
-//                 if (!NT_SUCCESS(Status)) {
-//                     ERR("convert_shared_data_extent returned %08x\n", Status);
-//                     return Status;
-//                 }
-//                 
-//                 return increase_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
-//             }
-            
             if (secttype == TYPE_EXTENT_DATA_REF) {
                 EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(UINT8));
                 
                 if (sectedr->root == root && sectedr->objid == objid && sectedr->offset == offset)
                     return sectcount;
+            } else if (secttype == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+                BOOL found = FALSE;
+                LIST_ENTRY* le;
+                
+                le = Vcb->shared_extents.Flink;
+                while (le != &Vcb->shared_extents) {
+                    shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
+                    
+                    if (sd->address == sectsdr->offset) {
+                        LIST_ENTRY* le2 = sd->entries.Flink;
+                        while (le2 != &sd->entries) {
+                            changed_extent_ref* sde = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                            
+                            if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
+                                return sde->edr.count;
+                            
+                            le2 = le2->Flink;
+                        }
+                        found = TRUE;
+                        break;
+                    }
+                    
+                    le = le->Flink;
+                }
+                
+                if (!found)
+                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);        
             }
             
             len -= sectlen;
