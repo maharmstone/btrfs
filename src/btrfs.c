@@ -3599,10 +3599,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
+    InitializeListHead(&Vcb->shared_extents);
     InitializeListHead(&Vcb->sector_checksums);
     
     KeInitializeSpinLock(&Vcb->dirty_fcbs_lock);
     KeInitializeSpinLock(&Vcb->dirty_filerefs_lock);
+    KeInitializeSpinLock(&Vcb->shared_extents_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 

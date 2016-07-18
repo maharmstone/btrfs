@@ -32,6 +32,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     tree* t;
     tree_data* td;
     chunk* c;
+    shared_data* sd;
     
     TRACE("(%p, %llx)\n", Vcb, addr);
     
@@ -81,6 +82,20 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
 //     t->items = ExAllocatePoolWithTag(PagedPool, num_items * sizeof(tree_data), ALLOC_TAG);
     InitializeListHead(&t->itemlist);
     
+    if (t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
+        sd = ExAllocatePoolWithTag(NonPagedPool, sizeof(shared_data), ALLOC_TAG);
+        if (!sd) {
+            ERR("out of memory\n");
+            ExFreePool(buf);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        sd->address = addr;
+        InitializeListHead(&sd->entries);
+        
+        ExInterlockedInsertTailList(&Vcb->shared_extents, &sd->list_entry, &Vcb->shared_extents_lock);
+    }
+    
     if (t->header.level == 0) { // leaf node
         leaf_node* ln = (leaf_node*)(buf + sizeof(tree_header));
         unsigned int i;
@@ -113,6 +128,51 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
                 RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
             } else
                 td->data = NULL;
+            
+            if (t->header.flags & HEADER_FLAG_SHARED_BACKREF && ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA)) {
+                EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                
+                if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                    
+                    if (ed2->size != 0) {
+                        LIST_ENTRY* le;
+                        BOOL found = FALSE;
+                        
+                        TRACE("shared extent %llx,%llx\n", ed2->address, ed2->size);
+                        
+                        le = sd->entries.Flink;
+                        while (le != &sd->entries) {
+                            changed_extent_ref* sde = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+                            
+                            if (sde->edr.root == t->header.tree_id && sde->edr.objid == ln[i].key.obj_id && sde->edr.offset == ln[i].key.offset - ed2->offset) {
+                                sde->edr.count++;
+                                found = TRUE;
+                                break;
+                            }
+                            
+                            le = le->Flink;
+                        }
+                        
+                        if (!found) {
+                            changed_extent_ref* sde = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                            
+                            if (!sde) {
+                                ERR("out of memory\n");
+                                ExFreePool(buf);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+                            
+                            sde->edr.root = t->header.tree_id;
+                            sde->edr.objid = ln[i].key.obj_id;
+                            sde->edr.offset = ln[i].key.offset - ed2->offset;
+                            sde->edr.count = 1;
+                            
+                            InsertTailList(&sd->entries, &sde->list_entry);
+                        }
+                    }
+                }
+            }
             
             td->size = ln[i].size;
             td->ignore = FALSE;
@@ -685,7 +745,7 @@ void STDCALL free_trees(device_extension* Vcb) {
                     r->treeholder.tree = NULL;
                 
                 if (IsListEmpty(&Vcb->trees))
-                    return;
+                    goto free_shared;
             } else if (t->header.level > level)
                 empty = FALSE;
             
@@ -694,6 +754,23 @@ void STDCALL free_trees(device_extension* Vcb) {
         
         if (empty)
             break;
+    }
+    
+free_shared:
+    while (!IsListEmpty(&Vcb->shared_extents)) {
+        shared_data* sd;
+        
+        le = RemoveHeadList(&Vcb->shared_extents);
+        sd = CONTAINING_RECORD(le, shared_data, list_entry);
+        
+        while (!IsListEmpty(&sd->entries)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&sd->entries);
+            changed_extent_ref* sde = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+            
+            ExFreePool(sde);
+        }
+        
+        ExFreePool(sd);
     }
 }
 
