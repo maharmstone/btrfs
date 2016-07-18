@@ -662,18 +662,38 @@ void free_trees_root(device_extension* Vcb, root* r) {
 }
 
 void STDCALL free_trees(device_extension* Vcb) {
-    tree* t;
-    root* r;
-
-    while (!IsListEmpty(&Vcb->trees)) {
-        t = CONTAINING_RECORD(Vcb->trees.Flink, tree, list_entry);
-        r = t->root;
+    LIST_ENTRY* le;
+    UINT8 level;
+    
+    for (level = 0; level <= 255; level++) {
+        BOOL empty = TRUE;
         
-        ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
+        le = Vcb->trees.Flink;
         
-        free_trees_root(Vcb, r);
+        while (le != &Vcb->trees) {
+            LIST_ENTRY* nextle = le->Flink;
+            tree* t = CONTAINING_RECORD(le, tree, list_entry);
+            root* r = t->root;
+            
+            if (t->header.level == level) {
+                BOOL top = !t->paritem;
+                
+                empty = FALSE;
+                
+                free_tree2(t, funcname, __FILE__, __LINE__);
+                if (top && r->treeholder.tree == t)
+                    r->treeholder.tree = NULL;
+                
+                if (IsListEmpty(&Vcb->trees))
+                    return;
+            } else if (t->header.level > level)
+                empty = FALSE;
+            
+            le = nextle;
+        }
         
-        ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+        if (empty)
+            break;
     }
 }
 
