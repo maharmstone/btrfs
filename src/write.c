@@ -4985,8 +4985,10 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         
-        if (t->write && t->header.level == 0 && t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
+        if (t->write && t->header.level == 0 &&
+            (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF))) {
             LIST_ENTRY* le2;
+            BOOL old = !(t->header.flags & HEADER_FLAG_MIXED_BACKREF);
             
             le2 = Vcb->shared_extents.Flink;
             while (le2 != &Vcb->shared_extents) {
@@ -5005,10 +5007,17 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
                         if (!NT_SUCCESS(Status))
                             WARN("increase_extent_refcount_data returned %08x\n", Status);
                         
-                        Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, rollback);
-                        
-                        if (!NT_SUCCESS(Status))
-                            WARN("decrease_extent_refcount_shared_data returned %08x\n", Status);
+                        if (old) {
+                            Status = decrease_extent_refcount_old(Vcb, sde->address, sde->size, sd->address, rollback);
+                            
+                            if (!NT_SUCCESS(Status))
+                                WARN("decrease_extent_refcount_old returned %08x\n", Status);
+                        } else {
+                            Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, rollback);
+                            
+                            if (!NT_SUCCESS(Status))
+                                WARN("decrease_extent_refcount_shared_data returned %08x\n", Status);
+                        }
                         
                         le3 = le3->Flink;
                     }
@@ -5019,6 +5028,7 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
             }
             
             t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
+            t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
         }
         
         le = le->Flink;
