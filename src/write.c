@@ -1449,7 +1449,6 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     KEY searchkey;
     traverse_ptr tp;
     chunk* c;
-    EXTENT_ITEM_SKINNY_METADATA* eism;
     NTSTATUS Status;
     
     searchkey.obj_id = address;
@@ -1473,37 +1472,6 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     }
     
     delete_tree_item(Vcb, &tp, rollback);
-    
-    eism = (EXTENT_ITEM_SKINNY_METADATA*)tp.item->data;
-    if (t && t->header.level == 0 && eism->ei.flags & EXTENT_ITEM_SHARED_BACKREFS && eism->type == TYPE_TREE_BLOCK_REF) {
-        // convert shared data extents
-        
-        LIST_ENTRY* le = t->itemlist.Flink;
-        while (le != &t->itemlist) {
-            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-            
-            TRACE("%llx,%x,%llx\n", td->key.obj_id, td->key.obj_type, td->key.offset);
-            
-            if (!td->ignore && !td->inserted) {
-                if (td->key.obj_type == TYPE_EXTENT_DATA) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
-                    
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                        
-                        if (ed2->address != 0) {
-                            TRACE("trying to convert shared data extent %llx,%llx\n", ed2->address, ed2->size);
-                            convert_shared_data_extent(Vcb, ed2->address, ed2->size, rollback);
-                        }
-                    }
-                }
-            }
-
-            le = le->Flink;
-        }
-        
-        t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
-    }
 
     c = get_chunk_from_address(Vcb, address);
     
@@ -1699,36 +1667,6 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         if (ei->refcount > 1) {
             FIXME("FIXME - cannot deal with refcounts larger than 1 at present (ei->refcount == %llx)\n", ei->refcount);
             return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (t && t->header.level == 0 && ei->flags & EXTENT_ITEM_SHARED_BACKREFS) {
-            // convert shared data extents
-            
-            LIST_ENTRY* le = t->itemlist.Flink;
-            while (le != &t->itemlist) {
-                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-                
-                TRACE("%llx,%x,%llx\n", td->key.obj_id, td->key.obj_type, td->key.offset);
-                
-                if (!td->ignore && !td->inserted) {
-                    if (td->key.obj_type == TYPE_EXTENT_DATA) {
-                        EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
-                        
-                        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                            
-                            if (ed2->address != 0) {
-                                TRACE("trying to convert shared data extent %llx,%llx\n", ed2->address, ed2->size);
-                                convert_shared_data_extent(Vcb, ed2->address, ed2->size, rollback);
-                            }
-                        }
-                    }
-                }
-    
-                le = le->Flink;
-            }
-            
-            t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
         }
     }
     
@@ -3476,7 +3414,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     
     if (level > 0) {
         if (!th->tree) {
-            Status = load_tree(Vcb, th->address, r, &th->tree);
+            Status = load_tree(Vcb, th->address, r, &th->tree, NULL);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("load_tree(%llx) returned %08x\n", th->address, Status);
@@ -5039,6 +4977,54 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    le = Vcb->trees.Flink;
+    while (le != &Vcb->trees) {
+        tree* t = CONTAINING_RECORD(le, tree, list_entry);
+        
+        if (t->write && t->header.level == 0 && t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
+            LIST_ENTRY* le2;
+            
+            le2 = Vcb->shared_extents.Flink;
+            while (le2 != &Vcb->shared_extents) {
+                shared_data* sd = CONTAINING_RECORD(le2, shared_data, list_entry);
+                
+                if (sd->address == t->header.address) {
+                    LIST_ENTRY* le3 = sd->entries.Flink;
+                    while (le3 != &sd->entries) {
+                        shared_data_entry* sde = CONTAINING_RECORD(le3, shared_data_entry, list_entry);
+                        
+                        TRACE("tree %llx; root %llx, objid %llx, offset %llx, count %x\n",
+                              t->header.address, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count);
+                        
+                        Status = increase_extent_refcount_data(Vcb, sde->address, sde->size, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count, rollback);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("increase_extent_refcount_data returned %08x\n", Status);
+                        
+                        Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, rollback);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("decrease_extent_refcount_shared_data returned %08x\n", Status);
+                        
+                        le3 = le3->Flink;
+                    }
+                    break;
+                }
+                
+                le2 = le2->Flink;
+            }
+            
+            t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
+        }
+        
+        le = le->Flink;
+    }
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -5079,6 +5065,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         le = le2;
     }
+    
+    convert_shared_data_refs(Vcb, rollback);
     
     ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
     if (!IsListEmpty(&Vcb->sector_checksums)) {

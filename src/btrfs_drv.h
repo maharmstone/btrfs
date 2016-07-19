@@ -377,6 +377,14 @@ typedef struct {
 
 typedef struct {
     UINT64 address;
+    UINT64 size;
+    EXTENT_DATA_REF edr;
+    LIST_ENTRY list_entry;
+} shared_data_entry;
+
+typedef struct {
+    UINT64 address;
+    UINT64 parent;
     LIST_ENTRY entries;
     LIST_ENTRY list_entry;
 } shared_data;
@@ -688,7 +696,7 @@ void STDCALL free_trees(device_extension* Vcb);
 BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, LIST_ENTRY* rollback);
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
 tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line);
-NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, const char* func, const char* file, unsigned int line);
+NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, const char* func, const char* file, unsigned int line);
 NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, const char* func, const char* file, unsigned int line);
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
@@ -699,7 +707,7 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
 #define find_next_item(Vcb, tp, next_tp, ignore) _find_next_item(Vcb, tp, next_tp, ignore, funcname, __FILE__, __LINE__)
 #define find_prev_item(Vcb, tp, prev_tp, ignore) _find_prev_item(Vcb, tp, prev_tp, ignore, funcname, __FILE__, __LINE__)
 #define free_tree(t) _free_tree(t, funcname, __FILE__, __LINE__)
-#define load_tree(t, addr, r, pt) _load_tree(t, addr, r, pt, funcname, __FILE__, __LINE__)
+#define load_tree(t, addr, r, pt, parent) _load_tree(t, addr, r, pt, parent, funcname, __FILE__, __LINE__)
 #define do_load_tree(Vcb, th, r, t, td, loaded) _do_load_tree(Vcb, th, r, t, td, loaded, funcname, __FILE__, __LINE__)  
 
 // in search.c
@@ -809,8 +817,8 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, LIST_ENTRY* rollback);
+NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 treeaddr, UINT64 parent, LIST_ENTRY* rollback);
 void decrease_chunk_usage(chunk* c, UINT64 delta);
-NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback);
 UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset);
 

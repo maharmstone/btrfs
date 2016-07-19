@@ -25,7 +25,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } rollback_item;
 
-NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, const char* func, const char* file, unsigned int line) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -91,6 +91,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         }
         
         sd->address = addr;
+        sd->parent = parent ? parent->header.address : addr;
         InitializeListHead(&sd->entries);
         
         ExInterlockedInsertTailList(&Vcb->shared_extents, &sd->list_entry, &Vcb->shared_extents_lock);
@@ -143,9 +144,10 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
                         
                         le = sd->entries.Flink;
                         while (le != &sd->entries) {
-                            changed_extent_ref* sde = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+                            shared_data_entry* sde = CONTAINING_RECORD(le, shared_data_entry, list_entry);
                             
-                            if (sde->edr.root == t->header.tree_id && sde->edr.objid == ln[i].key.obj_id && sde->edr.offset == ln[i].key.offset - ed2->offset) {
+                            if (sde->address == ed2->address && sde->size == ed2->size && sde->edr.root == t->header.tree_id &&
+                                sde->edr.objid == ln[i].key.obj_id && sde->edr.offset == ln[i].key.offset - ed2->offset) {
                                 sde->edr.count++;
                                 found = TRUE;
                                 break;
@@ -155,7 +157,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
                         }
                         
                         if (!found) {
-                            changed_extent_ref* sde = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                            shared_data_entry* sde = ExAllocatePoolWithTag(PagedPool, sizeof(shared_data_entry), ALLOC_TAG);
                             
                             if (!sde) {
                                 ERR("out of memory\n");
@@ -163,6 +165,8 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
                             
+                            sde->address = ed2->address;
+                            sde->size = ed2->size;
                             sde->edr.root = t->header.tree_id;
                             sde->edr.objid = ln[i].key.obj_id;
                             sde->edr.offset = ln[i].key.offset - ed2->offset;
@@ -320,7 +324,7 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
     if (!th->tree) {
         NTSTATUS Status;
         
-        Status = _load_tree(Vcb, th->address, r, &th->tree, func, file, line);
+        Status = _load_tree(Vcb, th->address, r, &th->tree, t, func, file, line);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
@@ -765,7 +769,7 @@ free_shared:
         
         while (!IsListEmpty(&sd->entries)) {
             LIST_ENTRY* le2 = RemoveHeadList(&sd->entries);
-            changed_extent_ref* sde = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+            shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
             
             ExFreePool(sde);
         }

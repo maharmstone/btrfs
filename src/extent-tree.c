@@ -208,18 +208,6 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
             return STATUS_INTERNAL_ERROR;
         }
         
-        if (secttype == TYPE_SHARED_DATA_REF) {
-            TRACE("found shared data extent at %llx, converting\n", tp.item->key.obj_id);
-            
-            Status = convert_shared_data_extent(Vcb, address, size, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("convert_shared_data_extent returned %08x\n", Status);
-                return Status;
-            }
-            
-            return increase_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
-        }
-        
         // If inline extent already present, increase refcount and return
         
         if (secttype == type) {
@@ -290,8 +278,6 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
             if (secttype > type)
                 break;
             
-            len--;
-            
             if (secttype == type) {
                 UINT64 sectoff = get_extent_hash(secttype, ptr + 1);
                 
@@ -299,7 +285,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
                     break;
             }
             
-            len -= sectlen;
+            len -= sectlen + sizeof(UINT8);
             ptr += sizeof(UINT8) + sectlen;
         }
         
@@ -310,7 +296,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         newei->refcount += get_extent_data_refcount(type, data);
         
         if (len > 0)
-            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data) + sizeof(UINT8) + datalen, ptr, len + 1);
+            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data) + sizeof(UINT8) + datalen, ptr, len);
         
         ptr = (ptr - tp.item->data) + (UINT8*)newei;
         
@@ -431,13 +417,13 @@ void decrease_chunk_usage(chunk* c, UINT64 delta) {
 }
 
 static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
-                                         UINT8 level, LIST_ENTRY* rollback) {
+                                         UINT8 level, UINT64 parent, LIST_ENTRY* rollback) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
     EXTENT_ITEM* ei;
     ULONG len;
-    UINT64 inline_rc, offset;
+    UINT64 inline_rc;
     UINT8* ptr;
     UINT32 rc = get_extent_data_refcount(type, data);
     ULONG datalen = get_extent_data_len(type);
@@ -473,7 +459,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
             return Status;
         }
         
-        return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
+        return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, parent, level, rollback);
     }
     
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
@@ -520,18 +506,6 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         if (sectlen == 0) {
             ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
             return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (secttype == TYPE_SHARED_DATA_REF) {
-            TRACE("found shared data extent at %llx, converting\n", tp.item->key.obj_id);
-            
-            Status = convert_shared_data_extent(Vcb, address, size, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("convert_shared_data_extent returned %08x\n", Status);
-                return Status;
-            }
-            
-            return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, rollback);
         }
         
         if (secttype == type) {
@@ -588,6 +562,45 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                     
                     return STATUS_SUCCESS;
                 }
+            } else if (type == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+                SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
+                ULONG neweilen;
+                EXTENT_ITEM* newei;
+                
+                if (sectsdr->offset == sdr->offset) {
+                    // We ignore sdr->count, and assume that we want to remove the whole bit
+                    
+                    if (ei->refcount == sectsdr->count) {
+                        delete_tree_item(Vcb, &tp, rollback);
+                        return STATUS_SUCCESS;
+                    }
+                    
+                    neweilen = tp.item->size - sizeof(UINT8) - sectlen;
+                    
+                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
+                    if (!newei) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(newei, ei, ptr - tp.item->data);
+                    
+                    if (len > sectlen)
+                        RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
+                    
+                    newei->generation = Vcb->superblock.generation;
+                    newei->refcount -= rc;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, rollback)) {
+                        ERR("insert_tree_item failed\n");
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    return STATUS_SUCCESS;
+                }
 //             } else if (type == TYPE_TREE_BLOCK_REF) {
 //                 ERR("trying to increase refcount of tree extent\n");
 //                 return STATUS_INTERNAL_ERROR;
@@ -607,11 +620,9 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         return STATUS_INTERNAL_ERROR;
     }
     
-    offset = get_extent_hash(type, data);
-    
     searchkey.obj_id = address;
     searchkey.obj_type = type;
-    searchkey.offset = offset;
+    searchkey.offset = type == TYPE_SHARED_DATA_REF ? parent : get_extent_hash(type, data);
     
     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
@@ -689,6 +700,45 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
             ERR("error - hash collision?\n");
             return STATUS_INTERNAL_ERROR;
         }
+    } else if (type == TYPE_SHARED_DATA_REF) {
+        SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)tp2.item->data;
+        SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
+        EXTENT_ITEM* newei;
+        
+        if (sectsdr->offset == sdr->offset) {
+            // As above, we assume that we want to remove the whole shared data ref
+            
+            if (ei->refcount == sectsdr->count) {
+                delete_tree_item(Vcb, &tp, rollback);
+                delete_tree_item(Vcb, &tp2, rollback);
+                return STATUS_SUCCESS;
+            }
+            
+            delete_tree_item(Vcb, &tp2, rollback);
+            
+            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!newei) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+            newei->generation = Vcb->superblock.generation;
+            newei->refcount -= rc;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            return STATUS_SUCCESS;
+        } else {
+            ERR("error - collision?\n");
+            return STATUS_INTERNAL_ERROR;
+        }
 //     } else if (type == TYPE_TREE_BLOCK_REF) {
 //         ERR("trying to increase refcount of tree extent\n");
 //         return STATUS_INTERNAL_ERROR;
@@ -707,7 +757,16 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
     edr.offset = offset;
     edr.count = refcount;
     
-    return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, rollback);
+    return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, 0, rollback);
+}
+
+NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 treeaddr, UINT64 parent, LIST_ENTRY* rollback) {
+    SHARED_DATA_REF sdr;
+
+    sdr.offset = treeaddr;
+    sdr.count = 1;
+    
+    return decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, parent, rollback);
 }
 
 typedef struct {
@@ -944,177 +1003,6 @@ static NTSTATUS populate_extent_refs_from_tree(device_extension* Vcb, UINT64 tre
     return STATUS_SUCCESS;
 }
 
-NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    LIST_ENTRY extent_refs;
-    LIST_ENTRY *le, *next_le;
-    EXTENT_ITEM* ei;
-    UINT64 eiflags, inline_rc;
-    UINT8* siptr;
-    ULONG len;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(&tp.item->key, &searchkey)) {
-        WARN("extent item not found for address %llx, size %llx\n", address, size);
-        return STATUS_SUCCESS;
-    }
-    
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    ei = (EXTENT_ITEM*)tp.item->data;
-    len = tp.item->size - sizeof(EXTENT_ITEM);
-    eiflags = ei->flags;
-    
-    InitializeListHead(&extent_refs);
-    
-    inline_rc = 0;
-    siptr = (UINT8*)&ei[1];
-    
-    do {
-        extent_ref* er;
-        ULONG extlen;
-        
-        extlen = get_extent_data_len(*siptr);
-        
-        if (extlen == 0) {
-            ERR("unrecognized extent subitem %x\n", *siptr);
-            free_extent_refs(&extent_refs);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        if (extlen > len - 1) {
-            ERR("extent %llx was truncated\n", address);
-            free_extent_refs(&extent_refs);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        er = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-        if (!er) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        er->type = *siptr;
-        
-        er->data = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
-        if (!er->data) {
-            ERR("out of memory\n");
-            ExFreePool(er);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(er->data, siptr+1, extlen);
-        er->allocated = TRUE;
-        
-        InsertTailList(&extent_refs, &er->list_entry);
-        
-        siptr += extlen;
-        len -= extlen + 1;
-        
-        inline_rc += get_extent_data_refcount(er->type, er->data);
-    } while (len > 0);
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    
-    if (inline_rc < ei->refcount) {
-        BOOL b;
-        traverse_ptr next_tp;
-        
-        do {
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
-            
-            if (tp.item->key.obj_id == address) {
-                ULONG extlen;
-                
-                extlen = get_extent_data_len(tp.item->key.obj_type);
-                
-                if (extlen != 0 && tp.item->size >= extlen) {
-                    extent_ref* er = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-                    if (!er) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    er->type = tp.item->key.obj_type;
-                    
-                    er->data = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
-                    if (!er->data) {
-                        ERR("out of memory\n");
-                        ExFreePool(er);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    RtlCopyMemory(er->data, siptr+1, extlen);
-                    er->allocated = TRUE;
-                    
-                    InsertTailList(&extent_refs, &er->list_entry);
-                    
-                    delete_tree_item(Vcb, &tp, rollback);
-                }
-            }
-            
-            if (b) {
-                tp = next_tp;
-                
-                if (tp.item->key.obj_id > address)
-                    break;
-            }
-        } while (b);
-    }
-    
-    le = extent_refs.Flink;
-    while (le != &extent_refs) {
-        extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-        next_le = le->Flink;
-        
-        if (er->type == TYPE_SHARED_DATA_REF) {
-            SHARED_DATA_REF* sdr = er->data;
-            
-            Status = populate_extent_refs_from_tree(Vcb, sdr->offset, address, &extent_refs);
-            if (!NT_SUCCESS(Status)) {
-                ERR("populate_extent_refs_from_tree returned %08x\n", Status);
-                free_extent_refs(&extent_refs);
-                return Status;
-            }
-
-            RemoveEntryList(&er->list_entry);
-            
-            if (er->allocated)
-                ExFreePool(er->data);
-            
-            ExFreePool(er);
-        }
-        // FIXME - also do for SHARED_BLOCK_REF?
-
-        le = next_le;
-    }
-    
-    Status = construct_extent_item(Vcb, address, size, eiflags, &extent_refs, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("construct_extent_item returned %08x\n", Status);
-        free_extent_refs(&extent_refs);
-        return Status;
-    }
-    
-    free_extent_refs(&extent_refs);
-    
-    return STATUS_SUCCESS;
-}
-
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -1254,7 +1142,7 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
                     if (sd->address == sectsdr->offset) {
                         LIST_ENTRY* le2 = sd->entries.Flink;
                         while (le2 != &sd->entries) {
-                            changed_extent_ref* sde = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                            shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
                             
                             if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
                                 return sde->edr.count;
