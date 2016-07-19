@@ -82,7 +82,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
 //     t->items = ExAllocatePoolWithTag(PagedPool, num_items * sizeof(tree_data), ALLOC_TAG);
     InitializeListHead(&t->itemlist);
     
-    if (t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
+    if (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         sd = ExAllocatePoolWithTag(NonPagedPool, sizeof(shared_data), ALLOC_TAG);
         if (!sd) {
             ERR("out of memory\n");
@@ -130,7 +130,8 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
             } else
                 td->data = NULL;
             
-            if (t->header.flags & HEADER_FLAG_SHARED_BACKREF && ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA)) {
+            if ((t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) &&
+                ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA)) {
                 EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
                 
                 if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
