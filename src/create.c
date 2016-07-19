@@ -1150,7 +1150,11 @@ static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         return 0;
     }
     
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+        EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+        
+        return eiv0->refcount;
+    } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
         ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
                                                                        tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
         return 0;
