@@ -2098,7 +2098,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
                 fileref->fcb->Header.FileSize.QuadPart = 0;
                 fileref->fcb->Header.ValidDataLength.QuadPart = 0;
                 
-                if (FileObject && FileObject->PrivateCacheMap) {
+                if (FileObject) {
                     CC_FILE_SIZES ccfs;
                     
                     ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
