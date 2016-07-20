@@ -1265,8 +1265,6 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
         }
     }
      
-    // FIXME - look through shared data refs
-    
     if (old) {
         BOOL b;
         
@@ -1318,7 +1316,7 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
                             WARN("shared data extents not loaded for tree at %llx\n", tp.item->key.offset);
                     }
                 } else {
-                    ERR("(%llx,%x,%llx) was %x bytes, not %x expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                    ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
                         tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
                 }
             }
@@ -1326,6 +1324,66 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
             if (b) {
                 tp = next_tp;
                 
+                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                    break;
+            }
+        } while (b);
+    } else {
+        BOOL b;
+        
+        searchkey.obj_id = address;
+        searchkey.obj_type = TYPE_SHARED_DATA_REF;
+        searchkey.offset = 0;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return 0;
+        }
+        
+        do {
+            traverse_ptr next_tp;
+            
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+            
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                if (tp.item->size >= sizeof(SHARED_DATA_REF)) {
+                    SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)tp.item->data;
+                    LIST_ENTRY* le;
+                    BOOL found = FALSE;
+                    
+                    le = Vcb->shared_extents.Flink;
+                    while (le != &Vcb->shared_extents) {
+                        shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
+                        
+                        if (sd->address == sdr->offset) {
+                            LIST_ENTRY* le2 = sd->entries.Flink;
+                            while (le2 != &sd->entries) {
+                                shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
+                                
+                                if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
+                                    return sde->edr.count;
+                                
+                                le2 = le2->Flink;
+                            }
+                            found = TRUE;
+                            break;
+                        }
+                        
+                        le = le->Flink;
+                    }
+
+                    if (!found)
+                        WARN("shared data extents not loaded for tree at %llx\n", sdr->offset);
+                } else {
+                    ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                        tp.item->key.offset, tp.item->size, sizeof(SHARED_DATA_REF));
+                }
+            }
+
+            if (b) {
+                tp = next_tp;
+
                 if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
                     break;
             }
