@@ -1954,6 +1954,8 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     ExFreePool(Vcb->threads.threads);
     
+    Vcb->removing = TRUE;
+    
     time.QuadPart = 0;
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);

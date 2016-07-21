@@ -56,7 +56,7 @@ void STDCALL flush_thread(void* context) {
     while (TRUE) {
         KeWaitForSingleObject(&Vcb->flush_thread_timer, Executive, KernelMode, FALSE, NULL);
 
-        if (!(devobj->Vpb->Flags & VPB_MOUNTED))
+        if (!(devobj->Vpb->Flags & VPB_MOUNTED) || Vcb->removing)
             break;
             
         do_flush(Vcb);
