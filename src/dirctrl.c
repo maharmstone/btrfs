@@ -724,13 +724,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
             specific_file = TRUE;
-            for (i = 0; i < IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR); i++) {
-                if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '?' || IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == '*' ||
-                    IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == DOS_QM || IrpSp->Parameters.QueryDirectory.FileName->Buffer[i] == DOS_STAR
-                ) {
-                    has_wildcard = TRUE;
-                    specific_file = FALSE;
-                }
+            if (FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
+                has_wildcard = TRUE;
+                specific_file = FALSE;
             }
         }
 
