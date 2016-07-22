@@ -718,8 +718,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
-        int i;
-        
         TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
         
         if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
