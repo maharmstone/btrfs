@@ -8158,7 +8158,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
             bufhead = sizeof(EXTENT_DATA) - 1;
         } else {
-            start_data = offset.QuadPart & ~(fcb->Vcb->superblock.sector_size - 1);
+            start_data = offset.QuadPart & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
             end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
             bufhead = 0;
         }
