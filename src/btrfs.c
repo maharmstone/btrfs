@@ -210,7 +210,7 @@ exit2:
 }
 #endif
 
-ULONG sector_align( ULONG NumberToBeAligned, ULONG Alignment )
+UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment )
 {
     if( Alignment & ( Alignment - 1 ) )
     {

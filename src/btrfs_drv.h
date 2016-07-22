@@ -592,7 +592,7 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
 
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
-ULONG sector_align( ULONG NumberToBeAligned, ULONG Alignment );
+UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment );
 int keycmp(const KEY* key1, const KEY* key2);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen);
