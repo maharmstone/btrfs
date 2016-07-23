@@ -1283,6 +1283,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (Irp->Flags & IRP_NOCACHE) {
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, IoIsOperationSynchronous(Irp))) {
             Status = STATUS_PENDING;
+            IoMarkIrpPending(Irp);
             goto exit;
         }
         
