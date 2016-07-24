@@ -1,9 +1,9 @@
-WinBtrfs v0.4
+WinBtrfs v0.5
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
-ultimate aim is for it to be feature-complete, but most of the basics are there
-already. It is a reimplementation from scratch, and contains no code from the
+aim is for it to be feature-complete, with only a few features still
+outstanding. It is a reimplementation from scratch, and contains no code from the
 Linux kernel. First, a disclaimer:
 
 This software is in active development - YOU USE IT AT YOUR OWN RISK. I take NO
@@ -14,6 +14,8 @@ THE POSSIBILITY OF SILENT CORRUPTION.
 
 In other words, assume that the driver is going to corrupt your entire
 filesystem, and you'll be pleasantly surprised when it doesn't.
+
+However, having said that, it ought to be suitable for day-to-day use.
 
 Everything here is released under the GNU Lesser General Public Licence (LGPL);
 see the file LICENCE for more info. You are encouraged to play about with the
@@ -26,6 +28,7 @@ Features
 --------
 
 * Reading and writing of Btrfs filesystems
+* Basic RAID: RAID0, RAID1, and RAID10
 * Caching
 * Discovery of Btrfs partitions, even if Windows would normally ignore them
 * Getting and setting of Access Control Lists (ACLs), using the xattr
@@ -38,20 +41,21 @@ Features
 * Symlinks and other reparse points
 * Shell extension to identify and create subvolumes, including snapshots
 * Hard links
+* Sparse files
 * Free-space cache
 * Preallocation
+* Asynchronous reading and writing
+* Partition-less Btrfs volumes
+* Per-volume registry mount options (see below)
 
 Todo
 ----
 
-* Basic RAID: RAID0, RAID1, and RAID10
-* RAID5 and RAID6 (incompat flag `raid56`)
 * zlib compression
 * LZO compression (incompat flag `compress_lzo`)
-* New (Linux 4.5) free space cache (compat_ro flag free_space_cache)
+* RAID5 and RAID6 (incompat flag `raid56`)
+* New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
 * Misc incompat flags: `mixed_groups`, `no_holes`
-* Asynchronous reading and writing
-* Probably a bunch of other bugs
 
 Installation
 ------------
@@ -108,10 +112,7 @@ Check:
 a) If on 64-bit Windows, you're running in Test Mode ("Test Mode" appears in the
 bottom right of the Desktop).
 
-b) You're not trying to mount a multi-device filesystem, which isn't supported
-yet.
-
-c) You're not trying to mount a filesystem with unsupported flags. On Linux,
+b) You're not trying to mount a filesystem with unsupported flags. On Linux,
 type:
 
     ls /sys/fs/btrfs/*/features/
@@ -138,6 +139,19 @@ prevents UAC from working. Thanks Microsoft!
 
 Changelog
 ---------
+
+v0.5 (2016-07-24):
+* Massive speed increases (from "sluggish" to "blistering")
+* Massive stability improvements
+* RAID support: RAID0, RAID1, and RAID10
+* Asynchronous reading and writing
+* Partition-less Btrfs volumes
+* Windows sparse file support
+* Object ID support
+* Beginnings of per-volume mount options
+* Security improvements
+* Notification improvements
+* Miscellaneous bug fixes
 
 v0.4 (2016-05-02):
 * Subvolume creation and deletion
@@ -200,6 +214,18 @@ and 3 for absolutely everything, including traces.
 Bear in mind this is a kernel filename, so you'll have to prefix it with "\??\" (e.g.,
 "\??\C:\btrfs.log"). It probably goes without saying, but don't store this on a volume the
 driver itself is using, or you'll cause an infinite loop.
+
+Mount options
+-------------
+
+The driver will create subkeys in the registry under HKLM\SYSTEM\CurrentControlSet\Services\btrfs
+for each mounted filesystem, named after its UUID. If you're unsure which UUID refers to which
+volume, you can check using `btrfs fi show` on Linux. You can add per-volume mount options to this
+subkey, which will take effect on reboot.
+
+Currenntly there's only one supported:
+
+* `Ignore` (DWORD): set this to 1 to tell the driver not to attempt loading this filesystem.
 
 Contact
 -------
