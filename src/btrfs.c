@@ -614,7 +614,7 @@ exit:
 static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LONGLONG* freespace) {
     UINT8 factor;
     
-    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID0 || Vcb->data_flags & BLOCK_FLAG_RAID10)
+    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10)
         factor = 2;
     else
         factor = 1;
