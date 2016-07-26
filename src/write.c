@@ -497,6 +497,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     }
     TRACE("total_size = %llx\n", total_size);
     
+    // We purposely check for DATA first - mixed blocks have the same size
+    // as DATA ones.
     if (flags & BLOCK_FLAG_DATA) {
         max_stripe_size = 0x40000000; // 1 GB
         max_chunk_size = 10 * max_stripe_size;
@@ -1372,8 +1374,14 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
     LIST_ENTRY* le;
     UINT64 flags = t->flags, addr;
     
-    if (flags == 0)
-        flags = (t->root->id == BTRFS_ROOT_CHUNK ? BLOCK_FLAG_SYSTEM : BLOCK_FLAG_METADATA) | BLOCK_FLAG_DUPLICATE;
+    if (flags == 0) {
+        if (t->root->id == BTRFS_ROOT_CHUNK)
+            flags = BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE;
+        else if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
+            flags = BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA;
+        else
+            flags = BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE;
+    }
     
 //     TRACE("flags = %x\n", (UINT32)wt->flags);
     
