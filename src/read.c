@@ -850,6 +850,22 @@ end:
     return Status;
 }
 
+static NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+    // FIXME - stub
+    
+    if (type != BTRFS_COMPRESSION_ZLIB) {
+        ERR("unsupported compression type %x\n", type);
+        return STATUS_NOT_SUPPORTED;
+    }
+    
+    RtlCopyMemory(outbuf, inbuf, min(inlen, outlen));
+    
+    if (inlen < outlen)
+        RtlZeroMemory(outbuf + inlen, outlen - inlen);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
@@ -951,12 +967,6 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                 goto exit;
             }
             
-            if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                FIXME("FIXME - compression not yet supported\n");
-                Status = STATUS_NOT_IMPLEMENTED;
-                goto exit;
-            }
-            
             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
                 WARN("Encryption not supported\n");
                 Status = STATUS_NOT_IMPLEMENTED;
@@ -979,6 +989,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     
                     RtlCopyMemory(data + bytes_read, &ed->data[off], read);
                     
+                    // FIXME - can we have compressed inline extents?
+                    
                     bytes_read += read;
                     length -= read;
                     break;
@@ -999,13 +1011,18 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         UINT32 *csum, bumpoff = 0;
                         UINT64 addr;
                         
-                        addr = ed2->address + ed2->offset + off;
-                        to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
-                        
-                        if (addr % fcb->Vcb->superblock.sector_size > 0) {
-                            bumpoff = addr % fcb->Vcb->superblock.sector_size;
-                            addr -= bumpoff;
-                            to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
+                        if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                            addr = ed2->address + ed2->offset + off;
+                            to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
+                            
+                            if (addr % fcb->Vcb->superblock.sector_size > 0) {
+                                bumpoff = addr % fcb->Vcb->superblock.sector_size;
+                                addr -= bumpoff;
+                                to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
+                            }
+                        } else {
+                            addr = ed2->address;
+                            to_read = sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
                         }
                         
                         buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
@@ -1034,7 +1051,34 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             goto exit;
                         }
                         
-                        RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
+                        if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                            RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
+                        } else {
+                            UINT8* decomp = NULL;
+                            
+                            // FIXME - don't mess around with decomp if we're reading the whole extent
+                            
+                            decomp = ExAllocatePoolWithTag(PagedPool, ed2->num_bytes + ed2->offset, ALLOC_TAG);
+                            if (!decomp) {
+                                ERR("out of memory\n");
+                                ExFreePool(buf);
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                            
+                            Status = decompress(ed->compression, buf, ed2->size, decomp, ed2->num_bytes + ed2->offset);
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("decompress returned %08x\n", Status);
+                                ExFreePool(buf);
+                                ExFreePool(decomp);
+                                goto exit;
+                            }
+                            
+                            RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
+                            
+                            ExFreePool(decomp);
+                        }
                         
                         ExFreePool(buf);
                         
