@@ -376,6 +376,34 @@
 				RelativePath=".\src\resource.h"
 				>
 			</File>
+			<Filter
+				Name="zlib"
+				>
+				<File
+					RelativePath=".\src\zlib\crc32.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\deflate.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\gzguts.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\trees.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\zconf.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\zutil.h"
+					>
+				</File>
+			</Filter>
 		</Filter>
 		<Filter
 			Name="Resource Files"
@@ -472,6 +500,30 @@
 				RelativePath=".\src\write.c"
 				>
 			</File>
+			<Filter
+				Name="zlib"
+				>
+				<File
+					RelativePath=".\src\zlib\adler32.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\crc32.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\deflate.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\trees.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\zutil.c"
+					>
+				</File>
+			</Filter>
 		</Filter>
 	</Files>
 	<Globals>

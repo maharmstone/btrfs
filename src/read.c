@@ -1,5 +1,8 @@
 #include "btrfs_drv.h"
 
+#define Z_SOLO
+#include "zlib/deflate.h"
+
 enum read_data_status {
     ReadDataStatus_Pending,
     ReadDataStatus_Success,
