@@ -3799,7 +3799,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     root_ccb->NodeType = BTRFS_NODE_TYPE_CCB;
     root_ccb->NodeSize = sizeof(ccb);
     
-    Vcb->root_file->FsContext = root_ccb;
+    Vcb->root_file->FsContext2 = root_ccb;
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
