@@ -3747,12 +3747,21 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->root_file = IoCreateStreamFileObject(NULL, DeviceToMount);
     Vcb->root_file->FsContext = root_fcb;
+    Vcb->root_file->SectionObjectPointer = &root_fcb->nonpaged->segment_object;
+    Vcb->root_file->Vpb = DeviceObject->Vpb;
     
     RtlZeroMemory(root_ccb, sizeof(ccb));
     root_ccb->NodeType = BTRFS_NODE_TYPE_CCB;
     root_ccb->NodeSize = sizeof(ccb);
     
     Vcb->root_file->FsContext2 = root_ccb;
+    
+    try {
+        CcInitializeCacheMap(Vcb->root_file, (PCC_FILE_SIZES)(&root_fcb->Header.AllocationSize), FALSE, cache_callbacks, Vcb->root_file);
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        Status = GetExceptionCode();
+        goto exit;
+    }
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         Status = find_disk_holes(Vcb, &Vcb->devices[i]);
