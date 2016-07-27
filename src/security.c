@@ -833,8 +833,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
             fcb = fileref->parent->fcb;
         else {
             ERR("could not find parent fcb for stream\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
+            return STATUS_INTERNAL_ERROR;
         }
     }
     
