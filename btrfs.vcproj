@@ -392,6 +392,22 @@
 					>
 				</File>
 				<File
+					RelativePath=".\src\zlib\inffast.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inffixed.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inflate.h"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inftrees.h"
+					>
+				</File>
+				<File
 					RelativePath=".\src\zlib\trees.h"
 					>
 				</File>
@@ -513,6 +529,18 @@
 				</File>
 				<File
 					RelativePath=".\src\zlib\deflate.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inffast.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inflate.c"
+					>
+				</File>
+				<File
+					RelativePath=".\src\zlib\inftrees.c"
 					>
 				</File>
 				<File
