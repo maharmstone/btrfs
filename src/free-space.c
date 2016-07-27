@@ -715,6 +715,9 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
+            ExFreePool(fsi);
+            free_fcb(c->cache);
+            c->cache = NULL;
             return Status;
         }
         

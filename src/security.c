@@ -201,6 +201,7 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     um = ExAllocatePoolWithTag(PagedPool, sizeof(uid_map), ALLOC_TAG);
     if (!um) {
         ERR("out of memory\n");
+        ExFreePool(sid);
         return;
     }
     
