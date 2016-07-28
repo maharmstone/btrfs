@@ -24,18 +24,29 @@ HRESULT __stdcall Factory::CreateInstance(IUnknown* pUnknownOuter, const IID& ii
     if (pUnknownOuter)
         return CLASS_E_NOAGGREGATION;
 
-    if (iid == IID_IUnknown || iid == IID_IShellIconOverlayIdentifier) {
-        BtrfsIconOverlay* bio = new BtrfsIconOverlay;
-        if (!bio)
-            return E_OUTOFMEMORY;
+    switch (type) {
+        case FactoryIconHandler:
+            if (iid == IID_IUnknown || iid == IID_IShellIconOverlayIdentifier) {
+                BtrfsIconOverlay* bio = new BtrfsIconOverlay;
+                if (!bio)
+                    return E_OUTOFMEMORY;
 
-        return bio->QueryInterface(iid, ppv);
-    } else if (iid == IID_IContextMenu || iid == IID_IShellExtInit) {
-        BtrfsContextMenu* bcm = new BtrfsContextMenu;
-        if (!bcm)
-            return E_OUTOFMEMORY;
-        
-        return bcm->QueryInterface(iid, ppv);
+                return bio->QueryInterface(iid, ppv);
+            }
+            break;
+            
+        case FactoryContextMenu:
+            if (iid == IID_IUnknown || iid == IID_IContextMenu || iid == IID_IShellExtInit) {
+                BtrfsContextMenu* bcm = new BtrfsContextMenu;
+                if (!bcm)
+                    return E_OUTOFMEMORY;
+                
+                return bcm->QueryInterface(iid, ppv);
+            }
+            break;
+            
+        default:
+            break;
     }
     
     *ppv = NULL;

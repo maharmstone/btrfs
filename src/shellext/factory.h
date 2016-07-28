@@ -1,9 +1,16 @@
 extern LONG objs_loaded;
 
+typedef enum {
+    FactoryUnknown,
+    FactoryIconHandler,
+    FactoryContextMenu
+} factory_type;
+
 class Factory : public IClassFactory {
 public:
     Factory() {
         refcount = 0;
+        type = FactoryUnknown;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -32,6 +39,8 @@ public:
     
     virtual HRESULT __stdcall CreateInstance(IUnknown* pUnknownOuter, const IID& iid, void** ppv);
     virtual HRESULT __stdcall LockServer(BOOL bLock);
+    
+    factory_type type;
 
 private:
     LONG refcount;

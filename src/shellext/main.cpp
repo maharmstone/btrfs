@@ -3,9 +3,11 @@
 #include <windows.h>
 #include "factory.h"
 
-static const GUID CLSID_ShellBtrfs = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf9 } };
+static const GUID CLSID_ShellBtrfsIconHandler = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf0 } };
+static const GUID CLSID_ShellBtrfsContextMenu = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf1 } };
 
-#define COM_DESCRIPTION L"WinBtrfs shell extension"
+#define COM_DESCRIPTION_ICON_HANDLER L"WinBtrfs shell extension (icon handler)"
+#define COM_DESCRIPTION_CONTEXT_MENU L"WinBtrfs shell extension (context menu)"
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
 HMODULE module;
@@ -20,12 +22,24 @@ STDAPI DllCanUnloadNow(void) {
 }
 
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
-    if (rclsid == CLSID_ShellBtrfs) {
+    if (rclsid == CLSID_ShellBtrfsIconHandler) {
         Factory* fact = new Factory;
         if (!fact)
             return E_OUTOFMEMORY;
-        else
+        else {
+            fact->type = FactoryIconHandler;
+            
             return fact->QueryInterface(riid, ppv);
+        }
+    } else if (rclsid == CLSID_ShellBtrfsContextMenu) {
+        Factory* fact = new Factory;
+        if (!fact)
+            return E_OUTOFMEMORY;
+        else {
+            fact->type = FactoryContextMenu;
+            
+            return fact->QueryInterface(riid, ppv);
+        }
     }
 
     return CLASS_E_CLASSNOTAVAILABLE;
@@ -204,20 +218,23 @@ static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name)
 }
 
 STDAPI DllRegisterServer(void) {
-    if (!register_clsid(CLSID_ShellBtrfs, COM_DESCRIPTION))
+    if (!register_clsid(CLSID_ShellBtrfsIconHandler, COM_DESCRIPTION_ICON_HANDLER))
         return E_FAIL;
     
-    if (!reg_icon_overlay(CLSID_ShellBtrfs, ICON_OVERLAY_NAME)) {
+    if (!register_clsid(CLSID_ShellBtrfsContextMenu, COM_DESCRIPTION_CONTEXT_MENU))
+        return E_FAIL;
+    
+    if (!reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register icon overlay.", NULL, MB_ICONERROR);
         return E_FAIL;
     }
     
-    if (!reg_context_menu_handler(CLSID_ShellBtrfs, L"Directory\\Background", ICON_OVERLAY_NAME)) {
+    if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Directory\\Background", ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
         return E_FAIL;
     }
     
-    if (!reg_context_menu_handler(CLSID_ShellBtrfs, L"Folder", ICON_OVERLAY_NAME)) {
+    if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Folder", ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
         return E_FAIL;
     }
@@ -230,7 +247,10 @@ STDAPI DllUnregisterServer(void) {
     unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
     unreg_icon_overlay(ICON_OVERLAY_NAME);
     
-    if (!unregister_clsid(CLSID_ShellBtrfs))
+    if (!unregister_clsid(CLSID_ShellBtrfsContextMenu))
+        return E_FAIL;
+    
+    if (!unregister_clsid(CLSID_ShellBtrfsIconHandler))
         return E_FAIL;
 
     return S_OK;
