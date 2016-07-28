@@ -134,6 +134,7 @@ end:
 static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rdb, ULONG buflen, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     ULONG minlen;
+    ULONG tlength;
     UNICODE_STRING subname;
     ANSI_STRING target;
     LARGE_INTEGER offset, time;
@@ -187,7 +188,8 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rd
     }
     
     offset.QuadPart = 0;
-    Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, (ULONG*)&target.Length, FALSE, TRUE,
+    tlength = target.Length;
+    Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, &tlength, FALSE, TRUE,
                          TRUE, FALSE, rollback);
     ExFreePool(target.Buffer);
     
