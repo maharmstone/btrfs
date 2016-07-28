@@ -4644,6 +4644,10 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
+        
+        if (datalen > 0)
+            ExFreePool(data);
+        
         return Status;
     }
     
