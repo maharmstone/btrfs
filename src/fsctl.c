@@ -1026,6 +1026,45 @@ end2:
     return Status;
 }
 
+static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
+    btrfs_inode_info* bii = data;
+    fcb* fcb;
+    ccb* ccb;
+    
+    if (length < sizeof(btrfs_inode_info))
+        return STATUS_BUFFER_OVERFLOW;
+    
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    bii->subvol = fcb->subvol->id;
+    bii->inode = fcb->inode;
+    bii->top = fcb->Vcb->root_fileref->fcb == fcb ? TRUE : FALSE;
+    bii->type = fcb->type;
+    bii->st_uid = fcb->inode_item.st_uid;
+    bii->st_gid = fcb->inode_item.st_gid;
+    bii->st_mode = fcb->inode_item.st_mode;
+    bii->st_rdev = fcb->inode_item.st_rdev;
+    bii->flags = fcb->inode_item.flags;
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     UINT64 i, num_devices;
     NTSTATUS Status;
@@ -2375,6 +2414,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_CREATE_SNAPSHOT:
             Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+            
+        case FSCTL_BTRFS_GET_INODE_INFO:
+            Status = get_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         default:
