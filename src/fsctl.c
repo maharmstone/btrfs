@@ -947,7 +947,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fr = create_fileref();
     if (!fr) {
         ERR("out of memory\n");
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(rootfcb);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -959,7 +963,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     Status = fcb_get_last_dir_index(fcb, &dirpos);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fr);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
         goto end;
     }
     
@@ -970,7 +976,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
     if (!fr->filepart.Buffer) {
         ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fr);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -980,7 +988,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fr);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
         goto end;
     }
     

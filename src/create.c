@@ -1915,8 +1915,8 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     *pfr = sf2;
     
 end:
-    ExReleaseResourceLite(&Vcb->fcb_lock);
     free_fileref(sf);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     
 end2:
     if (parts)
@@ -2123,7 +2123,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_new_sd returned %08x\n", Status);
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        
         return Status;
     }
     
@@ -2132,7 +2136,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
     if (!hl) {
         ERR("out of memory\n");
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2145,7 +2153,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (!hl->utf8.Buffer) {
         ERR("out of memory\n");
         ExFreePool(hl);
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     RtlCopyMemory(hl->utf8.Buffer, utf8, utf8len);
@@ -2157,7 +2169,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         ERR("out of memory\n");
         ExFreePool(hl->utf8.Buffer);
         ExFreePool(hl);
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2168,7 +2184,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref = create_fileref();
     if (!fileref) {
         ERR("out of memory\n");
+        
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2183,7 +2203,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fileref);
+        ExReleaseResource(&Vcb->fcb_lock);
         return Status;
     }
         
@@ -2192,7 +2214,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(fileref);
+            ExReleaseResource(&Vcb->fcb_lock);
             return Status;
         }
     }
@@ -2972,8 +2996,11 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 fileref = related->parent;
                 increase_fileref_refcount(fileref);
                 Status = STATUS_SUCCESS;
-            } else
+            } else {
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref);
+                ExReleaseResource(&Vcb->fcb_lock);
+            }
         } else {
             WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
             Status = STATUS_NOT_IMPLEMENTED;

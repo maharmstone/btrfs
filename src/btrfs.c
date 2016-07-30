@@ -1816,7 +1816,7 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     LONG rc;
 
 #ifdef DEBUG    
-    if (!ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->tree_lock)) {
+    if (!ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->tree_lock) && !fr->dirty) {
         ERR("fcb_lock not acquired exclusively\n");
         int3;
     }
