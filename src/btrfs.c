@@ -1719,6 +1719,13 @@ void mark_fileref_dirty(file_ref* fileref) {
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {
     LONG rc;
 
+#ifdef DEBUG    
+    if (!ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->tree_lock)) {
+        ERR("fcb_lock not acquired exclusively\n");
+        int3;
+    }
+#endif
+
     rc = InterlockedDecrement(&fcb->refcount);
     
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1733,7 +1740,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (rc > 0)
         return;
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
+//     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
     
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
@@ -1741,7 +1748,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
     
-    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+//     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
@@ -1807,6 +1814,13 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 
 void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line) {
     LONG rc;
+
+#ifdef DEBUG    
+    if (!ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->tree_lock)) {
+        ERR("fcb_lock not acquired exclusively\n");
+        int3;
+    }
+#endif
 
     rc = InterlockedDecrement(&fr->refcount);
     

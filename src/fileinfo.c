@@ -1423,7 +1423,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         increase_fileref_refcount(related);
     }
 
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
 
     if (NT_SUCCESS(Status)) {
         TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
@@ -1446,13 +1448,17 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         if (fileref == oldfileref || !oldfileref->deleted) {
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(oldfileref);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
             oldfileref = NULL;
         }
     }
     
     if (!related) {
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08x\n", Status);
@@ -1724,7 +1730,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
     
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     free_fileref(fr2);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     mark_fcb_dirty(fr2->parent->fcb);
     
@@ -1736,14 +1744,23 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     Status = STATUS_SUCCESS;
     
 end:
-    if (oldfileref)
+    if (oldfileref) {
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(oldfileref);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+    }
     
-    if (!NT_SUCCESS(Status) && related)
+    if (!NT_SUCCESS(Status) && related) {
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(related);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+    }
     
-    if (!NT_SUCCESS(Status) && fr2)
+    if (!NT_SUCCESS(Status) && fr2) {
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(fr2);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+    }
     
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
