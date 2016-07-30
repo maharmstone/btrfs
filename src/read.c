@@ -1357,6 +1357,12 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
+    if (fcb == Vcb->volume_fcb) {
+        TRACE("not allowing read of volume FCB\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+    
     ccb = FileObject->FsContext2;
     
     if (!ccb) {
