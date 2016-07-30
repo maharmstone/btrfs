@@ -78,7 +78,7 @@
 
 // #pragma pack(push, 1)
 
-struct device_extension;
+struct _device_extension;
 
 typedef struct {
     BTRFS_UUID fsuuid;
@@ -519,10 +519,10 @@ enum write_data_status {
     WriteDataStatus_Ignore
 };
 
-struct write_data_context;
+struct _write_data_context;
 
 typedef struct {
-    struct write_data_context* context;
+    struct _write_data_context* context;
     UINT8* buf;
     BOOL need_free;
     device* device;
@@ -532,7 +532,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } write_data_stripe;
 
-typedef struct {
+typedef struct _write_data_context {
     KEVENT Event;
     LIST_ENTRY stripes;
     LONG stripes_left;
@@ -587,7 +587,7 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
     startoff = off % (num_stripes * stripe_length);
     initoff = (off / (num_stripes * stripe_length)) * stripe_length;
     
-    *stripe = startoff / stripe_length;
+    *stripe = (UINT16)(startoff / stripe_length);
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
 

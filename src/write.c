@@ -971,7 +971,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             stripe->Irp = NULL;
             stripe->buf = NULL;
         } else {
-            stripe->context = (struct write_data_context*)wtc;
+            stripe->context = (struct _write_data_context*)wtc;
             stripe->buf = stripedata[i];
             stripe->need_free = need_free2;
             stripe->device = c->devices[i];
