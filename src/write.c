@@ -8493,7 +8493,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
     
-    if (!(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
         WARN("insufficient permissions\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
