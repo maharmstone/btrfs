@@ -1173,7 +1173,7 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("could not find address %llx in extent tree\n", address);
+        TRACE("could not find address %llx in extent tree\n", address);
         return 0;
     }
     
