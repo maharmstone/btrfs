@@ -654,13 +654,19 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
 
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         Status = open_fileref(Vcb, &fr, &nameus, fileref, FALSE, NULL);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08x\n", Status);
             Status = STATUS_SUCCESS;
         } else {
             send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(fr);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
         }
     }
     
