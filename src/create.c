@@ -3239,7 +3239,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 //             }
             
             // FIXME - make sure not ADS!
-            Status = truncate_file(fileref->fcb, fileref->fcb->inode_item.st_size, rollback);
+            Status = truncate_file(fileref->fcb, 0, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("truncate_file returned %08x\n", Status);
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
