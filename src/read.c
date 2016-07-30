@@ -1222,7 +1222,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         }
         
         if (start >= fcb->Header.ValidDataLength.QuadPart) {
-            length = min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart;
+            length = min(length, min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
             RtlZeroMemory(data, length);
             Irp->IoStatus.Information = *bytes_read = length;
             return STATUS_SUCCESS;
