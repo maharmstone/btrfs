@@ -1301,7 +1301,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
                     
                     InsertHeadList(&ext->list_entry, &ext2->list_entry);
                     remove_fcb_extent(ext, rollback);
-                } else if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0) {
+                } else if (ed->type == EXTENT_TYPE_REGULAR) {
                     NTSTATUS Status;
                     BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
                     UINT64 s1 = max(ext->offset, start);
@@ -1526,12 +1526,6 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
                 Status = excise_extents(Vcb, fcb, start, end, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("excise_extents returned %08x\n", Status);
-                    goto end;
-                }
-                
-                Status = insert_sparse_extent(fcb, start, end - start, &rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
                 }
             }

@@ -6356,7 +6356,7 @@ end:
     return Status;
 }
 
-NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     

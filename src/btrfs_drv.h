@@ -728,7 +728,6 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback);
 void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_list);
-NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp);
