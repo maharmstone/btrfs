@@ -1308,6 +1308,9 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         return STATUS_INTERNAL_ERROR;
                     }
                     
+                    if (ed2->address == 0 && ed2->size == 0) // sparse
+                        goto nextitem;
+                    
                     if (ed2->size != 0)
                         unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size) == 1;
                 }
@@ -1336,6 +1339,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 InsertTailList(&fcb->extents, &ext->list_entry);
             }
             
+nextitem:
             b = find_next_item(Vcb, &tp, &next_tp, FALSE);
          
             if (b) {
