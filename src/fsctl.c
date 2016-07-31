@@ -1576,8 +1576,7 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     LIST_ENTRY* le;
     FILE_ALLOCATED_RANGE_BUFFER* ranges = outbuf;
     ULONG i = 0;
-    BOOL sparse, finish_off;
-    UINT64 nonsparse_run_start;
+    UINT64 last_start, last_end;
     
     TRACE("FSCTL_QUERY_ALLOCATED_RANGES\n");
     
@@ -1618,51 +1617,41 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
     
     le = fcb->extents.Flink;
     
-    sparse = FALSE;
-    nonsparse_run_start = 0xffffffffffffffff;
-    finish_off = TRUE;
+    last_start = 0;
+    last_end = 0;
     
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
         if (!ext->ignore) {
-            EXTENT_DATA2* ed2 = ext->data->type == EXTENT_TYPE_REGULAR ? (EXTENT_DATA2*)ext->data->data : NULL;
+            EXTENT_DATA2* ed2 = (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ext->data->data : NULL;
+            UINT64 len = ed2 ? ed2->num_bytes : ext->data->decoded_size;
             
-            if (ed2 && ed2->size == 0) { // sparse
-                if (!sparse) {
-                    if (nonsparse_run_start < ext->offset) {
-                        if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
-                            ranges[i].FileOffset.QuadPart = nonsparse_run_start;
-                            ranges[i].Length.QuadPart = ext->offset - nonsparse_run_start;
-                            i++;
-                        } else {
-                            Status = STATUS_BUFFER_TOO_SMALL;
-                            goto end;
-                        }
+            if (ext->offset > last_end) { // first extent after a hole
+                if (last_end > last_start) {
+                    if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
+                        ranges[i].FileOffset.QuadPart = last_start;
+                        ranges[i].Length.QuadPart = min(fcb->inode_item.st_size, last_end) - last_start;
+                        i++;
+                    } else {
+                        Status = STATUS_BUFFER_TOO_SMALL;
+                        goto end;
                     }
-                    
-                    if (ext->offset > inbuf->FileOffset.QuadPart + inbuf->Length.QuadPart) {
-                        finish_off = FALSE;
-                        break;
-                    }
-                    
-                    sparse = TRUE;
                 }
-            } else { // not sparse
-                if (sparse) {
-                    sparse = FALSE;
-                    nonsparse_run_start = ext->offset;
-                }
+                
+                last_start = ext->offset;
             }
+            
+            last_end = ext->offset + len;
         }
         
         le = le->Flink;
     }
     
-    if (finish_off && nonsparse_run_start < fcb->inode_item.st_size) {
+    if (last_end > last_start) {
         if ((i + 1) * sizeof(FILE_ALLOCATED_RANGE_BUFFER) <= outbuflen) {
-            ranges[i].FileOffset.QuadPart = nonsparse_run_start;
-            ranges[i].Length.QuadPart = fcb->inode_item.st_size - nonsparse_run_start;
+            ranges[i].FileOffset.QuadPart = last_start;
+            ranges[i].Length.QuadPart = min(fcb->inode_item.st_size, last_end) - last_start;
             i++;
         } else {
             Status = STATUS_BUFFER_TOO_SMALL;
