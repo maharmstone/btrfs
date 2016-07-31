@@ -917,72 +917,23 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
     NTSTATUS Status;
     EXTENT_DATA* ed;
     UINT64 bytes_read = 0;
+    UINT64 last_end;
     LIST_ENTRY* le;
     
     TRACE("(%p, %p, %llx, %llx, %p)\n", fcb, data, start, length, pbr);
     
     if (pbr)
         *pbr = 0;
+    
+    if (start >= fcb->inode_item.st_size) {
+        WARN("Tried to read beyond end of file\n");
+        Status = STATUS_END_OF_FILE;
+        goto exit;        
+    }
 
     le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!ext->ignore) {
-            if (ext->offset == start)
-                break;
-            else if (ext->offset > start) {
-                LIST_ENTRY* le2 = le->Blink;
-                
-                ext = NULL;
-                
-                while (le2 != &fcb->extents) {
-                    extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
-                    
-                    if (!ext2->ignore) {
-                        le = le2;
-                        ext = ext2;
-                        break;
-                    }
-                    
-                    le2 = le2->Blink;
-                }
-                
-                if (!ext) {
-                    ERR("first extent was after offset\n");
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto exit;
-                } else
-                    break;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (le == &fcb->extents) {
-        LIST_ENTRY* le2 = le->Blink;
-        extent* ext = NULL;
 
-        while (le2 != &fcb->extents) {
-            extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
-            
-            if (!ext2->ignore) {
-                le = le2;
-                ext = ext2;
-                break;
-            }
-            
-            le2 = le2->Blink;
-        }
-        
-        if (!ext) {
-            ERR("could not find extent\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto exit;
-        }
-    }
+    last_end = start;
 
     while (le != &fcb->extents) {
         UINT64 len;
@@ -992,27 +943,25 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
         if (!ext->ignore) {
             ed = ext->data;
             
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                Status = STATUS_INTERNAL_ERROR;
-                goto exit;
+            ed2 = (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ed->data : NULL;
+            
+            len = ed2 ? ed2->num_bytes : ed->decoded_size;
+            
+            if (ext->offset + len <= start) {
+                last_end = ext->offset + len;
+                goto nextitem;
             }
             
-            if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                Status = STATUS_INTERNAL_ERROR;
-                goto exit;
+            if (ext->offset > last_end && ext->offset > start + bytes_read) {
+                UINT32 read = min(length, ext->offset - max(start, last_end));
+                
+                RtlZeroMemory(data + bytes_read, read);
+                bytes_read += read;
+                length -= read;
             }
             
-            ed2 = (EXTENT_DATA2*)ed->data;
-            
-            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-            
-            if (ext->offset + len < start) {
-                ERR("Tried to read beyond end of file\n");
-                Status = STATUS_END_OF_FILE;
-                goto exit;
-            }
+            if (length == 0 || ext->offset > start + bytes_read + length)
+                break;
             
             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
                 WARN("Encryption not supported\n");
@@ -1048,90 +997,85 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT64 off = start + bytes_read - ext->offset;
                     UINT32 to_read, read;
                     UINT8* buf;
+                    UINT32 *csum, bumpoff = 0;
+                    UINT64 addr;
                     
                     read = len - off;
                     if (read > length) read = length;
                     
-                    if (ed2->address == 0) {
-                        RtlZeroMemory(data + bytes_read, read);
-                    } else {
-                        UINT32 *csum, bumpoff = 0;
-                        UINT64 addr;
+                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                        addr = ed2->address + ed2->offset + off;
+                        to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
                         
-                        if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                            addr = ed2->address + ed2->offset + off;
-                            to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
-                            
-                            if (addr % fcb->Vcb->superblock.sector_size > 0) {
-                                bumpoff = addr % fcb->Vcb->superblock.sector_size;
-                                addr -= bumpoff;
-                                to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
-                            }
-                        } else {
-                            addr = ed2->address;
-                            to_read = sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
+                        if (addr % fcb->Vcb->superblock.sector_size > 0) {
+                            bumpoff = addr % fcb->Vcb->superblock.sector_size;
+                            addr -= bumpoff;
+                            to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
                         }
+                    } else {
+                        addr = ed2->address;
+                        to_read = sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
+                    }
+                    
+                    buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                    
+                    if (!buf) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                        Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum);
                         
-                        buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("load_csum returned %08x\n", Status);
+                            ExFreePool(buf);
+                            goto exit;
+                        }
+                    } else
+                        csum = NULL;
+                    
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_data returned %08x\n", Status);
+                        ExFreePool(buf);
+                        goto exit;
+                    }
+                    
+                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                        RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
+                    } else {
+                        UINT8* decomp = NULL;
                         
-                        if (!buf) {
+                        // FIXME - don't mess around with decomp if we're reading the whole extent
+                        
+                        decomp = ExAllocatePoolWithTag(PagedPool, ed2->num_bytes + ed2->offset, ALLOC_TAG);
+                        if (!decomp) {
                             ERR("out of memory\n");
+                            ExFreePool(buf);
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto exit;
                         }
                         
-                        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                            Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum);
-                            
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("load_csum returned %08x\n", Status);
-                                ExFreePool(buf);
-                                goto exit;
-                            }
-                        } else
-                            csum = NULL;
+                        Status = decompress(ed->compression, buf, ed2->size, decomp, ed2->num_bytes + ed2->offset);
                         
-                        Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("read_data returned %08x\n", Status);
+                            ERR("decompress returned %08x\n", Status);
                             ExFreePool(buf);
+                            ExFreePool(decomp);
                             goto exit;
                         }
                         
-                        if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                            RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
-                        } else {
-                            UINT8* decomp = NULL;
-                            
-                            // FIXME - don't mess around with decomp if we're reading the whole extent
-                            
-                            decomp = ExAllocatePoolWithTag(PagedPool, ed2->num_bytes + ed2->offset, ALLOC_TAG);
-                            if (!decomp) {
-                                ERR("out of memory\n");
-                                ExFreePool(buf);
-                                Status = STATUS_INSUFFICIENT_RESOURCES;
-                                goto exit;
-                            }
-                            
-                            Status = decompress(ed->compression, buf, ed2->size, decomp, ed2->num_bytes + ed2->offset);
-                            
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("decompress returned %08x\n", Status);
-                                ExFreePool(buf);
-                                ExFreePool(decomp);
-                                goto exit;
-                            }
-                            
-                            RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
-                            
-                            ExFreePool(decomp);
-                        }
+                        RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
                         
-                        ExFreePool(buf);
-                        
-                        if (csum)
-                            ExFreePool(csum);
+                        ExFreePool(decomp);
                     }
+                    
+                    ExFreePool(buf);
+                    
+                    if (csum)
+                        ExFreePool(csum);
                     
                     bytes_read += read;
                     length -= read;
@@ -1159,12 +1103,24 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     Status = STATUS_NOT_IMPLEMENTED;
                     goto exit;
             }
+
+            last_end = ext->offset + len;
             
             if (length == 0)
                 break;
         }
 
+nextitem:
         le = le->Flink;
+    }
+    
+    if (length > 0 && start + bytes_read < fcb->inode_item.st_size) {
+        UINT32 read = fcb->inode_item.st_size - start - bytes_read;
+        
+        RtlZeroMemory(data + bytes_read, read);
+        
+        bytes_read += read;
+        length -= read;
     }
     
     Status = STATUS_SUCCESS;
