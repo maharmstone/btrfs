@@ -7886,6 +7886,37 @@ static void STDCALL deferred_write_callback(void* context1, void* context2) {
         do_write_job(Vcb, Irp);
 }
 
+static NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    
+    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
+        if (is_file_prealloc(fcb, start_data, end_data)) {
+            Status = do_prealloc_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_prealloc_write returned %08x\n", Status);
+                return Status;
+            }
+        } else {
+            Status = do_cow_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_cow_write returned %08x\n", Status);
+                return Status;
+            }
+        }
+    } else {
+        Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_nocow_write returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
                      BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -7897,7 +7928,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     UINT8* data;
     LIST_ENTRY changed_sector_list;
     INODE_ITEM* origii;
-    BOOL changed_length = FALSE, nocsum, nocow/*, lazy_writer = FALSE, write_eof = FALSE*/;
+    BOOL changed_length = FALSE, nocsum/*, lazy_writer = FALSE, write_eof = FALSE*/;
     NTSTATUS Status;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -7987,7 +8018,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
-    nocow = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATACOW;
     
     newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.st_size;
     
@@ -8231,31 +8261,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
             
             fcb->inode_item.st_blocks += newlength;
-        } else if (!nocow) {
-            if (is_file_prealloc(fcb, start_data, end_data)) {
-                Status = do_prealloc_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - do_prealloc_write returned %08x\n", Status);
-                    ExFreePool(data);
-                    goto end;
-                }
-            } else {
-                Status = do_cow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - do_cow_write returned %08x\n", Status);
-                    ExFreePool(data);
-                    goto end;
-                }
-            }
-            
-            ExFreePool(data);
         } else {
-            Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+            Status = do_write_file(fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
-                ERR("error - do_nocow_write returned %08x\n", Status);
+                ERR("do_write_file returned %08x\n", Status);
                 ExFreePool(data);
                 goto end;
             }
