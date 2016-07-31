@@ -7007,676 +7007,676 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
     return STATUS_SUCCESS;
 }
 
-static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
-    LIST_ENTRY* le;
-    extent* ext = NULL;
-    
-    le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!nextext->ignore) {
-            if (nextext->offset == start_data) {
-                ext = nextext;
-                break;
-            } else if (nextext->offset > start_data)
-                break;
-            
-            ext = nextext;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!ext)
-        return FALSE;
-    
-    le = &ext->list_entry;
-    
-    while (le != &fcb->extents) {
-        ext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!ext->ignore) {
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                return FALSE;
-            }
-            
-            if (ext->offset < end_data && ext->data->type == EXTENT_TYPE_PREALLOC) {
-                EXTENT_DATA2* ed2;
-                
-                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    return FALSE;
-                }
-                
-                ed2 = (EXTENT_DATA2*)ext->data->data;
-                
-                if (ext->offset + ed2->num_bytes >= start_data)
-                    return TRUE;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    return FALSE;
-}
+// static BOOL is_file_prealloc(fcb* fcb, UINT64 start_data, UINT64 end_data) {
+//     LIST_ENTRY* le;
+//     extent* ext = NULL;
+//     
+//     le = fcb->extents.Flink;
+//     
+//     while (le != &fcb->extents) {
+//         extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!nextext->ignore) {
+//             if (nextext->offset == start_data) {
+//                 ext = nextext;
+//                 break;
+//             } else if (nextext->offset > start_data)
+//                 break;
+//             
+//             ext = nextext;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (!ext)
+//         return FALSE;
+//     
+//     le = &ext->list_entry;
+//     
+//     while (le != &fcb->extents) {
+//         ext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!ext->ignore) {
+//             if (ext->datalen < sizeof(EXTENT_DATA)) {
+//                 ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+//                 return FALSE;
+//             }
+//             
+//             if (ext->offset < end_data && ext->data->type == EXTENT_TYPE_PREALLOC) {
+//                 EXTENT_DATA2* ed2;
+//                 
+//                 if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//                     ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+//                     return FALSE;
+//                 }
+//                 
+//                 ed2 = (EXTENT_DATA2*)ext->data->data;
+//                 
+//                 if (ext->offset + ed2->num_bytes >= start_data)
+//                     return TRUE;
+//             }
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     return FALSE;
+// }
 
-static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    
-    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - excise_extents returned %08x\n", Status);
-        goto end;
-    }
-    
-    Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, changed_sector_list, Irp, rollback);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - insert_extent returned %08x\n", Status);
-        goto end;
-    }
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    return Status;
-}
+// static NTSTATUS do_cow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+//     NTSTATUS Status;
+//     
+//     Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - excise_extents returned %08x\n", Status);
+//         goto end;
+//     }
+//     
+//     Status = insert_extent(fcb->Vcb, fcb, start_data, end_data - start_data, data, changed_sector_list, Irp, rollback);
+//     
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - insert_extent returned %08x\n", Status);
+//         goto end;
+//     }
+//     
+//     Status = STATUS_SUCCESS;
+//     
+// end:
+//     return Status;
+// }
 
-static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    UINT64 last_written = start_data;
-    extent* ext = NULL;
-    LIST_ENTRY* le;
-    chunk* c;
-    
-    le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!nextext->ignore) {
-            if (nextext->offset == start_data) {
-                ext = nextext;
-                break;
-            } else if (nextext->offset > start_data)
-                break;
-            
-            ext = nextext;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!ext)
-        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
-    
-    le = &ext->list_entry;
-    
-    while (le != &fcb->extents) {
-        EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2;
-        LIST_ENTRY* le2 = le->Flink;
-        
-        ext = CONTAINING_RECORD(le, extent, list_entry);
-        ed = ext->data;
-        
-        if (!ext->ignore) {
-            if (ext->offset >= end_data)
-                break;
-            
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    return STATUS_INTERNAL_ERROR;
-                }
-                
-                ed2 = (EXTENT_DATA2*)ed->data;
-            }
-            
-            if (ed->type == EXTENT_TYPE_PREALLOC) {
-                if (ext->offset > last_written) {
-                    Status = do_cow_write(Vcb, fcb, last_written, ext->offset, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("do_cow_write returned %08x\n", Status);                    
-                        return Status;
-                    }
-                    
-                    last_written = ext->offset;
-                }
-                
-                if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
-                    EXTENT_DATA* ned;
-                    extent* newext;
-                    
-                    ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!ned) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    RtlCopyMemory(ned, ext->data, ext->datalen);
-                    
-                    ned->type = EXTENT_TYPE_REGULAR;
-                    
-                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, changed_sector_list, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("do_write_data returned %08x\n", Status);
-                        return Status;
-                    }
-                    
-                    last_written = ext->offset + ed2->num_bytes;
-                    
-                    newext->offset = ext->offset;
-                    newext->data = ned;
-                    newext->datalen = ext->datalen;
-                    newext->unique = ext->unique;
-                    newext->ignore = FALSE;
-                    InsertHeadList(&ext->list_entry, &newext->list_entry);
+// static NTSTATUS do_prealloc_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+//     NTSTATUS Status;
+//     UINT64 last_written = start_data;
+//     extent* ext = NULL;
+//     LIST_ENTRY* le;
+//     chunk* c;
+//     
+//     le = fcb->extents.Flink;
+//     
+//     while (le != &fcb->extents) {
+//         extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!nextext->ignore) {
+//             if (nextext->offset == start_data) {
+//                 ext = nextext;
+//                 break;
+//             } else if (nextext->offset > start_data)
+//                 break;
+//             
+//             ext = nextext;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (!ext)
+//         return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+//     
+//     le = &ext->list_entry;
+//     
+//     while (le != &fcb->extents) {
+//         EXTENT_DATA* ed;
+//         EXTENT_DATA2* ed2;
+//         LIST_ENTRY* le2 = le->Flink;
+//         
+//         ext = CONTAINING_RECORD(le, extent, list_entry);
+//         ed = ext->data;
+//         
+//         if (!ext->ignore) {
+//             if (ext->offset >= end_data)
+//                 break;
+//             
+//             if (ext->datalen < sizeof(EXTENT_DATA)) {
+//                 ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+//                 if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//                     ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+//                     return STATUS_INTERNAL_ERROR;
+//                 }
+//                 
+//                 ed2 = (EXTENT_DATA2*)ed->data;
+//             }
+//             
+//             if (ed->type == EXTENT_TYPE_PREALLOC) {
+//                 if (ext->offset > last_written) {
+//                     Status = do_cow_write(Vcb, fcb, last_written, ext->offset, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
+//                     
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("do_cow_write returned %08x\n", Status);                    
+//                         return Status;
+//                     }
+//                     
+//                     last_written = ext->offset;
+//                 }
+//                 
+//                 if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
+//                     EXTENT_DATA* ned;
+//                     extent* newext;
+//                     
+//                     ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!ned) {
+//                         ERR("out of memory\n");
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     RtlCopyMemory(ned, ext->data, ext->datalen);
+//                     
+//                     ned->type = EXTENT_TYPE_REGULAR;
+//                     
+//                     Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, changed_sector_list, Irp);
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("do_write_data returned %08x\n", Status);
+//                         return Status;
+//                     }
+//                     
+//                     last_written = ext->offset + ed2->num_bytes;
+//                     
+//                     newext->offset = ext->offset;
+//                     newext->data = ned;
+//                     newext->datalen = ext->datalen;
+//                     newext->unique = ext->unique;
+//                     newext->ignore = FALSE;
+//                     InsertHeadList(&ext->list_entry, &newext->list_entry);
+// 
+//                     remove_fcb_extent(ext, rollback);
+//                 } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
+//                     EXTENT_DATA *ned, *nedb;
+//                     EXTENT_DATA2* ned2;
+//                     extent *newext1, *newext2;
+//                     
+//                     ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!ned) {
+//                         ERR("out of memory\n");
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!nedb) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext1) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext2) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         ExFreePool(newext1);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     RtlCopyMemory(ned, ext->data, ext->datalen);
+//                     ned->type = EXTENT_TYPE_REGULAR;
+//                     ned2 = (EXTENT_DATA2*)ned->data;
+//                     ned2->num_bytes = end_data - ext->offset;
+//                     
+//                     RtlCopyMemory(nedb, ext->data, ext->datalen);
+//                     ned2 = (EXTENT_DATA2*)nedb->data;
+//                     ned2->offset += end_data - ext->offset;
+//                     ned2->num_bytes -= end_data - ext->offset;
+//                     
+//                     Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, changed_sector_list, Irp);
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("do_write_data returned %08x\n", Status);
+//                         return Status;
+//                     }
+//                     
+//                     last_written = end_data;
+//                     
+//                     newext1->offset = ext->offset;
+//                     newext1->data = ned;
+//                     newext1->datalen = ext->datalen;
+//                     newext1->unique = FALSE;
+//                     newext1->ignore = FALSE;
+//                     InsertHeadList(&ext->list_entry, &newext1->list_entry);
+//                     
+//                     newext2->offset = end_data;
+//                     newext2->data = nedb;
+//                     newext2->datalen = ext->datalen;
+//                     newext2->unique = FALSE;
+//                     newext2->ignore = FALSE;
+//                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+//                     
+//                     c = get_chunk_from_address(Vcb, ed2->address);
+//                     
+//                     if (!c)
+//                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+//                     else {
+//                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
+//                                                            fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+//                         
+//                         if (!NT_SUCCESS(Status)) {
+//                             ERR("update_changed_extent_ref returned %08x\n", Status);
+//                             return Status;
+//                         }
+//                     }
+// 
+//                     remove_fcb_extent(ext, rollback);
+//                 } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
+//                     EXTENT_DATA *ned, *nedb;
+//                     EXTENT_DATA2* ned2;
+//                     extent *newext1, *newext2;
+//                     
+//                     // FIXME - test this
+//                     
+//                     ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!ned) {
+//                         ERR("out of memory\n");
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!nedb) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext1) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext2) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         ExFreePool(newext1);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     RtlCopyMemory(ned, ext->data, ext->datalen);
+//                     
+//                     ned2 = (EXTENT_DATA2*)ned->data;
+//                     ned2->num_bytes = start_data - ext->offset;
+//                     
+//                     RtlCopyMemory(nedb, ext->data, ext->datalen);
+//                     
+//                     nedb->type = EXTENT_TYPE_REGULAR;
+//                     ned2 = (EXTENT_DATA2*)nedb->data;
+//                     ned2->offset += start_data - ext->offset;
+//                     ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
+//                     
+//                     Status = do_write_data(Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list, Irp);
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("do_write_data returned %08x\n", Status);
+//                         
+//                         return Status;
+//                     }
+//                     
+//                     last_written = start_data + ned2->num_bytes;
+//                     
+//                     newext1->offset = ext->offset;
+//                     newext1->data = ned;
+//                     newext1->datalen = ext->datalen;
+//                     newext1->unique = FALSE;
+//                     newext1->ignore = FALSE;
+//                     InsertHeadList(&ext->list_entry, &newext1->list_entry);
+//                     
+//                     newext2->offset = start_data;
+//                     newext2->data = nedb;
+//                     newext2->datalen = ext->datalen;
+//                     newext2->unique = FALSE;
+//                     newext2->ignore = FALSE;
+//                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+//                     
+//                     c = get_chunk_from_address(Vcb, ed2->address);
+//                     
+//                     if (!c)
+//                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+//                     else {
+//                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
+//                                                            fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+//                         
+//                         if (!NT_SUCCESS(Status)) {
+//                             ERR("update_changed_extent_ref returned %08x\n", Status);
+//                             return Status;
+//                         }
+//                     }
+// 
+//                     remove_fcb_extent(ext, rollback);
+//                 } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
+//                     EXTENT_DATA *ned, *nedb, *nedc;
+//                     EXTENT_DATA2* ned2;
+//                     extent *newext1, *newext2, *newext3;
+//                     
+//                     // FIXME - test this
+//                     
+//                     ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!ned) {
+//                         ERR("out of memory\n");
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!nedb) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     nedc = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//                     if (!nedb) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext1) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         ExFreePool(nedc);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext2) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         ExFreePool(nedc);
+//                         ExFreePool(newext1);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     newext3 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//                     if (!newext2) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(ned);
+//                         ExFreePool(nedb);
+//                         ExFreePool(nedc);
+//                         ExFreePool(newext1);
+//                         ExFreePool(newext2);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     RtlCopyMemory(ned, ext->data, ext->datalen);
+//                     RtlCopyMemory(nedb, ext->data, ext->datalen);
+//                     RtlCopyMemory(nedc, ext->data, ext->datalen);
+//                     
+//                     ned2 = (EXTENT_DATA2*)ned->data;
+//                     ned2->num_bytes = start_data - ext->offset;
+//                     
+//                     nedb->type = EXTENT_TYPE_REGULAR;
+//                     ned2 = (EXTENT_DATA2*)nedb->data;
+//                     ned2->offset += start_data - ext->offset;
+//                     ned2->num_bytes = end_data - start_data;
+//                     
+//                     ned2 = (EXTENT_DATA2*)nedc->data;
+//                     ned2->offset += end_data - ext->offset;
+//                     ned2->num_bytes -= end_data - ext->offset;
+//                     
+//                     ned2 = (EXTENT_DATA2*)nedb->data;
+//                     Status = do_write_data(Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list, Irp);
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("do_write_data returned %08x\n", Status);
+//                         return Status;
+//                     }
+//                     
+//                     last_written = end_data;
+//                     
+//                     newext1->offset = ext->offset;
+//                     newext1->data = ned;
+//                     newext1->datalen = ext->datalen;
+//                     newext1->unique = FALSE;
+//                     newext1->ignore = FALSE;
+//                     InsertHeadList(&ext->list_entry, &newext1->list_entry);
+//                     
+//                     newext2->offset = start_data;
+//                     newext2->data = nedb;
+//                     newext2->datalen = ext->datalen;
+//                     newext2->unique = FALSE;
+//                     newext2->ignore = FALSE;
+//                     InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+//                     
+//                     newext3->offset = end_data;
+//                     newext3->data = nedc;
+//                     newext3->datalen = ext->datalen;
+//                     newext3->unique = FALSE;
+//                     newext3->ignore = FALSE;
+//                     InsertHeadList(&newext2->list_entry, &newext3->list_entry);
+//                     
+//                     c = get_chunk_from_address(Vcb, ed2->address);
+//                     
+//                     if (!c)
+//                         ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+//                     else {
+//                         Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
+//                                                            fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+//                         
+//                         if (!NT_SUCCESS(Status)) {
+//                             ERR("update_changed_extent_ref returned %08x\n", Status);
+//                             return Status;
+//                         }
+//                     }
+// 
+//                     remove_fcb_extent(ext, rollback);
+//                 }
+//             }
+//         }
+//         
+//         le = le2;
+//     }
+//     
+//     if (last_written < end_data) {
+//         Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
+//                 
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("do_cow_write returned %08x\n", Status);
+//             return Status;
+//         }
+//     }
+// 
+//     fcb->extents_changed = TRUE;
+//     mark_fcb_dirty(fcb);
+//     
+//     return STATUS_SUCCESS;
+// }
 
-                    remove_fcb_extent(ext, rollback);
-                } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
-                    EXTENT_DATA *ned, *nedb;
-                    EXTENT_DATA2* ned2;
-                    extent *newext1, *newext2;
-                    
-                    ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!ned) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!nedb) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext1) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext2) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        ExFreePool(newext1);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    RtlCopyMemory(ned, ext->data, ext->datalen);
-                    ned->type = EXTENT_TYPE_REGULAR;
-                    ned2 = (EXTENT_DATA2*)ned->data;
-                    ned2->num_bytes = end_data - ext->offset;
-                    
-                    RtlCopyMemory(nedb, ext->data, ext->datalen);
-                    ned2 = (EXTENT_DATA2*)nedb->data;
-                    ned2->offset += end_data - ext->offset;
-                    ned2->num_bytes -= end_data - ext->offset;
-                    
-                    Status = do_write_data(Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, changed_sector_list, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("do_write_data returned %08x\n", Status);
-                        return Status;
-                    }
-                    
-                    last_written = end_data;
-                    
-                    newext1->offset = ext->offset;
-                    newext1->data = ned;
-                    newext1->datalen = ext->datalen;
-                    newext1->unique = FALSE;
-                    newext1->ignore = FALSE;
-                    InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                    
-                    newext2->offset = end_data;
-                    newext2->data = nedb;
-                    newext2->datalen = ext->datalen;
-                    newext2->unique = FALSE;
-                    newext2->ignore = FALSE;
-                    InsertHeadList(&newext1->list_entry, &newext2->list_entry);
-                    
-                    c = get_chunk_from_address(Vcb, ed2->address);
-                    
-                    if (!c)
-                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
-                    else {
-                        Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("update_changed_extent_ref returned %08x\n", Status);
-                            return Status;
-                        }
-                    }
-
-                    remove_fcb_extent(ext, rollback);
-                } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
-                    EXTENT_DATA *ned, *nedb;
-                    EXTENT_DATA2* ned2;
-                    extent *newext1, *newext2;
-                    
-                    // FIXME - test this
-                    
-                    ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!ned) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!nedb) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext1) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext2) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        ExFreePool(newext1);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    RtlCopyMemory(ned, ext->data, ext->datalen);
-                    
-                    ned2 = (EXTENT_DATA2*)ned->data;
-                    ned2->num_bytes = start_data - ext->offset;
-                    
-                    RtlCopyMemory(nedb, ext->data, ext->datalen);
-                    
-                    nedb->type = EXTENT_TYPE_REGULAR;
-                    ned2 = (EXTENT_DATA2*)nedb->data;
-                    ned2->offset += start_data - ext->offset;
-                    ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
-                    
-                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("do_write_data returned %08x\n", Status);
-                        
-                        return Status;
-                    }
-                    
-                    last_written = start_data + ned2->num_bytes;
-                    
-                    newext1->offset = ext->offset;
-                    newext1->data = ned;
-                    newext1->datalen = ext->datalen;
-                    newext1->unique = FALSE;
-                    newext1->ignore = FALSE;
-                    InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                    
-                    newext2->offset = start_data;
-                    newext2->data = nedb;
-                    newext2->datalen = ext->datalen;
-                    newext2->unique = FALSE;
-                    newext2->ignore = FALSE;
-                    InsertHeadList(&newext1->list_entry, &newext2->list_entry);
-                    
-                    c = get_chunk_from_address(Vcb, ed2->address);
-                    
-                    if (!c)
-                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
-                    else {
-                        Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("update_changed_extent_ref returned %08x\n", Status);
-                            return Status;
-                        }
-                    }
-
-                    remove_fcb_extent(ext, rollback);
-                } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
-                    EXTENT_DATA *ned, *nedb, *nedc;
-                    EXTENT_DATA2* ned2;
-                    extent *newext1, *newext2, *newext3;
-                    
-                    // FIXME - test this
-                    
-                    ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!ned) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    nedb = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!nedb) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    nedc = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    if (!nedb) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext1 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext1) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        ExFreePool(nedc);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext2) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        ExFreePool(nedc);
-                        ExFreePool(newext1);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    newext3 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    if (!newext2) {
-                        ERR("out of memory\n");
-                        ExFreePool(ned);
-                        ExFreePool(nedb);
-                        ExFreePool(nedc);
-                        ExFreePool(newext1);
-                        ExFreePool(newext2);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    RtlCopyMemory(ned, ext->data, ext->datalen);
-                    RtlCopyMemory(nedb, ext->data, ext->datalen);
-                    RtlCopyMemory(nedc, ext->data, ext->datalen);
-                    
-                    ned2 = (EXTENT_DATA2*)ned->data;
-                    ned2->num_bytes = start_data - ext->offset;
-                    
-                    nedb->type = EXTENT_TYPE_REGULAR;
-                    ned2 = (EXTENT_DATA2*)nedb->data;
-                    ned2->offset += start_data - ext->offset;
-                    ned2->num_bytes = end_data - start_data;
-                    
-                    ned2 = (EXTENT_DATA2*)nedc->data;
-                    ned2->offset += end_data - ext->offset;
-                    ned2->num_bytes -= end_data - ext->offset;
-                    
-                    ned2 = (EXTENT_DATA2*)nedb->data;
-                    Status = do_write_data(Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("do_write_data returned %08x\n", Status);
-                        return Status;
-                    }
-                    
-                    last_written = end_data;
-                    
-                    newext1->offset = ext->offset;
-                    newext1->data = ned;
-                    newext1->datalen = ext->datalen;
-                    newext1->unique = FALSE;
-                    newext1->ignore = FALSE;
-                    InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                    
-                    newext2->offset = start_data;
-                    newext2->data = nedb;
-                    newext2->datalen = ext->datalen;
-                    newext2->unique = FALSE;
-                    newext2->ignore = FALSE;
-                    InsertHeadList(&newext1->list_entry, &newext2->list_entry);
-                    
-                    newext3->offset = end_data;
-                    newext3->data = nedc;
-                    newext3->datalen = ext->datalen;
-                    newext3->unique = FALSE;
-                    newext3->ignore = FALSE;
-                    InsertHeadList(&newext2->list_entry, &newext3->list_entry);
-                    
-                    c = get_chunk_from_address(Vcb, ed2->address);
-                    
-                    if (!c)
-                        ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
-                    else {
-                        Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
-                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("update_changed_extent_ref returned %08x\n", Status);
-                            return Status;
-                        }
-                    }
-
-                    remove_fcb_extent(ext, rollback);
-                }
-            }
-        }
-        
-        le = le2;
-    }
-    
-    if (last_written < end_data) {
-        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
-                
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_cow_write returned %08x\n", Status);
-            return Status;
-        }
-    }
-
-    fcb->extents_changed = TRUE;
-    mark_fcb_dirty(fcb);
-    
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    UINT64 size, new_start, new_end, last_written = start_data;
-    extent* ext = NULL;
-    LIST_ENTRY* le;
-    
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, data, changed_sector_list);
-    
-    le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!nextext->ignore) {
-            if (nextext->offset == start_data) {
-                ext = nextext;
-                break;
-            } else if (nextext->offset > start_data)
-                break;
-            
-            ext = nextext;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!ext)
-        return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
-    
-    le = &ext->list_entry;
-    
-    while (le != &fcb->extents) {
-        EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2;
-        BOOL do_cow;
-        LIST_ENTRY* le2 = le->Flink;
-        
-        ext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!ext->ignore) {
-            ed = ext->data;
-            
-            if (ext->offset >= end_data)
-                break;
-            
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    return STATUS_INTERNAL_ERROR;
-                }
-                
-                ed2 = (EXTENT_DATA2*)ed->data;
-            }
-            
-            if (ed->type == EXTENT_TYPE_REGULAR) {
-                do_cow = !ext->unique;
-            } else {
-                do_cow = TRUE;
-            }
-            
-            if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                FIXME("FIXME: compression not yet supported\n");
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                WARN("encryption not supported\n");
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            if (ed->encoding != BTRFS_ENCODING_NONE) {
-                WARN("other encodings not supported\n");
-                return STATUS_NOT_SUPPORTED;
-            }
-            
-            size = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-            
-            TRACE("extent: start = %llx, length = %llx\n", ext->offset, size);
-            
-            new_start = ext->offset < start_data ? start_data : ext->offset;
-            new_end = ext->offset + size > end_data ? end_data : (ext->offset + size);
-            
-            TRACE("new_start = %llx\n", new_start);
-            TRACE("new_end = %llx\n", new_end);
-            
-            if (ed->type == EXTENT_TYPE_PREALLOC) {
-                Status = do_prealloc_write(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("do_prealloc_write returned %08x\n", Status);
-                    return Status;
-                }
-            } else if (do_cow) {
-                TRACE("doing COW write\n");
-                
-                Status = excise_extents(Vcb, fcb, new_start, new_end, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - excise_extents returned %08x\n", Status);
-                    return Status;
-                }
-                
-                Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - insert_extent returned %08x\n", Status);
-                    return Status;
-                }
-            } else {
-                UINT64 writeaddr = ed2->address + ed2->offset + new_start - ext->offset;
-                
-                TRACE("doing non-COW write to %llx\n", writeaddr);
-                
-                Status = write_data_complete(Vcb, writeaddr, (UINT8*)data + new_start - start_data, new_end - new_start, Irp);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("error - write_data returned %08x\n", Status);
-                    return Status;
-                }
-                
-                if (changed_sector_list) {
-                    unsigned int i;
-                    changed_sector* sc;
-                    
-                    sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                    if (!sc) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    sc->ol.key = writeaddr;
-                    sc->length = (new_end - new_start) / Vcb->superblock.sector_size;
-                    sc->deleted = FALSE;
-                    
-                    sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-                    if (!sc->checksums) {
-                        ERR("out of memory\n");
-                        ExFreePool(sc);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    for (i = 0; i < sc->length; i++) {
-                        sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + new_start - start_data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    }
-
-                    insert_into_ordered_list(changed_sector_list, &sc->ol);
-                }
-            }
-            
-            last_written = new_end;
-        }
-        
-        le = le2;
-    }
-    
-    if (last_written < end_data) {
-        Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
-                
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_cow_write returned %08x\n", Status);
-            return Status;
-        }
-    }
-
-    Status = STATUS_SUCCESS;
-    
-    fcb->extents_changed = TRUE;
-    mark_fcb_dirty(fcb);
-    
-    return Status;
-}
+// static NTSTATUS do_nocow_write(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+//     NTSTATUS Status;
+//     UINT64 size, new_start, new_end, last_written = start_data;
+//     extent* ext = NULL;
+//     LIST_ENTRY* le;
+//     
+//     TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, end_data, data, changed_sector_list);
+//     
+//     le = fcb->extents.Flink;
+//     
+//     while (le != &fcb->extents) {
+//         extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!nextext->ignore) {
+//             if (nextext->offset == start_data) {
+//                 ext = nextext;
+//                 break;
+//             } else if (nextext->offset > start_data)
+//                 break;
+//             
+//             ext = nextext;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (!ext)
+//         return do_cow_write(Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+//     
+//     le = &ext->list_entry;
+//     
+//     while (le != &fcb->extents) {
+//         EXTENT_DATA* ed;
+//         EXTENT_DATA2* ed2;
+//         BOOL do_cow;
+//         LIST_ENTRY* le2 = le->Flink;
+//         
+//         ext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!ext->ignore) {
+//             ed = ext->data;
+//             
+//             if (ext->offset >= end_data)
+//                 break;
+//             
+//             if (ext->datalen < sizeof(EXTENT_DATA)) {
+//                 ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+//                 return STATUS_INTERNAL_ERROR;
+//             }
+//             
+//             if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+//                 if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//                     ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+//                     return STATUS_INTERNAL_ERROR;
+//                 }
+//                 
+//                 ed2 = (EXTENT_DATA2*)ed->data;
+//             }
+//             
+//             if (ed->type == EXTENT_TYPE_REGULAR) {
+//                 do_cow = !ext->unique;
+//             } else {
+//                 do_cow = TRUE;
+//             }
+//             
+//             if (ed->compression != BTRFS_COMPRESSION_NONE) {
+//                 FIXME("FIXME: compression not yet supported\n");
+//                 return STATUS_NOT_SUPPORTED;
+//             }
+//             
+//             if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+//                 WARN("encryption not supported\n");
+//                 return STATUS_NOT_SUPPORTED;
+//             }
+//             
+//             if (ed->encoding != BTRFS_ENCODING_NONE) {
+//                 WARN("other encodings not supported\n");
+//                 return STATUS_NOT_SUPPORTED;
+//             }
+//             
+//             size = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+//             
+//             TRACE("extent: start = %llx, length = %llx\n", ext->offset, size);
+//             
+//             new_start = ext->offset < start_data ? start_data : ext->offset;
+//             new_end = ext->offset + size > end_data ? end_data : (ext->offset + size);
+//             
+//             TRACE("new_start = %llx\n", new_start);
+//             TRACE("new_end = %llx\n", new_end);
+//             
+//             if (ed->type == EXTENT_TYPE_PREALLOC) {
+//                 Status = do_prealloc_write(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
+//                 
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("do_prealloc_write returned %08x\n", Status);
+//                     return Status;
+//                 }
+//             } else if (do_cow) {
+//                 TRACE("doing COW write\n");
+//                 
+//                 Status = excise_extents(Vcb, fcb, new_start, new_end, rollback);
+//                 
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("error - excise_extents returned %08x\n", Status);
+//                     return Status;
+//                 }
+//                 
+//                 Status = insert_extent(Vcb, fcb, new_start, new_end - new_start, (UINT8*)data + new_start - start_data, changed_sector_list, Irp, rollback);
+//                 
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("error - insert_extent returned %08x\n", Status);
+//                     return Status;
+//                 }
+//             } else {
+//                 UINT64 writeaddr = ed2->address + ed2->offset + new_start - ext->offset;
+//                 
+//                 TRACE("doing non-COW write to %llx\n", writeaddr);
+//                 
+//                 Status = write_data_complete(Vcb, writeaddr, (UINT8*)data + new_start - start_data, new_end - new_start, Irp);
+//                 
+//                 if (!NT_SUCCESS(Status)) {
+//                     ERR("error - write_data returned %08x\n", Status);
+//                     return Status;
+//                 }
+//                 
+//                 if (changed_sector_list) {
+//                     unsigned int i;
+//                     changed_sector* sc;
+//                     
+//                     sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+//                     if (!sc) {
+//                         ERR("out of memory\n");
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     sc->ol.key = writeaddr;
+//                     sc->length = (new_end - new_start) / Vcb->superblock.sector_size;
+//                     sc->deleted = FALSE;
+//                     
+//                     sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+//                     if (!sc->checksums) {
+//                         ERR("out of memory\n");
+//                         ExFreePool(sc);
+//                         return STATUS_INSUFFICIENT_RESOURCES;
+//                     }
+//                     
+//                     for (i = 0; i < sc->length; i++) {
+//                         sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + new_start - start_data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+//                     }
+// 
+//                     insert_into_ordered_list(changed_sector_list, &sc->ol);
+//                 }
+//             }
+//             
+//             last_written = new_end;
+//         }
+//         
+//         le = le2;
+//     }
+//     
+//     if (last_written < end_data) {
+//         Status = do_cow_write(Vcb, fcb, last_written, end_data, (UINT8*)data + last_written - start_data, changed_sector_list, Irp, rollback);
+//                 
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("do_cow_write returned %08x\n", Status);
+//             return Status;
+//         }
+//     }
+// 
+//     Status = STATUS_SUCCESS;
+//     
+//     fcb->extents_changed = TRUE;
+//     mark_fcb_dirty(fcb);
+//     
+//     return Status;
+// }
 
 // #ifdef DEBUG_PARANOID
 // static void print_loaded_trees(tree* t, int spaces) {
@@ -7886,33 +7886,140 @@ static void STDCALL deferred_write_callback(void* context1, void* context2) {
         do_write_job(Vcb, Irp);
 }
 
-static NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
+    LIST_ENTRY *le, *le2;
+    UINT64 written = 0, length = end_data - start;
+    UINT64 last_cow_start;
     
-    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
-        if (is_file_prealloc(fcb, start_data, end_data)) {
-            Status = do_prealloc_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+    last_cow_start = 0;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        le2 = le->Flink;
+        
+        if (!ext->ignore) {
+            EXTENT_DATA* ed = ext->data;
+            EXTENT_DATA2* ed2 = ed->type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ed->data;
+            UINT64 len;
+            BOOL nocow;
             
-            if (!NT_SUCCESS(Status)) {
-                ERR("do_prealloc_write returned %08x\n", Status);
-                return Status;
-            }
-        } else {
-            Status = do_cow_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("do_cow_write returned %08x\n", Status);
-                return Status;
+            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+            
+            if (ext->offset + len <= start)
+                goto nextitem;
+            
+            if (ext->offset > start + written + length)
+                break;
+            
+            if (fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique) // FIXME - also do prealloc
+                nocow = TRUE;
+            else
+                nocow = FALSE;
+            
+            if (nocow) {
+                if (last_cow_start < ext->offset) {
+                    UINT64 start_write = max(last_cow_start, start + written);
+                    
+                    Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset - start_write, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("excise_extents returned %08x\n", Status);
+                        return Status;
+                    }
+                    
+                    Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, data, changed_sector_list, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_extent returned %08x\n", Status);
+                        return Status;
+                    }
+                    
+                    written += ext->offset - start_write;
+                    length -= ext->offset - start_write;
+                    
+                    if (length == 0)
+                        break;
+                }
+                
+                if (ed->type == EXTENT_TYPE_REGULAR) {
+                    UINT64 writeaddr = ed2->address + ed2->offset + start + written - ext->offset;
+                    UINT64 write_len = min(len, length);
+                                    
+                    TRACE("doing non-COW write to %llx\n", writeaddr);
+                    
+                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("write_data_complete returned %08x\n", Status);
+                        return Status;
+                    }
+                    
+                    if (changed_sector_list) {
+                        unsigned int i;
+                        changed_sector* sc;
+                        
+                        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                        if (!sc) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        sc->ol.key = writeaddr;
+                        sc->length = write_len / fcb->Vcb->superblock.sector_size;
+                        sc->deleted = FALSE;
+                        
+                        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+                        if (!sc->checksums) {
+                            ERR("out of memory\n");
+                            ExFreePool(sc);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        for (i = 0; i < sc->length; i++) {
+                            sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + written + (i * fcb->Vcb->superblock.sector_size), fcb->Vcb->superblock.sector_size);
+                        }
+    
+                        insert_into_ordered_list(changed_sector_list, &sc->ol);
+                    }
+                    
+                    written += write_len;
+                    length -= write_len;
+                    
+                    if (length == 0)
+                        break;
+                } else if (ed->type == EXTENT_TYPE_PREALLOC) {
+                    // FIXME
+                }
+                
+                last_cow_start = ext->offset + len;
             }
         }
-    } else {
-        Status = do_nocow_write(fcb->Vcb, fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
         
+nextitem:
+        le = le2;
+    }
+    
+    if (length > 0) {
+        UINT64 start_write = max(last_cow_start, start + written);
+        
+        Status = excise_extents(fcb->Vcb, fcb, start_write, end_data, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_nocow_write returned %08x\n", Status);
+            ERR("excise_extents returned %08x\n", Status);
+            return Status;
+        }
+        
+        Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, data, changed_sector_list, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_extent returned %08x\n", Status);
             return Status;
         }
     }
+    
+    // FIXME - make extending work again (here?)
+    // FIXME - make maximum extent size 128 MB again (here?)
+    
+    fcb->extents_changed = TRUE;
+    mark_fcb_dirty(fcb);
     
     return STATUS_SUCCESS;
 }
