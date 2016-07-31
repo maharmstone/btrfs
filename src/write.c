@@ -6422,57 +6422,6 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         }
     }
     
-    // if there is a gap before start_data, plug it with a sparse extent
-    // FIXME - don't do this if no_holes set
-    if (start_data > 0) {
-        NTSTATUS Status;
-        EXTENT_DATA* ed;
-        extent* lastext = NULL;
-        UINT64 len;
-        
-        le = fcb->extents.Flink;
-        while (le != &fcb->extents) {
-            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-            
-            if (!ext->ignore) {
-                if (ext->offset == start_data) {
-                    lastext = ext;
-                    break;
-                } else if (ext->offset > start_data)
-                    break;
-                
-                lastext = ext;
-            }
-            
-            le = le->Flink;
-        }
-
-        if (lastext && lastext->datalen >= sizeof(EXTENT_DATA)) {
-            EXTENT_DATA2* ed2;
-            
-            ed = lastext->data;
-            ed2 = (EXTENT_DATA2*)ed->data;
-            
-            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-        } else
-            ed = NULL;
-        
-        if (!lastext || !ed || lastext->offset + len < start_data) {
-            if (!lastext)
-                Status = insert_sparse_extent(fcb, 0, start_data, rollback);
-            else if (!ed) {
-                ERR("extent at %llx was %u bytes, expected at least %u\n", lastext->offset, lastext->datalen, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            } else
-                Status = insert_sparse_extent(fcb, lastext->offset + len, start_data - lastext->offset - len, rollback);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_sparse_extent returned %08x\n", Status);
-                return Status;
-            }
-        }
-    }
-    
     flags = Vcb->data_flags;
     
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
