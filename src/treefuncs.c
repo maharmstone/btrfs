@@ -855,6 +855,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         
         if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
+            int3;
             goto end;
         }
     } else
