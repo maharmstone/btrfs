@@ -637,6 +637,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 
 extern BOOL log_started;
 extern UINT32 debug_log_level;
+extern UINT32 mount_compress;
 
 #ifdef DEBUG_LONG_MESSAGES
 

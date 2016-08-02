@@ -496,6 +496,50 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     
     reset_subkeys(h, regpath);
     
+    RtlInitUnicodeString(&us, L"Compress");
+    
+    kvfi = NULL;
+    kvfilen = 0;
+    Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+    
+    if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        
+        if (!kvfi) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+        
+        Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
+        
+        if (NT_SUCCESS(Status)) {
+            if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
+                RtlCopyMemory(&mount_compress, ((UINT8*)kvfi) + kvfi->DataOffset, sizeof(UINT32));
+            } else {
+                Status = ZwDeleteValueKey(h, &us);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwDeleteValueKey returned %08x\n", Status);
+                }
+
+                Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &mount_compress, sizeof(mount_compress));
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ZwSetValueKey returned %08x\n", Status);
+                }
+            }
+        }
+        
+        ExFreePool(kvfi);
+    } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &mount_compress, sizeof(mount_compress));
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwSetValueKey returned %08x\n", Status);
+        }
+    } else {
+        ERR("ZwQueryValueKey returned %08x\n", Status);
+    }
+    
 #ifdef _DEBUG
     RtlInitUnicodeString(&us, L"DebugLogLevel");
     
@@ -525,7 +569,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
 
                 Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
                 if (!NT_SUCCESS(Status)) {
-                    ERR("ZwSetValueKey reutrned %08x\n", Status);
+                    ERR("ZwSetValueKey returned %08x\n", Status);
                 }
             }
         }
@@ -535,7 +579,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
         Status = ZwSetValueKey(h, &us, 0, REG_DWORD, &debug_log_level, sizeof(debug_log_level));
         
         if (!NT_SUCCESS(Status)) {
-            ERR("ZwSetValueKey reutrned %08x\n", Status);
+            ERR("ZwSetValueKey returned %08x\n", Status);
         }
     } else {
         ERR("ZwQueryValueKey returned %08x\n", Status);
