@@ -7927,9 +7927,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     } else {
         BOOL compress = FALSE;
         
-        if (fcb->subvol->id != BTRFS_ROOT_ROOT) {
-            compress = TRUE; // FIXME
-        }
+        // FIXME - compress-force mount option
+        // FIXME - nocompress inode flag
+        if (fcb->subvol->id != BTRFS_ROOT_ROOT && (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress))
+            compress = TRUE;
         
         if (make_inline) {
             start_data = 0;
