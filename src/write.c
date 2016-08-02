@@ -5462,24 +5462,6 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
             
             if (ext->offset < end_data && ext->offset + len > start_data) {
-                if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                    FIXME("FIXME - compression not supported at present\n");
-                    Status = STATUS_NOT_SUPPORTED;
-                    goto end;
-                }
-                
-                if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                    WARN("root %llx, inode %llx, extent %llx: encryption not supported (type %x)\n", fcb->subvol->id, fcb->inode, ext->offset, ed->encryption);
-                    Status = STATUS_NOT_SUPPORTED;
-                    goto end;
-                }
-                
-                if (ed->encoding != BTRFS_ENCODING_NONE) {
-                    WARN("other encodings not supported\n");
-                    Status = STATUS_NOT_SUPPORTED;
-                    goto end;
-                }
-                
                 if (ed->type == EXTENT_TYPE_INLINE) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
                         remove_fcb_extent(ext, rollback);
