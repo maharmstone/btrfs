@@ -6003,7 +6003,7 @@ static void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64
 }
 
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
-                         LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+                         LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
@@ -6315,7 +6315,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                     ExReleaseResourceLite(&c->nonpaged->lock);
                     goto cont;
                 }
@@ -6330,7 +6330,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                     ExReleaseResourceLite(&c->nonpaged->lock);
                     goto cont;
                 }
@@ -6440,7 +6440,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
-                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback)) {
+                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
                     written += newlen;
                     
                     if (written == orig_length) {
@@ -6470,7 +6470,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
-                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback)) {
+                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
                     written += newlen;
                     
                     if (written == orig_length) {
@@ -7648,6 +7648,89 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    UINT8 compression;
+    UINT64 comp_length;
+    UINT8* comp_data;
+    LIST_ENTRY* le;
+    chunk* c;
+    
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        return Status;
+    }
+    
+    // FIXME - try compression
+    
+    comp_length = end_data - start_data; // FIXME
+    comp_data = data; // FIXME
+    compression = BTRFS_COMPRESSION_NONE; // FIXME
+    
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    
+    le = fcb->Vcb->chunks.Flink;
+    while (le != &fcb->Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
+        if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                return STATUS_SUCCESS;
+            }
+        }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
+
+        le = le->Flink;
+    }
+    
+    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, rollback))) {
+        ExAcquireResourceExclusiveLite(&c->nonpaged->lock, TRUE);
+        
+        if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
+                ExReleaseResourceLite(&c->nonpaged->lock);
+                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                return STATUS_SUCCESS;
+            }
+        }
+        
+        ExReleaseResourceLite(&c->nonpaged->lock);
+    }
+    
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    
+    WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+
+    return STATUS_DISK_FULL;
+}
+
+static NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    UINT64 i;
+    
+    for (i = 0; i < sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE; i++) {
+        UINT64 s2, e2;
+        
+        s2 = start_data + (i * COMPRESSED_EXTENT_SIZE);
+        e2 = min(s2 + COMPRESSED_EXTENT_SIZE, end_data);
+        
+        Status = write_compressed_bit(fcb, s2, e2, (UINT8*)data + (i * COMPRESSED_EXTENT_SIZE), changed_sector_list, Irp, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_compressed_bit returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
                      BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -7922,10 +8005,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (fileref)
             mark_fileref_dirty(fileref);
     } else {
+        BOOL compress = FALSE;
+        
+        if (fcb->subvol->id != BTRFS_ROOT_ROOT) {
+            compress = TRUE; // FIXME
+        }
+        
         if (make_inline) {
             start_data = 0;
             end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
             bufhead = sizeof(EXTENT_DATA) - 1;
+        } else if (compress) {
+            start_data = offset.QuadPart & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
+            end_data = min(sector_align(offset.QuadPart + *length, COMPRESSED_EXTENT_SIZE),
+                           sector_align(newlength, fcb->Vcb->superblock.sector_size));
+            bufhead = 0;
         } else {
             start_data = offset.QuadPart & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
             end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
@@ -7992,6 +8086,16 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
             
             fcb->inode_item.st_blocks += newlength;
+        } else if (compress) {
+            Status = write_compressed(fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_compressed returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+            
+            ExFreePool(data);
         } else {
             Status = do_write_file(fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
             

@@ -62,9 +62,10 @@
 #define EA_REPARSE "system.reparse"
 #define EA_REPARSE_HASH 0x786f6167
 
-#define READ_AHEAD_GRANULARITY 0x10000 // 64 KB
-
 #define MAX_EXTENT_SIZE 0x8000000 // 128 MB
+#define COMPRESSED_EXTENT_SIZE 0x20000 // 128 KB
+
+#define READ_AHEAD_GRANULARITY COMPRESSED_EXTENT_SIZE // really ought to be a multiple of COMPRESSED_EXTENT_SIZE
 
 #ifdef _MSC_VER
 #define try __try
@@ -737,7 +738,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list,
-                         PIRP Irp, LIST_ENTRY* rollback);
+                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size);
 NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
