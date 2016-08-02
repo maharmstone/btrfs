@@ -1086,6 +1086,54 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
+    btrfs_set_inode_info* bsii = data;
+    fcb* fcb;
+    ccb* ccb;
+    
+    if (length < sizeof(btrfs_set_inode_info))
+        return STATUS_BUFFER_OVERFLOW;
+    
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (bsii->flags_changed && !(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    if (bsii->flags_changed) {
+        if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
+            (bsii->flags & BTRFS_INODE_NODATACOW) != (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
+            WARN("trying to change nocow flag on non-empty file\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        fcb->inode_item.flags = bsii->flags;
+        
+        if (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)
+            fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
+        else 
+            fcb->inode_item.flags &= ~(UINT64)BTRFS_INODE_NODATASUM;
+        
+        mark_fcb_dirty(fcb);
+    }
+    
+    // FIXME - also work with uid, gid, and mode
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     UINT64 i, num_devices;
     NTSTATUS Status;
@@ -2422,6 +2470,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_GET_INODE_INFO:
             Status = get_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+            
+        case FSCTL_BTRFS_SET_INODE_INFO:
+            Status = set_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         default:
