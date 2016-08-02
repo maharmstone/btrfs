@@ -60,6 +60,7 @@ public:
         stgm_set = FALSE;
         readonly = FALSE;
         flags_changed = FALSE;
+        empty = FALSE;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -103,6 +104,7 @@ public:
  
     btrfs_inode_info bii;
     BOOL readonly;
+    BOOL empty;
     
 private:
     LONG refcount;

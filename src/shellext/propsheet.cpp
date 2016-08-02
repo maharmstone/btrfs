@@ -91,10 +91,16 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
 
         if (h != INVALID_HANDLE_VALUE) {
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
-            CloseHandle(h);
                 
             if (Status == STATUS_SUCCESS && !bii.top) {
+                LARGE_INTEGER filesize;
+                
                 ignore = FALSE;
+                
+                if (bii.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize))
+                    empty = filesize.QuadPart == 0;
+                
+                CloseHandle(h);
                 return S_OK;
             }
             
@@ -291,7 +297,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
             
-            // FIXME - disable nocow checkbox if not a directory and size not 0
+            if (bps->bii.type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
+                EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
             
             if (bps->readonly) {
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
