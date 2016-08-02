@@ -420,6 +420,7 @@ typedef struct {
 
 typedef struct {
     BOOL ignore;
+    BOOL compress;
 } mount_options;
 
 #define VCB_TYPE_VOLUME     1
