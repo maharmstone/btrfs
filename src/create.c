@@ -2105,6 +2105,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
             fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
     }
     
+    if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+        fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+    
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     fcb->Header.AllocationSize.QuadPart = 0;
     fcb->Header.FileSize.QuadPart = 0;
