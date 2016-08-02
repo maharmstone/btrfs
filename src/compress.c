@@ -68,20 +68,77 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
     UINT8 compression;
     UINT64 comp_length;
     UINT8* comp_data;
+    UINT32 out_left;
     LIST_ENTRY* le;
     chunk* c;
+    z_stream c_stream;
+    int ret;
+    
+    comp_data = ExAllocatePoolWithTag(PagedPool, end_data - start_data, ALLOC_TAG);
+    if (!comp_data) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     
     Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08x\n", Status);
+        ExFreePool(comp_data);
         return Status;
     }
     
-    // FIXME - try compression
+    c_stream.zalloc = zlib_alloc;
+    c_stream.zfree = zlib_free;
+    c_stream.opaque = (voidpf)0;
+
+    ret = deflateInit(&c_stream, 3);
     
-    comp_length = end_data - start_data; // FIXME
-    comp_data = data; // FIXME
-    compression = BTRFS_COMPRESSION_NONE; // FIXME
+    if (ret != Z_OK) {
+        ERR("deflateInit returned %08x\n", ret);
+        ExFreePool(comp_data);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    c_stream.avail_in = end_data - start_data;
+    c_stream.next_in = data;
+    c_stream.avail_out = end_data - start_data;
+    c_stream.next_out = comp_data;
+    
+    do {
+        ret = deflate(&c_stream, Z_FINISH);
+        
+        if (ret == Z_STREAM_ERROR) {
+            ERR("deflate returned %x\n", ret);
+            ExFreePool(comp_data);
+            return STATUS_INTERNAL_ERROR;
+        }
+    } while (c_stream.avail_in > 0 && c_stream.avail_out > 0);
+    
+    out_left = c_stream.avail_out;
+    
+    ret = deflateEnd(&c_stream);
+    
+    if (ret != Z_OK) {
+        ERR("deflateEnd returned %08x\n", ret);
+        ExFreePool(comp_data);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (out_left < fcb->Vcb->superblock.sector_size) { // compressed extent would be larger than or same size as uncompressed extent
+        ExFreePool(comp_data);
+        
+        comp_length = end_data - start_data;
+        comp_data = data;
+        compression = BTRFS_COMPRESSION_NONE;
+    } else {
+        UINT32 cl;
+        
+        compression = BTRFS_COMPRESSION_ZLIB;
+        cl = end_data - start_data - out_left;
+        comp_length = sector_align(cl, fcb->Vcb->superblock.sector_size);
+        
+        RtlZeroMemory(comp_data + cl, comp_length - cl);
+    }
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
@@ -95,6 +152,10 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                
+                if (compression != BTRFS_COMPRESSION_NONE)
+                    ExFreePool(comp_data);
+                
                 return STATUS_SUCCESS;
             }
         }
@@ -111,6 +172,10 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
                 ExReleaseResourceLite(&c->nonpaged->lock);
                 ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                
+                if (compression != BTRFS_COMPRESSION_NONE)
+                    ExFreePool(comp_data);
+                
                 return STATUS_SUCCESS;
             }
         }

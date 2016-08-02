@@ -5461,7 +5461,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             
             len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
             
-            if (ext->offset < end_data && ext->offset + len >= start_data) {
+            if (ext->offset < end_data && ext->offset + len > start_data) {
                 if (ed->compression != BTRFS_COMPRESSION_NONE) {
                     FIXME("FIXME - compression not supported at present\n");
                     Status = STATUS_NOT_SUPPORTED;
@@ -6049,8 +6049,8 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     }
     
     ed->generation = Vcb->superblock.generation;
-    ed->decoded_size = length;
-    ed->compression = BTRFS_COMPRESSION_NONE;
+    ed->decoded_size = decoded_size;
+    ed->compression = compression;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
     ed->encoding = BTRFS_ENCODING_NONE;
     ed->type = prealloc ? EXTENT_TYPE_PREALLOC : EXTENT_TYPE_REGULAR;
@@ -6059,7 +6059,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->address = address;
     ed2->size = length;
     ed2->offset = 0;
-    ed2->num_bytes = length;
+    ed2->num_bytes = decoded_size;
     
     if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, rollback)) {
         ERR("add_extent_to_fcb failed\n");
@@ -6070,7 +6070,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     increase_chunk_usage(c, length);
     space_list_subtract(Vcb, c, FALSE, address, length, rollback);
     
-    fcb->inode_item.st_blocks += length;
+    fcb->inode_item.st_blocks += decoded_size;
     
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
