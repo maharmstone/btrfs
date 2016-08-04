@@ -987,7 +987,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         
                         // FIXME - don't mess around with decomp if we're reading the whole extent
                         
-                        decomp = ExAllocatePoolWithTag(PagedPool, ed2->num_bytes + ed2->offset, ALLOC_TAG);
+                        decomp = ExAllocatePoolWithTag(PagedPool, ed->decoded_size, ALLOC_TAG);
                         if (!decomp) {
                             ERR("out of memory\n");
                             ExFreePool(buf);
@@ -995,7 +995,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             goto exit;
                         }
                         
-                        Status = decompress(ed->compression, buf, ed2->size, decomp, ed2->num_bytes + ed2->offset);
+                        Status = decompress(ed->compression, buf, ed2->size, decomp, ed->decoded_size);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("decompress returned %08x\n", Status);
