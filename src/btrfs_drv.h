@@ -746,6 +746,7 @@ void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
                                    signed long long count, BOOL no_csum, UINT64 new_size);
 NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -864,6 +865,15 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
         item->Flink->Blink = item;
     else
         head->Blink = item;
+}
+
+static __inline BOOL write_fcb_compressed(fcb* fcb) {
+    // FIXME - compress-force mount option
+    // FIXME - nocompress inode flag
+    if (fcb->subvol->id != BTRFS_ROOT_ROOT && (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress))
+        return TRUE;
+    
+    return FALSE;
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS

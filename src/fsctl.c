@@ -1270,173 +1270,58 @@ end:
 }
 
 static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
-    
-    le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        LIST_ENTRY* le2 = le->Flink;
-        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+    NTSTATUS Status;
+    BOOL compress = write_fcb_compressed(fcb);
+    UINT64 start_data, end_data;
+    UINT8* data;
         
-        if (!ext->ignore) {
-            EXTENT_DATA* ed = ext->data;
-            EXTENT_DATA2* ed2;
-            UINT64 len;
-            
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    return STATUS_INTERNAL_ERROR;
-                }
-                
-                ed2 = (EXTENT_DATA2*)ed->data;
-            }
-            
-            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
-            
-            if (ext->offset < start + length && ext->offset + len >= start) {
-                if (ed->compression != BTRFS_COMPRESSION_NONE) {
-                    FIXME("FIXME - compression not supported at present\n");
-                    return STATUS_NOT_SUPPORTED;
-                }
-                
-                if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-                    WARN("encryption not supported (type %x)\n", ext->offset, ed->encryption);
-                    return STATUS_NOT_SUPPORTED;
-                }
-                
-                if (ed->encoding != BTRFS_ENCODING_NONE) {
-                    WARN("other encodings not supported\n");
-                    return STATUS_NOT_SUPPORTED;
-                }
-                
-                // We can ignore prealloc and sparse extents - they're already counted as zeroed
-                
-                if (ed->type == EXTENT_TYPE_INLINE) {
-                    extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                    EXTENT_DATA* data;
-                    UINT64 s2, e2;
-                    
-                    if (!ext2) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    data = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                    
-                    if (!data) {
-                        ERR("out of memory\n");
-                        ExFreePool(ext2);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    RtlCopyMemory(data, ext->data, ext->datalen);
-                    
-                    s2 = max(ext->offset, start);
-                    e2 = min(ext->offset + ed->decoded_size, start + length);
-                    RtlZeroMemory((UINT8*)data + sizeof(EXTENT_DATA) - 1 + s2 - ext->offset, e2 - s2);
-                    
-                    ext2->offset = ext->offset;
-                    ext2->data = data;
-                    ext2->datalen = ext->datalen;
-                    ext2->unique = ext->unique;
-                    ext2->ignore = FALSE;
-                    
-                    InsertHeadList(&ext->list_entry, &ext2->list_entry);
-                    remove_fcb_extent(ext, rollback);
-                } else if (ed->type == EXTENT_TYPE_REGULAR) {
-                    NTSTATUS Status;
-                    BOOL nocow = fcb->inode_item.flags & BTRFS_INODE_NODATACOW && ext->unique;
-                    UINT64 s1 = max(ext->offset, start);
-                    UINT64 e1 = min(ext->offset + len, start + length);
-                    UINT64 s2 = (s1 / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
-                    UINT64 e2 = sector_align(e1, Vcb->superblock.sector_size);
-                    UINT8* data;
-                    
-                    data = ExAllocatePoolWithTag(PagedPool, e2 - s2, ALLOC_TAG);
-                    if (!data) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    Status = read_file(fcb, data, s2, e2 - s2, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("read_file returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                    
-                    RtlZeroMemory(data + s1 - s2, e1 - s1);
-                    
-                    if (nocow) {
-                        UINT64 writeaddr = ed2->address + ed2->offset + s2 - ext->offset;
+    if (compress) {
+        start_data = start & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
+        end_data = min(sector_align(start + length, COMPRESSED_EXTENT_SIZE),
+                       sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size));
+    } else {
+        start_data = start & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
+        end_data = sector_align(start + length, fcb->Vcb->superblock.sector_size);
+    }
 
-                        Status = write_data_complete(Vcb, writeaddr, data, e2 - s2, Irp);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("write_data_complete returned %08x\n", Status);
-                            ExFreePool(data);
-                            return Status;
-                        }
-                        
-                        if (changed_sector_list) {
-                            unsigned int i;
-                            changed_sector* sc;
-                            
-                            sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                            if (!sc) {
-                                ERR("out of memory\n");
-                                ExFreePool(data);
-                                return STATUS_INSUFFICIENT_RESOURCES;
-                            }
-                            
-                            sc->ol.key = writeaddr;
-                            sc->length = (e2 - s2) / Vcb->superblock.sector_size;
-                            sc->deleted = FALSE;
-                            
-                            sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-                            if (!sc->checksums) {
-                                ERR("out of memory\n");
-                                ExFreePool(sc);
-                                ExFreePool(data);
-                                return STATUS_INSUFFICIENT_RESOURCES;
-                            }
-                            
-                            for (i = 0; i < sc->length; i++) {
-                                sc->checksums[i] = ~calc_crc32c(0xffffffff, data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                            }
-
-                            insert_into_ordered_list(changed_sector_list, &sc->ol);
-                        }
-                        
-                        ExFreePool(data);
-                    } else {
-                        Status = excise_extents(Vcb, fcb, s2, e2, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("excise_extents returned %08x\n", Status);
-                            ExFreePool(data);
-                            return Status;
-                        }
-                        
-                        Status = insert_extent(Vcb, fcb, s2, e2 - s2, data, changed_sector_list, Irp, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("insert_extent returned %08x\n", Status);
-                            ExFreePool(data);
-                            return Status;
-                        }
-                        
-                        ExFreePool(data);
-                    }
-                }
-            } else if (ext->offset >= start + length)
-                return STATUS_SUCCESS;
+    data = ExAllocatePoolWithTag(PagedPool, end_data - start_data, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(data, end_data - start_data);
+    
+    if (start > start_data || start + length < end_data) {
+        Status = read_file(fcb, data, start_data, end_data - start_data, NULL, Irp);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            ExFreePool(data);
+            return Status;
         }
+    }
+    
+    RtlZeroMemory(data + start - start_data, length);
+    
+    if (compress) {
+        Status = write_compressed(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
         
-        le = le2;
+        ExFreePool(data);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_compressed returned %08x\n", Status);
+            return Status;
+        }
+    } else {
+        Status = do_write_file(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+        
+        ExFreePool(data);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_write_file returned %08x\n", Status);
+            return Status;
+        }
     }
     
     return STATUS_SUCCESS;
@@ -1563,7 +1448,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
             
             if (end < fzdi->BeyondFinalZero.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->BeyondFinalZero.QuadPart, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
+                Status = zero_data(Vcb, fcb, end, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;

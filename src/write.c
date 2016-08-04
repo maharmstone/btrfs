@@ -7640,7 +7640,7 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 i;
     
@@ -7935,12 +7935,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (fileref)
             mark_fileref_dirty(fileref);
     } else {
-        BOOL compress = FALSE;
-        
-        // FIXME - compress-force mount option
-        // FIXME - nocompress inode flag
-        if (fcb->subvol->id != BTRFS_ROOT_ROOT && (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress))
-            compress = TRUE;
+        BOOL compress = write_fcb_compressed(fcb);
         
         if (make_inline) {
             start_data = 0;
