@@ -6338,42 +6338,6 @@ end:
     return Status;
 }
 
-static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
-    
-    TRACE("((%llx, %llx), %llx, %llx)\n", fcb->subvol->id, fcb->inode, start, length);
-    
-    ed = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
-    if (!ed) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    ed->generation = fcb->Vcb->superblock.generation;
-    ed->decoded_size = length;
-    ed->compression = BTRFS_COMPRESSION_NONE;
-    ed->encryption = BTRFS_ENCRYPTION_NONE;
-    ed->encoding = BTRFS_ENCODING_NONE;
-    ed->type = EXTENT_TYPE_REGULAR;
-    
-    ed2 = (EXTENT_DATA2*)ed->data;
-    ed2->address = 0;
-    ed2->size = 0;
-    ed2->offset = 0;
-    ed2->num_bytes = length;
-
-    if (!add_extent_to_fcb(fcb, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), FALSE, rollback)) {
-        ERR("add_extent_to_fcb failed\n");
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    fcb->extents_changed = TRUE;
-    mark_fcb_dirty(fcb);
-    
-    return STATUS_SUCCESS;
-}
-
 // static void print_tree(tree* t) {
 //     LIST_ENTRY* le = t->itemlist.Flink;
 //     while (le != &t->itemlist) {
@@ -6844,13 +6808,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                             ERR("insert_prealloc_extent returned %08x\n", Status);
                             return Status;
                         }
-                    } else {
-                        Status = insert_sparse_extent(fcb, oldalloc, newalloc - oldalloc, rollback);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("insert_sparse_extent returned %08x\n", Status);
-                            return Status;
-                        }
                     }
                     
                     fcb->extents_changed = TRUE;
@@ -6874,13 +6831,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_prealloc_extent returned %08x\n", Status);
-                        return Status;
-                    }
-                } else {
-                    Status = insert_sparse_extent(fcb, 0, newalloc, rollback);
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_sparse_extent returned %08x\n", Status);
                         return Status;
                     }
                 }
