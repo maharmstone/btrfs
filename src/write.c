@@ -6185,63 +6185,61 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         le = le->Flink;
     }
     
-    if (!ext) {
-        WARN("previous EXTENT_DATA not found\n");
-        goto end;
-    }
-    
+    if (!ext)
+        return FALSE;
+
     if (!ext->unique) {
         TRACE("extent was not unique\n");
-        goto end;
+        return FALSE;
     }
     
     ed = ext->data;
     
     if (ext->datalen < sizeof(EXTENT_DATA)) {
         ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-        goto end;
+        return FALSE;
     }
     
     if (ed->type != EXTENT_TYPE_REGULAR) {
         TRACE("not extending extent which is not EXTENT_TYPE_REGULAR\n");
-        goto end;
+        return FALSE;
     }
     
     ed2 = (EXTENT_DATA2*)ed->data;
     
     if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
         ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-        goto end;
+        return FALSE;
     }
 
     if (ext->offset + ed2->num_bytes != start_data) {
         TRACE("last EXTENT_DATA does not run up to start_data (%llx + %llx != %llx)\n", ext->offset, ed2->num_bytes, start_data);
-        goto end;
+        return FALSE;
     }
     
     if (ed->compression != BTRFS_COMPRESSION_NONE) {
-        FIXME("FIXME: compression not yet supported\n");
-        goto end;
+        TRACE("not extending a compressed extent\n");
+        return FALSE;
     }
     
     if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
         WARN("encryption not supported\n");
-        goto end;
+        return FALSE;
     }
     
     if (ed->encoding != BTRFS_ENCODING_NONE) {
         WARN("other encodings not supported\n");
-        goto end;
+        return FALSE;
     }
     
     if (ed2->size - ed2->offset != ed2->num_bytes) {
         TRACE("last EXTENT_DATA does not run all the way to the end of the extent\n");
-        goto end;
+        return FALSE;
     }
     
     if (ed2->size >= MAX_EXTENT_SIZE) {
         TRACE("extent size was too large to extend (%llx >= %llx)\n", ed2->size, (UINT64)MAX_EXTENT_SIZE);
-        goto end;
+        return FALSE;
     }
     
     c = get_chunk_from_address(Vcb, ed2->address);
@@ -6269,8 +6267,6 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     ExReleaseResourceLite(&c->nonpaged->lock);
     
-end:
-        
     return success;
 }
 
