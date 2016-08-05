@@ -1,3 +1,6 @@
+// Portion of the LZO code here were cribbed from code in libavcodec,
+// also under the LGPL. Thank you, Reimar Doeffinger.
+
 #include "btrfs_drv.h"
 
 #define Z_SOLO
@@ -7,6 +10,231 @@
 #include "zlib/inftrees.h"
 #include "zlib/inflate.h"
 
+#define LINUX_PAGE_SIZE 4096
+
+typedef struct {
+    UINT8* in;
+    UINT32 inlen;
+    UINT32 inpos;
+    UINT8* out;
+    UINT32 outlen;
+    UINT32 outpos;
+    BOOL error;
+} lzo_stream;
+
+static UINT8 lzo_nextbyte(lzo_stream* stream) {
+    UINT8 c;
+    
+    if (stream->inpos >= stream->inlen) {
+        stream->error = TRUE;
+        return 0;
+    }
+    
+    c = stream->in[stream->inpos];
+    stream->inpos++;
+    
+    return c;
+}
+
+static int lzo_len(lzo_stream* stream, int byte, int mask) {
+    int len = byte & mask;
+    
+    if (len == 0) {
+        while (!(byte = lzo_nextbyte(stream))) {
+            if (stream->error) return 0;
+            
+            len += 255;
+        }
+        
+        len += mask + byte;
+    }
+    
+    return len;
+}
+
+static void lzo_copy(lzo_stream* stream, int len) {
+    if (stream->inpos + len > stream->inlen) {
+        stream->error = TRUE;
+        return;
+    }
+    
+    if (stream->outpos + len > stream->outlen) {
+        stream->error = TRUE;
+        return;
+    }
+    
+    do {
+        stream->out[stream->outpos] = stream->in[stream->inpos];
+        stream->inpos++;
+        stream->outpos++;
+        len--;
+    } while (len > 0);
+}
+
+static void lzo_copyback(lzo_stream* stream, int back, int len) {
+    if (stream->outpos < back) {
+        stream->error = TRUE;
+        return;
+    }
+    
+    if (stream->outpos + len > stream->outlen) {
+        stream->error = TRUE;
+        return;
+    }
+    
+    do {
+        stream->out[stream->outpos] = stream->out[stream->outpos - back];
+        stream->outpos++;
+        len--;
+    } while (len > 0);
+}
+
+static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
+    UINT8 byte;
+    UINT32 len, back;
+    BOOL backcopy = FALSE;
+    
+    stream->error = FALSE;
+    
+    byte = lzo_nextbyte(stream);
+    if (stream->error) return STATUS_INTERNAL_ERROR;
+    
+    if (byte > 17) {
+        lzo_copy(stream, byte - 17);
+        if (stream->error) return STATUS_INTERNAL_ERROR;
+        
+        byte = lzo_nextbyte(stream);
+        if (stream->error) return STATUS_INTERNAL_ERROR;
+        
+        if (byte < 16) return STATUS_INTERNAL_ERROR;
+    }
+    
+    while (1) {
+        if (byte >> 4) {
+            backcopy = TRUE;
+            if (byte >> 6) {
+                len = (byte >> 5) - 1;
+                back = (lzo_nextbyte(stream) << 3) + ((byte >> 2) & 7) + 1;
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+            } else if (byte >> 5) {
+                len = lzo_len(stream, byte, 31);
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+                
+                byte = lzo_nextbyte(stream);
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+                
+                back = (lzo_nextbyte(stream) << 6) + (byte >> 2) + 1;
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+            } else {
+                len = lzo_len(stream, byte, 7);
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+                
+                back = (1 << 14) + ((byte & 8) << 11);
+                
+                byte = lzo_nextbyte(stream);
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+                
+                back += (lzo_nextbyte(stream) << 6) + (byte >> 2);
+                if (stream->error) return STATUS_INTERNAL_ERROR;
+                
+                if (back == (1 << 14)) {
+                    if (len != 1)
+                        return STATUS_INTERNAL_ERROR;
+                    break;
+                }
+            }
+        } else if (backcopy) {
+            len = 0;
+            back = (lzo_nextbyte(stream) << 2) + (byte >> 2) + 1;
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+        } else {
+            len = lzo_len(stream, byte, 15);
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            lzo_copy(stream, len + 3);
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            byte = lzo_nextbyte(stream);
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            if (byte >> 4)
+                continue;
+            
+            len = 1;
+            back = (1 << 11) + (lzo_nextbyte(stream) << 2) + (byte >> 2) + 1;
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            break;
+        }
+        
+        lzo_copyback(stream, back, len + 2);
+        if (stream->error) return STATUS_INTERNAL_ERROR;
+        
+        len = byte & 3;
+        
+        if (len) {
+            lzo_copy(stream, len);
+            if (stream->error) return STATUS_INTERNAL_ERROR;
+        } else
+            backcopy = !backcopy;
+        
+        byte = lzo_nextbyte(stream);
+        if (stream->error) return STATUS_INTERNAL_ERROR;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+    NTSTATUS Status;
+    UINT32 extlen, partlen, inoff, outoff;
+    lzo_stream stream;
+    
+    extlen = *((UINT32*)inbuf);
+    if (inlen < extlen) {
+        ERR("compressed extent was %llx, should have been at least %x\n", inlen, extlen);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    inoff = sizeof(UINT32);
+    outoff = 0;
+    
+    do {
+        partlen = *(UINT32*)&inbuf[inoff];
+        
+        if (partlen + inoff > inlen) {
+            ERR("overflow: %x + %x > %llx\n", partlen, inoff, inlen);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        inoff += sizeof(UINT32);
+    
+        stream.in = &inbuf[inoff];
+        stream.inlen = partlen;
+        stream.inpos = 0;
+        stream.out = &outbuf[outoff];
+        stream.outlen = LINUX_PAGE_SIZE;
+        stream.outpos = 0;
+        
+        Status = do_lzo_decompress(&stream);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_lzo_decompress returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (stream.outpos < stream.outlen)
+            RtlZeroMemory(&stream.out[stream.outpos], stream.outlen - stream.outpos);
+        
+        inoff += partlen;
+        outoff += stream.outlen;
+        
+        if (LINUX_PAGE_SIZE - (inoff % LINUX_PAGE_SIZE) < sizeof(UINT32))
+            inoff = ((inoff / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE;
+    } while (inoff < extlen);
+    
+    return STATUS_SUCCESS;
+}
+
 static void* zlib_alloc(void* opaque, unsigned int items, unsigned int size) {
     return ExAllocatePoolWithTag(PagedPool, items * size, ALLOC_TAG_ZLIB);
 }
@@ -15,14 +243,9 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
-NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+static NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
     z_stream c_stream;
     int ret;
-
-    if (type != BTRFS_COMPRESSION_ZLIB) {
-        ERR("unsupported compression type %x\n", type);
-        return STATUS_NOT_SUPPORTED;
-    }
 
     c_stream.zalloc = zlib_alloc;
     c_stream.zfree = zlib_free;
@@ -61,6 +284,17 @@ NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT6
     // FIXME - if we're short, should we zero the end of outbuf so we don't leak information into userspace?
     
     return STATUS_SUCCESS;
+}
+
+NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+    if (type == BTRFS_COMPRESSION_ZLIB)
+        return zlib_decompress(inbuf, inlen, outbuf, outlen);
+    else if (type == BTRFS_COMPRESSION_LZO)
+        return lzo_decompress(inbuf, inlen, outbuf, outlen);
+    else {
+        ERR("unsupported compression type %x\n", type);
+        return STATUS_NOT_SUPPORTED;
+    }
 }
 
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
