@@ -3,7 +3,8 @@ extern LONG objs_loaded;
 typedef enum {
     FactoryUnknown,
     FactoryIconHandler,
-    FactoryContextMenu
+    FactoryContextMenu,
+    FactoryPropSheet
 } factory_type;
 
 class Factory : public IClassFactory {

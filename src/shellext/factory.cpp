@@ -2,6 +2,7 @@
 #include "factory.h"
 #include "iconoverlay.h"
 #include "contextmenu.h"
+#include "propsheet.h"
 
 HRESULT __stdcall Factory::QueryInterface(const IID& iid, void** ppv) {    
     if (iid == IID_IUnknown || iid == IID_IClassFactory) {
@@ -42,6 +43,16 @@ HRESULT __stdcall Factory::CreateInstance(IUnknown* pUnknownOuter, const IID& ii
                     return E_OUTOFMEMORY;
                 
                 return bcm->QueryInterface(iid, ppv);
+            }
+            break;
+            
+        case FactoryPropSheet:
+            if (iid == IID_IUnknown || iid == IID_IShellPropSheetExt || iid == IID_IShellExtInit) {
+                BtrfsPropSheet* bps = new BtrfsPropSheet;
+                if (!bps)
+                    return E_OUTOFMEMORY;
+                
+                return bps->QueryInterface(iid, ppv);
             }
             break;
             

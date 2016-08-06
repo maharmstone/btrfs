@@ -407,6 +407,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\shellext\propsheet.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\resource.h"
 				>
 			</File>
@@ -428,6 +432,10 @@
 			</File>
 			<File
 				RelativePath=".\src\shellext\main.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\src\shellext\propsheet.cpp"
 				>
 			</File>
 		</Filter>

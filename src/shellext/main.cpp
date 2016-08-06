@@ -5,9 +5,11 @@
 
 static const GUID CLSID_ShellBtrfsIconHandler = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf0 } };
 static const GUID CLSID_ShellBtrfsContextMenu = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf1 } };
+static const GUID CLSID_ShellBtrfsPropSheet = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf2 } };
 
 #define COM_DESCRIPTION_ICON_HANDLER L"WinBtrfs shell extension (icon handler)"
 #define COM_DESCRIPTION_CONTEXT_MENU L"WinBtrfs shell extension (context menu)"
+#define COM_DESCRIPTION_PROP_SHEET L"WinBtrfs shell extension (property sheet)"
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
 HMODULE module;
@@ -37,6 +39,15 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
             return E_OUTOFMEMORY;
         else {
             fact->type = FactoryContextMenu;
+            
+            return fact->QueryInterface(riid, ppv);
+        }
+    } else if (rclsid == CLSID_ShellBtrfsPropSheet) {
+        Factory* fact = new Factory;
+        if (!fact)
+            return E_OUTOFMEMORY;
+        else {
+            fact->type = FactoryPropSheet;
             
             return fact->QueryInterface(riid, ppv);
         }
@@ -217,11 +228,56 @@ static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name)
         return TRUE;
 }
 
+static BOOL reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    WCHAR* clsidstring;
+    BOOL ret = FALSE;
+    
+    StringFromCLSID(clsid, &clsidstring);
+    
+    wcscpy(path, filetype);
+    wcscat(path, L"\\ShellEx\\PropertySheetHandlers\\");
+    wcscat(path, name);
+    
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+        goto end;
+
+    ret = TRUE;
+    
+end:
+    CoTaskMemFree(clsidstring);
+
+    return ret;
+}
+
+static BOOL unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
+    WCHAR path[MAX_PATH];
+    LONG l;
+    
+    wcscpy(path, filetype);
+    wcscat(path, L"\\ShellEx\\PropertySheetHandlers\\");
+    wcscat(path, name);
+    
+    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path);
+    
+    if (l != ERROR_SUCCESS) {
+        WCHAR s[255];
+        wsprintfW(s, L"RegDeleteTree returned %08x", l);
+        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        
+        return FALSE;
+    } else    
+        return TRUE;
+}
+
 STDAPI DllRegisterServer(void) {
     if (!register_clsid(CLSID_ShellBtrfsIconHandler, COM_DESCRIPTION_ICON_HANDLER))
         return E_FAIL;
     
     if (!register_clsid(CLSID_ShellBtrfsContextMenu, COM_DESCRIPTION_CONTEXT_MENU))
+        return E_FAIL;
+    
+    if (!register_clsid(CLSID_ShellBtrfsPropSheet, COM_DESCRIPTION_PROP_SHEET))
         return E_FAIL;
     
     if (!reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME)) {
@@ -239,13 +295,22 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
     }
     
+    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"*", ICON_OVERLAY_NAME)) {
+        MessageBoxW(0, L"Failed to register property sheet handler.", NULL, MB_ICONERROR);
+        return E_FAIL;
+    }
+    
     return S_OK;
 }
 
 STDAPI DllUnregisterServer(void) {
+    unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
     unreg_icon_overlay(ICON_OVERLAY_NAME);
+    
+    if (!unregister_clsid(CLSID_ShellBtrfsPropSheet))
+        return E_FAIL;
     
     if (!unregister_clsid(CLSID_ShellBtrfsContextMenu))
         return E_FAIL;
