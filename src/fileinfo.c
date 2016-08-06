@@ -1452,7 +1452,8 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ReplaceIfExists) {
+static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -1474,7 +1475,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     // FIXME - don't ignore fri->RootDirectory
     
     TRACE("tfo = %p\n", tfo);
-    TRACE("ReplaceIfExists = %u\n", ReplaceIfExists);
+    TRACE("ReplaceIfExists = %u\n", IrpSp->Parameters.SetFile.ReplaceIfExists);
     TRACE("RootDirectory = %p\n", fri->RootDirectory);
     TRACE("FileName = %.*S\n", fri->FileNameLength / sizeof(WCHAR), fri->FileName);
     
@@ -1543,7 +1544,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
         
         if (fileref != oldfileref && !oldfileref->deleted) {
-            if (!ReplaceIfExists) {
+            if (!IrpSp->Parameters.SetFile.ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
             } else if ((oldfileref->fcb->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
@@ -1559,7 +1560,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             }
         }
         
-        if (fileref == oldfileref || !oldfileref->deleted) {
+        if (fileref == oldfileref || oldfileref->deleted) {
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(oldfileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
@@ -2563,7 +2564,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
             // FIXME - make this work with streams
-            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, IrpSp->Parameters.SetFile.ReplaceIfExists);
+            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject);
             break;
 
         case FileValidDataLengthInformation:
