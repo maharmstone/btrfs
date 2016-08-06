@@ -635,11 +635,12 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 #define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
 #define free_fileref(fileref) _free_fileref(fileref, funcname, __FILE__, __LINE__)
 
+extern UINT32 mount_compress;
+
 #ifdef _DEBUG
 
 extern BOOL log_started;
 extern UINT32 debug_log_level;
-extern UINT32 mount_compress;
 
 #ifdef DEBUG_LONG_MESSAGES
 
