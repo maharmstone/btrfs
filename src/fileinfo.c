@@ -2438,7 +2438,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto exit;
     }
     
-    if (Vcb->readonly) {
+    if (Vcb->readonly && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
         goto end;
     }
@@ -2455,7 +2455,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto end;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
