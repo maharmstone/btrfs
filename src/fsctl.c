@@ -1341,8 +1341,6 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     BOOL nocsum;
     IO_STATUS_BLOCK iosb;
     
-    // FIXME - check permissions
-    
     if (!data || length < sizeof(FILE_ZERO_DATA_INFORMATION))
         return STATUS_INVALID_PARAMETER;
     
@@ -1364,7 +1362,18 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
     
     ccb = FileObject->FsContext2;
-    fileref = ccb ? ccb->fileref : NULL;
+    
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!(ccb->access & FILE_WRITE_DATA)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    fileref = ccb->fileref;
     
     if (!fileref) {
         ERR("fileref was NULL\n");
