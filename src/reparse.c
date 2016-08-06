@@ -358,8 +358,6 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     file_ref* fileref;
     LIST_ENTRY rollback;
     
-    // FIXME - check permissions
-    
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
     InitializeListHead(&rollback);
@@ -370,19 +368,36 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
     ccb = FileObject->FsContext2;
-    fileref = ccb ? ccb->fileref : NULL;
     
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
     
-    TRACE("%S\n", file_desc(FileObject));
+    if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    fileref = ccb->fileref;
     
     if (!fileref) {
         ERR("fileref was NULL\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
+    
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    TRACE("%S\n", file_desc(FileObject));
     
     if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer)) {
         ERR("buffer was too short\n");
