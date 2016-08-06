@@ -129,11 +129,11 @@ BEGIN
     CONTROL         "",IDC_GROUPX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,147,16,10
     CONTROL         "",IDC_OTHERX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,157,16,10
     GROUPBOX        "Flags",IDC_STATIC,7,178,221,49
-    CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,193,86,10
+    CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,193,86,10
     LTEXT           "(blank)",IDC_SUBVOL,82,21,109,8
     LTEXT           "(blank)",IDC_INODE,82,35,110,8
     LTEXT           "(blank)",IDC_TYPE,82,49,126,8
-    CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,207,46,10
+    CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,207,46,10
 END
 
 
@@ -182,6 +182,7 @@ BEGIN
     IDS_INODE_SOCKET        "Socket"
     IDS_INODE_SYMLINK       "Symbolic link"
     IDS_INODE_UNKNOWN       "Unknown inode type %x"
+    IDS_SET_INODE_INFO_ERROR "FSCTL_BTRFS_SET_INODE_INFO returned %08x"
 END
 
 #endif    // English (U.K.) resources

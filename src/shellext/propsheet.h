@@ -58,6 +58,8 @@ public:
         refcount = 0;
         ignore = TRUE;
         stgm_set = FALSE;
+        readonly = FALSE;
+        flags_changed = FALSE;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -95,12 +97,17 @@ public:
     
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
+    
+    void change_inode_flag(HWND hDlg, UINT64 flag, BOOL on);
+    void apply_changes(HWND hDlg);
  
     btrfs_inode_info bii;
+    BOOL readonly;
     
 private:
     LONG refcount;
     BOOL ignore;
     STGMEDIUM stgm;
     BOOL stgm_set;
+    BOOL flags_changed;
 };

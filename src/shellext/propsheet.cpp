@@ -80,7 +80,14 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         return E_FAIL; // FIXME - make this work with multiple files
 
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+        if (h == INVALID_HANDLE_VALUE && GetLastError() == ERROR_ACCESS_DENIED) {
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            
+            readonly = TRUE;
+        }
 
         if (h != INVALID_HANDLE_VALUE) {
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
@@ -138,6 +145,75 @@ static void ShowError(HWND hwnd, ULONG err) {
     MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
     
     LocalFree(buf);
+}
+
+void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, BOOL on) {
+    if (flag & BTRFS_INODE_NODATACOW)
+        flag |= BTRFS_INODE_NODATASUM;
+    
+    // FIXME - only allow NODATACOW to be changed if file is empty
+    
+    if (on)
+        bii.flags |= flag;
+    else
+        bii.flags &= ~flag;
+    
+    flags_changed = TRUE;
+    
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+}
+
+void BtrfsPropSheet::apply_changes(HWND hDlg) {
+    UINT num_files;
+    WCHAR fn[MAX_PATH]; // FIXME - is this long enough?
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    btrfs_set_inode_info bsii;
+    
+    if (readonly)
+        return;
+    
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    
+    if (num_files > 1)
+        return; // FIXME - make this work with multiple files
+
+    if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowError(hDlg, GetLastError());
+            return;
+        }
+        
+        ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
+        
+        if (flags_changed) {
+            bsii.flags_changed = TRUE;
+            bsii.flags = bii.flags;
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+        CloseHandle(h);
+
+        if (Status != STATUS_SUCCESS) {
+            WCHAR s[255], t[255];
+            
+            if (!LoadStringW(module, IDS_SET_INODE_INFO_ERROR, t, sizeof(t) / sizeof(WCHAR))) {
+                ShowError(hDlg, GetLastError());
+                return;
+            }
+            
+            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                ShowError(hDlg, ERROR_INSUFFICIENT_BUFFER);
+                return;
+            }
+            
+            MessageBoxW(hDlg, s, L"Error", MB_ICONERROR);
+        }
+    }
 }
 
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -215,7 +291,57 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
             
+            // FIXME - disable nocow checkbox if not a directory and size not 0
+            
+            if (bps->readonly) {
+                EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
+                // FIXME - also others
+            }
+            
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+            
             return FALSE;
+        }
+        
+        case WM_COMMAND:
+        {
+            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            
+            if (bps && !bps->readonly) {
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED: {
+                        switch (LOWORD(wParam)) {
+                            case IDC_NODATACOW:
+                                bps->change_inode_flag(hwndDlg, BTRFS_INODE_NODATACOW, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_COMPRESS:
+                                bps->change_inode_flag(hwndDlg, BTRFS_INODE_COMPRESS, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            break;
+        }
+        
+        case WM_NOTIFY:
+        {
+            switch (((LPNMHDR)lParam)->code) {
+                case PSN_KILLACTIVE:
+                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, FALSE);
+                break;
+                    
+                case PSN_APPLY: {
+                    BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                    
+                    bps->apply_changes(hwndDlg);
+                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
+                    break;
+                }
+            }
         }
     }
     

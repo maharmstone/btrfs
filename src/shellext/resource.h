@@ -19,6 +19,7 @@
 #define IDS_INODE_SOCKET                114
 #define IDS_INODE_SYMLINK               115
 #define IDS_INODE_UNKNOWN               116
+#define IDS_SET_INODE_INFO_ERROR        117
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
