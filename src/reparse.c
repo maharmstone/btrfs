@@ -219,9 +219,6 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ULONG tag;
     LIST_ENTRY rollback;
     
-    // FIXME - send notification if this succeeds? The attributes will have changed.
-    // FIXME - check permissions
-    
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
     InitializeListHead(&rollback);
@@ -237,6 +234,13 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (!ccb) {
         ERR("ccb was NULL\n");
         return STATUS_INVALID_PARAMETER;
+    }
+    
+    // It isn't documented what permissions FSCTL_SET_REPARSE_POINT needs, but CreateSymbolicLinkW
+    // creates a file with FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE.
+    if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
     }
     
     fileref = ccb->fileref;
