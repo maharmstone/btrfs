@@ -3673,10 +3673,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    Status = find_chunk_usage(Vcb);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_chunk_usage returned %08x\n", Status);
-        goto exit;
+    if (!Vcb->readonly) {
+        Status = find_chunk_usage(Vcb);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_chunk_usage returned %08x\n", Status);
+            goto exit;
+        }
     }
     
     // We've already increased the generation by one
