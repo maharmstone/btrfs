@@ -437,6 +437,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\compress.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\crc32c.c"
 				>
 			</File>

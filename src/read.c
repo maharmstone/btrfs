@@ -1,12 +1,5 @@
 #include "btrfs_drv.h"
 
-#define Z_SOLO
-#define ZLIB_INTERNAL
-
-#include "zlib/zlib.h"
-#include "zlib/inftrees.h"
-#include "zlib/inflate.h"
-
 enum read_data_status {
     ReadDataStatus_Pending,
     ReadDataStatus_Success,
@@ -855,62 +848,6 @@ end:
         ExFreePool(csum);
 
     return Status;
-}
-
-static void* zlib_alloc(void* opaque, unsigned int items, unsigned int size) {
-    return ExAllocatePoolWithTag(PagedPool, items * size, ALLOC_TAG_ZLIB);
-}
-
-static void zlib_free(void* opaque, void* ptr) {
-    ExFreePool(ptr);
-}
-
-static NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
-    z_stream c_stream;
-    int ret;
-
-    if (type != BTRFS_COMPRESSION_ZLIB) {
-        ERR("unsupported compression type %x\n", type);
-        return STATUS_NOT_SUPPORTED;
-    }
-
-    c_stream.zalloc = zlib_alloc;
-    c_stream.zfree = zlib_free;
-    c_stream.opaque = (voidpf)0;
-
-    ret = inflateInit(&c_stream);
-    
-    if (ret != Z_OK) {
-        ERR("inflateInit returned %08x\n", ret);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    c_stream.next_in = inbuf;
-    c_stream.avail_in = inlen;
-    
-    c_stream.next_out = outbuf;
-    c_stream.avail_out = outlen;
-    
-    do {
-        ret = inflate(&c_stream, Z_NO_FLUSH);
-        
-        if (ret != Z_OK && ret != Z_STREAM_END) {
-            ERR("inflate returned %08x\n", ret);
-            inflateEnd(&c_stream);
-            return STATUS_INTERNAL_ERROR;
-        }
-    } while (ret != Z_STREAM_END);
-
-    ret = inflateEnd(&c_stream);
-    
-    if (ret != Z_OK) {
-        ERR("inflateEnd returned %08x\n", ret);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    // FIXME - if we're short, should we zero the end of outbuf so we don't leak information into userspace?
-    
-    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
