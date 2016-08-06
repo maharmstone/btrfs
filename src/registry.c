@@ -5,11 +5,12 @@ extern UNICODE_STRING log_device, log_file, registry_path;
 static WCHAR option_mounted[] = L"Mounted";
 static WCHAR option_ignore[] = L"Ignore";
 static WCHAR option_compress[] = L"Compress";
+static WCHAR option_readonly[] = L"Readonly";
 
 #define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
 
 NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) {
-    UNICODE_STRING path, ignoreus, compressus;
+    UNICODE_STRING path, ignoreus, compressus, readonlyus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -69,7 +70,11 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     compressus.Buffer = option_compress;
     compressus.Length = compressus.MaximumLength = wcslen(option_compress) * sizeof(WCHAR);
     
+    readonlyus.Buffer = option_readonly;
+    readonlyus.Length = readonlyus.MaximumLength = wcslen(option_readonly) * sizeof(WCHAR);
+    
     options->compress = mount_compress;
+    options->readonly = FALSE;
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -90,6 +95,10 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->compress = *val != 0 ? TRUE : FALSE;
+            } else if (FsRtlAreNamesEqual(&readonlyus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->readonly = *val != 0 ? TRUE : FALSE;
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);

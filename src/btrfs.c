@@ -3565,6 +3565,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Vcb->readonly = TRUE;
     }
     
+    if (Vcb->options.readonly)
+        Vcb->readonly = TRUE;
+    
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
     
