@@ -26,8 +26,6 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     char* data;
     NTSTATUS Status;
     
-    // FIXME - check permissions
-    
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
