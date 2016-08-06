@@ -34,6 +34,7 @@
 #define IDC_SUBVOL                      1013
 #define IDC_INODE                       1014
 #define IDC_TYPE                        1015
+#define IDC_COMPRESS                    1016
 
 // Next default values for new objects
 // 
