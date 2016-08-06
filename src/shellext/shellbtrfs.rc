@@ -96,6 +96,39 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// Dialog
+//
+
+IDD_PROP_SHEET DIALOGEX 0, 0, 235, 156
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
+CAPTION "Property Page"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    LTEXT           "TODO: layout property page",IDC_STATIC,73,74,90,8
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_PROP_SHEET, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 149
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // String Table
 //
 
@@ -107,6 +140,7 @@ BEGIN
     IDS_CREATE_SNAPSHOT     "Create snapshot"
     IDS_CREATE_SNAPSHOT_HELP_TEXT "Creates a snapshot of a Btrfs subvolume."
     IDS_SNAPSHOT_FILENAME   "Snapshot of %s (%04u-%02u-%02u)"
+    IDS_PROP_SHEET_TITLE    "Btrfs properties"
 END
 
 #endif    // English (U.K.) resources

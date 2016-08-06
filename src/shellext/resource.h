@@ -9,6 +9,8 @@
 #define IDS_CREATE_SNAPSHOT             105
 #define IDS_CREATE_SNAPSHOT_HELP_TEXT   106
 #define IDS_SNAPSHOT_FILENAME           107
+#define IDD_PROP_SHEET                  107
+#define IDS_PROP_SHEET_TITLE            108
 
 // Next default values for new objects
 // 

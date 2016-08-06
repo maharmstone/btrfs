@@ -295,6 +295,11 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
     }
     
+    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"Folder", ICON_OVERLAY_NAME)) {
+        MessageBoxW(0, L"Failed to register property sheet handler.", NULL, MB_ICONERROR);
+        return E_FAIL;
+    }
+    
     if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"*", ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register property sheet handler.", NULL, MB_ICONERROR);
         return E_FAIL;
@@ -304,6 +309,7 @@ STDAPI DllRegisterServer(void) {
 }
 
 STDAPI DllUnregisterServer(void) {
+    unreg_prop_sheet_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
