@@ -1949,7 +1949,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
-        if (Vcb->need_write)
+        if (Vcb->need_write && !Vcb->readonly)
             do_write(Vcb, &rollback);
         
         free_trees(Vcb);

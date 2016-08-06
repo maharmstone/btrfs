@@ -1693,7 +1693,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     
     flush_fcb_caches(Vcb);
     
-    if (Vcb->need_write)
+    if (Vcb->need_write && !Vcb->readonly)
         do_write(Vcb, &rollback);
     
     free_trees(Vcb);
@@ -1834,7 +1834,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 
                 flush_fcb_caches(Vcb);
                 
-                if (Vcb->need_write)
+                if (Vcb->need_write && !Vcb->readonly)
                     do_write(Vcb, &rollback);
                 
                 free_trees(Vcb);
