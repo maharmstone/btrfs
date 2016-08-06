@@ -99,12 +99,40 @@ END
 // Dialog
 //
 
-IDD_PROP_SHEET DIALOGEX 0, 0, 235, 156
+IDD_PROP_SHEET DIALOGEX 0, 0, 235, 250
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "Property Page"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
-    LTEXT           "TODO: layout property page",IDC_STATIC,73,74,90,8
+    LTEXT           "Subvolume:",IDC_STATIC,14,21,38,8
+    LTEXT           "Inode:",IDC_STATIC,14,35,21,8
+    GROUPBOX        "Information",IDC_STATIC,7,7,221,57
+    LTEXT           "Type:",IDC_STATIC,14,49,18,8
+    GROUPBOX        "POSIX permissions",IDC_STATIC,7,71,221,102
+    LTEXT           "User:",IDC_STATIC,14,86,17,8
+    LTEXT           "Group:",IDC_STATIC,14,102,22,8
+    EDITTEXT        IDC_UID,94,84,40,14,ES_AUTOHSCROLL | ES_NUMBER | WS_DISABLED
+    EDITTEXT        IDC_GID,94,100,40,14,ES_AUTOHSCROLL | ES_NUMBER | WS_DISABLED
+    LTEXT           "User",IDC_STATIC,14,133,15,8
+    LTEXT           "Group",IDC_STATIC,14,145,20,8
+    LTEXT           "Others",IDC_STATIC,14,157,22,8
+    LTEXT           "Read",IDC_STATIC,50,123,17,8
+    LTEXT           "Write",IDC_STATIC,89,123,18,8
+    LTEXT           "Execute",IDC_STATIC,129,123,25,8
+    CONTROL         "",IDC_USERR,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,54,135,16,10
+    CONTROL         "",IDC_GROUPR,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,54,146,16,10
+    CONTROL         "",IDC_OTHERR,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,54,156,16,10
+    CONTROL         "",IDC_USERW,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,93,136,16,10
+    CONTROL         "",IDC_GROUPW,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,93,147,16,10
+    CONTROL         "",IDC_OTHERW,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,93,157,16,10
+    CONTROL         "",IDC_USERX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,136,16,10
+    CONTROL         "",IDC_GROUPX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,147,16,10
+    CONTROL         "",IDC_OTHERX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,157,16,10
+    GROUPBOX        "Flags",IDC_STATIC,7,178,221,65
+    CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,14,193,86,10
+    LTEXT           "(blank)",IDC_SUBVOL,82,21,109,8
+    LTEXT           "(blank)",IDC_INODE,82,35,110,8
+    LTEXT           "(blank)",IDC_TYPE,82,49,126,8
 END
 
 
@@ -121,7 +149,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 228
         TOPMARGIN, 7
-        BOTTOMMARGIN, 149
+        BOTTOMMARGIN, 243
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -141,6 +169,18 @@ BEGIN
     IDS_CREATE_SNAPSHOT_HELP_TEXT "Creates a snapshot of a Btrfs subvolume."
     IDS_SNAPSHOT_FILENAME   "Snapshot of %s (%04u-%02u-%02u)"
     IDS_PROP_SHEET_TITLE    "Btrfs properties"
+    IDS_INODE_FILE          "File"
+    IDS_INODE_DIR           "Directory"
+    IDS_INODE_CHAR          "Character device (major %llu, minor %u)"
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_INODE_BLOCK         "Block device (major %llu, minor %u)"
+    IDS_INODE_FIFO          "FIFO"
+    IDS_INODE_SOCKET        "Socket"
+    IDS_INODE_SYMLINK       "Symbolic link"
+    IDS_INODE_UNKNOWN       "Unknown inode type %x"
 END
 
 #endif    // English (U.K.) resources
