@@ -380,15 +380,7 @@
 				Name="zlib"
 				>
 				<File
-					RelativePath=".\src\zlib\crc32.h"
-					>
-				</File>
-				<File
 					RelativePath=".\src\zlib\deflate.h"
-					>
-				</File>
-				<File
-					RelativePath=".\src\zlib\gzguts.h"
 					>
 				</File>
 				<File
@@ -521,10 +513,6 @@
 				>
 				<File
 					RelativePath=".\src\zlib\adler32.c"
-					>
-				</File>
-				<File
-					RelativePath=".\src\zlib\crc32.c"
 					>
 				</File>
 				<File

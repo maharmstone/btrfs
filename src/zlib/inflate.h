@@ -8,6 +8,8 @@
    subject to change. Applications should only use zlib.h.
  */
 
+#define NO_GZIP // added by WinBtrfs
+
 /* define NO_GZIP when compiling if you want to disable gzip header and
    trailer decoding by inflate().  NO_GZIP would be used to avoid linking in
    the crc code when it is not needed.  For shared libraries, gzip decoding

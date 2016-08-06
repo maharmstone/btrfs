@@ -52,6 +52,8 @@
 
 /* @(#) $Id$ */
 
+#define NO_GZIP // added by WinBtrfs
+
 #include "deflate.h"
 
 const char deflate_copyright[] =
