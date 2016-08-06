@@ -1585,7 +1585,20 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (oldfileref) {
-        // FIXME - check we have permissions for this
+        ACCESS_MASK access;
+        SECURITY_SUBJECT_CONTEXT subjcont;
+        
+        SeCaptureSubjectContext(&subjcont);
+
+        if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, FALSE, DELETE, 0, NULL,
+                           IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+            SeReleaseSubjectContext(&subjcont);
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto end;
+        }
+
+        SeReleaseSubjectContext(&subjcont);
+        
         Status = delete_fileref(oldfileref, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_fileref returned %08x\n", Status);
