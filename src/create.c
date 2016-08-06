@@ -2988,8 +2988,12 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         goto exit;
     }
     
-    // FIXME - if Vcb->readonly or subvol readonly, don't allow the write ACCESS_MASK flags
-    
+    if (Vcb->readonly && Stack->Parameters.Create.SecurityContext->DesiredAccess &
+        (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC)) {
+        Status = STATUS_MEDIA_WRITE_PROTECTED;
+        goto exit;
+    }
+
     if (options & FILE_OPEN_BY_FILE_ID) {
         if (FileObject->FileName.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
             UINT64 inode;
@@ -3099,6 +3103,15 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 ExReleaseResource(&Vcb->fcb_lock);
                 goto exit;
             }
+        }
+        
+        if (fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && Stack->Parameters.Create.SecurityContext->DesiredAccess &
+            (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC)) {
+            Status = STATUS_ACCESS_DENIED;
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fileref(fileref);
+            ExReleaseResource(&Vcb->fcb_lock);
+            goto exit;
         }
         
         TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");
