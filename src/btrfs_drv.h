@@ -878,7 +878,8 @@ static __inline BOOL write_fcb_compressed(fcb* fcb) {
     if (fcb->Vcb->options.compress_force)
         return TRUE;
     
-    // FIXME - nocompress inode flag
+    if (fcb->inode_item.flags & BTRFS_INODE_NOCOMPRESS)
+        return FALSE;
     
     if (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress)
         return TRUE;
