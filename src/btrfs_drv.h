@@ -872,9 +872,15 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
 }
 
 static __inline BOOL write_fcb_compressed(fcb* fcb) {
-    // FIXME - compress-force mount option
+    if (fcb->subvol->id == BTRFS_ROOT_ROOT) // make sure we don't accidentally write the cache inodes compressed
+        return FALSE;
+    
+    if (fcb->Vcb->options.compress_force)
+        return TRUE;
+    
     // FIXME - nocompress inode flag
-    if (fcb->subvol->id != BTRFS_ROOT_ROOT && (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress))
+    
+    if (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress)
         return TRUE;
     
     return FALSE;
