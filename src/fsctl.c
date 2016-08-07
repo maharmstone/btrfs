@@ -701,7 +701,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     PSID owner;
     BOOLEAN defaulted;
     UINT64* root_num;
-    file_ref* fr;
+    file_ref* fr = NULL;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
