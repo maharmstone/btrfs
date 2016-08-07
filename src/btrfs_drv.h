@@ -421,6 +421,7 @@ typedef struct {
 typedef struct {
     BOOL ignore;
     BOOL compress;
+    BOOL compress_force;
     BOOL readonly;
 } mount_options;
 
