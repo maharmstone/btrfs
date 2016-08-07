@@ -693,7 +693,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     UINT64 dirpos;
-    UINT32 crc32;
     INODE_REF* ir;
     KEY searchkey;
     traverse_ptr tp;
@@ -701,7 +700,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     PSID owner;
     BOOLEAN defaulted;
     UINT64* root_num;
-    file_ref* fr = NULL;
+    file_ref *fr = NULL, *fr2;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
@@ -777,16 +776,16 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     InitializeListHead(&rollback);
     
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
-    
-    Status = find_file_in_dir_with_crc32(fcb->Vcb, &nameus, crc32, fileref, NULL, NULL, NULL, NULL, NULL);
+    // no need for fcb_lock as we have tree_lock exclusively
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL);
     
     if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
+        free_fileref(fr2);
         Status = STATUS_OBJECT_NAME_COLLISION;
         goto end;
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
-        ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
+        ERR("open_fileref returned %08x\n", Status);
         goto end;
     }
     
