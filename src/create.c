@@ -529,6 +529,8 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                     } else {
+                        ANSI_STRING nutf8;
+                        
                         us.Buffer = utf16;
                         us.Length = us.MaximumLength = (USHORT)stringlen;
                         
@@ -587,17 +589,20 @@ NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STR
                             index = 0;
                                 
                             if (fr->fcb->subvol != Vcb->root_root) {
+                                nutf8.Buffer = di->name;
+                                nutf8.Length = nutf8.MaximumLength = di->n;
+                                
                                 if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
+                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("find_subvol_dir_index returned %08x\n", Status);
                                         return Status;
                                     }
                                 } else {
-                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
+                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
                                     if (!NT_SUCCESS(Status)) {
                                         if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, utf8, &index);
+                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
                                             
                                             if (!NT_SUCCESS(Status)) {
                                                 ERR("find_file_dir_index_extref returned %08x\n", Status);
