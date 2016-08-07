@@ -399,7 +399,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
     td = first_item(t);
     lasttd = NULL;
     
-    if (!td) return STATUS_INTERNAL_ERROR;
+    if (!td) return STATUS_NOT_FOUND;
     
     do {
         cmp = keycmp(searchkey, &td->key);
@@ -456,7 +456,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                 oldtp = *tp;
             }
             
-            return STATUS_INTERNAL_ERROR;
+            return STATUS_NOT_FOUND;
         } else {
             tp->tree = t;
             tp->item = td;
@@ -472,7 +472,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         }
         
         if (!td)
-            return STATUS_INTERNAL_ERROR;
+            return STATUS_NOT_FOUND;
         
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
@@ -505,7 +505,7 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
     }
 
     Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, func, file, line);
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
         ERR("find_item_in_tree returned %08x\n", Status);
     }
     
@@ -821,7 +821,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     searchkey.offset = offset;
     
     Status = find_item(Vcb, r, &tp, &searchkey, TRUE);
-    if (!NT_SUCCESS(Status)) {
+    if (Status == STATUS_NOT_FOUND) {
         if (r) {
             if (!r->treeholder.tree) {
                 BOOL loaded;
@@ -845,6 +845,9 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
             ERR("error: find_item returned %08x\n", Status);
             goto end;
         }
+    } else if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
     }
     
     TRACE("tp.item = %p\n", tp.item);
