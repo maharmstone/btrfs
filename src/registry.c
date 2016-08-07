@@ -567,6 +567,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     reset_subkeys(h, regpath);
     
     get_registry_value(h, L"Compress", REG_DWORD, &mount_compress, sizeof(mount_compress));
+    get_registry_value(h, L"CompressForce", REG_DWORD, &mount_compress_force, sizeof(mount_compress_force));
     
 #ifdef _DEBUG
     get_registry_value(h, L"DebugLogLevel", REG_DWORD, &debug_log_level, sizeof(debug_log_level));

@@ -47,6 +47,7 @@ LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
 UINT32 mount_compress = 0;
+UINT32 mount_compress_force = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 

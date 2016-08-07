@@ -636,6 +636,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 #define free_fileref(fileref) _free_fileref(fileref, funcname, __FILE__, __LINE__)
 
 extern UINT32 mount_compress;
+extern UINT32 mount_compress_force;
 
 #ifdef _DEBUG
 
