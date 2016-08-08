@@ -732,10 +732,9 @@ end:
     return success ? c : NULL;
 }
 
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp) {
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c) {
     NTSTATUS Status;
     UINT32 i;
-    chunk* c;
     CHUNK_ITEM_STRIPE* cis;
     write_data_stripe* stripe;
     UINT64 *stripestart = NULL, *stripeend = NULL;
@@ -744,10 +743,12 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
-    c = get_chunk_from_address(Vcb, address);
     if (!c) {
-        ERR("could not get chunk for address %llx\n", address);
-        return STATUS_INTERNAL_ERROR;
+        c = get_chunk_from_address(Vcb, address);
+        if (!c) {
+            ERR("could not get chunk for address %llx\n", address);
+            return STATUS_INTERNAL_ERROR;
+        }
     }
     
     if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
@@ -1044,7 +1045,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp) {
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c) {
     write_data_context* wtc;
     NTSTATUS Status;
     
@@ -1059,7 +1060,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     wtc->tree = FALSE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp);
+    Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         free_write_data_stripes(wtc);
@@ -2197,7 +2198,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
             *((UINT32*)data) = crc32;
             TRACE("setting crc32 to %08x\n", crc32);
             
-            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc, NULL);
+            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc, NULL, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
                 goto end;
@@ -5932,7 +5933,7 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
     changed_sector* sc;
     int i;
     
-    Status = write_data_complete(Vcb, address, data, length, Irp);
+    Status = write_data_complete(Vcb, address, data, length, Irp, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         return Status;
@@ -6166,7 +6167,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     addr = ed2->address + ed2->size;
      
-    Status = write_data_complete(Vcb, addr, data, length, Irp);
+    Status = write_data_complete(Vcb, addr, data, length, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         ExFreePool(newext);
@@ -7559,7 +7560,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                                     
                     TRACE("doing non-COW write to %llx\n", writeaddr);
                     
-                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp);
+                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_complete returned %08x\n", Status);
                         return Status;

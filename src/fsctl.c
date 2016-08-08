@@ -176,7 +176,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     wtc->tree = TRUE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc, NULL);
+    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         goto end;
