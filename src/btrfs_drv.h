@@ -689,11 +689,20 @@ void STDCALL init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 // in crc32c.c
 UINT32 STDCALL calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen);
 
+typedef struct {
+    LIST_ENTRY* list;
+    LIST_ENTRY* list_size;
+    UINT64 address;
+    UINT64 length;
+} rollback_space;
+
 enum rollback_type {
     ROLLBACK_INSERT_ITEM,
     ROLLBACK_DELETE_ITEM,
     ROLLBACK_INSERT_EXTENT,
-    ROLLBACK_DELETE_EXTENT
+    ROLLBACK_DELETE_EXTENT,
+    ROLLBACK_ADD_SPACE,
+    ROLLBACK_SUBTRACT_SPACE
 };
 
 // in treefuncs.c

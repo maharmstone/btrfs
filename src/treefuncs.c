@@ -1029,6 +1029,8 @@ void clear_rollback(LIST_ENTRY* rollback) {
         switch (ri->type) {
             case ROLLBACK_INSERT_ITEM:
             case ROLLBACK_DELETE_ITEM:
+            case ROLLBACK_ADD_SPACE:
+            case ROLLBACK_SUBTRACT_SPACE:
                 ExFreePool(ri->ptr);
                 break;
 
@@ -1098,6 +1100,24 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 ext->ignore = FALSE;
                 break;
+            }
+            
+            case ROLLBACK_ADD_SPACE:
+            {
+                rollback_space* rs = ri->ptr;
+                
+                space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                
+                ExFreePool(rs);
+            }
+            
+            case ROLLBACK_SUBTRACT_SPACE:
+            {
+                rollback_space* rs = ri->ptr;
+                
+                space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                
+                ExFreePool(rs);
             }
         }
         

@@ -889,6 +889,23 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
     return STATUS_SUCCESS;
 }
 
+static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length) {
+    rollback_space* rs;
+    
+    rs = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_space), ALLOC_TAG);
+    if (!rs) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    rs->list = list;
+    rs->list_size = list_size;
+    rs->address = address;
+    rs->length = length;
+    
+    add_rollback(rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
+}
+
 void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, LIST_ENTRY* rollback, const char* func) {
     LIST_ENTRY* le;
     space *s, *s2;
@@ -912,7 +929,8 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
         if (list_size)
             InsertTailList(list_size, &s->list_entry_size);
         
-        // FIXME - insert rollback entry
+        if (rollback)
+            add_rollback_space(rollback, TRUE, list, list_size, address, length);
         
         return;
     }
@@ -928,9 +946,11 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
         // new entry envelops old one completely
         if (address <= s2->address && address + length >= s2->address + s2->size) {
             if (address < s2->address) {
+                if (rollback)
+                    add_rollback_space(rollback, TRUE, list, list_size, address, s2->address - address);
+                
                 s2->size += s2->address - address;
                 s2->address = address;
-                // FIXME - insert rollback
                 
                 while (s2->list_entry.Blink != list) {
                     space* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
@@ -951,8 +971,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
             }
             
             if (length > s2->size) {
+                if (rollback)
+                    add_rollback_space(rollback, TRUE, list, list_size, s2->address + s2->size, address + length - s2->address - s2->size);
+                
                 s2->size = length;
-                // FIXME - insert rollback
                 
                 while (s2->list_entry.Flink != list) {
                     space* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
@@ -981,9 +1003,11 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
         
         // new entry overlaps start of old one
         if (address < s2->address && address + length >= s2->address) {
+            if (rollback)
+                add_rollback_space(rollback, TRUE, list, list_size, address, s2->address - address);
+            
             s2->size += s2->address - address;
             s2->address = address;
-            // FIXME - insert rollback
             
             while (s2->list_entry.Blink != list) {
                 space* s3 = CONTAINING_RECORD(s2->list_entry.Blink, space, list_entry);
@@ -1012,8 +1036,10 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
         
         // new entry overlaps end of old one
         if (address <= s2->address + s2->size && address + length > s2->address + s2->size) {
+            if (rollback)
+                add_rollback_space(rollback, TRUE, list, list_size, address, s2->address + s2->size - address);
+            
             s2->size = address + length - s2->address;
-            // FIXME - insert rollback
             
             while (s2->list_entry.Flink != list) {
                 space* s3 = CONTAINING_RECORD(s2->list_entry.Flink, space, list_entry);
@@ -1048,7 +1074,9 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
                 return;
             }
             
-            // FIXME - insert rollback
+            if (rollback)
+                add_rollback_space(rollback, TRUE, list, list_size, address, length);
+            
             s->address = address;
             s->size = length;
             InsertHeadList(s2->list_entry.Blink, &s->list_entry);
@@ -1065,7 +1093,6 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
     // check if contiguous with last entry
     if (s2->address + s2->size == address) {
         s2->size += length;
-        // FIXME - insert rollback
         
         if (list_size) {
             RemoveEntryList(&s2->list_entry_size);
@@ -1090,7 +1117,8 @@ void _space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, U
     if (list_size)
         order_space_entry(s, list_size);
     
-    // FIXME - insert rollback
+    if (rollback)
+        add_rollback_space(rollback, TRUE, list, list_size, address, length);
 }
 
 static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
@@ -1283,7 +1311,9 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
             return;
         
         if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
-            // FIXME - insert rollback
+            if (rollback)
+                add_rollback_space(rollback, FALSE, list, list_size, s2->address, s2->size);
+            
             RemoveEntryList(&s2->list_entry);
             
             if (list_size)
@@ -1292,7 +1322,8 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
             ExFreePool(s2);
         } else if (address + length > s2->address && address + length < s2->address + s2->size) {
             if (address > s2->address) { // cut out hole
-                // FIXME - insert rollback
+                if (rollback)
+                    add_rollback_space(rollback, FALSE, list, list_size, address, length);
                 
                 s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
@@ -1316,9 +1347,11 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
                 
                 return;
             } else { // remove start of entry
+                if (rollback)
+                    add_rollback_space(rollback, FALSE, list, list_size, s2->address, address + length - s2->address);
+                
                 s2->size -= address + length - s2->address;
                 s2->address = address + length;
-                // FIXME - insert rollback
                 
                 if (list_size) {
                     RemoveEntryList(&s2->list_entry_size);
@@ -1326,7 +1359,9 @@ void _space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addre
                 }
             }
         } else if (address > s2->address && address < s2->address + s2->size) { // remove end of entry
-            // FIXME - insert rollback
+            if (rollback)
+                add_rollback_space(rollback, FALSE, list, list_size, address, s2->address + s2->size - address);
+            
             s2->size = address - s2->address;
             
             if (list_size) {
