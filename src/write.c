@@ -7502,6 +7502,9 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
     LIST_ENTRY *le, *le2;
     UINT64 written = 0, length = end_data - start;
     UINT64 last_cow_start;
+#ifdef DEBUG_PARANOID
+    UINT64 last_off;
+#endif
     
     last_cow_start = 0;
     
@@ -7638,6 +7641,29 @@ nextitem:
     
     // FIXME - make extending work again (here?)
     // FIXME - make maximum extent size 128 MB again (here?)
+    
+#ifdef DEBUG_PARANOID
+    last_off = 0xffffffffffffffff;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (!ext->ignore) {
+            if (ext->offset == last_off) {
+                ERR("offset %llx duplicated\n", ext->offset);
+                int3;
+            } else if (ext->offset < last_off && last_off != 0xffffffffffffffff) {
+                ERR("offsets out of order\n");
+                int3;
+            }
+            
+            last_off = ext->offset;
+        }
+        
+        le = le->Flink;
+    }
+#endif
     
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);
