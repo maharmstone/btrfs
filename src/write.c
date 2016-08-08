@@ -7534,7 +7534,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                 if (max(last_cow_start, start + written) < ext->offset) {
                     UINT64 start_write = max(last_cow_start, start + written);
                     
-                    Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset - start_write, rollback);
+                    Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("excise_extents returned %08x\n", Status);
                         return Status;
