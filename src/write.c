@@ -7154,14 +7154,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
 // }
 // #endif
 
-static void STDCALL deferred_write_callback(void* context1, void* context2) {
-    PIRP Irp = context1;
-    device_extension* Vcb = context2;
-    
-    if (!add_thread_job(Vcb, Irp))
-        do_write_job(Vcb, Irp);
-}
-
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data, UINT64 end_data, void* data, UINT64* written,
                                        LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed = ext->data;
@@ -7742,11 +7734,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
     
-    if (!no_cache && !CcCanIWrite(FileObject, *length, wait, deferred_write)) {
-        CcDeferWrite(FileObject, (PCC_POST_DEFERRED_WRITE)deferred_write_callback, Irp, Vcb, *length, deferred_write);
-
+    if (!no_cache && !CcCanIWrite(FileObject, *length, wait, deferred_write))
         return STATUS_PENDING;
-    }
     
     if (!wait && no_cache)
         return STATUS_PENDING;
