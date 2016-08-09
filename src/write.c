@@ -7285,8 +7285,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         EXTENT_DATA2* ned2;
         extent *newext1, *newext2;
         
-        // FIXME - test this
-        
         ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
         if (!ned) {
             ERR("out of memory\n");
@@ -7370,8 +7368,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         EXTENT_DATA *ned, *nedb, *nedc;
         EXTENT_DATA2* ned2;
         extent *newext1, *newext2, *newext3;
-        
-        // FIXME - test this
         
         ned = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
         if (!ned) {
