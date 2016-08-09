@@ -1155,6 +1155,11 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
     
+    if ((bsii->uid_changed || bsii->gid_changed) && !(ccb->access & WRITE_OWNER)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
     if (bsii->flags_changed) {
         if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
             (bsii->flags & BTRFS_INODE_NODATACOW) != (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
@@ -1177,7 +1182,15 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         fcb->inode_item.st_mode |= bsii->st_mode & allowed;
     }
     
-    if (bsii->flags_changed || bsii->mode_changed)
+    if (bsii->uid_changed) {
+        fcb->inode_item.st_uid = bsii->st_uid;
+        // FIXME - also change sd if necessary
+    }
+    
+    if (bsii->gid_changed)
+        fcb->inode_item.st_gid = bsii->st_gid;
+    
+    if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed)
         mark_fcb_dirty(fcb);
     
     // FIXME - also work with uid and gid
