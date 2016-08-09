@@ -1072,6 +1072,8 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
     
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
     bii->subvol = fcb->subvol->id;
     bii->inode = fcb->inode;
     bii->top = fcb->Vcb->root_fileref->fcb == fcb ? TRUE : FALSE;
@@ -1081,6 +1083,43 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     bii->st_mode = fcb->inode_item.st_mode;
     bii->st_rdev = fcb->inode_item.st_rdev;
     bii->flags = fcb->inode_item.flags;
+    
+    bii->inline_length = 0;
+    bii->disk_size[0] = 0;
+    bii->disk_size[1] = 0;
+    bii->disk_size[2] = 0;
+    
+    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+        LIST_ENTRY* le;
+        
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            
+            if (!ext->ignore) {
+                if (ext->data->type == EXTENT_TYPE_INLINE) {
+                    bii->inline_length += ext->data->decoded_size;
+                } else {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                    
+                    // FIXME - compressed extents with a hole in them are counted more than once
+                    if (ed2->size != 0) {
+                        if (ext->data->compression == BTRFS_COMPRESSION_NONE) {
+                            bii->disk_size[0] += ed2->num_bytes;
+                        } else if (ext->data->compression == BTRFS_COMPRESSION_ZLIB) {
+                            bii->disk_size[1] += ed2->size;
+                        } else if (ext->data->compression == BTRFS_COMPRESSION_LZO) {
+                            bii->disk_size[2] += ed2->size;
+                        }
+                    }
+                }
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
     
     return STATUS_SUCCESS;
 }

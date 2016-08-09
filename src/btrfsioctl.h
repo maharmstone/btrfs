@@ -29,6 +29,8 @@ typedef struct {
     UINT32 st_mode;
     UINT64 st_rdev;
     UINT64 flags;
+    UINT32 inline_length;
+    UINT64 disk_size[3];
 } btrfs_inode_info;
 
 typedef struct {
