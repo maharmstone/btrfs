@@ -210,7 +210,7 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     InsertTailList(&uid_map_list, &um->listentry);
 }
 
-static void uid_to_sid(UINT32 uid, PSID* sid) {
+void uid_to_sid(UINT32 uid, PSID* sid) {
     LIST_ENTRY* le;
     uid_map* um;
     sid_header* sh;

@@ -25,6 +25,8 @@
 
 #define DOTDOT ".."
 
+#define SEF_AVOID_PRIVILEGE_CHECK 0x08 // on MSDN but not in any header files(?)
+
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 
@@ -1126,6 +1128,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
 static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_set_inode_info* bsii = data;
+    NTSTATUS Status;
     fcb* fcb;
     ccb* ccb;
     
@@ -1160,11 +1163,14 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
     
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
     if (bsii->flags_changed) {
         if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
             (bsii->flags & BTRFS_INODE_NODATACOW) != (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
             WARN("trying to change nocow flag on non-empty file\n");
-            return STATUS_INVALID_PARAMETER;
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
         }
         
         fcb->inode_item.flags = bsii->flags;
@@ -1183,8 +1189,42 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     }
     
     if (bsii->uid_changed) {
+        PSID sid; 
+        SECURITY_INFORMATION secinfo;
+        SECURITY_DESCRIPTOR sd;
+        void* oldsd;
+        
         fcb->inode_item.st_uid = bsii->st_uid;
-        // FIXME - also change sd if necessary
+        
+        uid_to_sid(bsii->st_uid, &sid);
+        
+        Status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlCreateSecurityDescriptor returned %08x\n", Status);
+            goto end;
+        }
+        
+        Status = RtlSetOwnerSecurityDescriptor(&sd, sid, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
+            goto end;
+        }
+        
+        oldsd = fcb->sd;
+        
+        secinfo = OWNER_SECURITY_INFORMATION;
+        Status = SeSetSecurityDescriptorInfoEx(NULL, &secinfo, &sd, (void**)&fcb->sd, SEF_AVOID_PRIVILEGE_CHECK, PagedPool, IoGetFileObjectGenericMapping());
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("SeSetSecurityDescriptorInfo returned %08x\n", Status);
+            goto end;
+        }
+        
+        ExFreePool(oldsd);
+        
+        fcb->sd_dirty = TRUE;
+        
+        send_notification_fcb(ccb->fileref, FILE_NOTIFY_CHANGE_SECURITY, FILE_ACTION_MODIFIED);
     }
     
     if (bsii->gid_changed)
@@ -1193,9 +1233,12 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed)
         mark_fcb_dirty(fcb);
     
-    // FIXME - also work with uid and gid
+    Status = STATUS_SUCCESS;
     
-    return STATUS_SUCCESS;
+end:
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+    return Status;
 }
 
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
