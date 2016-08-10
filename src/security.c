@@ -985,7 +985,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
         ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
         fcb->inode_item.st_uid = UID_NOBODY;
     } else {
-        fcb->inode_item.st_uid = sid_to_uid(&owner);
+        fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
     return STATUS_SUCCESS;
