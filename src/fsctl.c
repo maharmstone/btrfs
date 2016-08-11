@@ -243,7 +243,7 @@ static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
     }
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, UINT32 crc32, PANSI_STRING utf8, PUNICODE_STRING name) {
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
@@ -271,8 +271,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fileref = ccb->fileref;
     
     InitializeListHead(&rollback);
-    
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
     // flush open files on this subvol
     
@@ -526,8 +524,6 @@ end:
     else
         do_rollback(Vcb, &rollback);
 
-    ExReleaseResourceLite(&Vcb->tree_lock);
-    
     return Status;
 }
 
@@ -539,10 +535,9 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ANSI_STRING utf8;
     UNICODE_STRING nameus;
     ULONG len;
-    UINT32 crc32;
     fcb* fcb;
     ccb* ccb;
-    file_ref* fileref;
+    file_ref *fileref, *fr2;
     
     if (length < offsetof(btrfs_create_snapshot, name))
         return STATUS_INVALID_PARAMETER;
@@ -606,24 +601,26 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         goto end2;
     }
+
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+    // no need for fcb_lock as we have tree_lock exclusively
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL);
     
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8.Buffer, utf8.Length);
-    
-    Status = find_file_in_dir_with_crc32(Vcb, &nameus, crc32, fileref, NULL, NULL, NULL, NULL, NULL);
-        
     if (NT_SUCCESS(Status)) {
         WARN("file already exists\n");
+        free_fileref(fr2);
         Status = STATUS_OBJECT_NAME_COLLISION;
-        goto end2;
+        goto end3;
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
-        ERR("find_file_in_dir_with_crc32 returned %08x\n", Status);
-        goto end2;
+        ERR("open_fileref returned %08x\n", Status);
+        goto end3;
     }
     
     Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, UserMode, (void**)&subvol_obj, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
-        goto end2;
+        goto end3;
     }
     
     subvol_fcb = subvol_obj->FsContext;
@@ -651,29 +648,27 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, crc32, &utf8, &nameus);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus);
     
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
 
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         Status = open_fileref(Vcb, &fr, &nameus, fileref, FALSE, NULL);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
         
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08x\n", Status);
             Status = STATUS_SUCCESS;
         } else {
             send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
-            
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(fr);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
         }
     }
     
 end:
     ObDereferenceObject(subvol_obj);
+    
+end3:
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
 end2:
     ExFreePool(utf8.Buffer);

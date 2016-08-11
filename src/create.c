@@ -468,8 +468,8 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
-                                             root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8) {
+static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
+                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp;
