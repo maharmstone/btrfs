@@ -1172,7 +1172,6 @@ static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
 static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
     UINT8 level;
     LIST_ENTRY* le;
-    NTSTATUS Status;
     
     for (level = 0; level <= 255; level++) {
         BOOL nothing_found = TRUE;
@@ -1193,46 +1192,6 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
                         TRACE("adding tree %p (level %x)\n", t->parent, t->header.level);
                         
                     t->parent->write = TRUE;
-                } else if (t->root != Vcb->chunk_root && t->root != Vcb->root_root) {
-                    KEY searchkey;
-                    traverse_ptr tp;
-                    
-                    searchkey.obj_id = t->root->id;
-                    searchkey.obj_type = TYPE_ROOT_ITEM;
-                    searchkey.offset = 0xffffffffffffffff;
-                    
-                    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("error - find_item returned %08x\n", Status);
-                        return Status;
-                    }
-                    
-                    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                        ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
-                        return STATUS_INTERNAL_ERROR;
-                    }
-                    
-                    if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, create new entry with new bits zeroed
-                        ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
-                        if (!ri) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        if (tp.item->size > 0)
-                            RtlCopyMemory(ri, tp.item->data, tp.item->size);
-                        
-                        RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
-                        
-                        delete_tree_item(Vcb, &tp, rollback);
-                        
-                        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
-                            ERR("insert_tree_item failed\n");
-                            return STATUS_INTERNAL_ERROR;
-                        }
-                    } else {
-                        tp.tree->write = TRUE;
-                    }
                 }
             }
             
@@ -1247,34 +1206,10 @@ static NTSTATUS add_parents(device_extension* Vcb, LIST_ENTRY* rollback) {
 }
 
 static void add_parents_to_cache(device_extension* Vcb, tree* t) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    
     while (t->parent) {
         t = t->parent;
         t->write = TRUE;
     }
-    
-    if (t->root == Vcb->root_root || t->root == Vcb->chunk_root)
-        return;
-    
-    searchkey.obj_id = t->root->id;
-    searchkey.obj_type = TYPE_ROOT_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
-        return;
-    }
-    
-    tp.tree->write = TRUE;
 }
 
 static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
@@ -1821,6 +1756,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                     ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+                    int3;
                     return STATUS_INTERNAL_ERROR;
                 }
                 
@@ -5113,6 +5049,63 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
     }
 }
 
+static NTSTATUS add_root_items_to_cache(device_extension* Vcb, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    le = Vcb->trees.Flink;
+    while (le != &Vcb->trees) {
+        tree* t = CONTAINING_RECORD(le, tree, list_entry);
+        
+        if (t->write && t->root != Vcb->chunk_root && t->root != Vcb->root_root) {
+            KEY searchkey;
+            traverse_ptr tp;
+            
+            searchkey.obj_id = t->root->id;
+            searchkey.obj_type = TYPE_ROOT_ITEM;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+                int3;
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, create new entry with new bits zeroed
+                ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+                if (!ri) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                if (tp.item->size > 0)
+                    RtlCopyMemory(ri, tp.item->data, tp.item->size);
+                
+                RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
+                
+                delete_tree_item(Vcb, &tp, rollback);
+                
+                if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            } else {
+                tp.tree->write = TRUE;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -5198,6 +5191,12 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         }
         
         Vcb->root_root->treeholder.tree->write = TRUE;
+    }
+    
+    Status = add_root_items_to_cache(Vcb, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_root_items_to_cache returned %08x\n", Status);
+        return Status;
     }
     
     do {
