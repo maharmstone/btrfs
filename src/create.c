@@ -2221,7 +2221,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         return Status;
     }
         
-    if (Irp->Overlay.AllocationSize.QuadPart > 0) {
+    if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
         
         if (!NT_SUCCESS(Status)) {
