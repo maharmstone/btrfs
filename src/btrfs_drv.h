@@ -423,6 +423,7 @@ typedef struct {
     BOOL compress;
     BOOL compress_force;
     BOOL readonly;
+    UINT32 zlib_level;
 } mount_options;
 
 #define VCB_TYPE_VOLUME     1
@@ -638,6 +639,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 
 extern UINT32 mount_compress;
 extern UINT32 mount_compress_force;
+extern UINT32 mount_zlib_level;
 
 #ifdef _DEBUG
 

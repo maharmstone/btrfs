@@ -381,7 +381,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     c_stream.zfree = zlib_free;
     c_stream.opaque = (voidpf)0;
 
-    ret = deflateInit(&c_stream, 3);
+    ret = deflateInit(&c_stream, fcb->Vcb->options.zlib_level);
     
     if (ret != Z_OK) {
         ERR("deflateInit returned %08x\n", ret);
