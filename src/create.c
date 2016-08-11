@@ -3462,6 +3462,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         TRACE("flags: (none)\n");
     }
     
+    if (IrpSp->Flags & SL_OPEN_PAGING_FILE) { // FIXME - implement this
+        Status = STATUS_NOT_SUPPORTED;
+        goto exit;
+    }
+    
 //     Vpb = DeviceObject->DeviceExtension;
     
 //     TRACE("create called for something other than FS device object\n");
