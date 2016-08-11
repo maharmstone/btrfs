@@ -824,6 +824,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
                 ERR("insert_tree_item failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
+            
+            *changed = TRUE;
         } else {        
             if (tp.item->size < sizeof(INODE_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
