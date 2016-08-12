@@ -66,6 +66,10 @@ public:
         empty = FALSE;
         can_change_perms = FALSE;
         can_change_owner = FALSE;
+        
+        sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
+        totalsize = 0;
+        
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -123,5 +127,5 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     BOOL flags_changed, perms_changed, uid_changed, gid_changed;
-    WCHAR size_on_disk[1024];
+    UINT64 sizes[4], totalsize;
 };

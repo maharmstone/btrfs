@@ -28,6 +28,8 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 
 extern HMODULE module;
 
+static void format_size(UINT64 size, WCHAR* s, ULONG len);
+
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this); 
@@ -265,7 +267,11 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk); // FIXME
+    WCHAR size_on_disk[1024];
+    
+    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR));
+    
+    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk);
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
@@ -593,78 +599,69 @@ typedef struct {
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     PROPSHEETPAGE psp;
     HPROPSHEETPAGE hPage;
-    UINT64 totalsize;
-    ULONG num_lines;
     int i;
-    WCHAR format[255], size[255], t[255];
+//     WCHAR format[255], size[255], t[255];
     
     if (ignore)
         return S_OK;
     
-    num_lines = 0;
-    size_on_disk[0] = 0;
     totalsize = 0;
     
     if (bii.inline_length > 0) {
         totalsize += bii.inline_length;
-        format_size(bii.inline_length, size, sizeof(size) / sizeof(WCHAR));
+        sizes[0] += bii.inline_length;
         
-        if (!LoadStringW(module, IDS_SIZE_INLINE, format, sizeof(format) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
-        }
-        
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-        }
-        
-        wcscpy(size_on_disk, t);
-        
-        num_lines++;
+//         format_size(bii.inline_length, size, sizeof(size) / sizeof(WCHAR));
+//         
+//         if (!LoadStringW(module, IDS_SIZE_INLINE, format, sizeof(format) / sizeof(WCHAR))) {
+//             ShowError(NULL, GetLastError());
+//         }
+//         
+//         if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+//             ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+//         }
+//         
+//         wcscpy(size_on_disk, t);
     }
     
     for (i = 0; i < 3; i++) {
         if (bii.disk_size[i] > 0) {
             totalsize += bii.disk_size[i];
-            format_size(bii.disk_size[i], size, sizeof(size) / sizeof(WCHAR));
+            sizes[i + 1] += bii.disk_size[i];
             
-            if (!LoadStringW(module, i == 0 ? IDS_SIZE_UNCOMPRESSED : (i == 1 ? IDS_SIZE_ZLIB : IDS_SIZE_LZO), format, sizeof(format) / sizeof(WCHAR))) {
-                ShowError(NULL, GetLastError());
-            }
-            
-            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-                ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            }
-            
-            if (size_on_disk[0] != 0)
-                wcscat(size_on_disk, L"\n");
-            
-            wcscat(size_on_disk, t);
-            
-            num_lines++;
+//             format_size(bii.disk_size[i], size, sizeof(size) / sizeof(WCHAR));
+//             
+//             if (!LoadStringW(module, i == 0 ? IDS_SIZE_UNCOMPRESSED : (i == 1 ? IDS_SIZE_ZLIB : IDS_SIZE_LZO), format, sizeof(format) / sizeof(WCHAR))) {
+//                 ShowError(NULL, GetLastError());
+//             }
+//             
+//             if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+//                 ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+//             }
+//             
+//             if (size_on_disk[0] != 0)
+//                 wcscat(size_on_disk, L"\n");
+//             
+//             wcscat(size_on_disk, t);
         }
     }
     
-    if (num_lines > 1) {
-        format_size(totalsize, size, sizeof(size) / sizeof(WCHAR));
-        
-        if (!LoadStringW(module, IDS_SIZE_TOTAL, format, sizeof(format) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
-        }
-        
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-        }
-        
-        if (size_on_disk[0] != 0)
-            wcscat(size_on_disk, L"\n");
-        
-        wcscat(size_on_disk, t);
-        
-        num_lines++;
-    }
-    
-    if (num_lines == 0)
-        num_lines = 1;
+//     if (num_lines > 1) {
+//         format_size(totalsize, size, sizeof(size) / sizeof(WCHAR));
+//         
+//         if (!LoadStringW(module, IDS_SIZE_TOTAL, format, sizeof(format) / sizeof(WCHAR))) {
+//             ShowError(NULL, GetLastError());
+//         }
+//         
+//         if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+//             ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+//         }
+//         
+//         if (size_on_disk[0] != 0)
+//             wcscat(size_on_disk, L"\n");
+//         
+//         wcscat(size_on_disk, t);
+//     }
     
     psp.dwSize = sizeof(psp);
     psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
