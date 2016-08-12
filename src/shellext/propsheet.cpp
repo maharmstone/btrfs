@@ -264,71 +264,8 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     }
 }
 
-typedef struct {
-    ULONG delta;
-    ULONG top;
-} resize_params;
-
-static BOOL CALLBACK resize_callback(HWND hwnd, LPARAM lParam) {
-    resize_params* rp = (resize_params*)lParam;
-    RECT r;
-    
-    GetWindowRect(hwnd, &r);
-    
-    if (r.top > rp->top) {
-        POINT pt;
-        
-        pt.x = r.left;
-        pt.y = r.top + rp->delta;
-        
-        ScreenToClient(GetParent(hwnd), &pt);
-
-        SetWindowPos(hwnd, NULL, pt.x, pt.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-    }
-    
-    return TRUE;
-}
-
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    HWND hc;
-    HDC hDC;
-    HFONT font, oldfont;
-    RECT origrect, r;
-    
-    hc = GetDlgItem(hwndDlg, IDC_SIZE_ON_DISK);
-    hDC = GetDC(hc);
-    
-    GetWindowRect(hc, &origrect);
-    
-    font = (HFONT)SendMessageW(hc, WM_GETFONT, 0, 0);
-    
-    if (font)
-        oldfont = (HFONT)SelectObject(hDC, font);
-        
-    r = origrect;
-    DrawTextW(hDC, size_on_disk, -1, &r, DT_CALCRECT);
-    
-    if (font)
-        SelectObject(hDC, oldfont);
-    
-    ReleaseDC(hc, hDC);
-    
-    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk);
-    
-    SetWindowPos(hc, NULL, 0, 0, origrect.right - origrect.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
-    
-    if (r.bottom - r.top > origrect.bottom - origrect.top) {
-        ULONG delta = (r.bottom - r.top) - (origrect.bottom - origrect.top);
-        resize_params rp;
-        
-        rp.delta = delta;
-        rp.top = r.top;
-        
-        EnumChildWindows(hwndDlg, resize_callback, (LPARAM)&rp);
-        
-        GetWindowRect(GetDlgItem(hwndDlg, IDC_GROUP_INFORMATION), &r);
-        SetWindowPos(GetDlgItem(hwndDlg, IDC_GROUP_INFORMATION), NULL, 0, 0, r.right - r.left, r.bottom - r.top + delta, SWP_NOMOVE | SWP_NOZORDER);
-    }
+    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk); // FIXME
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
@@ -656,18 +593,10 @@ typedef struct {
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     PROPSHEETPAGE psp;
     HPROPSHEETPAGE hPage;
-    HRSRC res;
-    HGLOBAL dlg;
-    DLGTEMPLATEEX_HEAD* dt;
-    DWORD dlgsize;
     UINT64 totalsize;
     ULONG num_lines;
     int i;
     WCHAR format[255], size[255], t[255];
-    
-    // This is jiggerypokery. The "size on disk" field has a variable height, but the height
-    // of a property sheet is determined when it is created. We have to load the dialog resource
-    // into memory and adjust its height manually.
     
     if (ignore)
         return S_OK;
@@ -737,24 +666,10 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     if (num_lines == 0)
         num_lines = 1;
     
-    res = FindResource(module, MAKEINTRESOURCE(IDD_PROP_SHEET), RT_DIALOG);
-    
-    dlg = LoadResource(module, res);
-    
-    dlgsize = SizeofResource(module, res);
-    
-    dt = (DLGTEMPLATEEX_HEAD*)malloc(dlgsize);
-    memcpy(dt, LockResource(dlg), dlgsize); // FIXME - free this eventually
-    
-    // 8 is the height of the statics in shellbtrfs.rc.
-    // This is in "dialog box units", rather than pixels, so it shouldn't matter.
-    dt->cy += (num_lines - 1) * 8;
-    
     psp.dwSize = sizeof(psp);
-    psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE | PSP_DLGINDIRECT;
+    psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
     psp.hInstance = module;
-//     psp.pszTemplate = MAKEINTRESOURCE(IDD_PROP_SHEET);
-    psp.pResource = (DLGTEMPLATE*)dt;
+    psp.pszTemplate = MAKEINTRESOURCE(IDD_PROP_SHEET);
     psp.hIcon = 0;
     psp.pszTitle = MAKEINTRESOURCE(IDS_PROP_SHEET_TITLE);
     psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
