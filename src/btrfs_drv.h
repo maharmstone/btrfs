@@ -425,6 +425,7 @@ typedef struct {
     BOOL readonly;
     UINT32 zlib_level;
     UINT32 flush_interval;
+    UINT32 max_inline;
 } mount_options;
 
 #define VCB_TYPE_VOLUME     1
@@ -468,7 +469,6 @@ typedef struct _device_extension {
     root* dev_root;
     root* uuid_root;
     BOOL log_to_phys_loaded;
-    UINT32 max_inline;
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
     LIST_ENTRY chunks_changed;
@@ -642,6 +642,7 @@ extern UINT32 mount_compress;
 extern UINT32 mount_compress_force;
 extern UINT32 mount_zlib_level;
 extern UINT32 mount_flush_interval;
+extern UINT32 mount_max_inline;
 
 #ifdef _DEBUG
 
@@ -852,7 +853,7 @@ void do_write_job(device_extension* Vcb, PIRP Irp);
 void STDCALL read_registry(PUNICODE_STRING regpath);
 NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid);
 NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid);
-NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options);
+NTSTATUS registry_load_volume_options(device_extension* Vcb);
 
 // in compress.c
 NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);

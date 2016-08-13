@@ -6772,7 +6772,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
             oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes);
             cur_inline = ed->type == EXTENT_TYPE_INLINE;
         
-            if (cur_inline && end > fcb->Vcb->max_inline) {
+            if (cur_inline && end > fcb->Vcb->options.max_inline) {
                 LIST_ENTRY changed_sector_list;
                 BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
                 UINT64 origlength, length;
@@ -6888,7 +6888,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             }
         } else {
-            if (end > fcb->Vcb->max_inline) {
+            if (end > fcb->Vcb->options.max_inline) {
                 newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
             
                 if (prealloc) {
@@ -7811,7 +7811,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
     }
     
-    make_inline = fcb->ads ? FALSE : newlength <= fcb->Vcb->max_inline;
+    make_inline = fcb->ads ? FALSE : newlength <= fcb->Vcb->options.max_inline;
     
     if (changed_length) {
         if (newlength > fcb->Header.AllocationSize.QuadPart) {

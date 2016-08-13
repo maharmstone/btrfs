@@ -6,8 +6,10 @@ static WCHAR option_mounted[] = L"Mounted";
 
 #define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
 
-NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) {
-    UNICODE_STRING path, ignoreus, compressus, compressforceus, readonlyus, zliblevelus, flushintervalus;
+NTSTATUS registry_load_volume_options(device_extension* Vcb) {
+    BTRFS_UUID* uuid = &Vcb->superblock.uuid;
+    mount_options* options = &Vcb->options;
+    UNICODE_STRING path, ignoreus, compressus, compressforceus, readonlyus, zliblevelus, flushintervalus, maxinlineus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -19,6 +21,7 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     options->readonly = FALSE;
     options->zlib_level = mount_zlib_level;
     options->flush_interval = mount_flush_interval;
+    options->max_inline = min(mount_max_inline, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
     
     path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
     path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
@@ -73,6 +76,7 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     RtlInitUnicodeString(&readonlyus, L"Readonly");
     RtlInitUnicodeString(&zliblevelus, L"ZlibLevel");
     RtlInitUnicodeString(&flushintervalus, L"FlushInterval");
+    RtlInitUnicodeString(&maxinlineus, L"MaxInline");
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -109,6 +113,10 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->flush_interval = *val;
+            } else if (FsRtlAreNamesEqual(&maxinlineus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->max_inline = min(*val, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);
@@ -589,6 +597,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     get_registry_value(h, L"CompressForce", REG_DWORD, &mount_compress_force, sizeof(mount_compress_force));
     get_registry_value(h, L"ZlibLevel", REG_DWORD, &mount_zlib_level, sizeof(mount_zlib_level));
     get_registry_value(h, L"FlushInterval", REG_DWORD, &mount_flush_interval, sizeof(mount_flush_interval));
+    get_registry_value(h, L"MaxInline", REG_DWORD, &mount_max_inline, sizeof(mount_max_inline));
     
     if (mount_flush_interval == 0)
         mount_flush_interval = 1;

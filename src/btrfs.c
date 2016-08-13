@@ -50,6 +50,7 @@ UINT32 mount_compress = 0;
 UINT32 mount_compress_force = 0;
 UINT32 mount_zlib_level = 3;
 UINT32 mount_flush_interval = 30;
+UINT32 mount_max_inline = 2048;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 
@@ -3531,7 +3532,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         TRACE("btrfs magic found\n");
     }
     
-    Status = registry_load_volume_options(&Vcb->superblock.uuid, &Vcb->options);
+    Status = registry_load_volume_options(Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("registry_load_volume_options returned %08x\n", Status);
         goto exit;
@@ -3602,8 +3603,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->log_to_phys_loaded = FALSE;
     
-    Vcb->max_inline = Vcb->superblock.node_size / 2;
-
     add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, NULL);
     
     if (!Vcb->chunk_root) {
