@@ -1,3 +1,5 @@
+// No copyright claimed in this file - do what you want with it.
+
 #ifndef BTRFSIOCTL_H_DEFINED
 #define BTRFSIOCTL_H_DEFINED
 
