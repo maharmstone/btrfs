@@ -901,7 +901,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
         rootfcb->inode_item.st_uid = UID_NOBODY;
     } else {
-        rootfcb->inode_item.st_uid = sid_to_uid(&owner);
+        rootfcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
     rootfcb->sd_dirty = TRUE;
