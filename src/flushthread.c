@@ -17,8 +17,6 @@
 
 #include "btrfs_drv.h"
 
-#define INTERVAL 15000 // in milliseconds
-
 static void do_flush(device_extension* Vcb) {
     LIST_ENTRY rollback;
     
@@ -49,7 +47,7 @@ void STDCALL flush_thread(void* context) {
     
     KeInitializeTimer(&Vcb->flush_thread_timer);
     
-    due_time.QuadPart = -INTERVAL * 10000;
+    due_time.QuadPart = (UINT64)Vcb->options.flush_interval * -10000000;
     
     KeSetTimer(&Vcb->flush_thread_timer, due_time, NULL);
     

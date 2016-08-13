@@ -7,7 +7,7 @@ static WCHAR option_mounted[] = L"Mounted";
 #define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
 
 NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) {
-    UNICODE_STRING path, ignoreus, compressus, compressforceus, readonlyus, zliblevelus;
+    UNICODE_STRING path, ignoreus, compressus, compressforceus, readonlyus, zliblevelus, flushintervalus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -18,6 +18,7 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     options->compress_force = mount_compress_force;
     options->readonly = FALSE;
     options->zlib_level = mount_zlib_level;
+    options->flush_interval = mount_flush_interval;
     
     path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
     path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
@@ -71,6 +72,7 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     RtlInitUnicodeString(&compressforceus, L"CompressForce");
     RtlInitUnicodeString(&readonlyus, L"Readonly");
     RtlInitUnicodeString(&zliblevelus, L"ZlibLevel");
+    RtlInitUnicodeString(&flushintervalus, L"FlushInterval");
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -103,6 +105,10 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->zlib_level = *val;
+            } else if (FsRtlAreNamesEqual(&flushintervalus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->flush_interval = *val;
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);
@@ -115,6 +121,9 @@ NTSTATUS registry_load_volume_options(BTRFS_UUID* uuid, mount_options* options) 
     
     if (options->zlib_level > 9)
         options->zlib_level = 9;
+    
+    if (options->flush_interval == 0)
+        options->flush_interval = mount_flush_interval;
 
     Status = STATUS_SUCCESS;
     
@@ -579,6 +588,10 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     get_registry_value(h, L"Compress", REG_DWORD, &mount_compress, sizeof(mount_compress));
     get_registry_value(h, L"CompressForce", REG_DWORD, &mount_compress_force, sizeof(mount_compress_force));
     get_registry_value(h, L"ZlibLevel", REG_DWORD, &mount_zlib_level, sizeof(mount_zlib_level));
+    get_registry_value(h, L"FlushInterval", REG_DWORD, &mount_flush_interval, sizeof(mount_flush_interval));
+    
+    if (mount_flush_interval == 0)
+        mount_flush_interval = 1;
     
 #ifdef _DEBUG
     get_registry_value(h, L"DebugLogLevel", REG_DWORD, &debug_log_level, sizeof(debug_log_level));

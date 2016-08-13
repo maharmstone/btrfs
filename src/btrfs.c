@@ -49,6 +49,7 @@ UINT32 debug_log_level = 0;
 UINT32 mount_compress = 0;
 UINT32 mount_compress_force = 0;
 UINT32 mount_zlib_level = 3;
+UINT32 mount_flush_interval = 30;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 
