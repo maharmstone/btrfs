@@ -164,7 +164,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    UINT num_files;
+    UINT num_files, i;
     WCHAR fn[MAX_PATH];
     HDROP hdrop;
     
@@ -192,61 +192,78 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
     
-    if (num_files > 1)
-        return E_FAIL; // FIXME - make this work with multiple files
-
-    if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-        
-        if (h != INVALID_HANDLE_VALUE)
-            can_change_perms = TRUE;
-        else
-            CloseHandle(h);
-        
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-        
-        if (h != INVALID_HANDLE_VALUE)
-            can_change_owner = TRUE;
-        else
-            CloseHandle(h);
-        
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-        if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
-                            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    for (i = 0; i < num_files; i++) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
             
-            readonly = TRUE;
-        }
-        
-        if (h != INVALID_HANDLE_VALUE) {
-            BY_HANDLE_FILE_INFORMATION bhfi;
-            
-            if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                add_to_search_list(fn);
-            
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
-                
-            if (Status == STATUS_SUCCESS && !bii.top) {
-                LARGE_INTEGER filesize;
-                
-                ignore = FALSE;
-                
-                if (bii.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize))
-                    empty = filesize.QuadPart == 0;
-                
+            if (h != INVALID_HANDLE_VALUE)
+                can_change_perms = TRUE;
+            else
                 CloseHandle(h);
-            } else {
+            
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+            
+            if (h != INVALID_HANDLE_VALUE)
+                can_change_owner = TRUE;
+            else
                 CloseHandle(h);
-                return E_FAIL;
+            
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+            if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
+                h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+                
+                readonly = TRUE;
             }
+            
+            if (h != INVALID_HANDLE_VALUE) {
+                BY_HANDLE_FILE_INFORMATION bhfi;
+                btrfs_inode_info bii2;
+                
+                if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    add_to_search_list(fn);
+                
+                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+                    
+                if (Status == STATUS_SUCCESS && !bii2.top) {
+                    int j;
+                    
+                    LARGE_INTEGER filesize;
+                    
+                    if (i == 0)
+                        memcpy(&bii, &bii2, sizeof(btrfs_inode_info)); // FIXME
+                        
+                    if (bii2.inline_length > 0) {
+                        totalsize += bii2.inline_length;
+                        sizes[0] += bii2.inline_length;
+                    }
+                    
+                    for (j = 0; j < 3; j++) {
+                        if (bii2.disk_size[j] > 0) {
+                            totalsize += bii2.disk_size[j];
+                            sizes[j + 1] += bii2.disk_size[j];
+                        }
+                    }
+                    
+                    ignore = FALSE;
+                    
+                    if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize))
+                        empty = filesize.QuadPart == 0;
+                    
+                    CloseHandle(h);
+                } else {
+                    CloseHandle(h);
+                    return E_FAIL;
+                }
+            } else
+                return E_FAIL;
         } else
             return E_FAIL;
-    } else
-        return E_FAIL;
+    }
     
     if (search_list.size() > 0) {
         thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
@@ -851,20 +868,6 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     
     if (!InitCommonControlsEx(&icex)) {
         MessageBoxW(NULL, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
-    }
-    
-    totalsize = 0;
-    
-    if (bii.inline_length > 0) {
-        totalsize += bii.inline_length;
-        sizes[0] += bii.inline_length;
-    }
-    
-    for (i = 0; i < 3; i++) {
-        if (bii.disk_size[i] > 0) {
-            totalsize += bii.disk_size[i];
-            sizes[i + 1] += bii.disk_size[i];
-        }
     }
     
     psp.dwSize = sizeof(psp);
