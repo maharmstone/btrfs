@@ -145,6 +145,7 @@ public:
     BOOL empty;
     WCHAR size_format[255];
     HANDLE thread;
+    UINT32 min_mode, max_mode;
     
 private:
     LONG refcount;

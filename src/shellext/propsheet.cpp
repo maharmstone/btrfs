@@ -192,6 +192,9 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
     
+    min_mode = 0;
+    max_mode = 0;
+    
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
             h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -249,6 +252,9 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                         }
                     }
                     
+                    min_mode |= ~bii2.st_mode;
+                    max_mode |= bii2.st_mode;
+                    
                     ignore = FALSE;
                     
                     if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize))
@@ -264,6 +270,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         } else
             return E_FAIL;
     }
+    
+    min_mode = ~min_mode;
     
     if (search_list.size() > 0) {
         thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
@@ -519,6 +527,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             BtrfsPropSheet* bps = (BtrfsPropSheet*)psp->lParam;
             WCHAR s[255];
             ULONG sr;
+            int i;
+            
+            static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX, 0 };
+            static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, 0 };
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
@@ -574,15 +586,25 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             SendDlgItemMessage(hwndDlg, IDC_NODATACOW, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_NODATACOW ? BST_CHECKED : BST_UNCHECKED, 0);
             SendDlgItemMessage(hwndDlg, IDC_COMPRESS, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_COMPRESS ? BST_CHECKED : BST_UNCHECKED, 0);
             
-            SendDlgItemMessage(hwndDlg, IDC_USERR, BM_SETCHECK, bps->bii.st_mode & S_IRUSR ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_USERW, BM_SETCHECK, bps->bii.st_mode & S_IWUSR ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_USERX, BM_SETCHECK, bps->bii.st_mode & S_IXUSR ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_GROUPR, BM_SETCHECK, bps->bii.st_mode & S_IRGRP ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_GROUPW, BM_SETCHECK, bps->bii.st_mode & S_IWGRP ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_GROUPX, BM_SETCHECK, bps->bii.st_mode & S_IXGRP ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_OTHERR, BM_SETCHECK, bps->bii.st_mode & S_IROTH ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_OTHERW, BM_SETCHECK, bps->bii.st_mode & S_IWOTH ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_OTHERX, BM_SETCHECK, bps->bii.st_mode & S_IXOTH ? BST_CHECKED : BST_UNCHECKED, 0);
+            i = 0;
+            while (perm_controls[i] != 0) {
+                if (bps->min_mode & perms[i] && bps->max_mode & perms[i]) {
+                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_CHECKED, 0);
+                } else if (!(bps->min_mode & perms[i]) && !(bps->max_mode & perms[i])) {
+                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_UNCHECKED, 0);
+                } else {
+                    LONG_PTR style;
+                    
+                    style = GetWindowLongPtr(GetDlgItem(hwndDlg, perm_controls[i]), GWL_STYLE);
+                    style &= ~BS_AUTOCHECKBOX;
+                    style |= BS_AUTO3STATE;
+                    SetWindowLongPtr(GetDlgItem(hwndDlg, perm_controls[i]), GWL_STYLE, style);
+                    
+                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_INDETERMINATE, 0);
+                }
+                
+                i++;
+            }
             
             if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
                 return FALSE;
@@ -857,7 +879,6 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     PROPSHEETPAGE psp;
     HPROPSHEETPAGE hPage;
-    int i;
     INITCOMMONCONTROLSEX icex;
     
     if (ignore)
