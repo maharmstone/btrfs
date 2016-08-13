@@ -3154,6 +3154,49 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
+        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
+            fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
+            Status = STATUS_CANNOT_DELETE;
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fileref(fileref);
+            ExReleaseResource(&Vcb->fcb_lock);
+            goto exit;
+        }
+        
+        if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
+            REPARSE_DATA_BUFFER* data;
+            
+            /* How reparse points work from the point of view of the filesystem appears to
+             * undocumented. When returning STATUS_REPARSE, MSDN encourages us to return
+             * IO_REPARSE in Irp->IoStatus.Information, but that means we have to do our own
+             * translation. If we instead return the reparse tag in Information, and store
+             * a pointer to the reparse data buffer in Irp->Tail.Overlay.AuxiliaryBuffer,
+             * IopSymlinkProcessReparse will do the translation for us. */
+            
+            Status = get_reparse_block(fileref->fcb, (UINT8**)&data);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_reparse_block returned %08x\n", Status);
+                
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+                goto exit;
+            }
+            
+            Status = STATUS_REPARSE;
+            Irp->IoStatus.Information = data->ReparseTag;
+            
+            if (FileObject->FileName.Buffer[(FileObject->FileName.Length / sizeof(WCHAR)) - 1] == '\\')
+                data->Reserved = sizeof(WCHAR);
+            
+            Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fileref(fileref);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            goto exit;
+        }
+        
         if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(fileref);
@@ -3169,47 +3212,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             Status = STATUS_NOT_A_DIRECTORY;
-            goto exit;
-        }
-        
-        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
-            fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
-            Status = STATUS_CANNOT_DELETE;
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResource(&Vcb->fcb_lock);
-            goto exit;
-        }
-        
-        
-        if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
-            UINT8* data;
-            
-            /* How reparse points work from the point of view of the filesystem appears to
-             * undocumented. When returning STATUS_REPARSE, MSDN encourages us to return
-             * IO_REPARSE in Irp->IoStatus.Information, but that means we have to do our own
-             * translation. If we instead return the reparse tag in Information, and store
-             * a pointer to the reparse data buffer in Irp->Tail.Overlay.AuxiliaryBuffer,
-             * IopSymlinkProcessReparse will do the translation for us. */
-            
-            Status = get_reparse_block(fileref->fcb, &data);
-            if (!NT_SUCCESS(Status)) {
-                ERR("get_reparse_block returned %08x\n", Status);
-                
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-                goto exit;
-            }
-            
-            Status = STATUS_REPARSE;
-            RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
-            
-            Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
-            
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
             goto exit;
         }
         
