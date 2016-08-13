@@ -32,7 +32,7 @@ typedef struct {
     enum DirEntryType dir_entry_type;
 } dir_entry;
 
-static ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts) {
+ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts) {
     fcb* fcb;
     ULONG tag = 0, br;
     NTSTATUS Status;

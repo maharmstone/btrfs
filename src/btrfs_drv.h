@@ -768,6 +768,7 @@ NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* da
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts);
 
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);

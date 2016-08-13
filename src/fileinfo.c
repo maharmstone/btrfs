@@ -2941,7 +2941,10 @@ static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_IN
     } else
         ati->FileAttributes = fcb->atts;
     
-    ati->ReparseTag = 0; // FIXME
+    if (!(ati->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        ati->ReparseTag = 0;
+    else
+        ati->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts);
     
     return STATUS_SUCCESS;
 }
