@@ -1835,19 +1835,19 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     fcb* fcb;
                     ULONG strlen;
                     
-                    if (type != BTRFS_TYPE_DIRECTORY && !lastpart) {
-                        WARN("passed path including file as subdirectory\n");
-                        
-                        Status = STATUS_OBJECT_PATH_NOT_FOUND;
-                        goto end;
-                    }
-                    
                     Status = open_fcb(Vcb, subvol, inode, type, &utf8, sf->fcb, &fcb);
                     if (!NT_SUCCESS(Status)) {
                         ERR("open_fcb returned %08x\n", Status);
                         goto end;
                     }
                     
+                    if (type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                        WARN("passed path including file as subdirectory\n");
+                        free_fcb(fcb);
+                        Status = STATUS_OBJECT_PATH_NOT_FOUND;
+                        goto end;
+                    }
+
                     sf2 = create_fileref();
                     if (!sf2) {
                         ERR("out of memory\n");
