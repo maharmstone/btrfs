@@ -3197,14 +3197,16 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (options & FILE_NON_DIRECTORY_FILE && fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-            
-            Status = STATUS_FILE_IS_A_DIRECTORY;
-            goto exit;
-        } else if (options & FILE_DIRECTORY_FILE && fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+        if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && !(fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            if (options & FILE_NON_DIRECTORY_FILE) {
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+                
+                Status = STATUS_FILE_IS_A_DIRECTORY;
+                goto exit;
+            }
+        } else if (options & FILE_DIRECTORY_FILE) {
             TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u, %S)\n", fileref->fcb->type, file_desc_fileref(fileref));
             
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
