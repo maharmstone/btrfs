@@ -1725,12 +1725,12 @@ void mark_fileref_dirty(file_ref* fileref) {
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {
     LONG rc;
 
-#ifdef DEBUG    
-    if (!ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->tree_lock)) {
-        ERR("fcb_lock not acquired exclusively\n");
-        int3;
-    }
-#endif
+// #ifdef DEBUG    
+//     if (!ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->tree_lock)) {
+//         ERR("fcb_lock not acquired exclusively\n");
+//         int3;
+//     }
+// #endif
 
     rc = InterlockedDecrement(&fcb->refcount);
     
