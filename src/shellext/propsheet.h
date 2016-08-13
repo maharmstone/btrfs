@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <shlobj.h>
+#include <deque>
 #include "../btrfsioctl.h"
 
 #ifndef S_IRUSR
@@ -83,6 +84,7 @@ public:
         empty = FALSE;
         can_change_perms = FALSE;
         can_change_owner = FALSE;
+        thread = NULL;
         
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
         totalsize = 0;
@@ -131,6 +133,9 @@ public:
     void change_gid(HWND hDlg, UINT32 gid);
     void apply_changes(HWND hDlg);
     void set_size_on_disk(HWND hwndDlg);
+    void add_to_search_list(WCHAR* fn);
+    DWORD search_list_thread();
+    void do_search(WCHAR* fn);
  
     btrfs_inode_info bii;
     BOOL readonly;
@@ -138,6 +143,7 @@ public:
     BOOL can_change_owner;
     BOOL empty;
     WCHAR size_format[255];
+    HANDLE thread;
     
 private:
     LONG refcount;
@@ -146,4 +152,5 @@ private:
     BOOL stgm_set;
     BOOL flags_changed, perms_changed, uid_changed, gid_changed;
     UINT64 sizes[4], totalsize;
+    std::deque<WCHAR*> search_list;
 };

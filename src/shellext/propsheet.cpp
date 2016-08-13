@@ -48,6 +48,7 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 extern HMODULE module;
 
 static void format_size(UINT64 size, WCHAR* s, ULONG len);
+static void ShowError(HWND hwnd, ULONG err);
 
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
@@ -62,6 +63,96 @@ HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
 
     *ppObj = NULL;
     return E_NOINTERFACE;
+}
+
+void BtrfsPropSheet::add_to_search_list(WCHAR* fn) {
+    WCHAR* s;
+    
+    s = (WCHAR*)malloc((wcslen(fn) + 1) * sizeof(WCHAR));
+    if (!s)
+        return;
+    
+    memcpy(s, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
+    
+    search_list.push_back(s);
+}
+
+void BtrfsPropSheet::do_search(WCHAR* fn) {
+    HANDLE h;
+    WCHAR* ss;
+    WIN32_FIND_DATAW ffd;
+    
+    ss = (WCHAR*)malloc((wcslen(fn) + 3) * sizeof(WCHAR));
+    if (!ss)
+        return;
+    
+    memcpy(ss, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
+    wcscat(ss, L"\\*");
+    
+    h = FindFirstFileW(ss, &ffd);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    
+    do {
+        if (ffd.cFileName[0] != '.' || ((ffd.cFileName[1] != 0) && (ffd.cFileName[1] != '.' || ffd.cFileName[2] != 0))) {
+            WCHAR* fn2 = (WCHAR*)malloc((wcslen(fn) + 1 + wcslen(ffd.cFileName) + 1) * sizeof(WCHAR));
+                
+            memcpy(fn2, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
+            wcscat(fn2, L"\\");
+            wcscat(fn2, ffd.cFileName);
+            
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                add_to_search_list(fn2);
+            } else {
+                HANDLE fh;
+                
+                fh = CreateFileW(fn2, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                
+                if (fh != INVALID_HANDLE_VALUE) {
+                    NTSTATUS Status;
+                    IO_STATUS_BLOCK iosb;
+                    btrfs_inode_info bii2;
+                    
+                    Status = NtFsControlFile(fh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+                
+                    if (Status == STATUS_SUCCESS) {
+                        sizes[0] += bii2.inline_length;
+                        sizes[1] += bii2.disk_size[0];
+                        sizes[2] += bii2.disk_size[1];
+                        sizes[3] += bii2.disk_size[2];
+                        totalsize += bii2.inline_length + bii2.disk_size[0] + bii2.disk_size[1] + bii2.disk_size[2];
+                    }
+                    
+                    CloseHandle(fh);
+                }
+                
+                free(fn2);
+            }
+        }
+    } while (FindNextFile(h, &ffd));
+    
+    FindClose(h);
+}
+
+DWORD BtrfsPropSheet::search_list_thread() {
+    while (!search_list.empty()) {
+        WCHAR* fn = search_list.front();
+        
+        do_search(fn);
+        
+        search_list.pop_front();
+        free(fn);
+    }
+    
+    thread = NULL;
+    
+    return 0;
+}
+
+static DWORD WINAPI global_search_list_thread(LPVOID lpParameter) {
+    BtrfsPropSheet* bps = (BtrfsPropSheet*)lpParameter;
+    
+    return bps->search_list_thread();
 }
 
 HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
@@ -125,8 +216,13 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
             
             readonly = TRUE;
         }
-
+        
         if (h != INVALID_HANDLE_VALUE) {
+            BY_HANDLE_FILE_INFORMATION bhfi;
+            
+            if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                add_to_search_list(fn);
+            
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
                 
             if (Status == STATUS_SUCCESS && !bii.top) {
@@ -138,14 +234,23 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     empty = filesize.QuadPart == 0;
                 
                 CloseHandle(h);
-                return S_OK;
+            } else {
+                CloseHandle(h);
+                return E_FAIL;
             }
-            
-            CloseHandle(h);
-        }
+        } else
+            return E_FAIL;
+    } else
+        return E_FAIL;
+    
+    if (search_list.size() > 0) {
+        thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
+        
+        if (!thread)
+            ShowError(NULL, GetLastError());
     }
 
-    return E_FAIL;
+    return S_OK;
 }
 
 static ULONG inode_type_to_string_ref(UINT8 type) {
@@ -286,7 +391,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    WCHAR size_on_disk[1024], s[1024];
+    WCHAR size_on_disk[1024], s[1024], old_text[1024];
     
     format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR));
     
@@ -295,7 +400,10 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
         return;
     }
     
-    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s);
+    GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, old_text, sizeof(old_text) / sizeof(WCHAR));
+    
+    if (wcscmp(s, old_text))
+        SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s);
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
@@ -335,6 +443,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             ULONG sr;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
             
             if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->bii.subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
                 return FALSE;
@@ -379,6 +489,9 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, bps->size_format, sizeof(bps->size_format) / sizeof(WCHAR));
             bps->set_size_on_disk(hwndDlg);
+            
+            if (bps->thread)
+                SetTimer(hwndDlg, 1, 250, NULL);
             
             SendDlgItemMessage(hwndDlg, IDC_NODATACOW, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_NODATACOW ? BST_CHECKED : BST_UNCHECKED, 0);
             SendDlgItemMessage(hwndDlg, IDC_COMPRESS, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_COMPRESS ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -427,8 +540,6 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
                 EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
             }
-            
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
             
             return FALSE;
         }
@@ -529,6 +640,20 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     break;
                 }
             }
+        }
+        
+        case WM_TIMER:
+        {
+            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            
+            if (bps) {
+                bps->set_size_on_disk(hwndDlg);
+                
+                if (!bps->thread)
+                    KillTimer(hwndDlg, 1);
+            }
+            
+            break;
         }
     }
     
