@@ -18,6 +18,8 @@
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+
+#define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
 
 #include "contextmenu.h"

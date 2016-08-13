@@ -16,10 +16,13 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #define ISOLATION_AWARE_ENABLED 1
+#define STRSAFE_NO_DEPRECATE
 
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+
+#define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
 #include <uxtheme.h>
 
@@ -130,7 +133,7 @@ void BtrfsPropSheet::do_search(WCHAR* fn) {
                 free(fn2);
             }
         }
-    } while (FindNextFile(h, &ffd));
+    } while (FindNextFileW(h, &ffd));
     
     FindClose(h);
 }
@@ -734,7 +737,7 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
     WCHAR kb[255];
     ULONG sr;
     float f;
-    NUMBERFMT fmt;
+    NUMBERFMTW fmt;
     WCHAR thou[4], grouping[64], *c;
     
     _i64tow(size, nb, 10);
