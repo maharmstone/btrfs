@@ -434,14 +434,17 @@ void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
 }
 
 void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
-    WCHAR size[1024];
+    WCHAR size[1024], old_text[1024];
     int i;
     ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
     
     for (i = 0; i < 4; i++) {
         format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR));
         
-        SetDlgItemTextW(hDlg, items[i], size);
+        GetDlgItemTextW(hDlg, items[i], old_text, sizeof(old_text) / sizeof(WCHAR));
+        
+        if (wcscmp(size, old_text))
+            SetDlgItemTextW(hDlg, items[i], size);
     }
 }
 
@@ -455,7 +458,8 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
             
             bps->update_size_details_dialog(hwndDlg);
             
-            // FIXME - add timer if thread running
+            if (bps->thread)
+                SetTimer(hwndDlg, 1, 250, NULL);
             
             return TRUE;
         }
@@ -466,6 +470,20 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
                 return TRUE;
             }
         break;
+        
+        case WM_TIMER:
+        {
+            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            
+            if (bps) {
+                bps->update_size_details_dialog(hwndDlg);
+                
+                if (!bps->thread)
+                    KillTimer(hwndDlg, 1);
+            }
+            
+            break;
+        }
     }
     
     return FALSE;
