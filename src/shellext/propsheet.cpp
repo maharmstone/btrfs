@@ -737,7 +737,7 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
     NUMBERFMT fmt;
     WCHAR thou[4], grouping[64], *c;
     
-    _itow(size, nb, 10);
+    _i64tow(size, nb, 10);
     
     GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
     
