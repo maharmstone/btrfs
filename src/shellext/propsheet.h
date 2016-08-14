@@ -81,7 +81,6 @@ public:
         perms_changed = FALSE;
         uid_changed = FALSE;
         gid_changed = FALSE;
-        empty = FALSE;
         can_change_perms = FALSE;
         can_change_owner = FALSE;
         thread = NULL;
@@ -143,7 +142,7 @@ public:
     BOOL readonly;
     BOOL can_change_perms;
     BOOL can_change_owner;
-    BOOL empty;
+    BOOL can_change_nocow;
     WCHAR size_format[255];
     HANDLE thread;
     UINT32 min_mode, max_mode, mode, mode_set;

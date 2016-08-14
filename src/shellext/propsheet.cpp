@@ -201,6 +201,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     
     can_change_perms = TRUE;
     can_change_owner = TRUE;
+    can_change_nocow = TRUE;
     
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -287,8 +288,10 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     
                     ignore = FALSE;
                     
-                    if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize))
-                        empty = filesize.QuadPart == 0;
+                    if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+                        if (filesize.QuadPart != 0)
+                            can_change_nocow = FALSE;
+                    }
                     
                     CloseHandle(h);
                 } else {
@@ -365,8 +368,6 @@ static void ShowError(HWND hwnd, ULONG err) {
 void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
     if (flag & BTRFS_INODE_NODATACOW)
         flag |= BTRFS_INODE_NODATASUM;
-    
-    // FIXME - only allow NODATACOW to be changed if file is empty
     
     if (state == BST_CHECKED) {
         flags |= flag;
@@ -728,7 +729,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
             
-            if (bps->type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
+            if (!bps->can_change_nocow)
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
             
             if (!bps->can_change_owner) {
