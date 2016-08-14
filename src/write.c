@@ -7674,15 +7674,35 @@ NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* da
     
     for (i = 0; i < sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE; i++) {
         UINT64 s2, e2;
+        BOOL compressed;
         
         s2 = start_data + (i * COMPRESSED_EXTENT_SIZE);
         e2 = min(s2 + COMPRESSED_EXTENT_SIZE, end_data);
         
-        Status = write_compressed_bit(fcb, s2, e2, (UINT8*)data + (i * COMPRESSED_EXTENT_SIZE), changed_sector_list, Irp, rollback);
+        Status = write_compressed_bit(fcb, s2, e2, (UINT8*)data + (i * COMPRESSED_EXTENT_SIZE), &compressed, changed_sector_list, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("write_compressed_bit returned %08x\n", Status);
             return Status;
+        }
+        
+        // If the first 128 KB of a file is incompressible, we set the nocompress flag so we don't
+        // bother with the rest of it.
+        if (s2 == 0 && e2 == COMPRESSED_EXTENT_SIZE && !compressed && !fcb->Vcb->options.compress_force) {
+            fcb->inode_item.flags |= BTRFS_INODE_NOCOMPRESS;
+            mark_fcb_dirty(fcb);
+            
+            // write subsequent data non-compressed
+            if (e2 < end_data) {
+                Status = do_write_file(fcb, e2, end_data, (UINT8*)data + e2, changed_sector_list, Irp, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write_file returned %08x\n", Status);
+                    return Status;
+                }
+            }
+            
+            return STATUS_SUCCESS;
         }
     }
     
