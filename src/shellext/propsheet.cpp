@@ -196,7 +196,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     max_mode = 0;
     min_flags = 0;
     max_flags = 0;
-    various_subvols = various_inodes = various_types = FALSE;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = FALSE;
     
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -246,6 +246,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                         subvol = bii2.subvol;
                         inode = bii2.inode;
                         type = bii2.type;
+                        uid = bii2.st_uid;
+                        gid = bii2.st_gid;
                     } else {
                         if (subvol != bii2.subvol)
                             various_subvols = TRUE;
@@ -255,8 +257,14 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                         
                         if (type != bii2.type)
                             various_types = TRUE;
-                    }
                         
+                        if (uid != bii2.st_uid)
+                            various_uids = TRUE;
+
+                        if (gid != bii2.st_gid)
+                            various_gids = TRUE;
+                    }
+
                     if (bii2.inline_length > 0) {
                         totalsize += bii2.inline_length;
                         sizes[0] += bii2.inline_length;
@@ -646,13 +654,31 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 i++;
             }
             
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return FALSE;
+            if (bps->various_uids) {
+                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return FALSE;
+                }
+                
+                EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
+            } else {
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return FALSE;
+            }
             
             SetDlgItemTextW(hwndDlg, IDC_UID, s);
             
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return FALSE;
+            if (bps->various_gids) {
+                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return FALSE;
+                }
+                
+                EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
+            } else {
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return FALSE;
+            }
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
             

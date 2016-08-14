@@ -149,7 +149,8 @@ public:
     UINT64 min_flags, max_flags;
     UINT64 subvol, inode;
     UINT8 type;
-    BOOL various_subvols, various_inodes, various_types;
+    UINT32 uid, gid;
+    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids;
     
 private:
     LONG refcount;
