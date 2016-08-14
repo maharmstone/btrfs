@@ -269,11 +269,16 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    WCHAR size_on_disk[1024];
+    WCHAR size_on_disk[1024], s[1024];
     
     format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR));
     
-    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk);
+    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), size_format, size_on_disk) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+        ShowError(hwndDlg, ERROR_INSUFFICIENT_BUFFER);
+        return;
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s);
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
@@ -355,6 +360,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetDlgItemTextW(hwndDlg, IDC_TYPE, s);
             
+            GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, bps->size_format, sizeof(bps->size_format) / sizeof(WCHAR));
             bps->set_size_on_disk(hwndDlg);
             
             SendDlgItemMessage(hwndDlg, IDC_NODATACOW, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_NODATACOW ? BST_CHECKED : BST_UNCHECKED, 0);

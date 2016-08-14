@@ -135,7 +135,7 @@ BEGIN
     LTEXT           "(blank)",IDC_TYPE,68,49,126,8
     CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,218,46,10
     LTEXT           "Size on disk:",IDC_STATIC,14,63,40,8
-    LTEXT           "(blank)",IDC_SIZE_ON_DISK,68,63,152,8
+    CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,68,63,152,8
 END
 
 

@@ -120,6 +120,7 @@ public:
     BOOL can_change_perms;
     BOOL can_change_owner;
     BOOL empty;
+    WCHAR size_format[255];
     
 private:
     LONG refcount;
