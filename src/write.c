@@ -6805,11 +6805,20 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 
                 remove_fcb_extent(ext, rollback);
                 
-                Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_extent returned %08x\n", Status);
-                    ExFreePool(data);
-                    return Status;
+                if (write_fcb_compressed(fcb)) {
+                    Status = write_compressed(fcb, offset, offset + length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("write_compressed returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
+                } else {
+                    Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_extent returned %08x\n", Status);
+                        ExFreePool(data);
+                        return Status;
+                    }
                 }
                 
                 oldalloc = ext->offset + length;
