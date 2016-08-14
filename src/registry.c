@@ -26,7 +26,7 @@ static WCHAR option_mounted[] = L"Mounted";
 NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;
-    UNICODE_STRING path, ignoreus, compressus, compressforceus, readonlyus, zliblevelus, flushintervalus, maxinlineus;
+    UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus, maxinlineus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -35,6 +35,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     
     options->compress = mount_compress;
     options->compress_force = mount_compress_force;
+    options->compress_type = mount_compress_type > BTRFS_COMPRESSION_LZO ? 0 : mount_compress_type;
     options->readonly = FALSE;
     options->zlib_level = mount_zlib_level;
     options->flush_interval = mount_flush_interval;
@@ -90,6 +91,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     RtlInitUnicodeString(&ignoreus, L"Ignore");
     RtlInitUnicodeString(&compressus, L"Compress");
     RtlInitUnicodeString(&compressforceus, L"CompressForce");
+    RtlInitUnicodeString(&compresstypeus, L"CompressType");
     RtlInitUnicodeString(&readonlyus, L"Readonly");
     RtlInitUnicodeString(&zliblevelus, L"ZlibLevel");
     RtlInitUnicodeString(&flushintervalus, L"FlushInterval");
@@ -118,6 +120,10 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->compress_force = *val != 0 ? TRUE : FALSE;
+            } else if (FsRtlAreNamesEqual(&compresstypeus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->compress_type = *val > BTRFS_COMPRESSION_LZO ? 0 : *val;
             } else if (FsRtlAreNamesEqual(&readonlyus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
@@ -612,6 +618,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     
     get_registry_value(h, L"Compress", REG_DWORD, &mount_compress, sizeof(mount_compress));
     get_registry_value(h, L"CompressForce", REG_DWORD, &mount_compress_force, sizeof(mount_compress_force));
+    get_registry_value(h, L"CompressType", REG_DWORD, &mount_compress_type, sizeof(mount_compress_type));
     get_registry_value(h, L"ZlibLevel", REG_DWORD, &mount_zlib_level, sizeof(mount_zlib_level));
     get_registry_value(h, L"FlushInterval", REG_DWORD, &mount_flush_interval, sizeof(mount_flush_interval));
     get_registry_value(h, L"MaxInline", REG_DWORD, &mount_max_inline, sizeof(mount_max_inline));

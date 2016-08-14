@@ -48,6 +48,7 @@ ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
 UINT32 mount_compress = 0;
 UINT32 mount_compress_force = 0;
+UINT32 mount_compress_type = 0;
 UINT32 mount_zlib_level = 3;
 UINT32 mount_flush_interval = 30;
 UINT32 mount_max_inline = 2048;

@@ -422,6 +422,7 @@ typedef struct {
     BOOL ignore;
     BOOL compress;
     BOOL compress_force;
+    UINT8 compress_type;
     BOOL readonly;
     UINT32 zlib_level;
     UINT32 flush_interval;
@@ -640,6 +641,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, LIST_ENTRY* 
 
 extern UINT32 mount_compress;
 extern UINT32 mount_compress_force;
+extern UINT32 mount_compress_type;
 extern UINT32 mount_zlib_level;
 extern UINT32 mount_flush_interval;
 extern UINT32 mount_max_inline;

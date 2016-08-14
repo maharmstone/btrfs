@@ -859,8 +859,20 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
 }
 
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
-    if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO) // FIXME - come up with a better way of determining when we should choose lzo
+    UINT8 type;
+
+    if (fcb->Vcb->options.compress_type != 0)
+        type = fcb->Vcb->options.compress_type;
+    else {
+        if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO)
+            type = BTRFS_COMPRESSION_LZO;
+        else
+            type = BTRFS_COMPRESSION_ZLIB;
+    }
+    
+    if (type == BTRFS_COMPRESSION_LZO) {
+        fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
         return lzo_write_compressed_bit(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
-    else
+    } else
         return zlib_write_compressed_bit(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
 }
