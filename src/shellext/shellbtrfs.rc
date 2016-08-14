@@ -225,10 +225,12 @@ BEGIN
     IDS_SIZE_PB             "%1.1f PB"
     IDS_SIZE_EB             "%1.1f EB"
     IDS_VARIOUS             "(various)"
+    IDS_INODE_CHAR_SIMPLE   "Character device"
 END
 
 STRINGTABLE 
 BEGIN
+    IDS_INODE_BLOCK_SIMPLE  "Block device"
     IDS_SIZE_LARGE          "%s (%s)"
 END
 

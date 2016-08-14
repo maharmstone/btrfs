@@ -140,7 +140,6 @@ public:
     void do_search(WCHAR* fn);
     void update_size_details_dialog(HWND hDlg);
  
-    btrfs_inode_info bii;
     BOOL readonly;
     BOOL can_change_perms;
     BOOL can_change_owner;
@@ -149,7 +148,7 @@ public:
     HANDLE thread;
     UINT32 min_mode, max_mode, mode, mode_set;
     UINT64 min_flags, max_flags, flags, flags_set;
-    UINT64 subvol, inode;
+    UINT64 subvol, inode, rdev;
     UINT8 type;
     UINT32 uid, gid;
     BOOL various_subvols, various_inodes, various_types, various_uids, various_gids;

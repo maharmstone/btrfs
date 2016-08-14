@@ -245,13 +245,12 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     LARGE_INTEGER filesize;
                     
                     if (i == 0) {
-                        memcpy(&bii, &bii2, sizeof(btrfs_inode_info)); // FIXME
-                        
                         subvol = bii2.subvol;
                         inode = bii2.inode;
                         type = bii2.type;
                         uid = bii2.st_uid;
                         gid = bii2.st_gid;
+                        rdev = bii2.st_rdev;
                     } else {
                         if (subvol != bii2.subvol)
                             various_subvols = TRUE;
@@ -650,6 +649,13 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             else
                 sr = inode_type_to_string_ref(bps->type);
             
+            if (bps->various_inodes) {
+                if (sr == IDS_INODE_CHAR)
+                    sr = IDS_INODE_CHAR_SIMPLE;
+                else if (sr == IDS_INODE_BLOCK)
+                    sr = IDS_INODE_BLOCK_SIMPLE;
+            }
+            
             if (sr == IDS_INODE_UNKNOWN) {
                 WCHAR t[255];
                 
@@ -668,7 +674,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     return FALSE;
                 }
                 
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, (UINT64)((bps->bii.st_rdev & 0xFFFFFFFFFFF) >> 20), (UINT32)(bps->bii.st_rdev & 0xFFFFF)) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, (UINT64)((bps->rdev & 0xFFFFFFFFFFF) >> 20), (UINT32)(bps->rdev & 0xFFFFF)) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     return FALSE;
             } else {
                 if (!LoadStringW(module, sr, s, sizeof(s) / sizeof(WCHAR))) {
