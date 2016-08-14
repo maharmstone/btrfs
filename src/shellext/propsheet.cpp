@@ -198,23 +198,26 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     max_flags = 0;
     various_subvols = various_inodes = various_types = various_uids = various_gids = FALSE;
     
+    can_change_perms = TRUE;
+    can_change_owner = TRUE;
+    
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
             h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
             
             if (h != INVALID_HANDLE_VALUE)
-                can_change_perms = TRUE;
-            else
                 CloseHandle(h);
+            else
+                can_change_perms = FALSE;
             
             h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
             
             if (h != INVALID_HANDLE_VALUE)
-                can_change_owner = TRUE;
-            else
                 CloseHandle(h);
+            else
+                can_change_owner = FALSE;
             
             h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -370,7 +373,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, BOOL on) {
 }
 
 void BtrfsPropSheet::apply_changes(HWND hDlg) {
-    UINT num_files;
+    UINT num_files, i;
     WCHAR fn[MAX_PATH]; // FIXME - is this long enough?
     HANDLE h;
     IO_STATUS_BLOCK iosb;
@@ -382,68 +385,73 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
     
-    if (num_files > 1)
-        return; // FIXME - make this work with multiple files
+    if (various_uids)
+        uid_changed = FALSE;
+    
+    if (various_gids)
+        gid_changed = FALSE;
 
-    if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
-        
-        if (flags_changed)
-            perms |= FILE_WRITE_ATTRIBUTES;
-        
-        if (perms_changed)
-            perms |= WRITE_DAC;
-        
-        if (uid_changed || gid_changed)
-            perms |= WRITE_OWNER;
-        
-        h = CreateFileW(fn, perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowError(hDlg, GetLastError());
-            return;
-        }
-        
-        ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
-        
-        if (flags_changed) {
-            bsii.flags_changed = TRUE;
-            bsii.flags = bii.flags;
-        }
-        
-        if (perms_changed) {
-            bsii.mode_changed = TRUE;
-            bsii.st_mode = bii.st_mode;
-        }
-        
-        if (uid_changed) {
-            bsii.uid_changed = TRUE;
-            bsii.st_uid = bii.st_uid;
-        }
-        
-        if (gid_changed) {
-            bsii.gid_changed = TRUE;
-            bsii.st_gid = bii.st_gid;
-        }
-        
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
-        CloseHandle(h);
-
-        if (Status != STATUS_SUCCESS) {
-            WCHAR s[255], t[255];
+    for (i = 0; i < num_files; i++) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
             
-            if (!LoadStringW(module, IDS_SET_INODE_INFO_ERROR, t, sizeof(t) / sizeof(WCHAR))) {
+            if (flags_changed)
+                perms |= FILE_WRITE_ATTRIBUTES;
+            
+            if (perms_changed)
+                perms |= WRITE_DAC;
+            
+            if (uid_changed || gid_changed)
+                perms |= WRITE_OWNER;
+            
+            h = CreateFileW(fn, perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+            if (h == INVALID_HANDLE_VALUE) {
                 ShowError(hDlg, GetLastError());
                 return;
             }
             
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-                ShowError(hDlg, ERROR_INSUFFICIENT_BUFFER);
-                return;
+            ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
+            
+//             if (flags_changed) {
+//                 bsii.flags_changed = TRUE;
+//                 bsii.flags = bii.flags;
+//             }
+//             
+//             if (perms_changed) {
+//                 bsii.mode_changed = TRUE;
+//                 bsii.st_mode = bii.st_mode;
+//             }
+            
+            if (uid_changed) {
+                bsii.uid_changed = TRUE;
+                bsii.st_uid = uid;
             }
             
-            MessageBoxW(hDlg, s, L"Error", MB_ICONERROR);
+            if (gid_changed) {
+                bsii.gid_changed = TRUE;
+                bsii.st_gid = gid;
+            }
+            
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+            CloseHandle(h);
+
+            if (Status != STATUS_SUCCESS) {
+                WCHAR s[255], t[255];
+                
+                if (!LoadStringW(module, IDS_SET_INODE_INFO_ERROR, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hDlg, GetLastError());
+                    return;
+                }
+                
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                    ShowError(hDlg, ERROR_INSUFFICIENT_BUFFER);
+                    return;
+                }
+                
+                MessageBoxW(hDlg, s, L"Error", MB_ICONERROR);
+            }
         }
     }
 }
@@ -476,7 +484,7 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
 }
 
 void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
-    bii.st_uid = uid;
+    this->uid = uid;
     
     uid_changed = TRUE;
     
@@ -484,7 +492,7 @@ void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
 }
 
 void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
-    bii.st_gid = gid;
+    this->gid = gid;
     
     gid_changed = TRUE;
     
