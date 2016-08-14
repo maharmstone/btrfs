@@ -67,7 +67,7 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
     fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
     fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_atime);
     fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_mtime);
-    fbi->ChangeTime.QuadPart = 0;
+    fbi->ChangeTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_ctime);
     fbi->FileAttributes = fcb->atts;
 
     IoStatus->Status = STATUS_SUCCESS;

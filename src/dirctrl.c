@@ -240,7 +240,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
             fbdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
             fbdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fbdi->ChangeTime.QuadPart = 0;
+            fbdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
             fbdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = atts;
@@ -279,7 +279,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
             fdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
             fdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fdi->ChangeTime.QuadPart = 0;
+            fdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
             fdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fdi->FileAttributes = atts;
@@ -315,7 +315,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
             ffdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
             ffdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            ffdi->ChangeTime.QuadPart = 0;
+            ffdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
             ffdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = atts;
@@ -355,7 +355,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
             fibdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
             fibdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fibdi->ChangeTime.QuadPart = 0;
+            fibdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
             fibdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = atts;

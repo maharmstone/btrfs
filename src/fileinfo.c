@@ -2609,7 +2609,7 @@ static NTSTATUS STDCALL fill_in_file_basic_information(FILE_BASIC_INFORMATION* f
     fbi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
     fbi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
     fbi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-    fbi->ChangeTime.QuadPart = 0;
+    fbi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
     
     if (fcb->ads) {
         if (!fileref || !fileref->parent) {
@@ -2648,7 +2648,7 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
     fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
     fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
     fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-    fnoi->ChangeTime.QuadPart = 0;
+    fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
     
     if (fcb->ads) {
         fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
