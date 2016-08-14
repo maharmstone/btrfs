@@ -89,10 +89,37 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
     }
     
-//     FIXME - CreationTime
-//     FIXME - LastAccessTime
-//     FIXME - LastWriteTime
-//     FIXME - ChangeTime
+    if (fbi->CreationTime.QuadPart == -1) {
+        FIXME("FIXME - support CreationTime == -1\n"); // FIXME - set ccb flag
+    } else if (fbi->CreationTime.QuadPart != 0) {
+        win_time_to_unix(fbi->CreationTime, &fcb->inode_item.otime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_CREATION;
+    }
+    
+    if (fbi->LastAccessTime.QuadPart == -1) {
+        FIXME("FIXME - support LastAccessTime == -1\n"); // FIXME - set ccb flag
+    } else if (fbi->LastAccessTime.QuadPart != 0) {
+        win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.st_atime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
+    }
+    
+    if (fbi->LastWriteTime.QuadPart == -1) {
+        FIXME("FIXME - support LastWriteTime == -1\n"); // FIXME - set ccb flag
+    } else if (fbi->LastWriteTime.QuadPart != 0) {
+        win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.st_mtime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+    }
+    
+    if (fbi->ChangeTime.QuadPart == -1) {
+        FIXME("FIXME - support ChangeTime == -1\n"); // FIXME - set ccb flag
+    } else if (fbi->ChangeTime.QuadPart != 0) {
+        win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.st_ctime);
+        inode_item_changed = TRUE;
+        // no filter for this
+    }
 
     if (inode_item_changed) {
         fcb->inode_item.transid = Vcb->superblock.generation;
