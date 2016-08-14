@@ -80,6 +80,14 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         return E_FAIL; // FIXME - make this work with multiple files
 
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        
+        if (h != INVALID_HANDLE_VALUE)
+            can_change_perms = TRUE;
+        else
+            CloseHandle(h);
+        
         h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
@@ -186,7 +194,15 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         return; // FIXME - make this work with multiple files
 
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0/*i*/, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+        ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
+        
+        if (flags_changed)
+            perms |= FILE_WRITE_ATTRIBUTES;
+        
+        if (perms_changed)
+            perms |= WRITE_DAC;
+        
+        h = CreateFileW(fn, perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
         if (h == INVALID_HANDLE_VALUE) {
@@ -199,6 +215,11 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         if (flags_changed) {
             bsii.flags_changed = TRUE;
             bsii.flags = bii.flags;
+        }
+        
+        if (perms_changed) {
+            bsii.mode_changed = TRUE;
+            bsii.st_mode = bii.st_mode;
         }
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
@@ -289,6 +310,17 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     }
 }
 
+void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
+    if (on)
+        bii.st_mode |= flag;
+    else
+        bii.st_mode &= ~flag;
+    
+    perms_changed = TRUE;
+    
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -369,9 +401,22 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             if (bps->bii.type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
             
+            if (!bps->can_change_perms) {
+                EnableWindow(GetDlgItem(hwndDlg, IDC_USERR), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_USERW), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_USERX), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPR), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPW), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPX), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERR), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERW), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERX), 0);
+            }
+            
             if (bps->readonly) {
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
                 EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
+                
                 // FIXME - also others
             }
             
@@ -394,6 +439,42 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             
                             case IDC_COMPRESS:
                                 bps->change_inode_flag(hwndDlg, BTRFS_INODE_COMPRESS, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_USERR:
+                                bps->change_perm_flag(hwndDlg, S_IRUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_USERW:
+                                bps->change_perm_flag(hwndDlg, S_IWUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_USERX:
+                                bps->change_perm_flag(hwndDlg, S_IXUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_GROUPR:
+                                bps->change_perm_flag(hwndDlg, S_IRGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_GROUPW:
+                                bps->change_perm_flag(hwndDlg, S_IWGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_GROUPX:
+                                bps->change_perm_flag(hwndDlg, S_IXGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_OTHERR:
+                                bps->change_perm_flag(hwndDlg, S_IROTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_OTHERW:
+                                bps->change_perm_flag(hwndDlg, S_IWOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_OTHERX:
+                                bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
                             break;
                         }
                     }
