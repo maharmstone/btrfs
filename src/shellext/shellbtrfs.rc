@@ -224,6 +224,7 @@ BEGIN
     IDS_SIZE_TB             "%1.1f TB"
     IDS_SIZE_PB             "%1.1f PB"
     IDS_SIZE_EB             "%1.1f EB"
+    IDS_VARIOUS             "(various)"
 END
 
 STRINGTABLE 

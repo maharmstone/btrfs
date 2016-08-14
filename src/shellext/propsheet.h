@@ -146,6 +146,10 @@ public:
     WCHAR size_format[255];
     HANDLE thread;
     UINT32 min_mode, max_mode;
+    UINT64 min_flags, max_flags;
+    UINT64 subvol, inode;
+    UINT8 type;
+    BOOL various_subvols, various_inodes, various_types;
     
 private:
     LONG refcount;

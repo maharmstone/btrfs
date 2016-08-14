@@ -194,6 +194,9 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     
     min_mode = 0;
     max_mode = 0;
+    min_flags = 0;
+    max_flags = 0;
+    various_subvols = various_inodes = various_types = FALSE;
     
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -237,8 +240,22 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     
                     LARGE_INTEGER filesize;
                     
-                    if (i == 0)
+                    if (i == 0) {
                         memcpy(&bii, &bii2, sizeof(btrfs_inode_info)); // FIXME
+                        
+                        subvol = bii2.subvol;
+                        inode = bii2.inode;
+                        type = bii2.type;
+                    } else {
+                        if (subvol != bii2.subvol)
+                            various_subvols = TRUE;
+                        
+                        if (inode != bii2.inode)
+                            various_inodes = TRUE;
+                        
+                        if (type != bii2.type)
+                            various_types = TRUE;
+                    }
                         
                     if (bii2.inline_length > 0) {
                         totalsize += bii2.inline_length;
@@ -254,6 +271,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     
                     min_mode |= ~bii2.st_mode;
                     max_mode |= bii2.st_mode;
+                    min_flags |= ~bii2.flags;
+                    max_flags |= bii2.flags;
                     
                     ignore = FALSE;
                     
@@ -272,6 +291,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     }
     
     min_mode = ~min_mode;
+    min_flags = ~min_flags;
     
     if (search_list.size() > 0) {
         thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
@@ -519,6 +539,23 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
     return FALSE;
 }
 
+static void set_check_box(HWND hwndDlg, ULONG id, UINT64 min, UINT64 max) {
+    if (min && max) {
+        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_CHECKED, 0);
+    } else if (!min && !max) {
+        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_UNCHECKED, 0);
+    } else {
+        LONG_PTR style;
+        
+        style = GetWindowLongPtr(GetDlgItem(hwndDlg, id), GWL_STYLE);
+        style &= ~BS_AUTOCHECKBOX;
+        style |= BS_AUTO3STATE;
+        SetWindowLongPtr(GetDlgItem(hwndDlg, id), GWL_STYLE, style);
+        
+        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_INDETERMINATE, 0);
+    }
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -536,17 +573,34 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
             
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->bii.subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return FALSE;
+            if (bps->various_subvols) {
+                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return FALSE;
+                }
+            } else {
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return FALSE;
+            }
             
             SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s);
             
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->bii.inode) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return FALSE;
+            if (bps->various_inodes) {
+                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return FALSE;
+                }
+            } else {
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->inode) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return FALSE;
+            }
             
             SetDlgItemTextW(hwndDlg, IDC_INODE, s);
             
-            sr = inode_type_to_string_ref(bps->bii.type);
+            if (bps->various_types)
+                sr = IDS_VARIOUS;
+            else
+                sr = inode_type_to_string_ref(bps->type);
             
             if (sr == IDS_INODE_UNKNOWN) {
                 WCHAR t[255];
@@ -556,7 +610,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     return FALSE;
                 }
                 
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bps->bii.type) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bps->type) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     return FALSE;
             } else if (sr == IDS_INODE_CHAR || sr == IDS_INODE_BLOCK) {
                 WCHAR t[255];
@@ -583,26 +637,12 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             if (bps->thread)
                 SetTimer(hwndDlg, 1, 250, NULL);
             
-            SendDlgItemMessage(hwndDlg, IDC_NODATACOW, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_NODATACOW ? BST_CHECKED : BST_UNCHECKED, 0);
-            SendDlgItemMessage(hwndDlg, IDC_COMPRESS, BM_SETCHECK, bps->bii.flags & BTRFS_INODE_COMPRESS ? BST_CHECKED : BST_UNCHECKED, 0);
+            set_check_box(hwndDlg, IDC_NODATACOW, bps->min_flags & BTRFS_INODE_NODATACOW, bps->max_flags & BTRFS_INODE_NODATACOW);
+            set_check_box(hwndDlg, IDC_COMPRESS, bps->min_flags & BTRFS_INODE_COMPRESS, bps->max_flags & BTRFS_INODE_COMPRESS);
             
             i = 0;
             while (perm_controls[i] != 0) {
-                if (bps->min_mode & perms[i] && bps->max_mode & perms[i]) {
-                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_CHECKED, 0);
-                } else if (!(bps->min_mode & perms[i]) && !(bps->max_mode & perms[i])) {
-                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_UNCHECKED, 0);
-                } else {
-                    LONG_PTR style;
-                    
-                    style = GetWindowLongPtr(GetDlgItem(hwndDlg, perm_controls[i]), GWL_STYLE);
-                    style &= ~BS_AUTOCHECKBOX;
-                    style |= BS_AUTO3STATE;
-                    SetWindowLongPtr(GetDlgItem(hwndDlg, perm_controls[i]), GWL_STYLE, style);
-                    
-                    SendDlgItemMessage(hwndDlg, perm_controls[i], BM_SETCHECK, BST_INDETERMINATE, 0);
-                }
-                
+                set_check_box(hwndDlg, perm_controls[i], bps->min_mode & perms[i], bps->max_mode & perms[i]);
                 i++;
             }
             
@@ -616,7 +656,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
             
-            if (bps->bii.type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
+            if (bps->type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
             
             if (!bps->can_change_owner) {

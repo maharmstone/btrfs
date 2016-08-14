@@ -29,6 +29,7 @@
 #define IDS_SIZE_TB                     123
 #define IDS_SIZE_PB                     124
 #define IDS_SIZE_EB                     125
+#define IDS_VARIOUS                     126
 #define IDS_SIZE_LARGE                  130
 #define IDC_UID                         1001
 #define IDC_GID                         1002
