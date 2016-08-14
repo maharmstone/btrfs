@@ -20,6 +20,20 @@
 #define IDS_INODE_SYMLINK               115
 #define IDS_INODE_UNKNOWN               116
 #define IDS_SET_INODE_INFO_ERROR        117
+#define IDS_SIZE_BYTE                   118
+#define IDS_SIZE_BYTES                  119
+#define IDS_SIZE_KB                     120
+#define IDS_SIZE_MB                     121
+#define IDS_SIZE_GB                     122
+#define IDS_SIZE_TB                     123
+#define IDS_SIZE_PB                     124
+#define IDS_SIZE_EB                     125
+#define IDS_SIZE_UNCOMPRESSED           126
+#define IDS_SIZE_ZLIB                   127
+#define IDS_SIZE_LZO                    128
+#define IDS_SIZE_TOTAL                  129
+#define IDS_SIZE_LARGE                  130
+#define IDS_SIZE_INLINE                 131
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -36,6 +50,8 @@
 #define IDC_INODE                       1014
 #define IDC_TYPE                        1015
 #define IDC_COMPRESS                    1016
+#define IDC_SIZE_ON_DISK                1017
+#define IDC_GROUP_INFORMATION           1018
 
 // Next default values for new objects
 // 
@@ -43,7 +59,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        103
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1016
+#define _APS_NEXT_CONTROL_VALUE         1019
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

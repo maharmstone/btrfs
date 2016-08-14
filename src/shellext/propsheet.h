@@ -101,6 +101,7 @@ public:
     
     void change_inode_flag(HWND hDlg, UINT64 flag, BOOL on);
     void apply_changes(HWND hDlg);
+    void set_size_on_disk(HWND hwndDlg);
  
     btrfs_inode_info bii;
     BOOL readonly;
@@ -112,4 +113,5 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     BOOL flags_changed;
+    WCHAR size_on_disk[1024];
 };
