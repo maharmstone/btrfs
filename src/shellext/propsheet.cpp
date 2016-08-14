@@ -88,6 +88,14 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         else
             CloseHandle(h);
         
+        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        
+        if (h != INVALID_HANDLE_VALUE)
+            can_change_owner = TRUE;
+        else
+            CloseHandle(h);
+        
         h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
@@ -202,6 +210,9 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         if (perms_changed)
             perms |= WRITE_DAC;
         
+        if (uid_changed || gid_changed)
+            perms |= WRITE_OWNER;
+        
         h = CreateFileW(fn, perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
@@ -220,6 +231,16 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         if (perms_changed) {
             bsii.mode_changed = TRUE;
             bsii.st_mode = bii.st_mode;
+        }
+        
+        if (uid_changed) {
+            bsii.uid_changed = TRUE;
+            bsii.st_uid = bii.st_uid;
+        }
+        
+        if (gid_changed) {
+            bsii.gid_changed = TRUE;
+            bsii.st_gid = bii.st_gid;
         }
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
@@ -321,6 +342,22 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
 }
 
+void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
+    bii.st_uid = uid;
+    
+    uid_changed = TRUE;
+    
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+}
+
+void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
+    bii.st_gid = gid;
+    
+    gid_changed = TRUE;
+    
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -401,6 +438,11 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             if (bps->bii.type != BTRFS_TYPE_DIRECTORY && !bps->empty) // disable nocow checkbox if not a directory and size not 0
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
             
+            if (!bps->can_change_owner) {
+                EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
+            }
+            
             if (!bps->can_change_perms) {
                 EnableWindow(GetDlgItem(hwndDlg, IDC_USERR), 0);
                 EnableWindow(GetDlgItem(hwndDlg, IDC_USERW), 0);
@@ -416,8 +458,6 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             if (bps->readonly) {
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
                 EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
-                
-                // FIXME - also others
             }
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
@@ -476,6 +516,28 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             case IDC_OTHERX:
                                 bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
                             break;
+                        }
+                    }
+                    
+                    case EN_CHANGE: {
+                        switch (LOWORD(wParam)) {
+                            case IDC_UID: {
+                                WCHAR s[255];
+                                
+                                GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
+                                
+                                bps->change_uid(hwndDlg, _wtoi(s));
+                                break;
+                            }
+                            
+                            case IDC_GID: {
+                                WCHAR s[255];
+                                
+                                GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
+                                
+                                bps->change_gid(hwndDlg, _wtoi(s));
+                                break;
+                            }
                         }
                     }
                 }

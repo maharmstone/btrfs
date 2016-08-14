@@ -61,8 +61,11 @@ public:
         readonly = FALSE;
         flags_changed = FALSE;
         perms_changed = FALSE;
+        uid_changed = FALSE;
+        gid_changed = FALSE;
         empty = FALSE;
         can_change_perms = FALSE;
+        can_change_owner = FALSE;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -103,12 +106,15 @@ public:
     
     void change_inode_flag(HWND hDlg, UINT64 flag, BOOL on);
     void change_perm_flag(HWND hDlg, ULONG perm, BOOL on);
+    void change_uid(HWND hDlg, UINT32 uid);
+    void change_gid(HWND hDlg, UINT32 gid);
     void apply_changes(HWND hDlg);
     void set_size_on_disk(HWND hwndDlg);
  
     btrfs_inode_info bii;
     BOOL readonly;
     BOOL can_change_perms;
+    BOOL can_change_owner;
     BOOL empty;
     
 private:
@@ -116,6 +122,6 @@ private:
     BOOL ignore;
     STGMEDIUM stgm;
     BOOL stgm_set;
-    BOOL flags_changed, perms_changed;
+    BOOL flags_changed, perms_changed, uid_changed, gid_changed;
     WCHAR size_on_disk[1024];
 };
