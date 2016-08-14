@@ -130,12 +130,12 @@ BEGIN
     CONTROL         "",IDC_OTHERX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,135,168,16,10
     GROUPBOX        "Flags",IDC_STATIC,7,190,221,48
     CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,204,86,10
-    LTEXT           "(blank)",IDC_SUBVOL,68,21,109,8
-    LTEXT           "(blank)",IDC_INODE,68,35,110,8
-    LTEXT           "(blank)",IDC_TYPE,68,49,126,8
+    LTEXT           "(blank)",IDC_SUBVOL,78,21,99,8
+    LTEXT           "(blank)",IDC_INODE,78,35,100,8
+    LTEXT           "(blank)",IDC_TYPE,78,49,116,8
     CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,218,46,10
-    LTEXT           "Size on disk:",IDC_STATIC,14,63,40,8
-    CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,68,63,152,8
+    LTEXT           "Size on disk:",IDC_STATIC,14,63,61,8
+    CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,78,63,142,8
 END
 
 
