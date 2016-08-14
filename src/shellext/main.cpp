@@ -1,6 +1,7 @@
 #define _WIN32_WINNT 0x0600
 
 #include <windows.h>
+#include <commctrl.h>
 #include "factory.h"
 
 static const GUID CLSID_ShellBtrfsIconHandler = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf0 } };

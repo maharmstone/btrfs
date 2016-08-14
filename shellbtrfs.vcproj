@@ -95,6 +95,7 @@
 			/>
 			<Tool
 				Name="VCManifestTool"
+				EmbedManifest="false"
 			/>
 			<Tool
 				Name="VCXDCMakeTool"
@@ -439,6 +440,10 @@
 				>
 			</File>
 		</Filter>
+		<File
+			RelativePath=".\src\shellext\shellbtrfs.manifest"
+			>
+		</File>
 		<File
 			RelativePath=".\src\shellext\shellbtrfs.rc"
 			>

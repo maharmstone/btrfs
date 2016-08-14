@@ -1,3 +1,5 @@
+#define ISOLATION_AWARE_ENABLED 1
+
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
@@ -600,10 +602,18 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     PROPSHEETPAGE psp;
     HPROPSHEETPAGE hPage;
     int i;
+    INITCOMMONCONTROLSEX icex;
 //     WCHAR format[255], size[255], t[255];
     
     if (ignore)
         return S_OK;
+    
+    icex.dwSize = sizeof(icex);
+    icex.dwICC = ICC_LINK_CLASS;
+    
+    if (!InitCommonControlsEx(&icex)) {
+        MessageBoxW(NULL, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
+    }
     
     totalsize = 0;
     
