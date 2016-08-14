@@ -433,6 +433,44 @@ void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
 }
 
+void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
+    WCHAR size[1024];
+    int i;
+    ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
+    
+    for (i = 0; i < 4; i++) {
+        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR));
+        
+        SetDlgItemTextW(hDlg, items[i], size);
+    }
+}
+
+static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            BtrfsPropSheet* bps = (BtrfsPropSheet*)lParam;
+            
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+            
+            bps->update_size_details_dialog(hwndDlg);
+            
+            // FIXME - add timer if thread running
+            
+            return TRUE;
+        }
+            
+        case WM_COMMAND:
+            if (HIWORD(wParam) == BN_CLICKED && (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)) {
+                EndDialog(hwndDlg, 0);
+                return TRUE;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -639,6 +677,17 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
                     break;
                 }
+                
+                case NM_CLICK:
+                case NM_RETURN: {
+                    if (((LPNMHDR)lParam)->hwndFrom == GetDlgItem(hwndDlg, IDC_SIZE_ON_DISK)) {
+                        PNMLINK pNMLink = (PNMLINK)lParam;
+                        
+                        if (pNMLink->item.iLink == 0)
+                            DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SIZE_DETAILS), hwndDlg, SizeDetailsDlgProc, GetWindowLongPtr(hwndDlg, GWLP_USERDATA));
+                    }
+                    break;
+                }
             }
         }
         
@@ -731,27 +780,11 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
     }
 }
 
-// From https://msdn.microsoft.com/en-us/library/windows/desktop/ms645398.aspx
-// Not in any header file. This is just the beginning of the struct.
-typedef struct {
-  WORD      dlgVer;
-  WORD      signature;
-  DWORD     helpID;
-  DWORD     exStyle;
-  DWORD     style;
-  WORD      cDlgItems;
-  short     x;
-  short     y;
-  short     cx;
-  short     cy;
-} DLGTEMPLATEEX_HEAD;
-
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     PROPSHEETPAGE psp;
     HPROPSHEETPAGE hPage;
     int i;
     INITCOMMONCONTROLSEX icex;
-//     WCHAR format[255], size[255], t[255];
     
     if (ignore)
         return S_OK;
@@ -768,58 +801,14 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     if (bii.inline_length > 0) {
         totalsize += bii.inline_length;
         sizes[0] += bii.inline_length;
-        
-//         format_size(bii.inline_length, size, sizeof(size) / sizeof(WCHAR));
-//         
-//         if (!LoadStringW(module, IDS_SIZE_INLINE, format, sizeof(format) / sizeof(WCHAR))) {
-//             ShowError(NULL, GetLastError());
-//         }
-//         
-//         if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-//             ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-//         }
-//         
-//         wcscpy(size_on_disk, t);
     }
     
     for (i = 0; i < 3; i++) {
         if (bii.disk_size[i] > 0) {
             totalsize += bii.disk_size[i];
             sizes[i + 1] += bii.disk_size[i];
-            
-//             format_size(bii.disk_size[i], size, sizeof(size) / sizeof(WCHAR));
-//             
-//             if (!LoadStringW(module, i == 0 ? IDS_SIZE_UNCOMPRESSED : (i == 1 ? IDS_SIZE_ZLIB : IDS_SIZE_LZO), format, sizeof(format) / sizeof(WCHAR))) {
-//                 ShowError(NULL, GetLastError());
-//             }
-//             
-//             if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-//                 ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-//             }
-//             
-//             if (size_on_disk[0] != 0)
-//                 wcscat(size_on_disk, L"\n");
-//             
-//             wcscat(size_on_disk, t);
         }
     }
-    
-//     if (num_lines > 1) {
-//         format_size(totalsize, size, sizeof(size) / sizeof(WCHAR));
-//         
-//         if (!LoadStringW(module, IDS_SIZE_TOTAL, format, sizeof(format) / sizeof(WCHAR))) {
-//             ShowError(NULL, GetLastError());
-//         }
-//         
-//         if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-//             ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-//         }
-//         
-//         if (size_on_disk[0] != 0)
-//             wcscat(size_on_disk, L"\n");
-//         
-//         wcscat(size_on_disk, t);
-//     }
     
     psp.dwSize = sizeof(psp);
     psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;

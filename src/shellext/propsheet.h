@@ -136,6 +136,7 @@ public:
     void add_to_search_list(WCHAR* fn);
     DWORD search_list_thread();
     void do_search(WCHAR* fn);
+    void update_size_details_dialog(HWND hDlg);
  
     btrfs_inode_info bii;
     BOOL readonly;

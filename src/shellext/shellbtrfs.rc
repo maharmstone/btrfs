@@ -138,6 +138,22 @@ BEGIN
     CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,78,63,142,8
 END
 
+IDD_SIZE_DETAILS DIALOGEX 0, 0, 212, 85
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Size details"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,81,64,50,14
+    LTEXT           "Inline:",IDC_STATIC,7,7,21,8
+    LTEXT           "Uncompressed:",IDC_STATIC,7,20,49,8
+    LTEXT           "ZLIB:",IDC_STATIC,7,33,18,8
+    LTEXT           "LZO:",IDC_STATIC,7,46,16,8
+    LTEXT           "(blank)",IDC_SIZE_INLINE,63,7,142,8
+    LTEXT           "(blank)",IDC_SIZE_UNCOMPRESSED,63,20,142,8
+    LTEXT           "(blank)",IDC_SIZE_ZLIB,63,33,142,8
+    LTEXT           "(blank)",IDC_SIZE_LZO,63,46,142,8
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -153,6 +169,14 @@ BEGIN
         RIGHTMARGIN, 228
         TOPMARGIN, 7
         BOTTOMMARGIN, 238
+    END
+
+    IDD_SIZE_DETAILS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 205
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 78
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -200,16 +224,11 @@ BEGIN
     IDS_SIZE_TB             "%1.1f TB"
     IDS_SIZE_PB             "%1.1f PB"
     IDS_SIZE_EB             "%1.1f EB"
-    IDS_SIZE_UNCOMPRESSED   "Uncompressed: %s"
-    IDS_SIZE_ZLIB           "ZLIB: %s"
 END
 
 STRINGTABLE 
 BEGIN
-    IDS_SIZE_LZO            "LZO: %s"
-    IDS_SIZE_TOTAL          "Total: %s"
     IDS_SIZE_LARGE          "%s (%s)"
-    IDS_SIZE_INLINE         "Inline: %s"
 END
 
 #endif    // English (U.K.) resources
