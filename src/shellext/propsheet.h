@@ -85,6 +85,8 @@ public:
         can_change_perms = FALSE;
         can_change_owner = FALSE;
         thread = NULL;
+        mode = mode_set = 0;
+        flags = flags_set = 0;
         
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
         totalsize = 0;
@@ -127,8 +129,8 @@ public:
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
     
-    void change_inode_flag(HWND hDlg, UINT64 flag, BOOL on);
-    void change_perm_flag(HWND hDlg, ULONG perm, BOOL on);
+    void change_inode_flag(HWND hDlg, UINT64 flag, UINT state);
+    void change_perm_flag(HWND hDlg, ULONG perm, UINT state);
     void change_uid(HWND hDlg, UINT32 uid);
     void change_gid(HWND hDlg, UINT32 gid);
     void apply_changes(HWND hDlg);
@@ -145,8 +147,8 @@ public:
     BOOL empty;
     WCHAR size_format[255];
     HANDLE thread;
-    UINT32 min_mode, max_mode;
-    UINT64 min_flags, max_flags;
+    UINT32 min_mode, max_mode, mode, mode_set;
+    UINT64 min_flags, max_flags, flags, flags_set;
     UINT64 subvol, inode;
     UINT8 type;
     UINT32 uid, gid;

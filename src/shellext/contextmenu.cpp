@@ -207,7 +207,7 @@ static void ShowError(HWND hwnd, ULONG err) {
     LocalFree(buf);
 }
 
-static void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
+void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
     _RtlNtStatusToDosError RtlNtStatusToDosError;
     HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
     

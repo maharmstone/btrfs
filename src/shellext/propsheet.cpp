@@ -50,6 +50,7 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 
 extern HMODULE module;
 
+extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 static void format_size(UINT64 size, WCHAR* s, ULONG len);
 static void ShowError(HWND hwnd, ULONG err);
 
@@ -304,6 +305,12 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     min_mode = ~min_mode;
     min_flags = ~min_flags;
     
+    mode = min_mode;
+    mode_set = ~(min_mode ^ max_mode);
+    
+    flags = min_flags;
+    flags_set = ~(min_flags ^ max_flags);
+    
     if (search_list.size() > 0) {
         thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
         
@@ -356,16 +363,21 @@ static void ShowError(HWND hwnd, ULONG err) {
     LocalFree(buf);
 }
 
-void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, BOOL on) {
+void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
     if (flag & BTRFS_INODE_NODATACOW)
         flag |= BTRFS_INODE_NODATASUM;
     
     // FIXME - only allow NODATACOW to be changed if file is empty
     
-    if (on)
-        bii.flags |= flag;
-    else
-        bii.flags &= ~flag;
+    if (state == BST_CHECKED) {
+        flags |= flag;
+        flags_set |= flag;
+    } else if (state == BST_UNCHECKED) {
+        flags &= ~flag;
+        flags_set |= flag;
+    } else if (state == BST_INDETERMINATE) {
+        flags_set = ~flag;
+    }
     
     flags_changed = TRUE;
     
@@ -380,17 +392,17 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     NTSTATUS Status;
     btrfs_set_inode_info bsii;
     
-    if (readonly)
-        return;
-    
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
-    
     if (various_uids)
         uid_changed = FALSE;
     
     if (various_gids)
         gid_changed = FALSE;
+    
+    if (!flags_changed && !perms_changed && !uid_changed && !gid_changed)
+        return;
 
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
             ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
@@ -414,15 +426,25 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             
             ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
             
-//             if (flags_changed) {
-//                 bsii.flags_changed = TRUE;
-//                 bsii.flags = bii.flags;
-//             }
-//             
-//             if (perms_changed) {
-//                 bsii.mode_changed = TRUE;
-//                 bsii.st_mode = bii.st_mode;
-//             }
+            btrfs_inode_info bii2;
+                    
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+        
+            if (Status != STATUS_SUCCESS) {
+                ShowNtStatusError(hDlg, Status);
+                CloseHandle(h);
+                return;
+            }
+            
+            if (flags_changed) {
+                bsii.flags_changed = TRUE;
+                bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
+            }
+            
+            if (perms_changed) {
+                bsii.mode_changed = TRUE;
+                bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
+            }
             
             if (uid_changed) {
                 bsii.uid_changed = TRUE;
@@ -454,6 +476,11 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             }
         }
     }
+    
+    flags_changed = FALSE;
+    perms_changed = FALSE;
+    uid_changed = FALSE;
+    gid_changed = FALSE;
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
@@ -472,11 +499,16 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
         SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s);
 }
 
-void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, BOOL on) {
-    if (on)
-        bii.st_mode |= flag;
-    else
-        bii.st_mode &= ~flag;
+void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
+    if (state == BST_CHECKED) {
+        mode |= flag;
+        mode_set |= flag;
+    } else if (state == BST_UNCHECKED) {
+        mode &= ~flag;
+        mode_set |= flag;
+    } else if (state == BST_INDETERMINATE) {
+        mode_set = ~flag;
+    }
     
     perms_changed = TRUE;
     
@@ -670,7 +702,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 
                 EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
             } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     return FALSE;
             }
             
@@ -684,7 +716,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 
                 EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
             } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->bii.st_gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     return FALSE;
             }
             
