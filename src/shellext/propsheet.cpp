@@ -728,10 +728,44 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 }
 
 static void format_size(UINT64 size, WCHAR* s, ULONG len) {
-    WCHAR t[255], bytes[255];
+    WCHAR nb[255], nb2[255], t[255], bytes[255];
     WCHAR kb[255];
     ULONG sr;
     float f;
+    NUMBERFMT fmt;
+    WCHAR thou[4], grouping[64], *c;
+    
+    _itow(size, nb, 10);
+    
+    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
+    
+    fmt.NumDigits = 0;
+    fmt.LeadingZero = 1;
+    fmt.lpDecimalSep = L"."; // not used
+    fmt.lpThousandSep = thou;
+    fmt.NegativeOrder = 0;
+    
+    // Grouping code copied from dlls/shlwapi/string.c in Wine - thank you
+    
+    fmt.Grouping = 0;
+    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SGROUPING, grouping, sizeof(grouping) / sizeof(WCHAR));
+    
+    c = grouping;
+    while (*c) {
+        if (*c >= '0' && *c < '9') {
+            fmt.Grouping *= 10;
+            fmt.Grouping += *c - '0';
+        }
+        
+        c++;
+    }
+
+    if (fmt.Grouping % 10 == 0)
+        fmt.Grouping /= 10;
+    else
+        fmt.Grouping *= 10;
+    
+    GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb, &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
     
     if (size < 1024) {
         if (!LoadStringW(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
@@ -739,7 +773,7 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
             return;
         }
         
-        if (StringCchPrintfW(s, len, t, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+        if (StringCchPrintfW(s, len, t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
             ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
@@ -752,7 +786,7 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
         return;
     }
     
-    if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+    if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
         ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
         return;
     }
