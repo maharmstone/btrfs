@@ -273,7 +273,7 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     
     SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_on_disk);
     
-    SetWindowPos(hc, NULL, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
+    SetWindowPos(hc, NULL, 0, 0, origrect.right - origrect.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
     
     if (r.bottom - r.top > origrect.bottom - origrect.top) {
         ULONG delta = (r.bottom - r.top) - (origrect.bottom - origrect.top);
@@ -424,6 +424,77 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
     return FALSE;
 }
 
+static void format_size(UINT64 size, WCHAR* s, ULONG len) {
+    WCHAR t[255], bytes[255];
+    WCHAR kb[255];
+    ULONG sr;
+    float f;
+    
+    if (size < 1024) {
+        if (!LoadStringW(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(NULL, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(s, len, t, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            return;
+        }
+        
+        return;
+    }
+    
+    if (!LoadStringW(module, IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
+        ShowError(NULL, GetLastError());
+        return;
+    }
+    
+    if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+        return;
+    }
+    
+    if (size >= 1152921504606846976) {
+        sr = IDS_SIZE_EB;
+        f = (float)size / 1152921504606846976.0f;
+    } else if (size >= 1125899906842624) {
+        sr = IDS_SIZE_PB;
+        f = (float)size / 1125899906842624.0f;
+    } else if (size >= 1099511627776) {
+        sr = IDS_SIZE_TB;
+        f = (float)size / 1099511627776.0f;
+    } else if (size >= 1073741824) {
+        sr = IDS_SIZE_GB;
+        f = (float)size / 1073741824.0f;
+    } else if (size >= 1048576) {
+        sr = IDS_SIZE_MB;
+        f = (float)size / 1048576.0f;
+    } else {
+        sr = IDS_SIZE_KB;
+        f = (float)size / 1024.0f;
+    }
+    
+    if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
+        ShowError(NULL, GetLastError());
+        return;
+    }
+    
+    if (StringCchPrintfW(kb, sizeof(kb) / sizeof(WCHAR), t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+        return;
+    }
+    
+    if (!LoadStringW(module, IDS_SIZE_LARGE, t, sizeof(t) / sizeof(WCHAR))) {
+        ShowError(NULL, GetLastError());
+        return;
+    }
+    
+    if (StringCchPrintfW(s, len, t, kb, bytes) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+        return;
+    }
+}
+
 // From https://msdn.microsoft.com/en-us/library/windows/desktop/ms645398.aspx
 // Not in any header file. This is just the beginning of the struct.
 typedef struct {
@@ -446,7 +517,10 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     HGLOBAL dlg;
     DLGTEMPLATEEX_HEAD* dt;
     DWORD dlgsize;
+    UINT64 totalsize;
     ULONG num_lines;
+    int i;
+    WCHAR format[255], size[255], t[255];
     
     // This is jiggerypokery. The "size on disk" field has a variable height, but the height
     // of a property sheet is determined when it is created. We have to load the dialog resource
@@ -455,8 +529,70 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     if (ignore)
         return S_OK;
     
-    wcscpy(size_on_disk, L"line 1\nline 2\nline 3\nline 4"); // FIXME
-    num_lines = 4; // FIXME
+    num_lines = 0;
+    size_on_disk[0] = 0;
+    totalsize = 0;
+    
+    if (bii.inline_length > 0) {
+        totalsize += bii.inline_length;
+        format_size(bii.inline_length, size, sizeof(size) / sizeof(WCHAR));
+        
+        if (!LoadStringW(module, IDS_SIZE_INLINE, format, sizeof(format) / sizeof(WCHAR))) {
+            ShowError(NULL, GetLastError());
+        }
+        
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+        }
+        
+        wcscpy(size_on_disk, t);
+        
+        num_lines++;
+    }
+    
+    for (i = 0; i < 3; i++) {
+        if (bii.disk_size[i] > 0) {
+            totalsize += bii.disk_size[i];
+            format_size(bii.disk_size[i], size, sizeof(size) / sizeof(WCHAR));
+            
+            if (!LoadStringW(module, i == 0 ? IDS_SIZE_UNCOMPRESSED : (i == 1 ? IDS_SIZE_ZLIB : IDS_SIZE_LZO), format, sizeof(format) / sizeof(WCHAR))) {
+                ShowError(NULL, GetLastError());
+            }
+            
+            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            }
+            
+            if (size_on_disk[0] != 0)
+                wcscat(size_on_disk, L"\n");
+            
+            wcscat(size_on_disk, t);
+            
+            num_lines++;
+        }
+    }
+    
+    if (num_lines > 1) {
+        format_size(totalsize, size, sizeof(size) / sizeof(WCHAR));
+        
+        if (!LoadStringW(module, IDS_SIZE_TOTAL, format, sizeof(format) / sizeof(WCHAR))) {
+            ShowError(NULL, GetLastError());
+        }
+        
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), format, size) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+        }
+        
+        if (size_on_disk[0] != 0)
+            wcscat(size_on_disk, L"\n");
+        
+        wcscat(size_on_disk, t);
+        
+        num_lines++;
+    }
+    
+    if (num_lines == 0)
+        num_lines = 1;
     
     res = FindResource(module, MAKEINTRESOURCE(IDD_PROP_SHEET), RT_DIALOG);
     

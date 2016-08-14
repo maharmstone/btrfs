@@ -130,12 +130,12 @@ BEGIN
     CONTROL         "",IDC_OTHERX,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,135,168,16,10
     GROUPBOX        "Flags",IDC_STATIC,7,190,221,48
     CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,204,86,10
-    LTEXT           "(blank)",IDC_SUBVOL,82,21,109,8
-    LTEXT           "(blank)",IDC_INODE,82,35,110,8
-    LTEXT           "(blank)",IDC_TYPE,82,49,126,8
+    LTEXT           "(blank)",IDC_SUBVOL,68,21,109,8
+    LTEXT           "(blank)",IDC_INODE,68,35,110,8
+    LTEXT           "(blank)",IDC_TYPE,68,49,126,8
     CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,218,46,10
     LTEXT           "Size on disk:",IDC_STATIC,14,63,40,8
-    LTEXT           "(blank)",IDC_SIZE_ON_DISK,82,63,126,8
+    LTEXT           "(blank)",IDC_SIZE_ON_DISK,68,63,152,8
 END
 
 
@@ -193,16 +193,16 @@ BEGIN
     IDS_SIZE_TB             "%1.1f TB"
     IDS_SIZE_PB             "%1.1f PB"
     IDS_SIZE_EB             "%1.1f EB"
-    IDS_SIZE_UNCOMPRESSED   "%s uncompressed"
-    IDS_SIZE_ZLIB           "%s ZLIB"
+    IDS_SIZE_UNCOMPRESSED   "Uncompressed: %s"
+    IDS_SIZE_ZLIB           "ZLIB: %s"
 END
 
 STRINGTABLE 
 BEGIN
-    IDS_SIZE_LZO            "%s LZO"
-    IDS_SIZE_TOTAL          "%s total"
+    IDS_SIZE_LZO            "LZO: %s"
+    IDS_SIZE_TOTAL          "Total: %s"
     IDS_SIZE_LARGE          "%s (%s)"
-    IDS_SIZE_INLINE         "%s inline"
+    IDS_SIZE_INLINE         "Inline: %s"
 END
 
 #endif    // English (U.K.) resources
