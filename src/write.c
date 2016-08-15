@@ -6335,6 +6335,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     chunk* c;
     UINT64 flags, origlength = length;
     NTSTATUS Status;
+    BOOL page_file = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE;
     
     flags = fcb->Vcb->data_flags;
     
@@ -6353,7 +6354,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                     ExReleaseResourceLite(&c->lock);
                     goto cont;
                 }
@@ -6368,7 +6369,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, TRUE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                     ExReleaseResourceLite(&c->lock);
                     goto cont;
                 }
