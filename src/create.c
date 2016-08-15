@@ -2210,7 +2210,25 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->utf8.MaximumLength = fileref->utf8.Length = utf8len;
     fileref->utf8.Buffer = utf8;
     
-    fileref->filepart = *fpus;
+    fileref->filepart.Length = fileref->filepart.MaximumLength = fpus->Length;
+    
+    if (fileref->filepart.Length == 0)
+        fileref->filepart.Buffer = NULL;
+    else {
+        fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
+        
+        if (!fileref->filepart.Buffer) {
+            ERR("out of memory\n");
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(fcb);
+            ExReleaseResource(&Vcb->fcb_lock);
+            
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(fileref->filepart.Buffer, fpus->Buffer, fpus->Length);
+    }
     
     Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
