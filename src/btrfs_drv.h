@@ -884,7 +884,8 @@ static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY*
 }
 
 static __inline BOOL write_fcb_compressed(fcb* fcb) {
-    if (fcb->subvol->id == BTRFS_ROOT_ROOT) // make sure we don't accidentally write the cache inodes compressed
+    // make sure we don't accidentally write the cache inodes or pagefile compressed
+    if (fcb->subvol->id == BTRFS_ROOT_ROOT || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
         return FALSE;
     
     if (fcb->Vcb->options.compress_force)
