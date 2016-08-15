@@ -2956,7 +2956,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
             } else {            
-                c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
+                c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
                 
                 if (!c) {
                     ERR("out of memory\n");
@@ -2977,7 +2977,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 c->cache = NULL;
                 c->created = FALSE;
                 
-                c->chunk_item = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);
                 
                 if (!c->chunk_item) {
                     ERR("out of memory\n");
@@ -2994,7 +2994,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     
-                    c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
+                    c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
                     
                     if (!c->devices) {
                         ERR("out of memory\n");
@@ -3576,7 +3576,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
     
-    Vcb->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device) * Vcb->superblock.num_devices, ALLOC_TAG);
+    Vcb->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device) * Vcb->superblock.num_devices, ALLOC_TAG);
     if (!Vcb->devices) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;

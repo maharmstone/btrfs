@@ -583,7 +583,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
         goto end;
     }
     
-    c = ExAllocatePoolWithTag(PagedPool, sizeof(chunk), ALLOC_TAG);
+    c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
     if (!c) {
         ERR("out of memory\n");
         goto end;
@@ -598,7 +598,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     // add CHUNK_ITEM to tree 3
     
     cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(CHUNK_ITEM_STRIPE));
-    c->chunk_item = ExAllocatePoolWithTag(PagedPool, cisize, ALLOC_TAG);
+    c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, cisize, ALLOC_TAG);
     if (!c->chunk_item) {
         ERR("out of memory\n");
         goto end;
@@ -638,7 +638,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     c->chunk_item->num_stripes = num_stripes;
     c->chunk_item->sub_stripes = sub_stripes;
     
-    c->devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * num_stripes, ALLOC_TAG);
+    c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * num_stripes, ALLOC_TAG);
     if (!c->devices) {
         ERR("out of memory\n");
         goto end;
@@ -674,7 +674,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     ExInitializeResourceLite(&c->nonpaged->lock);
     ExInitializeResourceLite(&c->nonpaged->changed_extents_lock);
     
-    s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    s = ExAllocatePoolWithTag(NonPagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
         goto end;
