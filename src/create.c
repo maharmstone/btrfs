@@ -2106,16 +2106,20 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         fcb->inode_item.st_mode &= ~(S_IXUSR | S_IXGRP | S_IXOTH); // remove executable bit if not directory
     }
     
-    // inherit nodatacow flag from parent directory
-    if (parfileref->fcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
-        fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
+    if (IrpSp->Flags & SL_OPEN_PAGING_FILE) {
+        fcb->inode_item.flags = BTRFS_INODE_NODATACOW | BTRFS_INODE_NODATASUM | BTRFS_INODE_NOCOMPRESS;
+    } else {
+        // inherit nodatacow flag from parent directory
+        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
+            fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
+            
+            if (type != BTRFS_TYPE_DIRECTORY)
+                fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
+        }
         
-        if (type != BTRFS_TYPE_DIRECTORY)
-            fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
+        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+            fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
     }
-    
-    if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
-        fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     fcb->Header.AllocationSize.QuadPart = 0;
