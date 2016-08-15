@@ -3224,8 +3224,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && !(fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            if (options & FILE_NON_DIRECTORY_FILE) {
+        if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            if (options & FILE_NON_DIRECTORY_FILE && !(fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
