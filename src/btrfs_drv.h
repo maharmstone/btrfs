@@ -337,11 +337,6 @@ typedef struct {
 } device;
 
 typedef struct {
-    ERESOURCE lock;
-    ERESOURCE changed_extents_lock;
-} chunk_nonpaged;
-
-typedef struct {
     CHUNK_ITEM* chunk_item;
     UINT32 size;
     UINT64 offset;
@@ -353,7 +348,8 @@ typedef struct {
     LIST_ENTRY space_size;
     LIST_ENTRY deleting;
     LIST_ENTRY changed_extents;
-    chunk_nonpaged* nonpaged;
+    ERESOURCE lock;
+    ERESOURCE changed_extents_lock;
     BOOL created;
     
     LIST_ENTRY list_entry;

@@ -2049,10 +2049,9 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         if (c->cache)
             free_fcb(c->cache);
         
-        ExDeleteResourceLite(&c->nonpaged->lock);
-        ExDeleteResourceLite(&c->nonpaged->changed_extents_lock);
+        ExDeleteResourceLite(&c->lock);
+        ExDeleteResourceLite(&c->changed_extents_lock);
         
-        ExFreePool(c->nonpaged);
         ExFreePool(c->chunk_item);
         ExFreePool(c);
     }
@@ -2979,14 +2978,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                c->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk_nonpaged), ALLOC_TAG);
-                
-                if (!c->nonpaged) {
-                    ERR("out of memory\n");
-                    ExFreePool(c);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
@@ -2998,7 +2989,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 if (!c->chunk_item) {
                     ERR("out of memory\n");
                     ExFreePool(c);
-                    ExFreePool(c->nonpaged);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
             
@@ -3015,7 +3005,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                     if (!c->devices) {
                         ERR("out of memory\n");
                         ExFreePool(c);
-                        ExFreePool(c->nonpaged);
                         ExFreePool(c->chunk_item);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
@@ -3027,8 +3016,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb) {
                 } else
                     c->devices = NULL;
                 
-                ExInitializeResourceLite(&c->nonpaged->lock);
-                ExInitializeResourceLite(&c->nonpaged->changed_extents_lock);
+                ExInitializeResourceLite(&c->lock);
+                ExInitializeResourceLite(&c->changed_extents_lock);
                 
                 InitializeListHead(&c->space);
                 InitializeListHead(&c->space_size);
