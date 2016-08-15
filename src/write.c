@@ -8072,53 +8072,55 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
     }
     
-    KeQuerySystemTime(&time);
-    win_time_to_unix(time, &now);
+    if (!(fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE) || !paging_io) {
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &now);
     
-//     ERR("no_cache = %s, FileObject->PrivateCacheMap = %p\n", no_cache ? "TRUE" : "FALSE", FileObject->PrivateCacheMap);
-    
-//     if (!no_cache) {
-//         if (!FileObject->PrivateCacheMap) {
-//             CC_FILE_SIZES ccfs;
-//             
-//             ccfs.AllocationSize = fcb->Header.AllocationSize;
-//             ccfs.FileSize = fcb->Header.FileSize;
-//             ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-//             
-//             TRACE("calling CcInitializeCacheMap...\n");
-//             CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
-//             
-//             changed_length = FALSE;
+//         ERR("no_cache = %s, FileObject->PrivateCacheMap = %p\n", no_cache ? "TRUE" : "FALSE", FileObject->PrivateCacheMap);
+//         
+//         if (!no_cache) {
+//             if (!FileObject->PrivateCacheMap) {
+//                 CC_FILE_SIZES ccfs;
+//                 
+//                 ccfs.AllocationSize = fcb->Header.AllocationSize;
+//                 ccfs.FileSize = fcb->Header.FileSize;
+//                 ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+//                 
+//                 TRACE("calling CcInitializeCacheMap...\n");
+//                 CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
+//                 
+//                 changed_length = FALSE;
+//             }
 //         }
-//     }
-    
-    if (fcb->ads) {
-        if (fileref && fileref->parent)
-            origii = &fileref->parent->fcb->inode_item;
-        else {
-            ERR("no parent fcb found for stream\n");
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
-    } else
-        origii = &fcb->inode_item;
-    
-    origii->transid = Vcb->superblock.generation;
-    origii->sequence++;
-    origii->st_ctime = now;
-    
-    if (!fcb->ads) {
-        if (changed_length) {
-            TRACE("setting st_size to %llx\n", newlength);
-            origii->st_size = newlength;
-            filter |= FILE_NOTIFY_CHANGE_SIZE;
+        
+        if (fcb->ads) {
+            if (fileref && fileref->parent)
+                origii = &fileref->parent->fcb->inode_item;
+            else {
+                ERR("no parent fcb found for stream\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+        } else
+            origii = &fcb->inode_item;
+        
+        origii->transid = Vcb->superblock.generation;
+        origii->sequence++;
+        origii->st_ctime = now;
+        
+        if (!fcb->ads) {
+            if (changed_length) {
+                TRACE("setting st_size to %llx\n", newlength);
+                origii->st_size = newlength;
+                filter |= FILE_NOTIFY_CHANGE_SIZE;
+            }
+            
+            origii->st_mtime = now;
+            filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
         }
         
-        origii->st_mtime = now;
-        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+        mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     }
-    
-    mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     
     if (!nocsum) {
         ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
