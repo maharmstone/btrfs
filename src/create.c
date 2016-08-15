@@ -2076,9 +2076,12 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         ExFreePool(utf8);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-        
+
     fcb->Vcb = Vcb;
-    
+
+    if (IrpSp->Flags & SL_OPEN_PAGING_FILE)
+        fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
+
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.st_size = 0;
