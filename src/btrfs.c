@@ -698,8 +698,24 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             break;
 
         case FileFsDeviceInformation:
-            FIXME("STUB: FileFsDeviceInformation\n");
+        {
+            FILE_FS_DEVICE_INFORMATION* ffdi = Irp->AssociatedIrp.SystemBuffer;
+            
+            TRACE("FileFsDeviceInformation\n");
+            
+            ffdi->DeviceType = FILE_DEVICE_DISK;
+            ffdi->Characteristics = Vcb->devices[0].devobj->Characteristics;
+            
+            if (Vcb->readonly)
+                ffdi->Characteristics |= FILE_READ_ONLY_DEVICE;
+            else
+                ffdi->Characteristics &= ~FILE_READ_ONLY_DEVICE;
+
+            BytesCopied = sizeof(FILE_FS_DEVICE_INFORMATION);
+            Status = STATUS_SUCCESS;
+            
             break;
+        }
 
         case FileFsDriverPathInformation:
             FIXME("STUB: FileFsDriverPathInformation\n");
