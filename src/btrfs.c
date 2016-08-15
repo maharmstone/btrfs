@@ -3694,7 +3694,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    Vcb->volume_fcb = create_fcb();
+    Vcb->volume_fcb = create_fcb(NonPagedPool);
     if (!Vcb->volume_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3704,7 +3704,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
     
-    root_fcb = create_fcb();
+    root_fcb = create_fcb(NonPagedPool);
     if (!root_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;

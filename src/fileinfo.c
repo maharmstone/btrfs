@@ -363,7 +363,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     
     // FIXME - we can skip a lot of this if the inode is about to be deleted
     
-    fcb = create_fcb();
+    fcb = create_fcb(PagedPool); // FIXME - what if we duplicate the paging file?
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;

@@ -669,7 +669,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         // create new inode
         
-        c->cache = create_fcb();
+        c->cache = create_fcb(PagedPool);
         if (!c->cache) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;

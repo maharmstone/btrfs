@@ -661,7 +661,7 @@ byindex:
     return Status;
 }
 
-fcb* create_fcb() {
+fcb* create_fcb(POOL_TYPE pool_type) {
     fcb* fcb;
     
     fcb = ExAllocatePoolWithTag(PagedPool, sizeof(struct _fcb), ALLOC_TAG);
@@ -1200,7 +1200,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
-    fcb = create_fcb();
+    fcb = create_fcb(PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1558,7 +1558,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
         }
     }
     
-    fcb = create_fcb();
+    fcb = create_fcb(PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1991,6 +1991,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     LARGE_INTEGER time;
     BTRFS_TIME now;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ULONG defda;
     file_ref* fileref;
     hardlink* hl;
@@ -2002,7 +2003,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (!NT_SUCCESS(Status))
         return Status;
     
-    utf8 = ExAllocatePoolWithTag(PagedPool, utf8len + 1, ALLOC_TAG);
+    utf8 = ExAllocatePoolWithTag(pool_type, utf8len + 1, ALLOC_TAG);
     if (!utf8) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2069,7 +2070,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     parfileref->fcb->subvol->lastinode++;
     
-    fcb = create_fcb();
+    fcb = create_fcb(pool_type);
     if (!fcb) {
         ERR("out of memory\n");
         ExFreePool(utf8);
@@ -2145,7 +2146,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fcb->sd_dirty = TRUE;
     
-    hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+    hl = ExAllocatePoolWithTag(pool_type, sizeof(hardlink), ALLOC_TAG);
     if (!hl) {
         ERR("out of memory\n");
         
@@ -2160,7 +2161,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     hl->index = dirpos;
     
     hl->utf8.Length = hl->utf8.MaximumLength = utf8len;
-    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8len, ALLOC_TAG);
+    hl->utf8.Buffer = ExAllocatePoolWithTag(pool_type, utf8len, ALLOC_TAG);
     
     if (!hl->utf8.Buffer) {
         ERR("out of memory\n");
@@ -2175,7 +2176,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     RtlCopyMemory(hl->utf8.Buffer, utf8, utf8len);
     
     hl->name.Length = hl->name.MaximumLength = fpus->Length;
-    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, fpus->Length, ALLOC_TAG);
+    hl->name.Buffer = ExAllocatePoolWithTag(pool_type, fpus->Length, ALLOC_TAG);
     
     if (!hl->name.Buffer) {
         ERR("out of memory\n");
@@ -2310,11 +2311,12 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     PACCESS_STATE access_state = IrpSp->Parameters.Create.SecurityContext->AccessState;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
-            
+
     TRACE("(%p, %p, %p, %.*S, %x, %x)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
     
     if (Vcb->readonly)
@@ -2356,7 +2358,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     while (i > 0 && fnus->Buffer[i-1] != '\\' && fnus->Buffer[i-1] != '/') { i--; }
     
     fpus.MaximumLength = (j - i + 2) * sizeof(WCHAR);
-    fpus.Buffer = ExAllocatePoolWithTag(PagedPool, fpus.MaximumLength, ALLOC_TAG);
+    fpus.Buffer = ExAllocatePoolWithTag(pool_type, fpus.MaximumLength, ALLOC_TAG);
     if (!fpus.Buffer) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2426,7 +2428,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
                 return STATUS_OBJECT_NAME_INVALID;
             
             fpus2.Length = fpus2.MaximumLength = fpus.Length;
-            fpus2.Buffer = ExAllocatePoolWithTag(PagedPool, fpus2.MaximumLength, ALLOC_TAG);
+            fpus2.Buffer = ExAllocatePoolWithTag(pool_type, fpus2.MaximumLength, ALLOC_TAG);
             
             if (!fpus2.Buffer) {
                 ERR("out of memory\n");
@@ -2469,7 +2471,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             goto end;
         }
             
-        fcb = create_fcb();
+        fcb = create_fcb(pool_type);
         if (!fcb) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2506,7 +2508,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         
         fcb->adsxattr.Length = utf8len + xapreflen;
         fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
-        fcb->adsxattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.MaximumLength, ALLOC_TAG);
+        fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
         if (!fcb->adsxattr.Buffer) {
             ERR("out of memory\n");
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -2547,7 +2549,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         fileref->fcb = fcb;
 
         fileref->filepart.MaximumLength = fileref->filepart.Length = stream.Length;
-        fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.MaximumLength, ALLOC_TAG);
+        fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
         if (!fileref->filepart.Buffer) {
             ERR("out of memory\n");
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3482,11 +3484,6 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             WARN("unknown flags: %x\n", flags);
     } else {
         TRACE("flags: (none)\n");
-    }
-    
-    if (IrpSp->Flags & SL_OPEN_PAGING_FILE) { // FIXME - implement this
-        Status = STATUS_NOT_SUPPORTED;
-        goto exit;
     }
     
 //     Vpb = DeviceObject->DeviceExtension;
