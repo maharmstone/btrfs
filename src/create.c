@@ -2833,7 +2833,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
     if (fcb->type == BTRFS_TYPE_FILE || fcb->type == BTRFS_TYPE_SYMLINK) {
         ULONG size, bytes_read, i;
         
-        if (fcb->inode_item.st_size < sizeof(ULONG)) {
+        if (fcb->type == BTRFS_TYPE_FILE && fcb->inode_item.st_size < sizeof(ULONG)) {
             WARN("file was too short to be a reparse point\n");
             return STATUS_INVALID_PARAMETER;
         }
