@@ -7719,7 +7719,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    BOOL paging_lock = FALSE, fcb_lock = FALSE, tree_lock = FALSE;
+    BOOL paging_lock = FALSE, fcb_lock = FALSE, tree_lock = FALSE, pagefile;
     ULONG filter = 0;
     
     TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
@@ -7782,7 +7782,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             paging_lock = TRUE;
     }
     
-    if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
+    pagefile = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE && paging_io;
+    
+    if (!pagefile && !ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
             Status = STATUS_PENDING;
             goto end;
@@ -8072,7 +8074,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
     }
     
-    if (!(fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE) || !paging_io) {
+    if (!pagefile) {
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
     
