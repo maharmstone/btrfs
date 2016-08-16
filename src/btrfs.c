@@ -4160,8 +4160,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     Status = STATUS_SUCCESS;
 
     while (!IsListEmpty(&VcbList)) {
-        LIST_ENTRY* le = RemoveHeadList(&VcbList);
-        Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        Vcb = CONTAINING_RECORD(VcbList.Flink, device_extension, list_entry);
         
         TRACE("shutting down Vcb %p\n", Vcb);
         
