@@ -1628,7 +1628,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed) {
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     ULONG i, num_parts;
@@ -1903,8 +1903,12 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             }
         }
         
-        if (i == num_parts - 1)
+        if (i == num_parts - 1) {
+            if (fn_offset)
+                *fn_offset = parts[has_stream ? (num_parts - 2) : (num_parts - 1)].Buffer - fnus->Buffer;
+            
             break;
+        }
         
         if (sf2->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
             Status = STATUS_REPARSE;
@@ -2341,7 +2345,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         related = NULL;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL);
+    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL);
     ExReleaseResource(&Vcb->fcb_lock);
     
     if (!NT_SUCCESS(Status))
@@ -2425,7 +2429,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &newpar, &fpus, parfileref, FALSE, NULL);
+        Status = open_fileref(Vcb, &newpar, &fpus, parfileref, FALSE, NULL, NULL);
         ExReleaseResource(&Vcb->fcb_lock);
         
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
@@ -2954,6 +2958,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     USHORT unparsed;
+    ULONG fn_offset = 0;
     file_ref *related, *fileref;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
@@ -3056,7 +3061,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed);
+        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset);
         ExReleaseResource(&Vcb->fcb_lock);
     }
     
@@ -3379,6 +3384,11 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         ccb->fileref = fileref;
         
         FileObject->FsContext2 = ccb;
+        
+        if (fn_offset > 0) {
+            FileObject->FileName.Length -= fn_offset * sizeof(WCHAR);
+            RtlMoveMemory(&FileObject->FileName.Buffer[0], &FileObject->FileName.Buffer[fn_offset], FileObject->FileName.Length);
+        }
         
         FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
         
