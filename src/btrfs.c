@@ -1201,14 +1201,14 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
     if (utf8len > 0) {
-        Status = RtlUnicodeToUTF8N((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE * sizeof(WCHAR), &utf8len, ffli->VolumeLabel, vollen);
+        Status = RtlUnicodeToUTF8N((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE, &utf8len, ffli->VolumeLabel, vollen);
         if (!NT_SUCCESS(Status))
             goto release;
     } else
         Status = STATUS_SUCCESS;
     
-    if (utf8len < MAX_LABEL_SIZE * sizeof(WCHAR))
-        RtlZeroMemory(Vcb->superblock.label + utf8len, (MAX_LABEL_SIZE * sizeof(WCHAR)) - utf8len);
+    if (utf8len < MAX_LABEL_SIZE)
+        RtlZeroMemory(Vcb->superblock.label + utf8len, MAX_LABEL_SIZE - utf8len);
     
 //     test_tree_deletion(Vcb); // TESTING
 //     test_tree_splitting(Vcb);
