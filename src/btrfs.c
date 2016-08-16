@@ -1169,27 +1169,43 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
+    USHORT vollen, i;
     
     TRACE("label = %.*S\n", ffli->VolumeLabelLength / sizeof(WCHAR), ffli->VolumeLabel);
     
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, ffli->VolumeLabel, ffli->VolumeLabelLength);
-    if (!NT_SUCCESS(Status))
-        goto end;
+    vollen = ffli->VolumeLabelLength;
     
-    if (utf8len > MAX_LABEL_SIZE) {
-        Status = STATUS_INVALID_VOLUME_LABEL;
-        goto end;
+    for (i = 0; i < ffli->VolumeLabelLength / sizeof(WCHAR); i++) {
+        if (ffli->VolumeLabel[i] == 0) {
+            vollen = i * sizeof(WCHAR);
+            break;
+        } else if (ffli->VolumeLabel[i] == '/' || ffli->VolumeLabel[i] == '\\') {
+            Status = STATUS_INVALID_VOLUME_LABEL;
+            goto end;
+        }
     }
     
-    // FIXME - check for '/' and '\\' and reject
-    
-//     utf8 = ExAllocatePoolWithTag(PagedPool, utf8len + 1, ALLOC_TAG);
-    
-    Status = RtlUnicodeToUTF8N((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE * sizeof(WCHAR), &utf8len, ffli->VolumeLabel, ffli->VolumeLabelLength);
-    if (!NT_SUCCESS(Status))
-        goto release;
+    if (vollen == 0) {
+        utf8len = 0;
+    } else {
+        Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, ffli->VolumeLabel, vollen);
+        if (!NT_SUCCESS(Status))
+            goto end;
+        
+        if (utf8len > MAX_LABEL_SIZE) {
+            Status = STATUS_INVALID_VOLUME_LABEL;
+            goto end;
+        }
+    }
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    if (utf8len > 0) {
+        Status = RtlUnicodeToUTF8N((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE * sizeof(WCHAR), &utf8len, ffli->VolumeLabel, vollen);
+        if (!NT_SUCCESS(Status))
+            goto release;
+    } else
+        Status = STATUS_SUCCESS;
     
     if (utf8len < MAX_LABEL_SIZE * sizeof(WCHAR))
         RtlZeroMemory(Vcb->superblock.label + utf8len, (MAX_LABEL_SIZE * sizeof(WCHAR)) - utf8len);
