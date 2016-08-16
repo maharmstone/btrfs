@@ -1498,9 +1498,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     InitializeListHead(&rollback);
     
-    // FIXME - check fri length
-    // FIXME - don't ignore fri->RootDirectory
-    
     TRACE("tfo = %p\n", tfo);
     TRACE("ReplaceIfExists = %u\n", IrpSp->Parameters.SetFile.ReplaceIfExists);
     TRACE("RootDirectory = %p\n", fri->RootDirectory);
@@ -1516,6 +1513,20 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     } else {
         LONG i;
+        
+        while (fnlen > 0 && (fri->FileName[fnlen - 1] == '/' || fri->FileName[fnlen - 1] == '\\'))
+            fnlen--;
+        
+        if (fnlen == 0)
+            return STATUS_INVALID_PARAMETER;
+        
+        for (i = fnlen - 1; i >= 0; i--) {
+            if (fri->FileName[i] == '\\' || fri->FileName[i] == '/') {
+                fn = &fri->FileName[i+1];
+                fnlen = (fri->FileNameLength / sizeof(WCHAR)) - i - 1;
+                break;
+            }
+        }
         
         for (i = fnlen - 1; i >= 0; i--) {
             if (fri->FileName[i] == '\\' || fri->FileName[i] == '/') {
