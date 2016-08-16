@@ -2210,6 +2210,12 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         tfofcb = tfo->FsContext;
         parfcb = tfofcb;
         
+        while (fnlen > 0 && (fli->FileName[fnlen - 1] == '/' || fli->FileName[fnlen - 1] == '\\'))
+            fnlen--;
+        
+        if (fnlen == 0)
+            return STATUS_INVALID_PARAMETER;
+        
         for (i = fnlen - 1; i >= 0; i--) {
             if (fli->FileName[i] == '\\' || fli->FileName[i] == '/') {
                 fn = &fli->FileName[i+1];
