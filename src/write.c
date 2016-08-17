@@ -4238,71 +4238,73 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             }
         } while (b);
         
-        // add new EXTENT_DATAs
-        
-        last_end = 0;
-        
-        le = fcb->extents.Flink;
-        while (le != &fcb->extents) {
-            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-            EXTENT_DATA* ed;
+        if (!fcb->deleted) {
+            // add new EXTENT_DATAs
             
-            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
-                Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, rollback);
+            last_end = 0;
+            
+            le = fcb->extents.Flink;
+            while (le != &fcb->extents) {
+                extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+                EXTENT_DATA* ed;
+                
+                if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
+                    Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_sparse_extent returned %08x\n", Status);
+                        goto end;
+                    }
+                }
+                    
+                ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+                if (!ed) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(ed, ext->data, ext->datalen);
+                
+                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    goto end;
+                }
+                
+                if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
+                    prealloc = TRUE;
+                
+                if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_INLINE)
+                    extents_inline = TRUE;
+                
+                if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
+                    if (ed->type == EXTENT_TYPE_INLINE)
+                        last_end = ext->offset + ed->decoded_size;
+                    else {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                        
+                        last_end = ext->offset + ed2->num_bytes;
+                    }
+                }
+                
+                le = le->Flink;
+            }
+            
+            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
+                sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
+                Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
                 }
             }
-                
-            ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-            if (!ed) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
             
-            RtlCopyMemory(ed, ext->data, ext->datalen);
+            // update prealloc flag in INODE_ITEM
             
-            if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, rollback)) {
-                ERR("insert_tree_item failed\n");
-                goto end;
-            }
-            
-            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
-                prealloc = TRUE;
-            
-            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_INLINE)
-                extents_inline = TRUE;
-            
-            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
-                if (ed->type == EXTENT_TYPE_INLINE)
-                    last_end = ext->offset + ed->decoded_size;
-                else {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                    
-                    last_end = ext->offset + ed2->num_bytes;
-                }
-            }
-            
-            le = le->Flink;
+            if (!prealloc)
+                fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
+            else
+                fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
         }
-        
-        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
-            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
-            Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_sparse_extent returned %08x\n", Status);
-                goto end;
-            }
-        }
-        
-        // update prealloc flag in INODE_ITEM
-        
-        if (!prealloc)
-            fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
-        else
-            fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
         
         fcb->extents_changed = FALSE;
     }
