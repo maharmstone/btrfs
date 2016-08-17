@@ -26,7 +26,8 @@ static WCHAR option_mounted[] = L"Mounted";
 NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;
-    UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus, maxinlineus;
+    UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus,
+                   maxinlineus, subvolidus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -40,6 +41,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->zlib_level = mount_zlib_level;
     options->flush_interval = mount_flush_interval;
     options->max_inline = min(mount_max_inline, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
+    options->subvol_id = 0;
     
     path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
     path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
@@ -96,6 +98,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     RtlInitUnicodeString(&zliblevelus, L"ZlibLevel");
     RtlInitUnicodeString(&flushintervalus, L"FlushInterval");
     RtlInitUnicodeString(&maxinlineus, L"MaxInline");
+    RtlInitUnicodeString(&subvolidus, L"SubvolId");
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -140,6 +143,10 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->max_inline = min(*val, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
+            } else if (FsRtlAreNamesEqual(&subvolidus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_QWORD) {
+                UINT64* val = (UINT64*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->subvol_id = *val;
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);

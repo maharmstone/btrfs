@@ -423,6 +423,7 @@ typedef struct {
     UINT32 zlib_level;
     UINT32 flush_interval;
     UINT32 max_inline;
+    UINT64 subvol_id;
 } mount_options;
 
 #define VCB_TYPE_VOLUME     1

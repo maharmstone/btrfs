@@ -3286,6 +3286,18 @@ static root* find_default_subvol(device_extension* Vcb) {
     static char fn[] = "default";
     static UINT32 crc32 = 0x8dbfc2d2;
     
+    if (Vcb->options.subvol_id != 0) {
+        le = Vcb->roots.Flink;
+        while (le != &Vcb->roots) {
+            root* r = CONTAINING_RECORD(le, root, list_entry);
+            
+            if (r->id == Vcb->options.subvol_id)
+                return r;
+            
+            le = le->Flink;
+        }
+    }
+    
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL) {
         NTSTATUS Status;
         KEY searchkey;
