@@ -526,7 +526,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     } else if (flags & BLOCK_FLAG_RAID0) {
         min_stripes = 2;
         max_stripes = Vcb->superblock.num_devices;
-        sub_stripes = 1;
+        sub_stripes = 0;
         type = BLOCK_FLAG_RAID0;
     } else if (flags & BLOCK_FLAG_RAID1) {
         min_stripes = 2;
