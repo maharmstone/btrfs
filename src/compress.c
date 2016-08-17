@@ -459,7 +459,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         le = le->Flink;
     }
     
-    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, rollback))) {
+    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
@@ -841,7 +841,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         le = le->Flink;
     }
     
-    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, rollback))) {
+    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {

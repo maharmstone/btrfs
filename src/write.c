@@ -479,7 +479,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
     return TRUE;
 }
 
-chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
+chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
     UINT64 total_size = 0, i, logaddr;
     UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes;
@@ -682,7 +682,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags, LIST_ENTRY* rollback) {
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
         
-        space_list_subtract2(&stripes[i].device->space, NULL, cis[i].offset, stripe_size, rollback);
+        space_list_subtract2(&stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL);
     }
     
     success = TRUE;
@@ -1358,7 +1358,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
     }
     
     // allocate new chunk if necessary
-    if ((c = alloc_chunk(Vcb, flags, rollback))) {
+    if ((c = alloc_chunk(Vcb, flags))) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
@@ -6389,7 +6389,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             le = le->Flink;
         }
         
-        if ((c = alloc_chunk(fcb->Vcb, flags, rollback))) {
+        if ((c = alloc_chunk(fcb->Vcb, flags))) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
@@ -6493,7 +6493,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         
         // Otherwise, see if we can put it in a new chunk.
         
-        if ((c = alloc_chunk(Vcb, flags, rollback))) {
+        if ((c = alloc_chunk(Vcb, flags))) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
