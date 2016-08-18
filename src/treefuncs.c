@@ -1045,6 +1045,7 @@ void clear_rollback(LIST_ENTRY* rollback) {
 }
 
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     rollback_item* ri;
     
     while (!IsListEmpty(rollback)) {
@@ -1094,6 +1095,23 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 re->ext->ignore = TRUE;
                 
+                if (re->ext->data->type == EXTENT_TYPE_REGULAR || re->ext->data->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->data->data;
+                    
+                    if (ed2->size != 0) {
+                        chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                        
+                        if (c) {
+                            Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
+                                                               re->fcb->inode, re->ext->offset - ed2->offset, -1,
+                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                            
+                            if (!NT_SUCCESS(Status))
+                                ERR("update_changed_extent_ref returned %08x\n", Status);
+                        }
+                    }
+                }
+                
                 ExFreePool(re);
                 break;
             }
@@ -1103,6 +1121,23 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 rollback_extent* re = ri->ptr;
                 
                 re->ext->ignore = FALSE;
+                
+                if (re->ext->data->type == EXTENT_TYPE_REGULAR || re->ext->data->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->data->data;
+                    
+                    if (ed2->size != 0) {
+                        chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                        
+                        if (c) {
+                            Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
+                                                               re->fcb->inode, re->ext->offset - ed2->offset, 1,
+                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                            
+                            if (!NT_SUCCESS(Status))
+                                ERR("update_changed_extent_ref returned %08x\n", Status);
+                        }
+                    }
+                }
                 
                 ExFreePool(re);
                 break;
