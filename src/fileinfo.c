@@ -561,43 +561,6 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         
         RtlCopyMemory(fcb->reparse_xattr.Buffer, oldfcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
     }
-    
-    if (oldfcb->ads) {
-        fcb->ads = TRUE;
-        fcb->adshash = oldfcb->adshash;
-        
-        if (oldfcb->adsxattr.Buffer && oldfcb->adsxattr.Length > 0) {
-            fcb->adsxattr.Length = fcb->adsxattr.MaximumLength = oldfcb->adsxattr.Length;
-            fcb->adsxattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsxattr.MaximumLength, ALLOC_TAG);
-            if (!fcb->adsxattr.Buffer) {
-                ERR("out of memory\n");
-                
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fcb(fcb);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-                
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            RtlCopyMemory(fcb->adsxattr.Buffer, oldfcb->adsxattr.Buffer, fcb->adsxattr.Length);
-        }
-        
-        if (oldfcb->adsdata.Buffer && oldfcb->adsdata.Length > 0) {
-            fcb->adsdata.Length = fcb->adsdata.MaximumLength = oldfcb->adsdata.Length;
-            fcb->adsdata.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->adsdata.MaximumLength, ALLOC_TAG);
-            if (!fcb->adsdata.Buffer) {
-                ERR("out of memory\n");
-                
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fcb(fcb);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-                
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            RtlCopyMemory(fcb->adsdata.Buffer, oldfcb->adsdata.Buffer, fcb->adsdata.Length);
-        }
-    }
 
 end:
     *pfcb = fcb;
