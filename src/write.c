@@ -521,7 +521,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     if (flags & BLOCK_FLAG_DUPLICATE) {
         min_stripes = 2;
         max_stripes = 2;
-        sub_stripes = 1;
+        sub_stripes = 0;
         type = BLOCK_FLAG_DUPLICATE;
     } else if (flags & BLOCK_FLAG_RAID0) {
         min_stripes = 2;
