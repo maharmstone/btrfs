@@ -7256,6 +7256,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext);
+        
         remove_fcb_extent(ext, rollback);
     } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
         EXTENT_DATA *ned, *nedb;
@@ -7317,12 +7319,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        
         newext2->offset = end_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
         newext2->unique = FALSE;
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+        
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
@@ -7401,12 +7407,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        
         newext2->offset = start_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
         newext2->unique = FALSE;
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+        
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
@@ -7511,6 +7521,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        
         newext2->offset = start_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
@@ -7518,12 +7530,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
+        
         newext3->offset = end_data;
         newext3->data = nedc;
         newext3->datalen = ext->datalen;
         newext3->unique = FALSE;
         newext3->ignore = FALSE;
         InsertHeadList(&newext2->list_entry, &newext3->list_entry);
+        
+        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext3);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
