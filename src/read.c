@@ -1069,7 +1069,7 @@ nextitem:
     }
     
     if (length > 0 && start + bytes_read < fcb->inode_item.st_size) {
-        UINT32 read = fcb->inode_item.st_size - start - bytes_read;
+        UINT32 read = min(fcb->inode_item.st_size - start - bytes_read, length);
         
         RtlZeroMemory(data + bytes_read, read);
         
