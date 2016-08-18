@@ -381,6 +381,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     if (oldfcb->ads) {
         fcb->ads = TRUE;
         fcb->adshash = oldfcb->adshash;
+        fcb->adsmaxlen = oldfcb->adsmaxlen;
         
         if (oldfcb->adsxattr.Buffer && oldfcb->adsxattr.Length > 0) {
             fcb->adsxattr.Length = oldfcb->adsxattr.Length;
