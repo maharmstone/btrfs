@@ -2305,29 +2305,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->subvol->root_item.ctime = now;
     
     fileref->parent = parfileref;
-    
-    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
-    
-    if (IsListEmpty(&parfileref->children))
-        InsertTailList(&parfileref->children, &fileref->list_entry);
-    else {
-        LIST_ENTRY* le = parfileref->children.Flink;
-        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
-        
-        while (le != &parfileref->children) {
-            file_ref* fr2 = (le->Flink == &parfileref->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
-            
-            if (fileref->index > fr1->index && (!fr2 || fr2->index > fileref->index)) {
-                InsertHeadList(&fr1->list_entry, &fileref->list_entry);
-                break;
-            }
-            
-            fr1 = fr2;
-            le = le->Flink;
-        }
-    }
-    
-    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+
+    insert_fileref_child(parfileref, fileref, TRUE);
     
     increase_fileref_refcount(parfileref);
  
