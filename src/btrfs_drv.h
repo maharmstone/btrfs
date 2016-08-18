@@ -168,6 +168,7 @@ typedef struct _fcb {
     
     BOOL ads;
     UINT32 adshash;
+    ULONG adsmaxlen;
     ANSI_STRING adsxattr;
     ANSI_STRING adsdata;
     

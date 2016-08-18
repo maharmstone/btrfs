@@ -1532,7 +1532,10 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
                          UINT32 streamhash, fcb* parent, fcb** pfcb) {
     fcb* fcb;
     UINT8* xattrdata;
-    UINT16 xattrlen;
+    UINT16 xattrlen, overhead;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1578,6 +1581,35 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
     fcb->ads = TRUE;
     fcb->adshash = streamhash;
     fcb->adsxattr = *xattr;
+    
+    // find XATTR_ITEM overhead and hence calculate maximum length
+    
+    searchkey.obj_id = parent->inode;
+    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.offset = streamhash;
+
+    Status = find_item(Vcb, parent->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        free_fcb(fcb);
+        return Status;
+    }
+    
+    if (keycmp(&tp.item->key, &searchkey)) {
+        ERR("error - could not find key for xattr\n");
+        free_fcb(fcb);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size < xattrlen) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
+        free_fcb(fcb);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    overhead = tp.item->size - xattrlen;
+    
+    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - overhead;
     
     fcb->adsdata.Buffer = (char*)xattrdata;
     fcb->adsdata.Length = fcb->adsdata.MaximumLength = xattrlen;
