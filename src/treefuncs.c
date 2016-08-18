@@ -1109,6 +1109,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                             if (!NT_SUCCESS(Status))
                                 ERR("update_changed_extent_ref returned %08x\n", Status);
                         }
+                        
+                        re->fcb->inode_item.st_blocks -= ed2->num_bytes;
                     }
                 }
                 
@@ -1136,6 +1138,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                             if (!NT_SUCCESS(Status))
                                 ERR("update_changed_extent_ref returned %08x\n", Status);
                         }
+                        
+                        re->fcb->inode_item.st_blocks += ed2->num_bytes;
                     }
                 }
                 
