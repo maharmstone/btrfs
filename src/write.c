@@ -7926,43 +7926,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (fcb->ads) {
-//         UINT32 maxlen;
-
         if (changed_length) {
             char* data2;
             
-//             // find maximum length of xattr
-//             maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-//             
-//             searchkey.obj_id = fcb->inode;
-//             searchkey.obj_type = TYPE_XATTR_ITEM;
-//             searchkey.offset = fcb->adshash;
-// 
-//             Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("error - find_item returned %08x\n", Status);
-//                 goto end;
-//             }
-//             
-//             if (keycmp(&tp.item->key, &searchkey)) {
-//                 ERR("error - could not find key for xattr\n");
-//                 Status = STATUS_INTERNAL_ERROR;
-//                 goto end;
-//             }
-//             
-//             if (tp.item->size < datalen) {
-//                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
-//                 Status = STATUS_INTERNAL_ERROR;
-//                 goto end;
-//             }
-//             
-//             maxlen -= tp.item->size - datalen; // subtract XATTR_ITEM overhead
-//             
-//             if (newlength > maxlen) {
-//                 ERR("error - xattr too long (%llu > %u)\n", newlength, maxlen);
-//                 Status = STATUS_DISK_FULL;
-//                 goto end;
-//             }
+            if (newlength > fcb->adsmaxlen) {
+                ERR("error - xattr too long (%llu > %u)\n", newlength, fcb->adsmaxlen);
+                Status = STATUS_DISK_FULL;
+                goto end;
+            }
 
             data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
             if (!data2) {
