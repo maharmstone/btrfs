@@ -6216,13 +6216,41 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
                         LIST_ENTRY* changed_sector_list, extent* ext, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
+    EXTENT_DATA2 *ed2, *ed2orig;
     extent* newext;
-    UINT64 addr;
+    UINT64 addr, origsize;
     NTSTATUS Status;
+    LIST_ENTRY* le;
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data,
                                                               length, data, changed_sector_list, ext, c, rollback);
+    
+    ed2orig = (EXTENT_DATA2*)ext->data->data;
+    
+    origsize = ed2orig->size;
+    addr = ed2orig->address + ed2orig->size;
+    
+    Status = write_data_complete(Vcb, addr, data, length, Irp, c);
+    if (!NT_SUCCESS(Status)) {
+        ERR("write_data returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext2 = CONTAINING_RECORD(le, extent, list_entry);
+            
+        if (!ext2->ignore && (ext2->data->type == EXTENT_TYPE_REGULAR || ext2->data->type == EXTENT_TYPE_PREALLOC)) {
+            EXTENT_DATA2* ed2b = (EXTENT_DATA2*)ext2->data->data;
+            
+            if (ed2b->address == ed2orig->address) {
+                ed2b->size = origsize + length;
+                ext2->data->decoded_size = origsize + length;
+            }
+        }
+                
+        le = le->Flink;
+    }
     
     ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
     if (!ed) {
@@ -6238,34 +6266,21 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     }
     
     RtlCopyMemory(ed, ext->data, ext->datalen);
-    
-    ed->decoded_size += length;
+
     ed2 = (EXTENT_DATA2*)ed->data;
-    
-    addr = ed2->address + ed2->size;
-     
-    Status = write_data_complete(Vcb, addr, data, length, Irp, c);
-    if (!NT_SUCCESS(Status)) {
-        ERR("write_data returned %08x\n", Status);
-        ExFreePool(newext);
-        ExFreePool(ed);
-        return FALSE;
-    }
-    
-    ed2->size += length;
-    ed2->num_bytes += length;
+    ed2->offset = ed2orig->offset + ed2orig->num_bytes;
+    ed2->num_bytes = length;
     
     RtlCopyMemory(newext, ext, sizeof(extent));
+    newext->offset = ext->offset + ed2orig->num_bytes;
     newext->data = ed;
     
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
     add_insert_extent_rollback(rollback, fcb, newext);
     
-    remove_fcb_extent(fcb, ext, rollback);
-    
-    Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size - length, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 0,
-                                       fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+    Status = update_changed_extent_ref(Vcb, c, ed2orig->address, origsize, fcb->subvol->id, fcb->inode, newext->offset - ed2->offset,
+                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
 
     if (!NT_SUCCESS(Status)) {
         ERR("update_changed_extent_ref returned %08x\n", Status);
