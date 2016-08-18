@@ -6260,6 +6260,8 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
+    add_insert_extent_rollback(rollback, fcb, newext);
+    
     remove_fcb_extent(fcb, ext, rollback);
     
     Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size - length, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 0,
