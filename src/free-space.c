@@ -296,7 +296,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
-        return Status;
+        return STATUS_NOT_FOUND;
     }
     
     if (c->cache->inode_item.st_size == 0) {
@@ -329,7 +329,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
         
         free_fcb(c->cache);
         c->cache = NULL;
-        return Status;
+        return STATUS_NOT_FOUND;
     }
     
     if (size > c->cache->inode_item.st_size)
