@@ -3847,7 +3847,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
 static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
-    ULONG xasize;
+    ULONG xasize, maxlen;
     DIR_ITEM* xa;
     NTSTATUS Status;
     
@@ -3864,8 +3864,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
     }
     
     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
-    
-    // FIXME - make sure xasize not too big
+    maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
     
     if (!keycmp(&tp.item->key, &searchkey)) { // key exists
         UINT8* newdata;
@@ -3890,6 +3889,12 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
                     UINT64 pos;
                     
                     // replace
+                    
+                    if (tp.item->size + xasize - oldxasize > maxlen) {
+                        ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", tp.item->size, xasize, oldxasize, maxlen);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
@@ -3923,8 +3928,14 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
                     break;
                 }
                 
-                if (xa->m + xa->n >= size) { // FIXME - test this works
+                if ((UINT8*)xa - (UINT8*)tp.item->data + oldxasize >= size) {
                     // not found, add to end of data
+                    
+                    if (tp.item->size + xasize > maxlen) {
+                        ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", tp.item->size, xasize, maxlen);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
                     if (!newdata) {
                         ERR("out of memory\n");
@@ -3955,7 +3966,10 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
             }
         }
     } else {
-        // add new DIR_ITEM struct
+        if (xasize > maxlen) {
+            ERR("DIR_ITEM would be over maximum size (%u > %u)\n", xasize, maxlen);
+            return STATUS_INTERNAL_ERROR;
+        }
         
         xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
         if (!xa) {
