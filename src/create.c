@@ -2344,6 +2344,201 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref* parfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
+                              PIRP Irp, ULONG options, POOL_TYPE pool_type, LIST_ENTRY* rollback) {
+    file_ref *fileref, *newpar;
+    fcb* fcb;
+    static char xapref[] = "user.";
+    ULONG xapreflen = strlen(xapref);
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    ULONG utf8len;
+    NTSTATUS Status;
+#ifdef DEBUG_FCB_REFCOUNTS
+    LONG rc;
+#endif
+    
+    TRACE("fpus = %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
+    TRACE("stream = %.*S\n", stream->Length / sizeof(WCHAR), stream->Buffer);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL);
+    ExReleaseResource(&Vcb->fcb_lock);
+    
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        UNICODE_STRING fpus2;
+        
+        if (!is_file_name_valid(fpus))
+            return STATUS_OBJECT_NAME_INVALID;
+        
+        fpus2.Length = fpus2.MaximumLength = fpus->Length;
+        fpus2.Buffer = ExAllocatePoolWithTag(pool_type, fpus2.MaximumLength, ALLOC_TAG);
+        
+        if (!fpus2.Buffer) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(fpus2.Buffer, fpus->Buffer, fpus2.Length);
+        
+        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, &newpar, rollback);
+    
+        if (!NT_SUCCESS(Status)) {
+            ERR("file_create2 returned %08x\n", Status);
+            ExFreePool(fpus2.Buffer);
+            return Status;
+        }
+        
+        send_notification_fileref(newpar, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
+        send_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+    } else if (!NT_SUCCESS(Status)) {
+        ERR("open_fileref returned %08x\n", Status);
+        return Status;
+    }
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    free_fileref(parfileref);
+    ExReleaseResource(&Vcb->fcb_lock);
+    
+    parfileref = newpar;
+    
+    if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK) {
+        WARN("parent not file or symlink\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (options & FILE_DIRECTORY_FILE) {
+        WARN("tried to create directory as stream\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+        
+    fcb = create_fcb(pool_type);
+    if (!fcb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    fcb->Vcb = Vcb;
+    
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize.QuadPart = 0;
+    fcb->Header.FileSize.QuadPart = 0;
+    fcb->Header.ValidDataLength.QuadPart = 0;
+    
+#ifdef DEBUG_FCB_REFCOUNTS
+    rc = InterlockedIncrement(&parfileref->fcb->refcount);
+    WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
+#else
+    InterlockedIncrement(&parfileref->fcb->refcount);
+#endif
+    fcb->subvol = parfileref->fcb->subvol;
+    fcb->inode = parfileref->fcb->inode;
+    fcb->type = parfileref->fcb->type;
+    
+    fcb->ads = TRUE;
+    
+    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream->Buffer, stream->Length);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return Status;
+    }
+    
+    fcb->adsxattr.Length = utf8len + xapreflen;
+    fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
+    fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
+    if (!fcb->adsxattr.Buffer) {
+        ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(fcb->adsxattr.Buffer, xapref, xapreflen);
+    
+    Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream->Buffer, stream->Length);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return Status;
+    }
+    
+    fcb->adsxattr.Buffer[fcb->adsxattr.Length] = 0;
+    
+    TRACE("adsxattr = %s\n", fcb->adsxattr.Buffer);
+    
+    fcb->adshash = calc_crc32c(0xfffffffe, (UINT8*)fcb->adsxattr.Buffer, fcb->adsxattr.Length);
+    TRACE("adshash = %08x\n", fcb->adshash);
+
+    fileref = create_fileref();
+    if (!fileref) {
+        ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    fileref->fcb = fcb;
+
+    fileref->filepart.MaximumLength = fileref->filepart.Length = stream->Length;
+    fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
+    if (!fileref->filepart.Buffer) {
+        ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fileref(fileref);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(fileref->filepart.Buffer, stream->Buffer, stream->Length);
+    
+    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fileref(fileref);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return Status;
+    }
+    
+    mark_fcb_dirty(fcb);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+    ExReleaseResource(&Vcb->fcb_lock);
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+    
+    parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
+    parfileref->fcb->inode_item.sequence++;
+    parfileref->fcb->inode_item.st_ctime = now;
+    
+    mark_fcb_dirty(parfileref->fcb);
+    
+    parfileref->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    parfileref->fcb->subvol->root_item.ctime = now;
+    
+    fileref->parent = (struct _file_ref*)parfileref;
+    
+    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    
+    increase_fileref_refcount(parfileref);
+    
+    *pfileref = fileref;
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
 //     fcb *fcb, *parfcb = NULL;
@@ -2448,202 +2643,11 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     }
     
     if (stream.Length > 0) {
-        file_ref* newpar;
-        fcb* fcb;
-        static char xapref[] = "user.";
-        ULONG xapreflen = strlen(xapref);
-        LARGE_INTEGER time;
-        BTRFS_TIME now;
-        ULONG utf8len;
-#ifdef DEBUG_FCB_REFCOUNTS
-        LONG rc;
-#endif
-        
-        TRACE("fpus = %.*S\n", fpus.Length / sizeof(WCHAR), fpus.Buffer);
-        TRACE("stream = %.*S\n", stream.Length / sizeof(WCHAR), stream.Buffer);
-        
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &newpar, &fpus, parfileref, FALSE, NULL, NULL);
-        ExReleaseResource(&Vcb->fcb_lock);
-        
-        if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-            UNICODE_STRING fpus2;
-            
-            if (!is_file_name_valid(&fpus))
-                return STATUS_OBJECT_NAME_INVALID;
-            
-            fpus2.Length = fpus2.MaximumLength = fpus.Length;
-            fpus2.Buffer = ExAllocatePoolWithTag(pool_type, fpus2.MaximumLength, ALLOC_TAG);
-            
-            if (!fpus2.Buffer) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            RtlCopyMemory(fpus2.Buffer, fpus.Buffer, fpus2.Length);
-            
-            Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, &newpar, rollback);
-        
-            if (!NT_SUCCESS(Status)) {
-                ERR("file_create2 returned %08x\n", Status);
-                ExFreePool(fpus2.Buffer);
-                goto end;
-            }
-            
-            send_notification_fileref(newpar, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
-            send_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
-        } else if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref returned %08x\n", Status);
-            goto end;
-        }
-        
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(parfileref);
-        ExReleaseResource(&Vcb->fcb_lock);
-        
-        parfileref = newpar;
-        
-        if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK) {
-            WARN("parent not file or symlink\n");
-            Status = STATUS_INVALID_PARAMETER;
-            goto end;
-        }
-        
-        if (options & FILE_DIRECTORY_FILE) {
-            WARN("tried to create directory as stream\n");
-            Status = STATUS_INVALID_PARAMETER;
-            goto end;
-        }
-            
-        fcb = create_fcb(pool_type);
-        if (!fcb) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        fcb->Vcb = Vcb;
-        
-        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-        fcb->Header.AllocationSize.QuadPart = 0;
-        fcb->Header.FileSize.QuadPart = 0;
-        fcb->Header.ValidDataLength.QuadPart = 0;
-        
-#ifdef DEBUG_FCB_REFCOUNTS
-        rc = InterlockedIncrement(&parfileref->fcb->refcount);
-        WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
-#else
-        InterlockedIncrement(&parfileref->fcb->refcount);
-#endif
-        fcb->subvol = parfileref->fcb->subvol;
-        fcb->inode = parfileref->fcb->inode;
-        fcb->type = parfileref->fcb->type;
-        
-        fcb->ads = TRUE;
-        
-        Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream.Buffer, stream.Length);
+        Status = create_stream(Vcb, &fileref, parfileref, &fpus, &stream, Irp, options, pool_type, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fcb(fcb);
-            ExReleaseResource(&Vcb->fcb_lock);
+            ERR("create_stream returned %08x\n", Status);
             goto end;
         }
-        
-        fcb->adsxattr.Length = utf8len + xapreflen;
-        fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
-        fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
-        if (!fcb->adsxattr.Buffer) {
-            ERR("out of memory\n");
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fcb(fcb);
-            ExReleaseResource(&Vcb->fcb_lock);
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(fcb->adsxattr.Buffer, xapref, xapreflen);
-        
-        Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream.Buffer, stream.Length);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fcb(fcb);
-            ExReleaseResource(&Vcb->fcb_lock);
-            goto end;
-        }
-        
-        fcb->adsxattr.Buffer[fcb->adsxattr.Length] = 0;
-        
-        TRACE("adsxattr = %s\n", fcb->adsxattr.Buffer);
-        
-        fcb->adshash = calc_crc32c(0xfffffffe, (UINT8*)fcb->adsxattr.Buffer, fcb->adsxattr.Length);
-        TRACE("adshash = %08x\n", fcb->adshash);
-
-        fileref = create_fileref();
-        if (!fileref) {
-            ERR("out of memory\n");
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fcb(fcb);
-            ExReleaseResource(&Vcb->fcb_lock);
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        fileref->fcb = fcb;
-
-        fileref->filepart.MaximumLength = fileref->filepart.Length = stream.Length;
-        fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
-        if (!fileref->filepart.Buffer) {
-            ERR("out of memory\n");
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResource(&Vcb->fcb_lock);
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(fileref->filepart.Buffer, stream.Buffer, stream.Length);
-        
-        Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
-            ExReleaseResource(&Vcb->fcb_lock);
-            goto end;
-        }
-       
-        mark_fcb_dirty(fcb);
-        
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
-        InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
-        ExReleaseResource(&Vcb->fcb_lock);
-        
-        KeQuerySystemTime(&time);
-        win_time_to_unix(time, &now);
-        
-        parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
-        parfileref->fcb->inode_item.sequence++;
-        parfileref->fcb->inode_item.st_ctime = now;
-        
-        mark_fcb_dirty(parfileref->fcb);
-        
-        parfileref->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
-        parfileref->fcb->subvol->root_item.ctime = now;
-        
-        fileref->parent = (struct _file_ref*)parfileref;
-        
-        ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
-        InsertTailList(&parfileref->children, &fileref->list_entry);
-        ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
-        
-        increase_fileref_refcount(parfileref);
-        
-        ExFreePool(fpus.Buffer);
-        fpus.Buffer = NULL;
     } else {
         if (!is_file_name_valid(&fpus)) {
             Status = STATUS_OBJECT_NAME_INVALID;
