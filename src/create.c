@@ -2541,9 +2541,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     
     fileref->parent = (struct _file_ref*)parfileref;
     
-    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
-    InsertTailList(&parfileref->children, &fileref->list_entry);
-    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    insert_fileref_child(parfileref, fileref, TRUE);
     
     increase_fileref_refcount(parfileref);
     
