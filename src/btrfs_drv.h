@@ -702,6 +702,11 @@ typedef struct {
     UINT64 length;
 } rollback_space;
 
+typedef struct {
+    fcb* fcb;
+    extent* ext;
+} rollback_extent;
+
 enum rollback_type {
     ROLLBACK_INSERT_ITEM,
     ROLLBACK_DELETE_ITEM,
@@ -761,7 +766,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list,
                          PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size);
 NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
-void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
                                    signed long long count, BOOL no_csum, UINT64 new_size);
 NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);

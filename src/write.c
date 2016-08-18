@@ -50,6 +50,7 @@ typedef struct {
 // static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback);
+static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -5583,7 +5584,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
             if (ext->offset < end_data && ext->offset + len > start_data) {
                 if (ed->type == EXTENT_TYPE_INLINE) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= len;
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
@@ -5624,7 +5625,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - ext->offset;
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
@@ -5665,7 +5666,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= ext->offset + len - start_data;
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
@@ -5744,7 +5745,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - start_data;
                     }
@@ -5769,7 +5770,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                             }
                         }
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
                         EXTENT_DATA* ned;
                         EXTENT_DATA2* ned2;
@@ -5813,7 +5814,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
                         EXTENT_DATA* ned;
                         EXTENT_DATA2* ned2;
@@ -5857,7 +5858,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
                         EXTENT_DATA *neda, *nedb;
                         EXTENT_DATA2 *neda2, *nedb2;
@@ -5957,7 +5958,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
                         
-                        remove_fcb_extent(ext, rollback);
+                        remove_fcb_extent(fcb, ext, rollback);
                     }
                 }
             }
@@ -6016,6 +6017,21 @@ static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data,
     return STATUS_SUCCESS;
 }
 
+static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
+    rollback_extent* re;
+    
+    re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
+    if (!re) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    re->fcb = fcb;
+    re->ext = ext;
+    
+    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
+}
+
 static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
@@ -6049,15 +6065,27 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     InsertTailList(&fcb->extents, &ext->list_entry);
     
 end:
-    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, ext);
+    add_insert_extent_rollback(rollback, fcb, ext);
 
     return TRUE;
 }
 
-void remove_fcb_extent(extent* ext, LIST_ENTRY* rollback) {
+static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     if (!ext->ignore) {
+        rollback_extent* re;
+        
         ext->ignore = TRUE;
-        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, ext);
+        
+        re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
+        if (!re) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        re->fcb = fcb;
+        re->ext = ext;
+        
+        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
     }
 }
 
@@ -6232,7 +6260,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     InsertHeadList(&ext->list_entry, &newext->list_entry);
     
-    remove_fcb_extent(ext, rollback);
+    remove_fcb_extent(fcb, ext, rollback);
     
     Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size - length, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 0,
                                        fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
@@ -6854,7 +6882,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 
                 fcb->inode_item.st_blocks -= origlength;
                 
-                remove_fcb_extent(ext, rollback);
+                remove_fcb_extent(fcb, ext, rollback);
                 
                 if (write_fcb_compressed(fcb)) {
                     Status = write_compressed(fcb, offset, offset + length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
@@ -6900,7 +6928,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     
                     ed->decoded_size = end - ext->offset;
                     
-                    remove_fcb_extent(ext, rollback);
+                    remove_fcb_extent(fcb, ext, rollback);
                     
                     if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, rollback)) {
                         ERR("add_extent_to_fcb failed\n");
@@ -7256,9 +7284,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext);
+        add_insert_extent_rollback(rollback, fcb, newext);
         
-        remove_fcb_extent(ext, rollback);
+        remove_fcb_extent(fcb, ext, rollback);
     } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
         EXTENT_DATA *ned, *nedb;
         EXTENT_DATA2* ned2;
@@ -7319,7 +7347,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        add_insert_extent_rollback(rollback, fcb, newext1);
         
         newext2->offset = end_data;
         newext2->data = nedb;
@@ -7328,7 +7356,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
+        add_insert_extent_rollback(rollback, fcb, newext2);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
@@ -7344,7 +7372,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             }
         }
 
-        remove_fcb_extent(ext, rollback);
+        remove_fcb_extent(fcb, ext, rollback);
     } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
         EXTENT_DATA *ned, *nedb;
         EXTENT_DATA2* ned2;
@@ -7407,7 +7435,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        add_insert_extent_rollback(rollback, fcb, newext1);
         
         newext2->offset = start_data;
         newext2->data = nedb;
@@ -7416,7 +7444,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
+        add_insert_extent_rollback(rollback, fcb, newext2);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
@@ -7432,7 +7460,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             }
         }
 
-        remove_fcb_extent(ext, rollback);
+        remove_fcb_extent(fcb, ext, rollback);
     } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
         EXTENT_DATA *ned, *nedb, *nedc;
         EXTENT_DATA2* ned2;
@@ -7521,7 +7549,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext1);
+        add_insert_extent_rollback(rollback, fcb, newext1);
         
         newext2->offset = start_data;
         newext2->data = nedb;
@@ -7530,7 +7558,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext2);
+        add_insert_extent_rollback(rollback, fcb, newext2);
         
         newext3->offset = end_data;
         newext3->data = nedc;
@@ -7539,7 +7567,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->ignore = FALSE;
         InsertHeadList(&newext2->list_entry, &newext3->list_entry);
         
-        add_rollback(rollback, ROLLBACK_INSERT_EXTENT, newext3);
+        add_insert_extent_rollback(rollback, fcb, newext3);
         
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
         
@@ -7555,7 +7583,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             }
         }
 
-        remove_fcb_extent(ext, rollback);
+        remove_fcb_extent(fcb, ext, rollback);
     }
     
     return STATUS_SUCCESS;

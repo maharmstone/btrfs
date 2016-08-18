@@ -1031,6 +1031,8 @@ void clear_rollback(LIST_ENTRY* rollback) {
             case ROLLBACK_DELETE_ITEM:
             case ROLLBACK_ADD_SPACE:
             case ROLLBACK_SUBTRACT_SPACE:
+            case ROLLBACK_INSERT_EXTENT:
+            case ROLLBACK_DELETE_EXTENT:
                 ExFreePool(ri->ptr);
                 break;
 
@@ -1088,17 +1090,21 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
             
             case ROLLBACK_INSERT_EXTENT:
             {
-                extent* ext = ri->ptr;
+                rollback_extent* re = ri->ptr;
                 
-                ext->ignore = TRUE;
+                re->ext->ignore = TRUE;
+                
+                ExFreePool(re);
                 break;
             }
             
             case ROLLBACK_DELETE_EXTENT:
             {
-                extent* ext = ri->ptr;
+                rollback_extent* re = ri->ptr;
                 
-                ext->ignore = FALSE;
+                re->ext->ignore = FALSE;
+                
+                ExFreePool(re);
                 break;
             }
             
