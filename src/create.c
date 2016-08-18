@@ -2521,6 +2521,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     }
     
     mark_fcb_dirty(fcb);
+    mark_fileref_dirty(fileref);
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
