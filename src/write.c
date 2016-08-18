@@ -5158,6 +5158,27 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         ExFreePool(dirt);
     }
     
+    // We process deleted streams first, so we don't run over our xattr
+    // limit unless we absolutely have to.
+    
+    le = Vcb->dirty_fcbs.Flink;
+    while (le != &Vcb->dirty_fcbs) {
+        dirty_fcb* dirt;
+        LIST_ENTRY* le2 = le->Flink;
+        
+        dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
+        
+        if (dirt->fcb->deleted && dirt->fcb->ads) {
+            RemoveEntryList(le);
+            
+            flush_fcb(dirt->fcb, FALSE, rollback);
+            free_fcb(dirt->fcb);
+            ExFreePool(dirt);
+        }
+        
+        le = le2;
+    }
+    
     le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
         dirty_fcb* dirt;
