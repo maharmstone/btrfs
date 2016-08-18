@@ -2344,22 +2344,26 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref* parfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
+static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
                               PIRP Irp, ULONG options, POOL_TYPE pool_type, LIST_ENTRY* rollback) {
-    file_ref *fileref, *newpar;
+    file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
     static char xapref[] = "user.";
-    ULONG xapreflen = strlen(xapref);
+    ULONG xapreflen = strlen(xapref), overhead;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG utf8len;
     NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
     
     TRACE("fpus = %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
     TRACE("stream = %.*S\n", stream->Length / sizeof(WCHAR), stream->Buffer);
+    
+    parfileref = *pparfileref;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL);
@@ -2401,6 +2405,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     ExReleaseResource(&Vcb->fcb_lock);
     
     parfileref = newpar;
+    *pparfileref = parfileref;
     
     if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK) {
         WARN("parent not file or symlink\n");
@@ -2474,7 +2479,36 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     
     fcb->adshash = calc_crc32c(0xfffffffe, (UINT8*)fcb->adsxattr.Buffer, fcb->adsxattr.Length);
     TRACE("adshash = %08x\n", fcb->adshash);
-
+    
+    searchkey.obj_id = parfileref->fcb->inode;
+    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.offset = fcb->adshash;
+    
+    Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return Status;
+    }
+    
+    if (!keycmp(&tp.item->key, &searchkey))
+        overhead = tp.item->size;
+    else
+        overhead = 0;
+    
+    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
+    
+    if (utf8len + xapreflen + overhead > fcb->adsmaxlen) {
+        WARN("not enough room for new DIR_ITEM (%u + %u > %u)", utf8len + xapreflen, overhead, fcb->adsmaxlen);
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fcb(fcb);
+        ExReleaseResource(&Vcb->fcb_lock);
+        return STATUS_DISK_FULL;
+    } else
+        fcb->adsmaxlen -= overhead + utf8len + xapreflen;
+    
     fileref = create_fileref();
     if (!fileref) {
         ERR("out of memory\n");
@@ -2643,7 +2677,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     }
     
     if (stream.Length > 0) {
-        Status = create_stream(Vcb, &fileref, parfileref, &fpus, &stream, Irp, options, pool_type, rollback);
+        Status = create_stream(Vcb, &fileref, &parfileref, &fpus, &stream, Irp, options, pool_type, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("create_stream returned %08x\n", Status);
             goto end;
