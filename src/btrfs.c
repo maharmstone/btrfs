@@ -3373,7 +3373,7 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
     ULONG i;
     NTSTATUS Status;
     
-    Vcb->threads.num_threads = max(3, KeQueryActiveProcessorCount(NULL)); // FIXME - number of processors?
+    Vcb->threads.num_threads = max(3, KeQueryActiveProcessorCount(NULL));
     
     Vcb->threads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_thread) * Vcb->threads.num_threads, ALLOC_TAG);
     if (!Vcb->threads.threads) {
@@ -3405,6 +3405,8 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
         }
     }
     
+    Vcb->threads.pending_jobs = 0;
+    
     return STATUS_SUCCESS;
 }
 
@@ -3413,6 +3415,9 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     thread_job* tj;
     
     threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
+    
+    if (Vcb->threads.pending_jobs >= Vcb->threads.num_threads)
+        return FALSE;
     
     if (Vcb->threads.threads[threadnum].quit)
         return FALSE;
@@ -3426,6 +3431,8 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     }
     
     tj->Irp = Irp;
+    
+    InterlockedIncrement(&Vcb->threads.pending_jobs);
     
     ExInterlockedInsertTailList(&Vcb->threads.threads[threadnum].jobs, &tj->list_entry, &Vcb->threads.threads[threadnum].spin_lock);
     KeSetEvent(&Vcb->threads.threads[threadnum].event, 0, FALSE);

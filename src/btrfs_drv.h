@@ -413,6 +413,7 @@ typedef struct {
     ULONG num_threads;
     LONG next_thread;
     drv_thread* threads;
+    LONG pending_jobs;
 } drv_threads;
 
 typedef struct {

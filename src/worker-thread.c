@@ -95,6 +95,7 @@ void STDCALL worker_thread(void* context) {
         
         while (TRUE) {
             LIST_ENTRY* le;
+            device_extension* Vcb = thread->DeviceObject->DeviceExtension;
             
             KeAcquireSpinLock(&thread->spin_lock, &irql);
             
@@ -108,6 +109,7 @@ void STDCALL worker_thread(void* context) {
             
             KeReleaseSpinLock(&thread->spin_lock, irql);
             
+            InterlockedDecrement(&Vcb->threads.pending_jobs);
             do_job(thread, le);
         }
         
