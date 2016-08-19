@@ -1146,23 +1146,51 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 ExFreePool(re);
                 break;
             }
-            
+
             case ROLLBACK_ADD_SPACE:
-            {
-                rollback_space* rs = ri->ptr;
-                
-                space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL);
-                
-                ExFreePool(rs);
-            }
-            
             case ROLLBACK_SUBTRACT_SPACE:
             {
                 rollback_space* rs = ri->ptr;
                 
-                space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                if (rs->chunk)
+                    ExAcquireResourceExclusiveLite(&rs->chunk->lock, TRUE);
                 
+                if (ri->type == ROLLBACK_ADD_SPACE)
+                    space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                else
+                    space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                
+                if (rs->chunk) {
+                    LIST_ENTRY* le2 = le->Blink;
+                    
+                    while (le2 != rollback) {
+                        LIST_ENTRY* le3 = le2->Blink;
+                        rollback_item* ri2 = CONTAINING_RECORD(le2, rollback_item, list_entry);
+                        
+                        if (ri2->type == ROLLBACK_ADD_SPACE || ri2->type == ROLLBACK_SUBTRACT_SPACE) {
+                            rollback_space* rs2 = ri2->ptr;
+                            
+                            if (rs2->chunk == rs->chunk) {
+                                if (ri2->type == ROLLBACK_ADD_SPACE)
+                                    space_list_subtract2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
+                                else
+                                    space_list_add2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
+                                
+                                ExFreePool(rs2);
+                                RemoveEntryList(&ri2->list_entry);
+                                ExFreePool(ri2);
+                            }
+                        }
+                        
+                        le2 = le3;
+                    }
+                    
+                    ExReleaseResourceLite(&rs->chunk->lock);
+                }
+                    
                 ExFreePool(rs);
+                
+                break;
             }
         }
         
