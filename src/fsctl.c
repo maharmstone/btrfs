@@ -608,10 +608,13 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL);
     
     if (NT_SUCCESS(Status)) {
-        WARN("file already exists\n");
-        free_fileref(fr2);
-        Status = STATUS_OBJECT_NAME_COLLISION;
-        goto end3;
+        if (!fr2->deleted) {
+            WARN("file already exists\n");
+            free_fileref(fr2);
+            Status = STATUS_OBJECT_NAME_COLLISION;
+            goto end3;
+        } else
+            free_fileref(fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08x\n", Status);
         goto end3;
