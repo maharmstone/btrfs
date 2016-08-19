@@ -6314,7 +6314,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     
     increase_chunk_usage(c, length);
       
-    space_list_subtract(Vcb, c, FALSE, addr, length, rollback);
+    space_list_subtract(Vcb, c, FALSE, addr, length, NULL); // no rollback as we don't reverse extending the extent
      
     fcb->inode_item.st_blocks += length;
     
