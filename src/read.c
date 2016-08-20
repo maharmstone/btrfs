@@ -166,6 +166,14 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+static void do_verify(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    
+    Status = IoVerifyVolume(devobj, FALSE);
+    
+    ERR("IoVerifyVolume returned %08x\n", Status);
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -450,7 +458,23 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error && IoIsErrorUserInduced(context->stripes[i].iosb.Status)) {
-            IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
+            if (Irp && context->stripes[i].iosb.Status == STATUS_VERIFY_REQUIRED) {
+                PDEVICE_OBJECT dev;
+                
+                dev = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
+                IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
+                
+                if (!dev) {
+                    dev = IoGetDeviceToVerify(PsGetCurrentThread());
+                    IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
+                }
+                
+                dev = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
+                
+                if (dev)
+                    do_verify(dev);
+            }
+//             IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
             
             Status = context->stripes[i].iosb.Status;
             goto exit;
