@@ -401,12 +401,12 @@ static ACL* load_default_acl() {
 //     }
 // }
 
-static BOOL get_sd_from_xattr(fcb* fcb) {
+static BOOL get_sd_from_xattr(fcb* fcb, PIRP Irp) {
     ULONG buflen;
     NTSTATUS Status;
     PSID sid, usersid;
     
-    if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8**)&fcb->sd, (UINT16*)&buflen))
+    if (!get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8**)&fcb->sd, (UINT16*)&buflen, Irp))
         return FALSE;
     
     TRACE("using xattr " EA_NTACL " for security descriptor\n");
@@ -655,12 +655,12 @@ end:
         ExFreePool(groupsid);
 }
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent) {
+void fcb_get_sd(fcb* fcb, struct _fcb* parent, PIRP Irp) {
     NTSTATUS Status;
     PSID usersid = NULL, groupsid = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;
     
-    if (get_sd_from_xattr(fcb))
+    if (get_sd_from_xattr(fcb, Irp))
         return;
     
     if (!parent) {

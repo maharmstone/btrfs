@@ -370,7 +370,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08x\n", Status);
         ExFreePool(comp_data);
@@ -762,7 +762,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08x\n", Status);
         ExFreePool(comp_data);

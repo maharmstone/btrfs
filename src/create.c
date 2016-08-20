@@ -21,7 +21,7 @@
 
 extern PDEVICE_OBJECT devobj;
 
-static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -31,7 +31,7 @@ static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode
     searchkey.obj_type = TYPE_INODE_REF;
     searchkey.offset = parinode;
     
-    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, r, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -78,7 +78,7 @@ static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode
         return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -88,7 +88,7 @@ static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT6
     searchkey.obj_type = TYPE_INODE_EXTREF;
     searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
     
-    Status = find_item(Vcb, r, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, r, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -135,7 +135,7 @@ static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT6
         return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 subvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex) {
+static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 subvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -145,7 +145,7 @@ static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 sub
     searchkey.obj_type = TYPE_ROOT_REF;
     searchkey.offset = subvolid;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -177,7 +177,7 @@ static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 sub
         return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS load_index_list(fcb* fcb) {
+static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -187,14 +187,14 @@ static NTSTATUS load_index_list(fcb* fcb) {
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
     
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
     }
 
     if (keycmp(&tp.item->key, &searchkey) == -1) {
-        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE)) {
+        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp)) {
             tp = next_tp;
             
             TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -311,7 +311,7 @@ static NTSTATUS load_index_list(fcb* fcb) {
         }
         
 nextitem:
-        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
          
         if (b) {
             tp = next_tp;
@@ -339,7 +339,7 @@ end:
 }
 
 static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING filename, root** subvol, UINT64* inode, UINT8* type,
-                                               UINT64* pindex, PANSI_STRING utf8) {
+                                               UINT64* pindex, PANSI_STRING utf8, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     UNICODE_STRING us;
@@ -356,7 +356,7 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
     ExAcquireResourceExclusiveLite(&fr->fcb->nonpaged->index_lock, TRUE);
     
     if (!fr->fcb->index_loaded) {
-        Status = load_index_list(fr->fcb);
+        Status = load_index_list(fr->fcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_index_list returned %08x\n", Status);
             goto end;
@@ -469,7 +469,7 @@ end:
 }
 
 static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
-                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8) {
+                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8, PIRP Irp) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp;
@@ -483,7 +483,7 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = crc32;
     
-    Status = find_item(Vcb, fr->fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, fr->fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -593,16 +593,16 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
                                 nutf8.Length = nutf8.MaximumLength = di->n;
                                 
                                 if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
+                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("find_subvol_dir_index returned %08x\n", Status);
                                         return Status;
                                     }
                                 } else {
-                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
+                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
                                     if (!NT_SUCCESS(Status)) {
                                         if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index);
+                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
                                             
                                             if (!NT_SUCCESS(Status)) {
                                                 ERR("find_file_dir_index_extref returned %08x\n", Status);
@@ -652,7 +652,7 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
     }
     
 byindex:
-    Status = find_file_in_dir_index(fr, filename, subvol, inode, type, pindex, utf8);
+    Status = find_file_in_dir_index(fr, filename, subvol, inode, type, pindex, utf8, Irp);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("find_file_in_dir_index returned %08x\n", Status);
         return Status;
@@ -743,7 +743,7 @@ file_ref* create_fileref() {
 }
 
 NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
-                                  root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8) {
+                                  root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8, PIRP Irp) {
     char* fn;
     UINT32 crc32;
     ULONG utf8len;
@@ -773,10 +773,10 @@ NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filenam
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
     TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
     
-    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8);
+    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8, Irp);
 }
 
-static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr) {
+static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr, PIRP Irp) {
     NTSTATUS Status;
     ULONG utf8len;
     char* utf8;
@@ -824,7 +824,7 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         goto end;
@@ -877,7 +877,7 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
     
     searchkey.offset = 0;
     
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         goto end;
@@ -960,7 +960,7 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
             }
         }
         
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
         if (b) {
             tp = next_tp;
             
@@ -1134,7 +1134,7 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     return deleted;
 }
 
-static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size) {
+static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1144,7 +1144,7 @@ static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -1170,7 +1170,7 @@ static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     return ei->refcount;
 }
 
-NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb) {
+NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1216,7 +1216,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     searchkey.obj_type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         free_fcb(fcb);
@@ -1249,15 +1249,15 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             fcb->type = BTRFS_TYPE_FILE;
     }
     
-    fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE);
+    fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE, Irp);
     
-    fcb_get_sd(fcb, parent);
+    fcb_get_sd(fcb, parent, Irp);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         UINT8* xattrdata;
         UINT16 xattrlen;
         
-        if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen)) {
+        if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen, Irp)) {
             fcb->reparse_xattr.Buffer = (char*)xattrdata;
             fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
         }
@@ -1280,7 +1280,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         searchkey.obj_type = TYPE_EXTENT_DATA;
         searchkey.offset = 0;
         
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             free_fcb(fcb);
@@ -1317,7 +1317,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         goto nextitem;
                     
                     if (ed2->size != 0)
-                        unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size) == 1;
+                        unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size, Irp) == 1;
                 }
                 
                 ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
@@ -1345,7 +1345,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             }
             
 nextitem:
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
          
             if (b) {
                 tp = next_tp;
@@ -1370,7 +1370,7 @@ nextitem:
     searchkey.obj_type = TYPE_INODE_REF;
     searchkey.offset = 0;
     
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         free_fcb(fcb);
@@ -1514,7 +1514,7 @@ nextitem:
             }
         }
         
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
         
         if (b) {
             tp = next_tp;
@@ -1529,7 +1529,7 @@ nextitem:
 }
 
 NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr,
-                         UINT32 streamhash, fcb* parent, fcb** pfcb) {
+                         UINT32 streamhash, fcb* parent, fcb** pfcb, PIRP Irp) {
     fcb* fcb;
     UINT8* xattrdata;
     UINT16 xattrlen, overhead;
@@ -1567,7 +1567,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
         return STATUS_INSUFFICIENT_RESOURCES;
     }
       
-    if (!get_xattr(Vcb, parent->subvol, parent->inode, xattr->Buffer, streamhash, &xattrdata, &xattrlen)) {
+    if (!get_xattr(Vcb, parent->subvol, parent->inode, xattr->Buffer, streamhash, &xattrdata, &xattrlen, Irp)) {
         ERR("get_xattr failed\n");
         free_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
@@ -1588,7 +1588,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = streamhash;
 
-    Status = find_item(Vcb, parent->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, parent->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
         free_fcb(fcb);
@@ -1660,7 +1660,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset) {
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     ULONG i, num_parts;
@@ -1787,7 +1787,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 
                 // FIXME - check if already opened
                 
-                if (!find_stream(Vcb, sf->fcb, &parts[i], &streamname, &streamhash, &xattr)) {
+                if (!find_stream(Vcb, sf->fcb, &parts[i], &streamname, &streamhash, &xattr, Irp)) {
                     TRACE("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
                     
                     Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -1803,7 +1803,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         goto end;
                     }
                     
-                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamhash, sf->fcb, &fcb);
+                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamhash, sf->fcb, &fcb, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("open_fcb_stream returned %08x\n", Status);
                         goto end;
@@ -1854,7 +1854,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 UINT8 type;
                 ANSI_STRING utf8;
                 
-                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8);
+                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8, Irp);
                 if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
@@ -1867,7 +1867,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     fcb* fcb;
                     ULONG strlen;
                     
-                    Status = open_fcb(Vcb, subvol, inode, type, &utf8, sf->fcb, &fcb);
+                    Status = open_fcb(Vcb, subvol, inode, type, &utf8, sf->fcb, &fcb, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("open_fcb returned %08x\n", Status);
                         goto end;
@@ -1972,7 +1972,7 @@ end2:
     return Status;
 }
 
-NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index) {
+NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, prev_tp;
     NTSTATUS Status;
@@ -1990,14 +1990,14 @@ NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index) {
     searchkey.obj_type = TYPE_DIR_INDEX + 1;
     searchkey.offset = 0;
     
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     
     if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
-        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, FALSE))
+        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, FALSE, Irp))
             tp = prev_tp;
     }
     
@@ -2053,7 +2053,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     utf8[utf8len] = 0;
     
-    Status = fcb_get_last_dir_index(parfileref->fcb, &dirpos);
+    Status = fcb_get_last_dir_index(parfileref->fcb, &dirpos, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
         ExFreePool(utf8);
@@ -2077,7 +2077,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     mark_fcb_dirty(parfileref->fcb);
     
     if (parfileref->fcb->subvol->lastinode == 0)
-        get_last_inode(Vcb, parfileref->fcb->subvol);
+        get_last_inode(Vcb, parfileref->fcb->subvol, Irp);
     
     inode = parfileref->fcb->subvol->lastinode + 1;
     
@@ -2345,7 +2345,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     parfileref = *pparfileref;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL);
+    Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, Irp);
     ExReleaseResource(&Vcb->fcb_lock);
     
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
@@ -2463,7 +2463,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = fcb->adshash;
     
-    Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -2584,7 +2584,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         related = NULL;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL);
+    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL, Irp);
     ExReleaseResource(&Vcb->fcb_lock);
     
     if (!NT_SUCCESS(Status))
@@ -3101,7 +3101,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_SUCCESS;
             } else {
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref);
+                Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
                 ExReleaseResource(&Vcb->fcb_lock);
             }
         } else {
@@ -3116,7 +3116,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset);
+        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset, Irp);
         ExReleaseResource(&Vcb->fcb_lock);
     }
     
@@ -3355,7 +3355,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 //             }
             
             // FIXME - make sure not ADS!
-            Status = truncate_file(fileref->fcb, 0, rollback);
+            Status = truncate_file(fileref->fcb, 0, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("truncate_file returned %08x\n", Status);
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3383,7 +3383,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             oldatts = fileref->fcb->atts;
             
             defda = get_file_attributes(Vcb, &fileref->fcb->inode_item, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
-                                        fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE);
+                                        fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
             
             if (RequestedDisposition == FILE_SUPERSEDE)
                 fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;

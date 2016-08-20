@@ -719,7 +719,7 @@ static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG l
     return Status;
 }
 
-static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length) {
+static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -730,7 +730,7 @@ static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 
     searchkey.obj_type = TYPE_EXTENT_CSUM;
     searchkey.offset = start;
     
-    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -759,7 +759,7 @@ static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 
                 break;
         }
         
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
         
         if (b)
             tp = next_tp;
@@ -773,7 +773,7 @@ static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum) {
+static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum, PIRP Irp) {
     UINT32* csum = NULL;
     NTSTATUS Status;
     UINT64 end;
@@ -844,7 +844,7 @@ static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UI
     runlength = RtlFindFirstRunClear(&bmp, &index);
             
     while (runlength != 0) {
-        Status = load_csum_from_disk(Vcb, &csum[index], start + (index * Vcb->superblock.sector_size), runlength);
+        Status = load_csum_from_disk(Vcb, &csum[index], start + (index * Vcb->superblock.sector_size), runlength, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_csum_from_disk returned %08x\n", Status);
             goto end;
@@ -980,7 +980,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     }
                     
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                        Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum);
+                        Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum, Irp);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("load_csum returned %08x\n", Status);

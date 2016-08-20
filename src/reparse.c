@@ -154,7 +154,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rd
     
     fileref->fcb->inode_item.st_mode |= __S_IFLNK;
     
-    Status = truncate_file(fileref->fcb, 0, rollback);
+    Status = truncate_file(fileref->fcb, 0, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("truncate_file returned %08x\n", Status);
         return Status;
@@ -304,7 +304,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             Status = STATUS_SUCCESS;
         } else { // otherwise, store as file data
-            Status = truncate_file(fcb, 0, &rollback);
+            Status = truncate_file(fcb, 0, Irp, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("truncate_file returned %08x\n", Status);
                 goto end;
@@ -452,7 +452,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         // FIXME - do we need to check that the reparse tags match?
         
-        Status = truncate_file(fcb, 0, &rollback);
+        Status = truncate_file(fcb, 0, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("truncate_file returned %08x\n", Status);
             goto end;

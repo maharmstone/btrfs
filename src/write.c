@@ -49,7 +49,7 @@ typedef struct {
 
 // static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
-static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback);
+static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
@@ -271,7 +271,7 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     return lastaddr;
 }
 
-static NTSTATUS update_dev_item(device_extension* Vcb, device* device, LIST_ENTRY* rollback) {
+static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
@@ -281,7 +281,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, LIST_ENTR
     searchkey.obj_type = TYPE_DEV_ITEM;
     searchkey.offset = device->devitem.dev_id;
     
-    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -302,7 +302,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, LIST_ENTR
     
     RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
     
-    if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -1205,7 +1205,7 @@ static void add_parents_to_cache(device_extension* Vcb, tree* t) {
     }
 }
 
-static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64 address, LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64 address, PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_ITEM_SKINNY_METADATA* eism;
     traverse_ptr insert_tp;
     
@@ -1221,7 +1221,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
     eism->type = TYPE_TREE_BLOCK_REF;
     eism->tbr.offset = root_id;
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(eism);
         return FALSE;
@@ -1238,7 +1238,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
     return TRUE;
 }
 
-static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64* new_address, LIST_ENTRY* rollback) {
+static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64* new_address, PIRP Irp, LIST_ENTRY* rollback) {
     UINT64 address;
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
@@ -1249,7 +1249,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
         return FALSE;
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        BOOL b = insert_tree_extent_skinny(Vcb, level, root_id, c, address, rollback);
+        BOOL b = insert_tree_extent_skinny(Vcb, level, root_id, c, address, Irp, rollback);
         
         if (b)
             *new_address = address;
@@ -1279,7 +1279,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
 //     }
 // #endif
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(eit2);
         return FALSE;
@@ -1298,7 +1298,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
     return TRUE;
 }
 
-NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
+NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
     UINT64 flags = t->flags, addr;
@@ -1328,7 +1328,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, rollback)) {
+        if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, Irp, rollback)) {
             t->new_address = addr;
             t->has_new_address = TRUE;
             return STATUS_SUCCESS;
@@ -1344,7 +1344,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
                 ExReleaseResourceLite(&c->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 t->new_address = addr;
@@ -1363,7 +1363,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, rollback)) {
+            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
                 ExReleaseResourceLite(&c->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 t->new_address = addr;
@@ -1382,7 +1382,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, LIST_ENTRY* rollba
     return STATUS_DISK_FULL;
 }
 
-static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, LIST_ENTRY* rollback) {
+static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     chunk* c;
@@ -1392,7 +1392,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     searchkey.obj_type = TYPE_METADATA_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return FALSE;
@@ -1459,7 +1459,7 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
 //     }    
 // }
 
-static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, LIST_ENTRY* rollback) {
+static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, tp2, insert_tp;
     EXTENT_REF_V0* erv0;
@@ -1471,7 +1471,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     searchkey.obj_type = TYPE_EXTENT_REF_V0;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return;
@@ -1486,7 +1486,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = Vcb->superblock.node_size;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return;
@@ -1521,7 +1521,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
         eism->type = TYPE_TREE_BLOCK_REF;
         eism->tbr.offset = t->header.tree_id;
         
-        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_METADATA_ITEM, t->header.level -1, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_METADATA_ITEM, t->header.level -1, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             return;
         }
@@ -1541,7 +1541,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
         eit2->type = TYPE_TREE_BLOCK_REF;
         eit2->tbr.offset = t->header.tree_id;
 
-        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             return;
         }
@@ -1552,7 +1552,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     add_parents_to_cache(Vcb, tp2.tree);
 }
 
-static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, LIST_ENTRY* rollback) {
+static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_ITEM* ei;
@@ -1565,7 +1565,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     TRACE("(%p, %llx, %p)\n", Vcb, address, t);
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        if (reduce_tree_extent_skinny(Vcb, address, t, rollback)) {
+        if (reduce_tree_extent_skinny(Vcb, address, t, Irp, rollback)) {
             return STATUS_SUCCESS;
         }
     }
@@ -1574,7 +1574,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = Vcb->superblock.node_size;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -1617,7 +1617,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         searchkey.obj_type = TYPE_EXTENT_REF_V0;
         searchkey.offset = 0xffffffffffffffff;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -1641,7 +1641,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             
             if (!td->ignore && !td->inserted) {
                 if (t->header.level > 0) {
-                    convert_old_tree_extent(Vcb, td, t, rollback);
+                    convert_old_tree_extent(Vcb, td, t, Irp, rollback);
                 } else if (td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA)) {
                     EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
                     
@@ -1650,7 +1650,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
                         
                         if (ed2->address != 0) {
                             TRACE("trying to convert old data extent %llx,%llx\n", ed2->address, ed2->size);
-                            convert_old_data_extent(Vcb, ed2->address, ed2->size, rollback);
+                            convert_old_data_extent(Vcb, ed2->address, ed2->size, Irp, rollback);
                         }
                     }
                 }
@@ -1676,7 +1676,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -1689,7 +1689,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
         if (t->write && !t->has_new_address) {
             chunk* c;
             
-            Status = get_tree_new_address(Vcb, t, rollback);
+            Status = get_tree_new_address(Vcb, t, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("get_tree_new_address returned %08x\n", Status);
                 return Status;
@@ -1698,7 +1698,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
             TRACE("allocated extent %llx\n", t->new_address);
             
             if (t->has_address) {
-                Status = reduce_tree_extent(Vcb, t->header.address, t, rollback);
+                Status = reduce_tree_extent(Vcb, t->header.address, t, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("reduce_tree_extent returned %08x\n", Status);
@@ -1722,7 +1722,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, LIST_ENTRY* rollbac
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -1741,7 +1741,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
                 searchkey.obj_type = TYPE_ROOT_ITEM;
                 searchkey.offset = 0xffffffffffffffff;
                 
-                Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+                Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("error - find_item returned %08x\n", Status);
                     return Status;
@@ -1772,7 +1772,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
                     
                     delete_tree_item(Vcb, &tp, rollback);
                     
-                    if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, 0, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, 0, ri, sizeof(ROOT_ITEM), NULL, Irp, rollback)) {
                         ERR("insert_tree_item failed\n");
                         return STATUS_INTERNAL_ERROR;
                     }
@@ -1786,7 +1786,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, LIST_ENTRY* rollback) {
         le = le->Flink;
     }
     
-    Status = update_chunk_caches(Vcb, rollback);
+    Status = update_chunk_caches(Vcb, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("update_chunk_caches returned %08x\n", Status);
         return Status;
@@ -1879,7 +1879,7 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
 }
 
-static NTSTATUS write_trees(device_extension* Vcb) {
+static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     UINT8 level;
     UINT8 *data, *body;
     UINT32 crc32;
@@ -1930,7 +1930,7 @@ static NTSTATUS write_trees(device_extension* Vcb) {
                     searchkey.obj_type = TYPE_EXTENT_ITEM;
                     searchkey.offset = Vcb->superblock.node_size;
                     
-                    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+                    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("error - find_item returned %08x\n", Status);
                         return Status;
@@ -2174,7 +2174,7 @@ end:
     return Status;
 }
 
-static void update_backup_superblock(device_extension* Vcb, superblock_backup* sb) {
+static void update_backup_superblock(device_extension* Vcb, superblock_backup* sb, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     
@@ -2192,7 +2192,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     searchkey.obj_type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp))) {
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
@@ -2204,7 +2204,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
 
     searchkey.obj_id = BTRFS_ROOT_FSTREE;
     
-    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp))) {
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
@@ -2216,7 +2216,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     
     searchkey.obj_id = BTRFS_ROOT_DEVTREE;
     
-    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp))) {
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
@@ -2228,7 +2228,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
 
     searchkey.obj_id = BTRFS_ROOT_CHECKSUM;
     
-    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE))) {
+    if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp))) {
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
             
@@ -2243,7 +2243,7 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     sb->num_devices = Vcb->superblock.num_devices;
 }
 
-static NTSTATUS write_superblocks(device_extension* Vcb) {
+static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     UINT64 i;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2272,7 +2272,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
         RtlCopyMemory(&Vcb->superblock.backup[i], &Vcb->superblock.backup[i+1], sizeof(superblock_backup));
     }
     
-    update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1]);
+    update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1], Irp);
     
     for (i = 0; i < Vcb->superblock.num_devices; i++) {
         if (Vcb->devices[i].devobj) {
@@ -2287,7 +2287,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, LIST_ENTRY* rollback) {
+static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     UINT64 old_size;
@@ -2316,7 +2316,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
         old_size = ce->old_count > 0 ? ce->old_size : ce->size;
         
         if (cer->edr.count > old_count) {
-            Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, rollback);
+            Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp, rollback);
                         
             if (!NT_SUCCESS(Status)) {
                 ERR("increase_extent_refcount_data returned %08x\n", Status);
@@ -2324,7 +2324,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             }
         } else if (cer->edr.count < old_count) {
             Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
-                                                   old_count - cer->edr.count, rollback);
+                                                   old_count - cer->edr.count, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("decrease_extent_refcount_data returned %08x\n", Status);
@@ -2341,7 +2341,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             searchkey.obj_type = TYPE_EXTENT_ITEM;
             searchkey.offset = ce->old_size;
             
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 return Status;
@@ -2364,7 +2364,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             } else
                 data = NULL;
             
-            if (!insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2418,7 +2418,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
     KEY searchkey;
@@ -2441,7 +2441,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             LIST_ENTRY* le3 = le2->Flink;
             changed_extent* ce = CONTAINING_RECORD(le2, changed_extent, list_entry);
             
-            Status = flush_changed_extent(Vcb, c, ce, rollback);
+            Status = flush_changed_extent(Vcb, c, ce, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_changed_extent returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
@@ -2458,7 +2458,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
             searchkey.offset = c->chunk_item->size;
             
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
@@ -2495,7 +2495,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
             
             delete_tree_item(Vcb, &tp, rollback);
             
-            if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 ExFreePool(bgi);
                 Status = STATUS_INTERNAL_ERROR;
@@ -2539,7 +2539,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, LIST_ENTRY* rollback) 
     if (flushed_extents) {
         ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
         if (!IsListEmpty(&Vcb->sector_checksums)) {
-            update_checksum_tree(Vcb, rollback);
+            update_checksum_tree(Vcb, Irp, rollback);
         }
         ExReleaseResourceLite(&Vcb->checksum_lock);
     }
@@ -2857,7 +2857,7 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
@@ -2890,7 +2890,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     
 //     ExAcquireResourceExclusiveLite(&t->parent->nonpaged->load_tree_lock, TRUE);
     
-    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, &loaded);
+    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, &loaded, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree returned %08x\n", Status);
         return Status;
@@ -2940,14 +2940,14 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
         next_tree->size = 0;
         
         if (next_tree->has_new_address) { // delete associated EXTENT_ITEM
-            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08x\n", Status);
                 return Status;
             }
         } else if (next_tree->has_address) {
-            Status = reduce_tree_extent(Vcb, next_tree->header.address, next_tree, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->header.address, next_tree, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08x\n", Status);
@@ -3041,7 +3041,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, LIST_ENTRY* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree* t, UINT8 level, LIST_ENTRY* rollback) {
+static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree* t, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -3051,7 +3051,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         searchkey.obj_type = TYPE_METADATA_ITEM;
         searchkey.offset = t->header.level;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -3074,7 +3074,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             
             delete_tree_item(Vcb, &tp, rollback);
             
-            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 ExFreePool(eism);
                 return STATUS_INTERNAL_ERROR;
@@ -3088,7 +3088,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -3115,7 +3115,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         
         eit->level = level;
         
-        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             ExFreePool(eit);
             return STATUS_INTERNAL_ERROR;
@@ -3129,7 +3129,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
     return STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
 //     LIST_ENTRY *le, *le2;
 //     write_tree* wt;
 //     tree_data* td;
@@ -3180,7 +3180,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         t->root->root_item.bytes_used -= Vcb->superblock.node_size;
                         
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
@@ -3189,7 +3189,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             
                             t->has_new_address = FALSE;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.address, t, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.address, t, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
@@ -3212,7 +3212,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         free_tree(t);
                     } else if (t->header.level != 0) {
                         if (t->has_new_address) {
-                            Status = update_extent_level(Vcb, t->new_address, t, 0, rollback);
+                            Status = update_extent_level(Vcb, t->new_address, t, 0, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_extent_level returned %08x\n", Status);
@@ -3255,7 +3255,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
             t = CONTAINING_RECORD(le, tree, list_entry);
             
             if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size) {
-                Status = try_tree_amalgamate(Vcb, t, rollback);
+                Status = try_tree_amalgamate(Vcb, t, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("try_tree_amalgamate returned %08x\n", Status);
                     return Status;
@@ -3293,7 +3293,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                         TRACE("deleting top-level tree in root %llx with one item\n", t->root->id);
                         
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
@@ -3302,7 +3302,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             
                             t->has_new_address = FALSE;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.address, t, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.address, t, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08x\n", Status);
@@ -3316,7 +3316,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
                             KEY searchkey = {0,0,0};
                             traverse_ptr tp;
                             
-                            Status = find_item(Vcb, t->root, &tp, &searchkey, FALSE);
+                            Status = find_item(Vcb, t->root, &tp, &searchkey, FALSE, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("error - find_item returned %08x\n", Status);
                                 return Status;
@@ -3347,12 +3347,12 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, UINT8 level, LIST_ENTRY* rollback) {
+static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     if (level > 0) {
         if (!th->tree) {
-            Status = load_tree(Vcb, th->address, r, &th->tree, NULL);
+            Status = load_tree(Vcb, th->address, r, &th->tree, NULL, NULL);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("load_tree(%llx) returned %08x\n", th->address, Status);
@@ -3367,7 +3367,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
                 
                 if (!td->ignore) {
-                    Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, rollback);
+                    Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, Irp, rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("remove_root_extents returned %08x\n", Status);
@@ -3381,7 +3381,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     }
     
     if (!th->tree || th->tree->has_address) {
-        Status = reduce_tree_extent(Vcb, th->address, NULL, rollback);
+        Status = reduce_tree_extent(Vcb, th->address, NULL, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("reduce_tree_extent(%llx) returned %08x\n", th->address, Status);
@@ -3392,12 +3392,12 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) {
+static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     
-    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.root_level, rollback);
+    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.root_level, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("remove_root_extents returned %08x\n", Status);
         return Status;
@@ -3410,7 +3410,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
         
         if (searchkey.obj_id != 0 || searchkey.offset != 0) {
-            Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 WARN("find_item returned %08x\n", Status);
             } else {
@@ -3428,7 +3428,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
     searchkey.obj_type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
         return Status;
@@ -3446,7 +3446,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, LIST_ENTRY* rollback) 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->drop_roots.Flink, *le2;
     NTSTATUS Status;
     
@@ -3455,7 +3455,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         le2 = le->Flink;
         
-        Status = drop_root(Vcb, r, rollback);
+        Status = drop_root(Vcb, r, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("drop_root(%llx) returned %08x\n", r->id, Status);
             return Status;
@@ -3467,7 +3467,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     BLOCK_GROUP_ITEM* bgi;
@@ -3482,7 +3482,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollba
     
     RtlCopyMemory(ci, c->chunk_item, c->size);
     
-    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ci);
         return STATUS_INTERNAL_ERROR;
@@ -3508,7 +3508,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollba
     bgi->chunk_tree = 0x100;
     bgi->flags = c->chunk_item->type;
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -3540,14 +3540,14 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollba
         de->length = c->chunk_item->size / factor;
         de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        if (!insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             ExFreePool(de);
             return STATUS_INTERNAL_ERROR;
         }
         
         // FIXME - no point in calling this twice for the same device
-        Status = update_dev_item(Vcb, c->devices[i], rollback);
+        Status = update_dev_item(Vcb, c->devices[i], Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("update_dev_item returned %08x\n", Status);
             return Status;
@@ -3582,7 +3582,7 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
     }
 }
 
-static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -3595,7 +3595,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     if (c->cache) {
         c->cache->deleted = TRUE;
         
-        flush_fcb(c->cache, TRUE, rollback);
+        flush_fcb(c->cache, TRUE, Irp, rollback);
         
         free_fcb(c->cache);
         
@@ -3603,7 +3603,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         searchkey.obj_type = 0;
         searchkey.offset = c->offset;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -3629,7 +3629,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             searchkey.obj_type = TYPE_DEV_EXTENT;
             searchkey.offset = cis[i].offset;
             
-            Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 return Status;
@@ -3665,7 +3665,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             searchkey.obj_type = TYPE_DEV_ITEM;
             searchkey.offset = c->devices[i]->devitem.dev_id;
             
-            Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 return Status;
@@ -3686,7 +3686,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
             
             RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
             
-            if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -3704,7 +3704,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         searchkey.obj_type = TYPE_CHUNK_ITEM;
         searchkey.offset = c->offset;
         
-        Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -3720,7 +3720,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
         searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
         searchkey.offset = 0xffffffffffffffff;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -3765,7 +3765,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* rollback
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunks(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks_changed.Flink, *le2;
     NTSTATUS Status;
     UINT64 used_minus_cache;
@@ -3817,7 +3817,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
         }
         
         if (used_minus_cache == 0) {
-            Status = drop_chunk(Vcb, c, rollback);
+            Status = drop_chunk(Vcb, c, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("drop_chunk returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
@@ -3825,7 +3825,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
                 return Status;
             }
         } else if (c->created) {
-            Status = create_chunk(Vcb, c, rollback);
+            Status = create_chunk(Vcb, c, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("create_chunk returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
@@ -3845,7 +3845,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8* data, UINT16 datalen, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     ULONG xasize, maxlen;
@@ -3858,7 +3858,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -3924,7 +3924,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
                     RtlCopyMemory(xa->name + strlen(name), data, datalen);
                     
                     delete_tree_item(Vcb, &tp, rollback);
-                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, Irp, rollback);
                     
                     break;
                 }
@@ -3957,7 +3957,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
                     RtlCopyMemory(xa->name + strlen(name), data, datalen);
                     
                     delete_tree_item(Vcb, &tp, rollback);
-                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, Irp, rollback);
                     
                     break;
                 } else {
@@ -3988,13 +3988,13 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
         RtlCopyMemory(xa->name, name, strlen(name));
         RtlCopyMemory(xa->name + strlen(name), data, datalen);
         
-        insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL, rollback);
+        insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL, Irp, rollback);
     }
     
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, LIST_ENTRY* rollback) {
+static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* xa;
@@ -4006,7 +4006,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
     
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return FALSE;
@@ -4064,7 +4064,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
                         RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
                     
-                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp, rollback);
                     
                         
                     return TRUE;
@@ -4087,7 +4087,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
     }
 }
 
-static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     
@@ -4112,7 +4112,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, rollback)) {
+    if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -4120,7 +4120,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, LIST
     return STATUS_SUCCESS;
 }
 
-void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
+void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
@@ -4146,9 +4146,9 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     
     if (fcb->ads) {
         if (fcb->deleted)
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp, rollback);
         else {
-            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length, rollback);
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4212,7 +4212,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                         } else {
                             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08x\n", Status);
                                 goto end;
@@ -4233,7 +4233,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_EXTENT_DATA;
         searchkey.offset = 0;
         
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             goto end;
@@ -4243,7 +4243,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
                 delete_tree_item(fcb->Vcb, &tp, rollback);
             
-            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE);
+            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
             
             if (b) {
                 tp = next_tp;
@@ -4264,7 +4264,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                 EXTENT_DATA* ed;
                 
                 if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
-                    Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, rollback);
+                    Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_sparse_extent returned %08x\n", Status);
                         goto end;
@@ -4280,7 +4280,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                 
                 RtlCopyMemory(ed, ext->data, ext->datalen);
                 
-                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, rollback)) {
+                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, Irp, rollback)) {
                     ERR("insert_tree_item failed\n");
                     goto end;
                 }
@@ -4306,7 +4306,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
                 sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
-                Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, rollback);
+                Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
@@ -4329,7 +4329,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0xffffffffffffffff;
         
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             goto end;
@@ -4345,7 +4345,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
                 
                 RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
                 
-                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
                     ERR("insert_tree_item failed\n");
                     goto end;
                 }
@@ -4372,7 +4372,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             searchkey.obj_type = TYPE_INODE_ITEM;
             searchkey.offset = ii_offset;
             
-            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 goto end;
@@ -4405,13 +4405,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_XATTR_ITEM;
         searchkey.offset = 0;
         
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE);
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             goto end;
         }
     
-        while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE)) {
+        while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE, Irp)) {
             tp = tp2;
             
             if (tp.item->key.obj_id == fcb->inode) {
@@ -4436,14 +4436,14 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
         
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
         
-        if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+        if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             goto end;
         }
     }
     
     if (fcb->sd_dirty) {
-        Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), rollback);
+        Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
         }
@@ -4458,13 +4458,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
             TRACE("inserting new DOSATTRIB xattr\n");
             sprintf(val, "0x%lx", fcb->atts);
         
-            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), rollback);
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp, rollback);
         
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -4472,13 +4472,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* rollback) {
     
     if (fcb->reparse_xattr_changed) {
         if (fcb->reparse_xattr.Buffer && fcb->reparse_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length, rollback);
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp, rollback);
         
         fcb->reparse_xattr_changed = FALSE;
     }
@@ -4490,7 +4490,7 @@ end:
     return;
 }
 
-static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, LIST_ENTRY* rollback) {
+static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, UINT64 parinode, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -4499,7 +4499,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     searchkey.obj_type = TYPE_ROOT_REF;
     searchkey.offset = subvolid;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -4553,7 +4553,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                         if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
                             RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
                         
-                        insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, rollback);
+                        insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, Irp, rollback);
                     }
                     
                     break;
@@ -4574,7 +4574,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, LIST_ENTRY* rollback) {
+static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -4583,7 +4583,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     searchkey.obj_type = TYPE_ROOT_REF;
     searchkey.offset = subvolid;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -4607,13 +4607,13 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         
         delete_tree_item(Vcb, &tp, rollback);
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp, rollback)) {
             ERR("error - failed to insert item\n");
             ExFreePool(rr2);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp, rollback)) {
             ERR("error - failed to insert item\n");
             ExFreePool(rr);
             return STATUS_INTERNAL_ERROR;
@@ -4623,7 +4623,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
@@ -4634,7 +4634,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     searchkey.obj_type = TYPE_ROOT_REF;
     searchkey.offset = subvolid;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -4658,7 +4658,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     searchkey.obj_type = TYPE_ROOT_BACKREF;
     searchkey.offset = parsubvolid;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         
@@ -4672,7 +4672,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
         delete_tree_item(Vcb, &tp, rollback);
     
     if (datalen > 0) {
-        if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, Irp, rollback)) {
             ERR("error - failed to insert item\n");
             ExFreePool(data);
             return STATUS_INTERNAL_ERROR;
@@ -4682,7 +4682,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
+static NTSTATUS flush_fileref(file_ref* fileref, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     // if fileref created and then immediately deleted, do nothing
@@ -4734,20 +4734,20 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         RtlCopyMemory(di2, di, disize);
               
-        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, rollback)) {
+        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             Status = STATUS_INTERNAL_ERROR;
             return Status;
         }
         
-        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di2, disize, rollback);
+        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di2, disize, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_dir_item returned %08x\n", Status);
             return Status;
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
+            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_inode_ref returned %08x\n", Status);
                 return Status;
@@ -4769,13 +4769,13 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             rr->n = fileref->utf8.Length;
             RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
             
-            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, rollback);
+            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_ref returned %08x\n", Status);
                 return Status;
             }
             
-            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_root_backref returned %08x\n", Status);
                 return Status;
@@ -4800,7 +4800,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, name, rollback);
+        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, name, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_dir_item returned %08x\n", Status);
             return Status;
@@ -4809,18 +4809,18 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
             // delete INODE_REF (0xc)
             
-            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, name, rollback);
+            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, name, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_inode_ref returned %08x\n", Status);
                 return Status;
             }
         } else { // subvolume
-            Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, name, rollback);
+            Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, name, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_root_ref returned %08x\n", Status);
             }
             
-            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_root_backref returned %08x\n", Status);
                 return Status;
@@ -4833,7 +4833,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_DIR_INDEX;
         searchkey.offset = fileref->index;
 
-        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);        
+        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             Status = STATUS_INTERNAL_ERROR;
@@ -4866,7 +4866,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
 
         // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, oldcrc32, oldutf8, rollback);
+        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, oldcrc32, oldutf8, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_dir_item returned %08x\n", Status);
             return Status;
@@ -4906,7 +4906,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         RtlCopyMemory(di2, di, disize);
         
-        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di, disize, rollback);
+        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di, disize, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_dir_item returned %08x\n", Status);
             return Status;
@@ -4915,7 +4915,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
             // delete INODE_REF (0xc)
             
-            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, oldutf8, rollback);
+            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, oldutf8, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_inode_ref returned %08x\n", Status);
                 return Status;
@@ -4923,7 +4923,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             
             // add INODE_REF (0xc)
             
-            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, rollback);
+            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_inode_ref returned %08x\n", Status);
                 return Status;
@@ -4934,7 +4934,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             
             // FIXME - make sure this works with duff subvols within snapshots
             
-            Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, oldutf8, rollback);
+            Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, oldutf8, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_root_ref returned %08x\n", Status);
             }
@@ -4952,13 +4952,13 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
             rr->n = fileref->utf8.Length;
             RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
             
-            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, rollback);
+            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_ref returned %08x\n", Status);
                 return Status;
             }
             
-            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rollback);
+            Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_root_backref returned %08x\n", Status);
                 return Status;
@@ -4971,7 +4971,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_DIR_INDEX;
         searchkey.offset = fileref->index;
         
-        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE);
+        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             Status = STATUS_INTERNAL_ERROR;
@@ -4986,7 +4986,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
         
         // add DIR_INDEX (0x60)
         
-        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, rollback)) {
+        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             Status = STATUS_INTERNAL_ERROR;
             return Status;
@@ -5003,7 +5003,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
-static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback) {
+static void convert_shared_data_refs(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -5028,18 +5028,18 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
                         TRACE("tree %llx; root %llx, objid %llx, offset %llx, count %x\n",
                               t->header.address, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count);
                         
-                        Status = increase_extent_refcount_data(Vcb, sde->address, sde->size, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count, rollback);
+                        Status = increase_extent_refcount_data(Vcb, sde->address, sde->size, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count, Irp, rollback);
                         
                         if (!NT_SUCCESS(Status))
                             WARN("increase_extent_refcount_data returned %08x\n", Status);
                         
                         if (old) {
-                            Status = decrease_extent_refcount_old(Vcb, sde->address, sde->size, sd->address, rollback);
+                            Status = decrease_extent_refcount_old(Vcb, sde->address, sde->size, sd->address, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status))
                                 WARN("decrease_extent_refcount_old returned %08x\n", Status);
                         } else {
-                            Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, rollback);
+                            Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, Irp, rollback);
                             
                             if (!NT_SUCCESS(Status))
                                 WARN("decrease_extent_refcount_shared_data returned %08x\n", Status);
@@ -5061,7 +5061,7 @@ static void convert_shared_data_refs(device_extension* Vcb, LIST_ENTRY* rollback
     }
 }
 
-static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, LIST_ENTRY* rollback) {
+static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -5070,7 +5070,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, LIST_
     searchkey.obj_type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -5096,7 +5096,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, LIST_
         
         delete_tree_item(Vcb, &tp, rollback);
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5107,7 +5107,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, LIST_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_items_to_cache(device_extension* Vcb, LIST_ENTRY* rollback) {
+static NTSTATUS add_root_items_to_cache(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -5116,7 +5116,7 @@ static NTSTATUS add_root_items_to_cache(device_extension* Vcb, LIST_ENTRY* rollb
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         
         if (t->write && t->root != Vcb->chunk_root && t->root != Vcb->root_root) {
-            Status = add_root_item_to_cache(Vcb, t->root->id, rollback);
+            Status = add_root_item_to_cache(Vcb, t->root->id, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_item_to_cache returned %08x\n", Status);
                 return Status;
@@ -5127,7 +5127,7 @@ static NTSTATUS add_root_items_to_cache(device_extension* Vcb, LIST_ENTRY* rollb
     }
     
     // make sure we always update the extent tree
-    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, rollback);
+    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_item_to_cache returned %08x\n", Status);
         return Status;
@@ -5136,7 +5136,7 @@ static NTSTATUS add_root_items_to_cache(device_extension* Vcb, LIST_ENTRY* rollb
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     BOOL cache_changed = FALSE;
@@ -5154,7 +5154,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
         
-        flush_fileref(dirt->fileref, rollback);
+        flush_fileref(dirt->fileref, Irp, rollback);
         free_fileref(dirt->fileref);
         ExFreePool(dirt);
     }
@@ -5172,7 +5172,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         if (dirt->fcb->deleted && dirt->fcb->ads) {
             RemoveEntryList(le);
             
-            flush_fcb(dirt->fcb, FALSE, rollback);
+            flush_fcb(dirt->fcb, FALSE, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
         }
@@ -5190,7 +5190,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         if (dirt->fcb->subvol != Vcb->root_root || dirt->fcb->deleted) {
             RemoveEntryList(le);
             
-            flush_fcb(dirt->fcb, FALSE, rollback);
+            flush_fcb(dirt->fcb, FALSE, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
         }
@@ -5198,16 +5198,16 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         le = le2;
     }
     
-    convert_shared_data_refs(Vcb, rollback);
+    convert_shared_data_refs(Vcb, Irp, rollback);
     
     ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
     if (!IsListEmpty(&Vcb->sector_checksums)) {
-        update_checksum_tree(Vcb, rollback);
+        update_checksum_tree(Vcb, Irp, rollback);
     }
     ExReleaseResourceLite(&Vcb->checksum_lock);
     
     if (!IsListEmpty(&Vcb->drop_roots)) {
-        Status = drop_roots(Vcb, rollback);
+        Status = drop_roots(Vcb, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("drop_roots returned %08x\n", Status);
@@ -5216,7 +5216,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     }
     
     if (!IsListEmpty(&Vcb->chunks_changed)) {
-        Status = update_chunks(Vcb, rollback);
+        Status = update_chunks(Vcb, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunks returned %08x\n", Status);
@@ -5235,7 +5235,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         searchkey.obj_type = 0;
         searchkey.offset = 0;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -5244,7 +5244,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         Vcb->root_root->treeholder.tree->write = TRUE;
     }
     
-    Status = add_root_items_to_cache(Vcb, rollback);
+    Status = add_root_items_to_cache(Vcb, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_items_to_cache returned %08x\n", Status);
         return Status;
@@ -5257,25 +5257,25 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             goto end;
         }
         
-        Status = do_splits(Vcb, rollback);
+        Status = do_splits(Vcb, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("do_splits returned %08x\n", Status);
             goto end;
         }
         
-        Status = allocate_tree_extents(Vcb, rollback);
+        Status = allocate_tree_extents(Vcb, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_parents returned %08x\n", Status);
             goto end;
         }
         
-        Status = update_chunk_usage(Vcb, rollback);
+        Status = update_chunk_usage(Vcb, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunk_usage returned %08x\n", Status);
             goto end;
         }
         
-        Status = allocate_cache(Vcb, &cache_changed, rollback);
+        Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("allocate_cache returned %08x\n", Status);
             goto end;
@@ -5295,13 +5295,13 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     
     TRACE("trees consistent\n");
     
-    Status = update_root_root(Vcb, rollback);
+    Status = update_root_root(Vcb, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("update_root_root returned %08x\n", Status);
         goto end;
     }
     
-    Status = write_trees(Vcb);
+    Status = write_trees(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_trees returned %08x\n", Status);
         goto end;
@@ -5309,7 +5309,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
     
     Vcb->superblock.cache_generation = Vcb->superblock.generation;
     
-    Status = write_superblocks(Vcb);
+    Status = write_superblocks(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_superblocks returned %08x\n", Status);
         goto end;
@@ -5333,7 +5333,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
         searchkey.obj_type = TYPE_METADATA_ITEM;
         searchkey.offset = 0xffffffffffffffff;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             int3;
@@ -5344,7 +5344,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, LIST_ENTRY* rollback) {
             searchkey.obj_type = TYPE_EXTENT_ITEM;
             searchkey.offset = 0xffffffffffffffff;
             
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 int3;
@@ -5432,7 +5432,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
 }
 
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
-                                   BOOL no_csum, UINT64 new_size) {
+                                   BOOL no_csum, UINT64 new_size, PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -5456,7 +5456,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
         searchkey.obj_type = TYPE_EXTENT_ITEM;
         searchkey.offset = 0xffffffffffffffff;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             goto end;
@@ -5505,7 +5505,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
         le = le->Flink;
     }
     
-    old_count = find_extent_data_refcount(Vcb, address, size, root, objid, offset);
+    old_count = find_extent_data_refcount(Vcb, address, size, root, objid, offset, Irp);
     
     if (old_count > 0) {
         cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
@@ -5549,7 +5549,7 @@ end:
     return Status;
 }
 
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, LIST_ENTRY* rollback) {
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
@@ -5762,7 +5762,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -5875,7 +5875,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -6280,7 +6280,7 @@ static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
     add_insert_extent_rollback(rollback, fcb, newext);
     
     Status = update_changed_extent_ref(Vcb, c, ed2orig->address, origsize, fcb->subvol->id, fcb->inode, newext->offset - ed2->offset,
-                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
 
     if (!NT_SUCCESS(Status)) {
         ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -6619,7 +6619,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     return STATUS_DISK_FULL;
 }
 
-static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
+static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->sector_checksums.Flink;
     changed_sector* cs;
     traverse_ptr tp, next_tp;
@@ -6648,7 +6648,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
         
         // FIXME - create checksum_root if it doesn't exist at all
         
-        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) { // tree is completely empty
             // FIXME - do proper check here that tree is empty
             if (!cs->deleted) {
@@ -6660,7 +6660,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 RtlCopyMemory(checksums, cs->checksums, sizeof(UINT32) * cs->length);
                 
-                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, cs->ol.key, checksums, sizeof(UINT32) * cs->length, NULL, rollback)) {
+                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, cs->ol.key, checksums, sizeof(UINT32) * cs->length, NULL, Irp, rollback)) {
                     ERR("insert_tree_item failed\n");
                     ExFreePool(checksums);
                     goto exit;
@@ -6680,7 +6680,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
             searchkey.obj_type = TYPE_EXTENT_CSUM;
             searchkey.offset = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
             
-            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 goto exit;
@@ -6719,7 +6719,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
             searchkey.obj_type = TYPE_EXTENT_CSUM;
             searchkey.offset = cs->ol.key;
             
-            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE);
+            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
                 goto exit;
@@ -6739,7 +6739,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
                     delete_tree_item(Vcb, &tp, rollback);
                 }
                 
-                if (find_next_item(Vcb, &tp, &next_tp, FALSE)) {
+                if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
                     tp = next_tp;
                 } else
                     break;
@@ -6774,7 +6774,7 @@ static void update_checksum_tree(device_extension* Vcb, LIST_ENTRY* rollback) {
                     
                     RtlCopyMemory(data, &checksums[index], sizeof(UINT32) * rl);
                     
-                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, startaddr + (index * Vcb->superblock.sector_size), data, sizeof(UINT32) * rl, NULL, rollback)) {
+                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, startaddr + (index * Vcb->superblock.sector_size), data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(data);
                         ExFreePool(bmparr);
@@ -6815,13 +6815,13 @@ void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_l
     }
 }
 
-NTSTATUS truncate_file(fcb* fcb, UINT64 end, LIST_ENTRY* rollback) {
+NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     // FIXME - convert into inline extent if short enough
     
     Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sector_size),
-                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
+                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("error - excise_extents failed\n");
         return Status;
@@ -7391,7 +7391,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -7479,7 +7479,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -7602,7 +7602,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -7653,7 +7653,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                 if (max(last_cow_start, start + written) < ext->offset) {
                     UINT64 start_write = max(last_cow_start, start + written);
                     
-                    Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset, rollback);
+                    Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("excise_extents returned %08x\n", Status);
                         return Status;
@@ -7745,7 +7745,7 @@ nextitem:
     if (length > 0) {
         UINT64 start_write = max(last_cow_start, start + written);
         
-        Status = excise_extents(fcb->Vcb, fcb, start_write, end_data, rollback);
+        Status = excise_extents(fcb->Vcb, fcb, start_write, end_data, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08x\n", Status);
             return Status;
@@ -8129,7 +8129,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             InitializeListHead(&changed_sector_list);
 
         if (make_inline) {
-            Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, rollback);
+            Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - excise_extents returned %08x\n", Status);
                 ExFreePool(data);

@@ -23,11 +23,11 @@
 
 // #define DEBUG_SPACE_LISTS
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &fcb);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &fcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return Status;
@@ -36,7 +36,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIS
     fcb->dirty = TRUE;
     
     if (fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), rollback);
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08x\n", Status);
             return Status;
@@ -45,14 +45,14 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIS
     
     fcb->deleted = TRUE;
     
-    flush_fcb(fcb, FALSE, rollback);
+    flush_fcb(fcb, FALSE, Irp, rollback);
     
     free_fcb(fcb);
 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS clear_free_space_cache(device_extension* Vcb) {
+NTSTATUS clear_free_space_cache(device_extension* Vcb, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -65,7 +65,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
     searchkey.obj_type = 0;
     searchkey.offset = 0;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -86,7 +86,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
                 else {
                     LIST_ENTRY* le;
                     
-                    Status = remove_free_space_inode(Vcb, fsi->key.obj_id, &rollback);
+                    Status = remove_free_space_inode(Vcb, fsi->key.obj_id, Irp, &rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
@@ -109,7 +109,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb) {
                 WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         }
         
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
         if (b)
             tp = next_tp;
     } while (b);
@@ -245,7 +245,7 @@ static void order_space_entry(space* s, LIST_ENTRY* list_size) {
     InsertTailList(list_size, &s->list_entry_size);
 }
 
-static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
+static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
@@ -266,7 +266,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     searchkey.obj_type = 0;
     searchkey.offset = c->offset;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -293,7 +293,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c) {
     num_entries = fsi->num_entries;
     num_bitmaps = fsi->num_bitmaps;
     
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return STATUS_NOT_FOUND;
@@ -446,7 +446,7 @@ clearcache:
     
     InitializeListHead(&rollback);
     
-    Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, &rollback);
+    Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08x\n", Status);
         do_rollback(Vcb, &rollback);
@@ -463,7 +463,7 @@ clearcache:
     return STATUS_NOT_FOUND;
 }
 
-NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
+NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     UINT64 lastaddr;
@@ -473,7 +473,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
 //     LIST_ENTRY* le;
     
     if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
-        Status = load_stored_free_space_cache(Vcb, c);
+        Status = load_stored_free_space_cache(Vcb, c, Irp);
         
         if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
             ERR("load_stored_free_space_cache returned %08x\n", Status);
@@ -489,7 +489,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
         searchkey.obj_type = TYPE_EXTENT_ITEM;
         searchkey.offset = 0;
         
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -525,7 +525,7 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c) {
                     lastaddr = tp.item->key.obj_id + tp.item->key.offset;
             }
             
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE);
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
             if (b)
                 tp = next_tp;
         } while (b);
@@ -613,7 +613,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     UINT64 num_entries, new_cache_size, i;
@@ -695,7 +695,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->subvol = Vcb->root_root;
         
         if (Vcb->root_root->lastinode == 0)
-            get_last_inode(Vcb, Vcb->root_root);
+            get_last_inode(Vcb, Vcb->root_root, Irp);
         
         c->cache->inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
         
@@ -716,7 +716,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         searchkey.obj_type = 0;
         searchkey.offset = c->offset;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             ExFreePool(fsi);
@@ -732,7 +732,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         fsi->key.obj_type = TYPE_INODE_ITEM;
         fsi->key.offset = 0;
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             free_fcb(c->cache);
             c->cache = NULL;
@@ -753,7 +753,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         Vcb->root_root->lastinode = c->cache->inode;
         
-        flush_fcb(c->cache, TRUE, rollback);
+        flush_fcb(c->cache, TRUE, Irp, rollback);
         
         *changed = TRUE;
     } else if (new_cache_size > c->cache->inode_item.st_size) {
@@ -771,7 +771,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         searchkey.obj_type = 0;
         searchkey.offset = c->offset;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -802,7 +802,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->inode_item.st_size = new_cache_size;
         c->cache->inode_item.st_blocks = new_cache_size;
         
-        flush_fcb(c->cache, TRUE, rollback);
+        flush_fcb(c->cache, TRUE, Irp, rollback);
     
         *changed = TRUE;
     } else {
@@ -815,7 +815,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -827,7 +827,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
             RtlCopyMemory(ii, &c->cache->inode_item, sizeof(INODE_ITEM));
             
-            if (!insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -846,7 +846,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         searchkey.obj_type = 0;
         searchkey.offset = c->offset;
         
-        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -870,7 +870,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     return STATUS_SUCCESS;
 }
 
-NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollback) {
+NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->chunks_changed.Flink;
     NTSTATUS Status;
 
@@ -881,7 +881,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, LIST_ENTRY* rollba
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
 
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        Status = allocate_cache_chunk(Vcb, c, &b, rollback);
+        Status = allocate_cache_chunk(Vcb, c, &b, Irp, rollback);
         ExReleaseResourceLite(&c->lock);
         
         if (b)
@@ -1146,7 +1146,7 @@ static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, 
     }
 }
 
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1197,7 +1197,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     c->cache->inode_item.sequence++;
     c->cache->inode_item.st_ctime = *now;
     
-    flush_fcb(c->cache, TRUE, rollback);
+    flush_fcb(c->cache, TRUE, Irp, rollback);
     
     // update free_space item
     
@@ -1205,7 +1205,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     searchkey.obj_type = 0;
     searchkey.offset = c->offset;
     
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE);
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -1260,7 +1260,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
+NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->chunks_changed.Flink;
     NTSTATUS Status;
     chunk* c;
@@ -1274,7 +1274,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, LIST_ENTRY* rollback) {
         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        Status = update_chunk_cache(Vcb, c, &now, rollback);
+        Status = update_chunk_cache(Vcb, c, &now, Irp, rollback);
         ExReleaseResourceLite(&c->lock);
 
         if (!NT_SUCCESS(Status)) {
