@@ -2425,6 +2425,11 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto exit;
     }
     
+    if (!(Vcb->Vpb->Flags & VPB_MOUNTED)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
     if (Vcb->readonly && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
         goto end;
