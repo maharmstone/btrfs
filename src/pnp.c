@@ -236,7 +236,14 @@ static NTSTATUS pnp_start_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 }
 
 static NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-    FIXME("STUB\n");
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
+    
+    if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
+        uninit(Vcb, FALSE);
+        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+    }
 
     return STATUS_SUCCESS;
 }
