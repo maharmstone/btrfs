@@ -68,7 +68,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64 dupflags, UINT64* newaddr, LIST_ENTRY* rollback) {
+static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64 dupflags, UINT64* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
     UINT8* buf;
     NTSTATUS Status;
     write_data_context* wtc;
@@ -90,7 +90,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned %08x\n", Status);
         goto end;
@@ -159,7 +159,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         internal_node* in = (internal_node*)&th[1];
         
         for (i = 0; i < th->num_items; i++) {
-            Status = snapshot_tree_copy(Vcb, in[i].address, subvol, dupflags, &newaddr, rollback);
+            Status = snapshot_tree_copy(Vcb, in[i].address, subvol, dupflags, &newaddr, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("snapshot_tree_copy returned %08x\n", Status);
@@ -243,7 +243,7 @@ static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
     }
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name) {
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name, PIRP Irp) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
@@ -353,7 +353,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, &rollback);
+    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("snapshot_tree_copy returned %08x\n", Status);
         goto end;
@@ -527,7 +527,7 @@ end:
     return Status;
 }
 
-static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length) {
+static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG length, PIRP Irp) {
     PFILE_OBJECT subvol_obj;
     NTSTATUS Status;
     btrfs_create_snapshot* bcs = data;
@@ -651,7 +651,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, Irp);
     
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
@@ -2467,7 +2467,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
             
         case FSCTL_BTRFS_CREATE_SNAPSHOT:
-            Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = create_snapshot(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
             break;
             
         case FSCTL_BTRFS_GET_INODE_INFO:
