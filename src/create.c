@@ -3171,8 +3171,11 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             TRACE("file doesn't exist, returning STATUS_OBJECT_NAME_NOT_FOUND\n");
             goto exit;
         }
-    } else {
+    } else if (Status == STATUS_OBJECT_PATH_NOT_FOUND) {
         TRACE("open_fileref returned %08x\n", Status);
+        goto exit;
+    } else {
+        ERR("open_fileref returned %08x\n", Status);
         goto exit;
     }
     
