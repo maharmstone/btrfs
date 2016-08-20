@@ -568,7 +568,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
     
     flags = fcb->Vcb->data_flags;
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
     
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
@@ -588,21 +588,25 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    
     if ((c = alloc_chunk(fcb->Vcb, flags))) {
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length)) {
                 ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 return STATUS_SUCCESS;
             }
         }
         
         ExReleaseResourceLite(&c->lock);
-    }
-    
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    } else   
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
     
     WARN("couldn't find any data chunks with %llx bytes free\n", length);
 

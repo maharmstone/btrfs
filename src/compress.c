@@ -434,7 +434,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         *compressed = TRUE;
     }
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
     
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
@@ -459,13 +459,18 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    
     if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
                 ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
@@ -475,9 +480,8 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         }
         
         ExReleaseResourceLite(&c->lock);
-    }
-    
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    } else
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
     
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
 
@@ -816,7 +820,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         *compressed = TRUE;
     }
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
     
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
@@ -841,13 +845,18 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    
     if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
                 ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                 
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
@@ -857,9 +866,8 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         }
         
         ExReleaseResourceLite(&c->lock);
-    }
-    
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    } else
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
     
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
 

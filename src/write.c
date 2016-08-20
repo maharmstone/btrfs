@@ -6446,10 +6446,10 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
     // FIXME - try and maximize contiguous ranges first. If we can't do that,
     // allocate all the free space we find until it's enough.
     
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
-    
     do {
         UINT64 extlen = min(MAX_EXTENT_SIZE, length);
+        
+        ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
         
         le = fcb->Vcb->chunks.Flink;
         while (le != &fcb->Vcb->chunks) {
@@ -6460,6 +6460,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                     ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     goto cont;
                 }
             }
@@ -6469,7 +6470,13 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             le = le->Flink;
         }
         
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+        
         if ((c = alloc_chunk(fcb->Vcb, flags))) {
+            ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+            
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
@@ -6480,7 +6487,8 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             }
             
             ExReleaseResourceLite(&c->lock);
-        }
+        } else
+            ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
         
         WARN("couldn't find any data chunks with %llx bytes free\n", origlength);
         Status = STATUS_DISK_FULL;
@@ -6494,8 +6502,6 @@ cont:
     Status = STATUS_SUCCESS;
     
 end:
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-
     return Status;
 }
 
@@ -6531,14 +6537,14 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     
     flags = Vcb->data_flags;
     
-    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-    
     while (written < orig_length) {
         UINT64 newlen = min(length, MAX_EXTENT_SIZE);
         BOOL done = FALSE;
         
         // Rather than necessarily writing the whole extent at once, we deal with it in blocks of 128 MB.
         // First, see if we can write the extent part to an existing chunk.
+        
+        ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
         
         le = Vcb->chunks.Flink;
         while (le != &Vcb->chunks) {
@@ -6569,11 +6575,17 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             le = le->Flink;
         }
         
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        
         if (done) continue;
         
         // Otherwise, see if we can put it in a new chunk.
         
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+        
         if ((c = alloc_chunk(Vcb, flags))) {
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
@@ -6582,7 +6594,6 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
                     
                     if (written == orig_length) {
                         ExReleaseResourceLite(&c->lock);
-                        ExReleaseResourceLite(&Vcb->chunk_lock);
                         return STATUS_SUCCESS;
                     } else {
                         done = TRUE;
@@ -6594,15 +6605,14 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             }
             
             ExReleaseResourceLite(&c->lock);
-        }
+        } else
+            ExReleaseResourceLite(&Vcb->chunk_lock);
         
         if (!done) {
             FIXME("FIXME - not enough room to write whole extent part, try to write bits and pieces\n"); // FIXME
             break;
         }
     }
-    
-    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     WARN("couldn't find any data chunks with %llx bytes free\n", length);
 
