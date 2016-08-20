@@ -2428,7 +2428,7 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     return att;
 }
 
-NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer) {
+static NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
     IO_STATUS_BLOCK* IoStatus;
     LARGE_INTEGER Offset;
     PIRP Irp;
@@ -2468,6 +2468,9 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     IrpSp = IoGetNextIrpStackLocation(Irp);
     IrpSp->MajorFunction = IRP_MJ_READ;
     
+    if (override)
+        IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+    
     if (DeviceObject->Flags & DO_BUFFERED_IO) {
         FIXME("FIXME - buffered IO\n");
     } else if (DeviceObject->Flags & DO_DIRECT_IO) {
@@ -2501,20 +2504,10 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     
     IoSetCompletionRoutine(Irp, read_completion, context, TRUE, TRUE, TRUE);
 
-//     if (Override)
-//     {
-//         Stack = IoGetNextIrpStackLocation(Irp);
-//         Stack->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
-//     }
-
-//     TRACE("Calling IO Driver... with irp %p\n", Irp);
     Status = IoCallDriver(DeviceObject, Irp);
 
-//     TRACE("Waiting for IO Operation for %p\n", Irp);
     if (Status == STATUS_PENDING) {
-//         TRACE("Operation pending\n");
         KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-//         TRACE("Getting IO Status... for %p\n", Irp);
         Status = context->iosb.Status;
     }
     
@@ -2552,7 +2545,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
         if (i > 0 && superblock_addrs[i] + sizeof(superblock) > length)
             break;
         
-        Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb);
+        Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("Failed to read superblock %u: %08x\n", i, Status);
             ExFreePool(sb);
@@ -3913,6 +3906,60 @@ exit:
     return Status;
 }
 
+static NTSTATUS verify_volume(PDEVICE_OBJECT device) {
+    device_extension* Vcb = device->DeviceExtension;
+    ULONG cc, to_read;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    superblock* sb;
+    UINT32 crc32;
+    
+    Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    
+    if (!NT_SUCCESS(Status))
+        return Status;
+    
+    to_read = sector_align(sizeof(superblock), device->SectorSize);
+    
+    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = sync_read_phys(Vcb->Vpb->RealDevice, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("Failed to read superblock: %08x\n", Status);
+        ExFreePool(sb);
+        return Status;
+    }
+    
+    if (sb->magic != BTRFS_MAGIC) {
+        ERR("not a BTRFS volume\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+    
+    if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
+        ERR("different UUIDs\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+    
+    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+    
+    if (crc32 != *((UINT32*)sb->checksum)) {
+        ERR("different UUIDs\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+    
+    ExFreePool(sb);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
@@ -3956,7 +4003,9 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             break;
             
         case IRP_MN_VERIFY_VOLUME:
-            FIXME("STUB: IRP_MN_VERIFY_VOLUME\n");
+            TRACE("IRP_MN_VERIFY_VOLUME\n");
+            
+            Status = verify_volume(DeviceObject);
             break;
            
         default:
