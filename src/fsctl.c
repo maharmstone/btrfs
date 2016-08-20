@@ -1987,6 +1987,33 @@ end:
     return Status;
 }
 
+static NTSTATUS is_volume_dirty(device_extension* Vcb, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    ULONG* volstate;
+
+    if (Irp->AssociatedIrp.SystemBuffer) {
+        volstate = Irp->AssociatedIrp.SystemBuffer;
+    } else if (Irp->MdlAddress != NULL) {
+        volstate = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, LowPagePriority);
+
+        if (!volstate)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        return STATUS_INVALID_USER_BUFFER;
+
+    if (IrpSp->Parameters.FileSystemControl.OutputBufferLength < sizeof(ULONG))
+        return STATUS_INVALID_PARAMETER;
+
+    *volstate = 0;
+    
+    if (IrpSp->FileObject->FsContext != Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    Irp->IoStatus.Information = sizeof(ULONG);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2119,8 +2146,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_IS_VOLUME_DIRTY:
-            WARN("STUB: FSCTL_IS_VOLUME_DIRTY\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = is_volume_dirty(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_ALLOW_EXTENDED_DASD_IO:
