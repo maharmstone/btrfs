@@ -1955,6 +1955,9 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     CcUninitializeCacheMap(FileObject, NULL, NULL);
     
+    if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
+        return STATUS_SUCCESS;
+    
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     
     if (fileref)
