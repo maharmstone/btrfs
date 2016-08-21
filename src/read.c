@@ -166,14 +166,6 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static void do_verify(PDEVICE_OBJECT devobj) {
-    NTSTATUS Status;
-    
-    Status = IoVerifyVolume(devobj, FALSE);
-    
-    ERR("IoVerifyVolume returned %08x\n", Status);
-}
-
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -183,6 +175,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     device** devices;
     UINT64 *stripestart = NULL, *stripeend = NULL;
     UINT16 startoffstripe;
+    
+    Status = verify_vcb(Vcb, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("verify_vcb returned %08x\n", Status);
+        return Status;
+    }
     
     if (Vcb->log_to_phys_loaded) {
         chunk* c = get_chunk_from_address(Vcb, addr);
@@ -472,7 +470,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 dev = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
                 
                 if (dev)
-                    do_verify(dev);
+                    IoVerifyVolume(dev, FALSE);
             }
 //             IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
             
