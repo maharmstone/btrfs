@@ -3494,6 +3494,53 @@ exit:
     return Status;
 }
 
+NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
+    UINT64 i;
+    
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        if (Vcb->devices[i].removable) {
+            NTSTATUS Status;
+            ULONG cc;
+            IO_STATUS_BLOCK iosb;
+            
+            Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("dev_ioctl returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (iosb.Information < sizeof(ULONG)) {
+                ERR("iosb.Information was too short\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (cc != Vcb->devices[i].change_count) {
+                PDEVICE_OBJECT dev;
+                
+                Vcb->devices[i].devobj->Flags |= DO_VERIFY_VOLUME;
+                
+                dev = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
+                IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
+                
+                if (!dev) {
+                    dev = IoGetDeviceToVerify(PsGetCurrentThread());
+                    IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
+                }
+                
+                dev = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
+                
+                if (dev)
+                    IoVerifyVolume(dev, FALSE);
+                
+                return STATUS_VERIFY_REQUIRED;
+            }
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
@@ -3520,6 +3567,13 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     }
     
     Vcb = DeviceObject->DeviceExtension;
+    
+    Status = verify_vcb(Vcb, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("verify_vcb returned %08x\n", Status);
+        goto exit;
+    }
+    
     ExAcquireResourceSharedLite(&Vcb->load_lock, TRUE);
     locked = TRUE;
     
