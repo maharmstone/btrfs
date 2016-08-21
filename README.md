@@ -151,6 +151,7 @@ v0.6 (2016-08-21):
 * Added inode property sheet to shell extension
 * Many more mount options (see below)
 * Better support for removable devices
+* Page file support
 * Many miscellaneous bug fixes
 
 v0.5 (2016-07-24):
