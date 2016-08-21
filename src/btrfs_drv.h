@@ -810,6 +810,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
 NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr, UINT32 streamhash, fcb* parent, fcb** pfcb, PIRP Irp);
 void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock);
 NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp);
+NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);

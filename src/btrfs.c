@@ -1978,6 +1978,8 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     LIST_ENTRY* le;
     LARGE_INTEGER time;
     
+    Vcb->removing = TRUE;
+    
     RemoveEntryList(&Vcb->list_entry);
     
     Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
@@ -2009,8 +2011,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     }
     
     ExFreePool(Vcb->threads.threads);
-    
-    Vcb->removing = TRUE;
     
     time.QuadPart = 0;
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
@@ -2465,6 +2465,7 @@ static NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOff
         goto exit;
     }
     
+    Irp->Flags |= IRP_NOCACHE;
     IrpSp = IoGetNextIrpStackLocation(Irp);
     IrpSp->MajorFunction = IRP_MJ_READ;
     
@@ -3915,10 +3916,15 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT device) {
     UINT32 crc32;
     UINT64 i;
     
-    Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    if (Vcb->removing)
+        return STATUS_WRONG_VOLUME;
     
-    if (!NT_SUCCESS(Status))
+    Status = dev_ioctl(Vcb->Vpb->RealDevice, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08x\n", Status);
         return Status;
+    }
     
     to_read = sector_align(sizeof(superblock), device->SectorSize);
     
@@ -4033,6 +4039,12 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             TRACE("IRP_MN_VERIFY_VOLUME\n");
             
             Status = verify_volume(DeviceObject);
+            
+            if (!NT_SUCCESS(Status) && Vcb->Vpb->Flags & VPB_MOUNTED) {
+                uninit(Vcb, FALSE);
+//                 Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+            }
+            
             break;
            
         default:
