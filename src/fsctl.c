@@ -1908,7 +1908,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
     while (le != &VcbList) {
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
         
-        if (Vcb->Vpb->RealDevice == devobj) {
+        if (Vcb->Vpb && Vcb->Vpb->RealDevice == devobj) {
             if (Vcb->Vpb == devobj->Vpb) {
                 KIRQL irql;
                 PVPB newvpb;
