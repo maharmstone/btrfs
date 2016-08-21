@@ -1,4 +1,4 @@
-WinBtrfs v0.5
+WinBtrfs v0.6
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -15,7 +15,8 @@ THE POSSIBILITY OF SILENT CORRUPTION.
 In other words, assume that the driver is going to corrupt your entire
 filesystem, and you'll be pleasantly surprised when it doesn't.
 
-However, having said that, it ought to be suitable for day-to-day use.
+However, having said that, it ought to be suitable for day-to-day use, especially
+when mounted readonly.
 
 Everything here is released under the GNU Lesser General Public Licence (LGPL);
 see the file LICENCE for more info. You are encouraged to play about with the
@@ -23,6 +24,9 @@ source code as you will, and I'd appreciate a note (mark@harmstone.com) if you
 come up with anything nifty. On top of that, I'm open to relicensing the code if
 you've a burning desire to use it on a GPL or commercial project, or what have
 you - drop me a line and we'll talk.
+
+See at the end of this document for copyright details of third-party code that's
+included here.
 
 Features
 --------
@@ -47,15 +51,17 @@ Features
 * Asynchronous reading and writing
 * Partition-less Btrfs volumes
 * Per-volume registry mount options (see below)
+* zlib compression
+* LZO compression (incompat flag `compress_lzo`)
+* Misc incompat flags: `mixed_groups`, `no_holes`
 
 Todo
 ----
 
-* zlib compression
-* LZO compression (incompat flag `compress_lzo`)
 * RAID5 and RAID6 (incompat flag `raid56`)
 * New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
-* Misc incompat flags: `mixed_groups`, `no_holes`
+* LXSS ("Ubuntu on Windows") support
+* Maintenance tools: mkfs.btrfs, btrfs-balance, etc.
 
 Installation
 ------------
@@ -117,11 +123,9 @@ type:
 
     ls /sys/fs/btrfs/*/features/
 
-If you see any of the flags listed above as being unsupported, it won't work.
-
-* I can't read from or write to a particular file!
-
-Make sure it's not compressed, which isn't yet supported.
+If you see any of the flags listed above as being unsupported, it won't work. As of
+Linux 4.7, the only unsupported flags are that for RAID 5/6, and the readonly flag
+for the new free-space cache.
 
 * The filenames are weird!
 or
@@ -139,6 +143,15 @@ prevents UAC from working. Thanks Microsoft!
 
 Changelog
 ---------
+
+v0.6 (2016-08-21):
+* Compression support (both zlib and lzo)
+* Mixed groups support
+* No-holes support
+* Added inode property sheet to shell extension
+* Many more mount options (see below)
+* Better support for removable devices
+* Many miscellaneous bug fixes
 
 v0.5 (2016-07-24):
 * Massive speed increases (from "sluggish" to "blistering")
@@ -221,14 +234,73 @@ Mount options
 The driver will create subkeys in the registry under HKLM\SYSTEM\CurrentControlSet\Services\btrfs
 for each mounted filesystem, named after its UUID. If you're unsure which UUID refers to which
 volume, you can check using `btrfs fi show` on Linux. You can add per-volume mount options to this
-subkey, which will take effect on reboot.
+subkey, which will take effect on reboot. If a value is set in the key above this, it will use this
+by default.
 
-Currenntly there's only one supported:
+* `Ignore` (DWORD): set this to 1 to tell the driver not to attempt loading this filesystem. With the
+`Readonly flag, this is probably redundant.
 
-* `Ignore` (DWORD): set this to 1 to tell the driver not to attempt loading this filesystem.
+* `Readonly` (DWORD): set this to 1 to tell the driver not to allow writing to this volume. This is
+the equivalent of the `ro` flag on Linux.
+
+* `Compress` (DWORD): set this to 1 to tell the driver to write files as compressed by default. This is
+the equivalent of the `compress` flag on Linux.
+
+* `CompressForce` (DWORD): set this to 1 to force compression, i.e. to ignore the `nocompress` inode
+flag and even attempt compression of incompressible files. This isn't a good idea, but is the equivalent
+of the `compress-force` flag on Linux.
+
+* `CompressType` (DWORD): set this to 1 to prefer zlib compression, and 2 to prefer lzo compression. The
+default is 0, which uses lzo compression if the incompat flag is set, and zlib otherwise.
+
+* `FlushInterval` (DWORD): the interval in seconds between metadata flushes. The default is 30, as on Linux - 
+the parameter is called `commit` there.
+
+* `ZlibLevel` (DWORD): a number between -1 and 9, which determines how much CPU time is spent trying to
+compress files. You might want to fiddle with this if you have a fast CPU but a slow disk, or vice versa.
+The default is 3, which is the hard-coded value on Linux.
+
+* `MaxInline` (DWORD): the maximum size that will be allowed for "inline" files, i.e. those stored in the
+metadata. The default is 2048, which is also the default on modern versions of Linux - the parameter is
+called `max_inline` there. It will be clipped to the maximum value, which unless you've changed your node
+size will be a shade under 16 KB.
+
+* `SubvolId` (QWORD): the ID of the subvolume that we will attempt to mount as the root. If it doesn't
+exist, this parameter will be silently ignored. The subvolume ID can be found on the inode property
+sheet; it's in hex there, as opposed to decimal on the Linux tools. The default is whatever has been set
+via `btrfs subvolume set-default`; or, failing that, subvolume 5. The equivalent parameter on Linux is
+called `subvolid`.
 
 Contact
 -------
 
 I'd appreciate any feedback you might have, positive or negative:
 mark@harmstone.com.
+
+Copyright
+---------
+
+This code also contains portions of zlib, which is licensed as follows:
+
+  Copyright (C) 1995-2013 Jean-loup Gailly and Mark Adler
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+It also contains portions of an early version of lzo, which is copyright 1996
+Markus Oberhumer. Modern versions are licensed under the GPL, but this was
+licensed under the LGPL, so I believe it is okay to use.
+
