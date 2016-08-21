@@ -3913,6 +3913,7 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT device) {
     NTSTATUS Status;
     superblock* sb;
     UINT32 crc32;
+    UINT64 i;
     
     Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
     
@@ -3956,6 +3957,32 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT device) {
     }
     
     ExFreePool(sb);
+    
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        if (Vcb->devices[i].removable) {
+            NTSTATUS Status;
+            ULONG cc;
+            IO_STATUS_BLOCK iosb;
+            
+            Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("dev_ioctl returned %08x\n", Status);
+                return Status;
+            }
+            
+            if (iosb.Information < sizeof(ULONG)) {
+                ERR("iosb.Information was too short\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            Vcb->devices[i].change_count = cc;
+        }
+        
+        Vcb->devices[i].devobj->Flags &= ~DO_VERIFY_VOLUME;
+    }
+    
+    Vcb->Vpb->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
     
     return STATUS_SUCCESS;
 }
