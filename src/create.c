@@ -3497,7 +3497,7 @@ exit:
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
     UINT64 i;
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+    for (i = 0; i < Vcb->devices_loaded; i++) {
         if (Vcb->devices[i].removable) {
             NTSTATUS Status;
             ULONG cc;
