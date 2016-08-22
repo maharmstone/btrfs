@@ -57,8 +57,11 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
     UINT64 i;
+    LONG stripes_left;
 
     // FIXME - we definitely need a per-stripe lock here
+    
+    stripes_left = InterlockedDecrement(&context->stripes_left);
     
     if (stripe->status == ReadDataStatus_Cancelling) {
         stripe->status = ReadDataStatus_Cancelled;
@@ -152,6 +155,19 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                     IoCancelIrp(context->stripes[i].Irp);
                 }
             }
+        } else if (context->type == BLOCK_FLAG_RAID5) {
+            // FIXME - check checksum
+            
+            stripe->status = ReadDataStatus_Success;
+            
+//             if (stripes_left == 1) {
+//                 for (i = 0; i < context->num_stripes; i++) {
+//                     if (context->stripes[i].status == ReadDataStatus_Pending && context->stripes[i].stripenum == stripe->stripenum) {
+//                         context->stripes[i].status = ReadDataStatus_Cancelling;
+//                         IoCancelIrp(context->stripes[i].Irp);
+//                     }
+//                 }
+//             }
         }
             
         goto end;
@@ -160,10 +176,45 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     }
     
 end:
-    if (InterlockedDecrement(&context->stripes_left) == 0)
+    if (stripes_left == 0)
         KeSetEvent(&context->Event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static void raid5_decode(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+                         UINT32* pos, UINT32 length, UINT32 firststripesize) {
+    UINT16 parity, stripe;
+    BOOL first = *pos == 0;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    
+    parity = ((off / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
+    
+    stripe = (parity + 1) % ci->num_stripes;
+    
+    while (TRUE) {
+        if (stripe == parity) {
+            *stripeoff += stripelen;
+            return;
+        }
+        
+        if (skip >= ci->stripe_length) {
+            skip -= ci->stripe_length;
+        } else {
+            UINT32 copylen = min(stripelen, length - *pos) + ci->stripe_length - stripelen - skip;
+            
+            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+            
+            *pos += copylen;
+            
+            if (*pos == length)
+                return;
+            
+            skip = 0;
+        }
+        
+        stripe = (stripe + 1) % ci->num_stripes;
+    }
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp) {
@@ -174,6 +225,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     NTSTATUS Status;
     device** devices;
     UINT64 *stripestart = NULL, *stripeend = NULL;
+    UINT32 firststripesize;
     UINT16 startoffstripe;
     
     Status = verify_vcb(Vcb, Irp);
@@ -247,8 +299,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     } else if (ci->type & BLOCK_FLAG_RAID10) {
         type = BLOCK_FLAG_RAID10;
     } else if (ci->type & BLOCK_FLAG_RAID5) {
-        FIXME("RAID5 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
+        type = BLOCK_FLAG_RAID5;
     } else if (ci->type & BLOCK_FLAG_RAID6) {
         FIXME("RAID6 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
@@ -369,6 +420,48 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         for (i = 0; i < ci->num_stripes; i++) {
             stripestart[i] = addr - offset;
             stripeend[i] = stripestart[i] + length;
+        }
+    } else if (type == BLOCK_FLAG_RAID5) {
+        UINT64 startoff, endoff;
+        UINT16 endoffstripe;
+        UINT64 start = 0xffffffffffffffff, end = 0;
+        
+        get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 1, &startoff, &startoffstripe);
+        get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes - 1, &endoff, &endoffstripe);
+        
+        for (i = 0; i < ci->num_stripes - 1; i++) {
+            UINT64 ststart, stend;
+            
+            if (startoffstripe > i) {
+                ststart = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+            } else if (startoffstripe == i) {
+                ststart = startoff;
+            } else {
+                ststart = startoff - (startoff % ci->stripe_length);
+            }
+              
+            if (endoffstripe > i) {
+                stend = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
+            } else if (endoffstripe == i) {
+                stend = endoff + 1;
+            } else {
+                stend = endoff - (endoff % ci->stripe_length);
+            }
+            
+            if (ststart != stend) {
+                if (ststart < start) {
+                    start = ststart;
+                    firststripesize = ci->stripe_length - (ststart % ci->stripe_length);
+                }
+                
+                if (stend > end)
+                    end = stend;
+            }
+        }
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            stripestart[i] = start;
+            stripeend[i] = end;
         }
     }
     
@@ -680,6 +773,48 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         // if we somehow get here, return STATUS_INTERNAL_ERROR
         
         Status = STATUS_INTERNAL_ERROR;
+    } else if (type == BLOCK_FLAG_RAID5) {
+        UINT32 pos, skip;
+        int num_errors = 0;
+        UINT64 off, stripeoff;
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Error) {
+                num_errors++;
+                if (num_errors > 1)
+                    break;
+            }
+        }
+        
+        if (num_errors > 1) {
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Error) {
+                    WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
+                    Status = context->stripes[i].iosb.Status;
+                    goto exit;
+                }
+            }
+        }
+        
+        pos = 0;
+        
+        off = addr - offset;
+        off -= off % ((ci->num_stripes - 1) * ci->stripe_length);
+        skip = addr - offset - off;
+        
+        // FIXME - calculate missing stripe via xor if not loaded
+        
+        stripeoff = 0;
+        raid5_decode(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize);
+        
+        while (pos < length) {
+            off += (ci->num_stripes - 1) * ci->stripe_length;
+            raid5_decode(off, 0, context, ci, &stripeoff, buf, &pos, length, 0);
+        }
+
+        // FIXME - check checksum
+        
+        Status = STATUS_SUCCESS;
     }
 
 exit:
