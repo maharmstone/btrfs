@@ -811,8 +811,27 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             off += (ci->num_stripes - 1) * ci->stripe_length;
             raid5_decode(off, 0, context, ci, &stripeoff, buf, &pos, length, 0);
         }
-
-        // FIXME - check checksum
+        
+        if (is_tree) {
+            tree_header* th = (tree_header*)buf;
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum)) {
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                Status = STATUS_CRC_ERROR;
+                goto exit;
+            }
+        } else if (csum) {
+            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                
+                if (crc32 != csum[i]) {
+                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
+            }
+        }
         
         Status = STATUS_SUCCESS;
     }
