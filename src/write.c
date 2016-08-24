@@ -2510,18 +2510,8 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 Vcb->superblock.bytes_used += c->used - c->oldused;
             } else if (c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_DUPLICATE || c->chunk_item->type & BLOCK_FLAG_RAID10) {
                 Vcb->superblock.bytes_used += 2 * (c->used - c->oldused);
-            } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-                FIXME("RAID5 not yet supported\n");
-                ExFreePool(bgi);
-                Status = STATUS_INTERNAL_ERROR;
-                ExReleaseResourceLite(&c->lock);
-                goto end;
-            } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-                FIXME("RAID6 not yet supported\n");
-                ExFreePool(bgi);
-                Status = STATUS_INTERNAL_ERROR;
-                ExReleaseResourceLite(&c->lock);
-                goto end;
+            } else if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+                Vcb->superblock.bytes_used += c->chunk_item->num_stripes * (c->used - c->oldused);
             } else { // SINGLE
                 Vcb->superblock.bytes_used += c->used - c->oldused;
             }
