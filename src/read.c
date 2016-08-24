@@ -201,7 +201,7 @@ static void raid5_decode(UINT64 off, UINT32 skip, read_data_context* context, CH
         if (skip >= ci->stripe_length) {
             skip -= ci->stripe_length;
         } else {
-            UINT32 copylen = min(stripelen, length - *pos) + ci->stripe_length - stripelen - skip;
+            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
             
             RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
             
