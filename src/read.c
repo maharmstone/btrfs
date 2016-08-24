@@ -162,14 +162,15 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
             
             stripe->status = ReadDataStatus_Success;
             
-//             if (stripes_left == 1) {
-//                 for (i = 0; i < context->num_stripes; i++) {
-//                     if (context->stripes[i].status == ReadDataStatus_Pending && context->stripes[i].stripenum == stripe->stripenum) {
-//                         context->stripes[i].status = ReadDataStatus_Cancelling;
-//                         IoCancelIrp(context->stripes[i].Irp);
-//                     }
-//                 }
-//             }
+            if (stripes_left == 1) {
+                for (i = 0; i < context->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Pending) {
+                        context->stripes[i].status = ReadDataStatus_Cancelling;
+                        IoCancelIrp(context->stripes[i].Irp);
+                        break;
+                    }
+                }
+            }
         }
             
         goto end;
@@ -184,6 +185,48 @@ end:
         KeSetEvent(&context->Event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static void raid5_reconstruct(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
+                              BOOL first, UINT32 firststripesize, UINT16 missing) {
+    UINT16 parity, stripe;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    UINT32 readlen;
+    UINT8* buf;
+    
+    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %x)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, missing);
+    
+    parity = ((off / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
+    
+    readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
+    
+    buf = &context->stripes[missing].buf[*stripeoff];
+    
+    if (missing != parity) {
+        UINT32 i;
+        UINT16 firststripe = missing == 0 ? 1 : 0;
+        
+        RtlCopyMemory(buf, &context->stripes[firststripe].buf[*stripeoff], readlen);
+        
+        for (stripe = firststripe + 1; stripe < context->num_stripes; stripe++) {
+            if (stripe != missing) {
+                UINT8* buf2 = &context->stripes[stripe].buf[*stripeoff];
+                
+                // FIXME - should we be doing SIMD here? Or will the compiler take care of that for us?
+                
+                for (i = 0; i < readlen; i++) {
+                    *buf ^= *buf2;
+                    buf++;
+                    buf2++;
+                }
+                
+                buf = &context->stripes[missing].buf[*stripeoff];
+            }
+        }
+    } else
+        TRACE("parity == missing == %x, skipping\n", parity);
+    
+    *stripeoff += stripelen;
 }
 
 static void raid5_decode(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
@@ -783,6 +826,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT32 pos, skip;
         int num_errors = 0;
         UINT64 off, stripeoff;
+        BOOL needs_reconstruct = FALSE;
+        UINT64 reconstruct_stripe;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -802,14 +847,41 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
         }
         
-        pos = 0;
-        
         off = addr - offset;
         off -= off % ((ci->num_stripes - 1) * ci->stripe_length);
         skip = addr - offset - off;
         
-        // FIXME - calculate missing stripe via xor if not loaded
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                if (needs_reconstruct) {
+                    ERR("more than one stripe needs reconstruction\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit;
+                } else {
+                    needs_reconstruct = TRUE;
+                    reconstruct_stripe = i;
+                }
+            }
+        }
         
+        if (needs_reconstruct) {
+            TRACE("reconstructing stripe %u\n", reconstruct_stripe);
+            
+            pos = 0;
+            stripeoff = 0;
+            
+            raid5_reconstruct(off, skip, context, ci, &stripeoff, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], TRUE, firststripesize, reconstruct_stripe);
+            
+            while (stripeoff < stripeend[0] - stripestart[0]) {
+                off += (ci->num_stripes - 1) * ci->stripe_length;
+                raid5_reconstruct(off, 0, context, ci, &stripeoff, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], FALSE, 0, reconstruct_stripe);
+            }
+            
+            off = addr - offset;
+            off -= off % ((ci->num_stripes - 1) * ci->stripe_length);
+        }
+        
+        pos = 0;
         stripeoff = 0;
         raid5_decode(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize);
         
