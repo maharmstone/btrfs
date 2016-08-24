@@ -51,6 +51,7 @@ typedef struct {
     UINT32* csum;
     BOOL tree;
     read_data_stripe* stripes;
+    KSPIN_LOCK spin_lock;
 } read_data_context;
 
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
@@ -58,8 +59,9 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     read_data_context* context = (read_data_context*)stripe->context;
     UINT64 i;
     LONG stripes_left;
+    KIRQL irql;
 
-    // FIXME - we definitely need a per-stripe lock here
+    KeAcquireSpinLock(&context->spin_lock, &irql);
     
     stripes_left = InterlockedDecrement(&context->stripes_left);
     
@@ -176,6 +178,8 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     }
     
 end:
+    KeReleaseSpinLock(&context->spin_lock, irql);
+    
     if (stripes_left == 0)
         KeSetEvent(&context->Event, 0, FALSE);
 
@@ -466,6 +470,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
+    
+    KeInitializeSpinLock(&context->spin_lock);
     
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
