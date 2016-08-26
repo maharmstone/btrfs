@@ -461,6 +461,161 @@ end:
     return success ? c : NULL;
 }
 
+static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, UINT64* stripestart, UINT64* stripeend, UINT8** stripedata) {
+    UINT64 startoff, endoff;
+    UINT16 startoffstripe, endoffstripe, stripenum;
+    UINT64 pos, *stripeoff;
+    UINT32 i;
+    
+    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &endoff, &endoffstripe);
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (startoffstripe > i) {
+            stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (startoffstripe == i) {
+            stripestart[i] = startoff;
+        } else {
+            stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length);
+        }
+        
+        if (endoffstripe > i) {
+            stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (endoffstripe == i) {
+            stripeend[i] = endoff + 1;
+        } else {
+            stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length);
+        }
+        
+        if (stripestart[i] != stripeend[i]) {
+            stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+            
+            if (!stripedata[i]) {
+                ERR("out of memory\n");
+                ExFreePool(stripeoff);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+    }
+    
+    pos = 0;
+    RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes);
+    
+    stripenum = startoffstripe;
+    while (pos < length) {
+        if (pos == 0) {
+            UINT32 writelen = min(stripeend[stripenum] - stripestart[stripenum],
+                                    c->chunk_item->stripe_length - (stripestart[stripenum] % c->chunk_item->stripe_length));
+            
+            RtlCopyMemory(stripedata[stripenum], data, writelen);
+            stripeoff[stripenum] += writelen;
+            pos += writelen;
+        } else if (length - pos < c->chunk_item->stripe_length) {
+            RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
+            break;
+        } else {
+            RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
+            stripeoff[stripenum] += c->chunk_item->stripe_length;
+            pos += c->chunk_item->stripe_length;
+        }
+        
+        stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+    }
+
+    ExFreePool(stripeoff);
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT32 length, UINT64* stripestart, UINT64* stripeend, UINT8** stripedata) {
+    UINT64 startoff, endoff;
+    UINT16 startoffstripe, endoffstripe, stripenum;
+    UINT64 pos, *stripeoff;
+    UINT32 i;
+
+    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &endoff, &endoffstripe);
+
+    startoffstripe *= c->chunk_item->sub_stripes;
+    endoffstripe *= c->chunk_item->sub_stripes;
+
+    for (i = 0; i < c->chunk_item->num_stripes; i += c->chunk_item->sub_stripes) {
+        UINT16 j;
+        
+        if (startoffstripe > i) {
+            stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (startoffstripe == i) {
+            stripestart[i] = startoff;
+        } else {
+            stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length);
+        }
+        
+        if (endoffstripe > i) {
+            stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (endoffstripe == i) {
+            stripeend[i] = endoff + 1;
+        } else {
+            stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length);
+        }
+        
+        if (stripestart[i] != stripeend[i]) {
+            stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+            
+            if (!stripedata[i]) {
+                ERR("out of memory\n");
+                ExFreePool(stripeoff);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+        
+        for (j = 1; j < c->chunk_item->sub_stripes; j++) {
+            stripestart[i+j] = stripestart[i];
+            stripeend[i+j] = stripeend[i];
+            stripedata[i+j] = stripedata[i];
+        }
+    }
+
+    pos = 0;
+    RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
+
+    stripenum = startoffstripe / c->chunk_item->sub_stripes;
+    while (pos < length) {
+        if (pos == 0) {
+            UINT32 writelen = min(stripeend[stripenum * c->chunk_item->sub_stripes] - stripestart[stripenum * c->chunk_item->sub_stripes],
+                                    c->chunk_item->stripe_length - (stripestart[stripenum * c->chunk_item->sub_stripes] % c->chunk_item->stripe_length));
+            
+            RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes], data, writelen);
+            stripeoff[stripenum] += writelen;
+            pos += writelen;
+        } else if (length - pos < c->chunk_item->stripe_length) {
+            RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes] + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
+            break;
+        } else {
+            RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes] + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
+            stripeoff[stripenum] += c->chunk_item->stripe_length;
+            pos += c->chunk_item->stripe_length;
+        }
+        
+        stripenum = (stripenum + 1) % (c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
+    }
+
+    ExFreePool(stripeoff);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c) {
     NTSTATUS Status;
     UINT32 i;
@@ -513,169 +668,34 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
-        UINT64 startoff, endoff;
-        UINT16 startoffstripe, endoffstripe, stripenum;
-        UINT64 pos, *stripeoff;
-        
-        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes, ALLOC_TAG);
-        if (!stripeoff) {
-            ERR("out of memory\n");
+        Status = prepare_raid0_write(c, address, data, length, stripestart, stripeend, stripedata);
+        if (!NT_SUCCESS(Status)) {
+            ERR("prepare_raid0_write returned %08x\n", Status);
             ExFreePool(stripedata);
             ExFreePool(stripeend);
             ExFreePool(stripestart);
-            return STATUS_INSUFFICIENT_RESOURCES;
+            return Status;
         }
-
-        get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &startoff, &startoffstripe);
-        get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &endoff, &endoffstripe);
-        
-        for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (startoffstripe > i) {
-                stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-            } else if (startoffstripe == i) {
-                stripestart[i] = startoff;
-            } else {
-                stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length);
-            }
-            
-            if (endoffstripe > i) {
-                stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-            } else if (endoffstripe == i) {
-                stripeend[i] = endoff + 1;
-            } else {
-                stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length);
-            }
-            
-            if (stripestart[i] != stripeend[i]) {
-                stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
-                
-                if (!stripedata[i]) {
-                    ERR("out of memory\n");
-                    ExFreePool(stripeoff);
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-            }
-        }
-        
-        pos = 0;
-        RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes);
-        
-        stripenum = startoffstripe;
-        while (pos < length) {
-            if (pos == 0) {
-                UINT32 writelen = min(stripeend[stripenum] - stripestart[stripenum],
-                                      c->chunk_item->stripe_length - (stripestart[stripenum] % c->chunk_item->stripe_length));
-                
-                RtlCopyMemory(stripedata[stripenum], data, writelen);
-                stripeoff[stripenum] += writelen;
-                pos += writelen;
-            } else if (length - pos < c->chunk_item->stripe_length) {
-                RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
-                break;
-            } else {
-                RtlCopyMemory(stripedata[stripenum] + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
-                stripeoff[stripenum] += c->chunk_item->stripe_length;
-                pos += c->chunk_item->stripe_length;
-            }
-            
-            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
-        }
-
-        ExFreePool(stripeoff);
         
         if (need_free)
             ExFreePool(data);
 
         need_free2 = TRUE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
-        UINT64 startoff, endoff;
-        UINT16 startoffstripe, endoffstripe, stripenum;
-        UINT64 pos, *stripeoff;
-        
-        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes, ALLOC_TAG);
-        if (!stripeoff) {
-            ERR("out of memory\n");
+        Status = prepare_raid10_write(c, address, data, length, stripestart, stripeend, stripedata);
+        if (!NT_SUCCESS(Status)) {
+            ERR("prepare_raid10_write returned %08x\n", Status);
             ExFreePool(stripedata);
             ExFreePool(stripeend);
             ExFreePool(stripestart);
-            return STATUS_INSUFFICIENT_RESOURCES;
+            return Status;
         }
-
-        get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &startoff, &startoffstripe);
-        get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &endoff, &endoffstripe);
-        
-        startoffstripe *= c->chunk_item->sub_stripes;
-        endoffstripe *= c->chunk_item->sub_stripes;
-        
-        for (i = 0; i < c->chunk_item->num_stripes; i += c->chunk_item->sub_stripes) {
-            UINT16 j;
-            
-            if (startoffstripe > i) {
-                stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-            } else if (startoffstripe == i) {
-                stripestart[i] = startoff;
-            } else {
-                stripestart[i] = startoff - (startoff % c->chunk_item->stripe_length);
-            }
-            
-            if (endoffstripe > i) {
-                stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-            } else if (endoffstripe == i) {
-                stripeend[i] = endoff + 1;
-            } else {
-                stripeend[i] = endoff - (endoff % c->chunk_item->stripe_length);
-            }
-            
-            if (stripestart[i] != stripeend[i]) {
-                stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
-                
-                if (!stripedata[i]) {
-                    ERR("out of memory\n");
-                    ExFreePool(stripeoff);
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-            }
-            
-            for (j = 1; j < c->chunk_item->sub_stripes; j++) {
-                stripestart[i+j] = stripestart[i];
-                stripeend[i+j] = stripeend[i];
-                stripedata[i+j] = stripedata[i];
-            }
-        }
-        
-        pos = 0;
-        RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
-        
-        stripenum = startoffstripe / c->chunk_item->sub_stripes;
-        while (pos < length) {
-            if (pos == 0) {
-                UINT32 writelen = min(stripeend[stripenum * c->chunk_item->sub_stripes] - stripestart[stripenum * c->chunk_item->sub_stripes],
-                                      c->chunk_item->stripe_length - (stripestart[stripenum * c->chunk_item->sub_stripes] % c->chunk_item->stripe_length));
-                
-                RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes], data, writelen);
-                stripeoff[stripenum] += writelen;
-                pos += writelen;
-            } else if (length - pos < c->chunk_item->stripe_length) {
-                RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes] + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
-                break;
-            } else {
-                RtlCopyMemory(stripedata[stripenum * c->chunk_item->sub_stripes] + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
-                stripeoff[stripenum] += c->chunk_item->stripe_length;
-                pos += c->chunk_item->stripe_length;
-            }
-            
-            stripenum = (stripenum + 1) % (c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
-        }
-
-        ExFreePool(stripeoff);
         
         if (need_free)
             ExFreePool(data);
 
         need_free2 = TRUE;
-    } else {
+    } else {  // write same data to every location - SINGLE, DUP, RAID1
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             stripestart[i] = address - c->offset;
             stripeend[i] = stripestart[i] + length;
