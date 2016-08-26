@@ -762,7 +762,6 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c);
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list,
                          PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size);
 NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
@@ -819,6 +818,7 @@ void do_unlock_volume(device_extension* Vcb);
 void STDCALL flush_thread(void* context);
 NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
+void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
