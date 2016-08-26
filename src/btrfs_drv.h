@@ -749,7 +749,6 @@ void STDCALL free_cache();
 extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 // in write.c
-NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write);
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
                      BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback);
@@ -762,7 +761,6 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c);
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c);
 void free_write_data_stripes(write_data_context* wtc);
-NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data, LIST_ENTRY* changed_sector_list,
@@ -772,6 +770,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
                                    signed long long count, BOOL no_csum, UINT64 new_size, PIRP Irp);
 NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
+BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -818,6 +817,8 @@ void do_unlock_volume(device_extension* Vcb);
 
 // in flushthread.c
 void STDCALL flush_thread(void* context);
+NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
