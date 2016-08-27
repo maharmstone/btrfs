@@ -714,23 +714,25 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
     parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     stripepos = 0;
     
-    if (firststripesize < c->chunk_item->stripe_length || startoffstripe != 0) {
+    if ((address - c->offset) % (c->chunk_item->stripe_length * c->chunk_item->num_stripes) > 0) {
         UINT16 firstdata;
         
         stripenum = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
         
+        i = 0;
         while (TRUE) {
             ULONG copylen;
             
-            if (stripestart[stripenum] >= start + firststripesize)
+            if (i > c->chunk_item->num_stripes - 1 || stripestart[i] >= start + firststripesize)
                 break;
             
-            copylen = start + firststripesize - stripestart[stripenum];
+            copylen = start + firststripesize - stripestart[i];
 
             RtlCopyMemory(&stripedata[stripenum][firststripesize - copylen], &data2[pos], copylen);
             
             pos += copylen;
             stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+            i++;
         }
         
         firstdata = parity == 0 ? 1 : 0;
@@ -777,15 +779,17 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
 
         stripenum = (parity + 1) % c->chunk_item->num_stripes;
         
+        i = 0;
         while (pos < length) {
             ULONG copylen;
             
-            copylen = stripeend[stripenum] - start - stripepos;
+            copylen = stripeend[i] - start - stripepos;
 
             RtlCopyMemory(&stripedata[stripenum][stripepos], &data2[pos], copylen);
             
             pos += copylen;
             stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+            i++;
         }
         
         firstdata = parity == 0 ? 1 : 0;
