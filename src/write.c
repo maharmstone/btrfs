@@ -616,6 +616,196 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
     return STATUS_SUCCESS;
 }
 
+static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
+    UINT32 j;
+    
+    // FIXME - use SIMD
+    for (j = 0; j < len; j++) {
+        *buf1 ^= *buf2;
+        buf1++;
+        buf2++;
+    }
+}
+
+static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32 length, UINT64* stripestart, UINT64* stripeend, UINT8** stripedata) {
+    UINT64 startoff, endoff;
+    UINT16 startoffstripe, endoffstripe, stripenum, parity;
+    UINT64 start = 0xffffffffffffffff, end = 0;
+    UINT64 pos, stripepos;
+    UINT32 firststripesize, laststripesize;
+    UINT32 i;
+    UINT8* data2 = (UINT8*)data;
+    
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
+    
+    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        UINT64 ststart, stend;
+        
+        if (startoffstripe > i) {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (startoffstripe == i) {
+            ststart = startoff;
+        } else {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length);
+        }
+
+        if (endoffstripe > i) {
+            stend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (endoffstripe == i) {
+            stend = endoff + 1;
+        } else {
+            stend = endoff - (endoff % c->chunk_item->stripe_length);
+        }
+
+        if (ststart != stend) {
+            stripestart[i] = ststart;
+            stripeend[i] = stend;
+            
+            if (ststart < start) {
+                start = ststart;
+                firststripesize = c->chunk_item->stripe_length - (ststart % c->chunk_item->stripe_length);
+            }
+
+            if (stend > end) {
+                end = stend;
+                laststripesize = (address - c->offset + stend) % c->chunk_item->stripe_length;
+            }
+        }
+    }
+    
+    if (start == end) {
+        ERR("error: start == end (%llx)\n", start);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    // FIXME - stripestart shouldn't necessarily be the same for every stripe. Fix this so we're not
+    // rewriting existing overlapping data.
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        stripedata[i] = ExAllocatePoolWithTag(NonPagedPool, end - start, ALLOC_TAG);
+        if (!stripedata[i]) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+    
+//     parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+//     stripenum = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
+    
+    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        if (stripestart[i] > start) {
+            // FIXME - read data
+            
+//             stripestart[i] = start;
+        }
+        
+        if (stripeend[i] < end) {
+            // FIXME - read data
+            
+//             stripeend[i] = end;
+        }
+        
+//         stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+    }
+    
+    pos = 0;
+    
+    parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+    stripepos = 0;
+    
+    if (firststripesize < c->chunk_item->stripe_length || startoffstripe != 0) {
+        UINT16 firstdata;
+        
+        stripenum = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
+        
+        while (TRUE) {
+            ULONG copylen;
+            
+            if (stripestart[stripenum] >= start + firststripesize)
+                break;
+            
+            copylen = start + firststripesize - stripestart[stripenum];
+
+            RtlCopyMemory(&stripedata[stripenum][firststripesize - copylen], &data2[pos], copylen);
+            
+            pos += copylen;
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+        
+        firstdata = parity == 0 ? 1 : 0;
+        
+        RtlCopyMemory(stripedata[parity], stripedata[firstdata], firststripesize);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity)
+                do_xor(&stripedata[parity][0], &stripedata[i][0], firststripesize);
+        }
+        
+        stripepos = firststripesize;
+        
+        parity = (parity + 1) % c->chunk_item->num_stripes;
+    }
+    
+    while (length - pos >= c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
+        UINT16 firstdata;
+        
+        stripenum = (parity + 1) % c->chunk_item->num_stripes;
+        
+        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+            RtlCopyMemory(&stripedata[stripenum][stripepos], &data2[pos], c->chunk_item->stripe_length);
+            
+            pos += c->chunk_item->stripe_length;
+            stripenum = (stripenum +1) % c->chunk_item->num_stripes;
+        }
+        
+        firstdata = parity == 0 ? 1 : 0;
+        
+        RtlCopyMemory(&stripedata[parity][stripepos], &stripedata[firstdata][stripepos], c->chunk_item->stripe_length);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity)
+                do_xor(&stripedata[parity][stripepos], &stripedata[i][stripepos], c->chunk_item->stripe_length);
+        }
+        
+        parity = (parity + 1) % c->chunk_item->num_stripes;
+        stripepos += c->chunk_item->stripe_length;
+    }
+    
+    if (pos < length) {
+        UINT16 firstdata;
+
+        stripenum = (parity + 1) % c->chunk_item->num_stripes;
+        
+        while (pos < length) {
+            ULONG copylen;
+            
+            copylen = stripeend[stripenum] - start - stripepos;
+
+            RtlCopyMemory(&stripedata[stripenum][stripepos], &data2[pos], copylen);
+            
+            pos += copylen;
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+        
+        firstdata = parity == 0 ? 1 : 0;
+        
+        RtlCopyMemory(&stripedata[parity][stripepos], &stripedata[firstdata][stripepos], laststripesize);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity)
+                do_xor(&stripedata[parity][stripepos], &stripedata[i][stripepos], laststripesize);
+        }
+    }
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        stripestart[i] = start;
+        stripeend[i] = end;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c) {
     NTSTATUS Status;
     UINT32 i;
@@ -635,10 +825,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         }
     }
     
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-        FIXME("RAID5 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         FIXME("RAID6 not yet supported\n");
         return STATUS_NOT_IMPLEMENTED;
     }
@@ -685,6 +872,20 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid10_write(c, address, data, length, stripestart, stripeend, stripedata);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid10_write returned %08x\n", Status);
+            ExFreePool(stripedata);
+            ExFreePool(stripeend);
+            ExFreePool(stripestart);
+            return Status;
+        }
+        
+        if (need_free)
+            ExFreePool(data);
+
+        need_free2 = TRUE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        Status = prepare_raid5_write(c, address, data, length, stripestart, stripeend, stripedata);
+        if (!NT_SUCCESS(Status)) {
+            ERR("prepare_raid5_write returned %08x\n", Status);
             ExFreePool(stripedata);
             ExFreePool(stripeend);
             ExFreePool(stripestart);
