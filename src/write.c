@@ -24,6 +24,8 @@ typedef struct {
     UINT64 start;
     UINT64 end;
     UINT8* data;
+    UINT32 skip_start;
+    UINT32 skip_end;
 } write_stripe;
 
 typedef struct {
@@ -825,6 +827,8 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
                     goto readend;
                 }
                 
+                stripes[stripenum].skip_start = stripes[i].start - start;
+                
                 j++;
                 if (j == num_reads) break;
             }
@@ -848,6 +852,8 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
                         j++;
                         goto readend;
                     }
+                    
+                    stripes[stripenum].skip_end = end - stripes[i].end;
                     
                     j++;
                     if (j == num_reads) break;
@@ -1121,11 +1127,12 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             IrpSp->MajorFunction = IRP_MJ_WRITE;
             
             if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
-                stripe->Irp->AssociatedIrp.SystemBuffer = stripes[i].data;
+                stripe->Irp->AssociatedIrp.SystemBuffer = stripes[i].data + stripes[i].skip_start;
 
                 stripe->Irp->Flags = IRP_BUFFERED_IO;
             } else if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
-                stripe->Irp->MdlAddress = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
+                stripe->Irp->MdlAddress = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                                        stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
                 if (!stripe->Irp->MdlAddress) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INTERNAL_ERROR;
@@ -1134,11 +1141,11 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
                 
                 MmProbeAndLockPages(stripe->Irp->MdlAddress, KernelMode, IoWriteAccess);
             } else {
-                stripe->Irp->UserBuffer = stripes[i].data;
+                stripe->Irp->UserBuffer = stripes[i].data + stripes[i].skip_start;
             }
 
-            IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start;
-            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset;
+            IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
+            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset + stripes[i].skip_start;
             
             stripe->Irp->UserIosb = &stripe->iosb;
             wtc->stripes_left++;
