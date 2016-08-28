@@ -779,8 +779,10 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        if (stripes[i].start == 0 && stripes[i].end == 0)
-            stripes[i].start = stripes[i].end = start;
+        if (i < c->chunk_item->num_stripes - 1) {
+            if (stripes[i].start == 0 && stripes[i].end == 0)
+                stripes[i].start = stripes[i].end = start;
+        }
     }
     
     num_reads = 0;
@@ -925,7 +927,7 @@ readend:
             if (pos >= length)
                 break;
             
-            if (stripes[i].start < start + firststripesize) {
+            if (stripes[i].start < start + firststripesize && stripes[i].start != stripes[i].end) {
                 copylen = min(start + firststripesize - stripes[i].start, length - pos);
 
                 RtlCopyMemory(&stripes[stripenum].data[firststripesize - copylen], &data2[pos], copylen);
