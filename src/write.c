@@ -917,7 +917,7 @@ readend:
     parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     stripepos = 0;
     
-    if ((address - c->offset) % (c->chunk_item->stripe_length * c->chunk_item->num_stripes) > 0) {
+    if ((address - c->offset) % (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) > 0) {
         UINT16 firstdata;
         BOOL first = TRUE;
         
@@ -1194,6 +1194,9 @@ end:
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c) {
     write_data_context* wtc;
     NTSTATUS Status;
+// #ifdef DEBUG_PARANOID
+//     UINT8* buf2;
+// #endif
     
     wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
     if (!wtc) {
@@ -1244,6 +1247,16 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     }
 
     ExFreePool(wtc);
+
+// #ifdef DEBUG_PARANOID
+//     buf2 = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+//     Status = read_data(Vcb, address, length, NULL, FALSE, buf2, NULL, Irp);
+//     
+//     if (!NT_SUCCESS(Status) || RtlCompareMemory(buf2, data, length) != length)
+//         int3;
+//     
+//     ExFreePool(buf2);
+// #endif
 
     return STATUS_SUCCESS;
 }
