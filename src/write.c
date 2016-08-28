@@ -721,6 +721,7 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
     UINT32 i;
     UINT8* data2 = (UINT8*)data;
     UINT32 num_reads;
+    BOOL same_stripe = FALSE;
     
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
@@ -918,6 +919,7 @@ readend:
     
     if ((address - c->offset) % (c->chunk_item->stripe_length * c->chunk_item->num_stripes) > 0) {
         UINT16 firstdata;
+        BOOL first = TRUE;
         
         stripenum = (parity + 1) % c->chunk_item->num_stripes;
         
@@ -929,10 +931,16 @@ readend:
             
             if (stripes[i].start < start + firststripesize && stripes[i].start != stripes[i].end) {
                 copylen = min(start + firststripesize - stripes[i].start, length - pos);
+                
+                if (!first && copylen < c->chunk_item->stripe_length) {
+                    same_stripe = TRUE;
+                    break;
+                }
 
                 RtlCopyMemory(&stripes[stripenum].data[firststripesize - copylen], &data2[pos], copylen);
                 
                 pos += copylen;
+                first = FALSE;
             }
             
             stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
@@ -947,9 +955,10 @@ readend:
                 do_xor(&stripes[parity].data[0], &stripes[i].data[0], firststripesize);
         }
         
-        stripepos = firststripesize;
-        
-        parity = (parity + 1) % c->chunk_item->num_stripes;
+        if (!same_stripe) {
+            stripepos = firststripesize;
+            parity = (parity + 1) % c->chunk_item->num_stripes;
+        }
     }
     
     while (length >= pos + c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
@@ -979,8 +988,9 @@ readend:
     
     if (pos < length) {
         UINT16 firstdata;
-
-        stripenum = (parity + 1) % c->chunk_item->num_stripes;
+        
+        if (!same_stripe)
+            stripenum = (parity + 1) % c->chunk_item->num_stripes;
         
         i = 0;
         while (pos < length) {
