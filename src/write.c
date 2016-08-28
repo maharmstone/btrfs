@@ -754,6 +754,8 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             if (stend > end) {
                 end = stend;
                 laststripesize = stend % c->chunk_item->stripe_length;
+                if (laststripesize == 0)
+                    laststripesize = c->chunk_item->stripe_length;
             }
         }
     }
@@ -776,21 +778,14 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
     
     num_reads = 0;
     
-    parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
-//     stripenum = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
-    
     for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
         if (stripes[i].start > start) {
             num_reads++;
         }
         
-//         if (stripes[i].end < end) {
-//             // FIXME - read data
-//             
-// //             stripeend[i] = end;
-//         }
-        
-//         stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        if (stripes[i].end < end) {
+            num_reads++;
+        }
     }
     
     if (num_reads > 0) {
@@ -813,6 +808,7 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
+        parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
         stripenum = (parity + 1) % c->chunk_item->num_stripes;
         
         j = 0;
@@ -834,6 +830,31 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             }
             
             stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+        
+        if (j < num_reads) {
+            parity = (((address + length - 1 - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+            stripenum = (parity + 1) % c->chunk_item->num_stripes;
+            
+            for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+                if (stripes[i].end < end) {
+                    read_stripes[j].Irp = NULL;
+                    read_stripes[j].devobj = c->devices[stripenum]->devobj;
+                    read_stripes[j].master = master;
+                    
+                    Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset, &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("make_read_irp returned %08x\n", Status);
+                        j++;
+                        goto readend;
+                    }
+                    
+                    j++;
+                    if (j == num_reads) break;
+                }
+                
+                stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+            }
         }
         
         master->stripes_left = j;
