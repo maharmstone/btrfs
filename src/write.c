@@ -296,8 +296,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
         sub_stripes = 2;
         type = BLOCK_FLAG_RAID10;
     } else if (flags & BLOCK_FLAG_RAID5) {
-        FIXME("RAID5 not yet supported\n");
-        goto end;
+        min_stripes = 3;
+        max_stripes = Vcb->superblock.num_devices;
+        sub_stripes = 1;
+        type = BLOCK_FLAG_RAID5;
     } else if (flags & BLOCK_FLAG_RAID6) {
         FIXME("RAID6 not yet supported\n");
         goto end;
@@ -367,6 +369,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
         factor = num_stripes;
     else if (type == BLOCK_FLAG_RAID10)
         factor = num_stripes / sub_stripes;
+    else if (type == BLOCK_FLAG_RAID5)
+        factor = num_stripes - 1;
     
     if (stripe_size * factor > max_chunk_size)
         stripe_size = max_chunk_size / factor;
