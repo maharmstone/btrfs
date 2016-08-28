@@ -766,16 +766,21 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
         ERR("error: start == end (%llx)\n", start);
         return STATUS_INTERNAL_ERROR;
     }
-
-    // FIXME - stripestart shouldn't necessarily be the same for every stripe. Fix this so we're not
-    // rewriting existing overlapping data.
     
+    if (startoffstripe == endoffstripe && start / c->chunk_item->stripe_length == end / c->chunk_item->stripe_length) {
+        firststripesize = end - start;
+        laststripesize = firststripesize;
+    }
+
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         stripes[i].data = ExAllocatePoolWithTag(NonPagedPool, end - start, ALLOC_TAG);
         if (!stripes[i].data) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
+        
+        if (stripes[i].start == 0 && stripes[i].end == 0)
+            stripes[i].start = stripes[i].end = start;
     }
     
     num_reads = 0;
@@ -917,8 +922,11 @@ readend:
         for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
             ULONG copylen;
             
+            if (pos >= length)
+                break;
+            
             if (stripes[i].start < start + firststripesize) {
-                copylen = start + firststripesize - stripes[i].start;
+                copylen = min(start + firststripesize - stripes[i].start, length - pos);
 
                 RtlCopyMemory(&stripes[stripenum].data[firststripesize - copylen], &data2[pos], copylen);
                 
@@ -942,7 +950,7 @@ readend:
         parity = (parity + 1) % c->chunk_item->num_stripes;
     }
     
-    while (length - pos >= c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
+    while (length >= pos + c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
         UINT16 firstdata;
         
         stripenum = (parity + 1) % c->chunk_item->num_stripes;
@@ -976,7 +984,7 @@ readend:
         while (pos < length) {
             ULONG copylen;
             
-            copylen = stripes[i].end - start - stripepos;
+            copylen = min(stripes[i].end - start - stripepos, length - pos);
 
             RtlCopyMemory(&stripes[stripenum].data[stripepos], &data2[pos], copylen);
             
@@ -1093,10 +1101,11 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             goto end;
         }
         
-        if (stripes[i].start == stripes[i].end) {
+        if (stripes[i].start + stripes[i].skip_start == stripes[i].end - stripes[i].skip_end) {
             stripe->status = WriteDataStatus_Ignore;
             stripe->Irp = NULL;
-            stripe->buf = NULL;
+            stripe->buf = stripes[i].data;
+            stripe->need_free = need_free2;
         } else {
             stripe->context = (struct _write_data_context*)wtc;
             stripe->buf = stripes[i].data;
