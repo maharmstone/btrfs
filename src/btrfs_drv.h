@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <emmintrin.h>
 #include "btrfs.h"
 
 #ifdef _DEBUG
@@ -638,6 +639,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
 #define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
 #define free_fileref(fileref) _free_fileref(fileref, funcname, __FILE__, __LINE__)
 
+extern BOOL have_sse2;
+
 extern UINT32 mount_compress;
 extern UINT32 mount_compress_force;
 extern UINT32 mount_compress_type;
@@ -913,8 +916,21 @@ static __inline BOOL write_fcb_compressed(fcb* fcb) {
 
 static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
     UINT32 j;
+    __m128i x1, x2;
     
-    // FIXME - use SIMD
+    if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
+        while (len >= 16) {
+            x1 = _mm_load_si128((__m128i*)buf1);
+            x2 = _mm_load_si128((__m128i*)buf2);
+            x1 = _mm_xor_si128(x1, x2);
+            _mm_store_si128((__m128i*)buf1, x1);
+            
+            buf1 += 16;
+            buf2 += 16;
+            len -= 16;
+        }
+    }
+    
     for (j = 0; j < len; j++) {
         *buf1 ^= *buf2;
         buf1++;
