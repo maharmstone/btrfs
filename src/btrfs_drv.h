@@ -911,6 +911,17 @@ static __inline BOOL write_fcb_compressed(fcb* fcb) {
     return FALSE;
 }
 
+static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
+    UINT32 j;
+    
+    // FIXME - use SIMD
+    for (j = 0; j < len; j++) {
+        *buf1 ^= *buf2;
+        buf1++;
+        buf2++;
+    }
+}
+
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
 #define increase_fileref_refcount(fileref) {\

@@ -192,7 +192,6 @@ static void raid5_reconstruct(UINT64 off, UINT32 skip, read_data_context* contex
     UINT16 parity, stripe;
     UINT32 stripelen = first ? firststripesize : ci->stripe_length;
     UINT32 readlen;
-    UINT8* buf;
     
     TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %x)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, missing);
     
@@ -200,28 +199,14 @@ static void raid5_reconstruct(UINT64 off, UINT32 skip, read_data_context* contex
     
     readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
     
-    buf = &context->stripes[missing].buf[*stripeoff];
-    
     if (missing != parity) {
-        UINT32 i;
         UINT16 firststripe = missing == 0 ? 1 : 0;
         
-        RtlCopyMemory(buf, &context->stripes[firststripe].buf[*stripeoff], readlen);
+        RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], &context->stripes[firststripe].buf[*stripeoff], readlen);
         
         for (stripe = firststripe + 1; stripe < context->num_stripes; stripe++) {
-            if (stripe != missing) {
-                UINT8* buf2 = &context->stripes[stripe].buf[*stripeoff];
-                
-                // FIXME - should we be doing SIMD here? Or will the compiler take care of that for us?
-                
-                for (i = 0; i < readlen; i++) {
-                    *buf ^= *buf2;
-                    buf++;
-                    buf2++;
-                }
-                
-                buf = &context->stripes[missing].buf[*stripeoff];
-            }
+            if (stripe != missing)
+                do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
         }
     } else
         TRACE("parity == missing == %x, skipping\n", parity);

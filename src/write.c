@@ -640,17 +640,6 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
     return STATUS_SUCCESS;
 }
 
-static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
-    UINT32 j;
-    
-    // FIXME - use SIMD
-    for (j = 0; j < len; j++) {
-        *buf1 ^= *buf2;
-        buf1++;
-        buf2++;
-    }
-}
-
 static NTSTATUS STDCALL read_stripe_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID ptr) {
     read_stripe* stripe = ptr;
     read_stripe_master* master = stripe->master;
