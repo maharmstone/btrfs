@@ -3071,16 +3071,11 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
         CHUNK_ITEM* ci = c->chunk_item;
         CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
         
-        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10 || ci->type & BLOCK_FLAG_RAID5) {
+        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
-                ULONG sub_stripes = max(ci->sub_stripes, 1), num_stripes;
+                ULONG sub_stripes = max(ci->sub_stripes, 1);
                 
-                if (ci->type & BLOCK_FLAG_RAID5)
-                    num_stripes = ci->num_stripes - 1;
-                else
-                    num_stripes = ci->num_stripes;
-
-                if (cis[j].offset + (ci->size * num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
 #ifdef _DEBUG
                     UINT64 startoff;
                     UINT16 startoffstripe;
@@ -3090,17 +3085,35 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
-                    off_start *= num_stripes / sub_stripes;
+                    off_start *= ci->num_stripes / sub_stripes;
                     off_start += (j / sub_stripes) * ci->stripe_length;
 
                     off_end = off_start + ci->stripe_length;
                     
 #ifdef _DEBUG
-                    get_raid0_offset(off_start, ci->stripe_length, num_stripes / sub_stripes, &startoff, &startoffstripe);
+                    get_raid0_offset(off_start, ci->stripe_length, ci->num_stripes / sub_stripes, &startoff, &startoffstripe);
                     TRACE("j = %u, startoffstripe = %u\n", j, startoffstripe);
                     TRACE("startoff = %llx, superblock = %llx\n", startoff + cis[j].offset, superblock_addrs[i]);
 #endif
                     
+                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                }
+            }
+        } else if (ci->type & BLOCK_FLAG_RAID5) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
+                
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 1));
+                    off_start *= ci->num_stripes - 1;
+
+                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
+                    
+                    TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
+
                     space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
