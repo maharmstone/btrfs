@@ -41,6 +41,7 @@ typedef struct {
 typedef struct {
     UINT64 address;
     UINT32 length;
+    BOOL overlap;
     UINT8* data;
     LIST_ENTRY list_entry;
 } tree_write;
@@ -850,6 +851,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     write_data_context* wtc;
     LIST_ENTRY tree_writes;
     tree_write* tw;
+    chunk* c;
     
     TRACE("(%p)\n", Vcb);
     
@@ -1102,8 +1104,30 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             tw->address = t->new_address;
             tw->length = Vcb->superblock.node_size;
             tw->data = data;
+            tw->overlap = FALSE;
             
-            InsertTailList(&tree_writes, &tw->list_entry); // FIXME - should be in order
+            if (IsListEmpty(&tree_writes))
+                InsertTailList(&tree_writes, &tw->list_entry);
+            else {
+                LIST_ENTRY* le2;
+                BOOL inserted = FALSE;
+                
+                le2 = tree_writes.Flink;
+                while (le2 != &tree_writes) {
+                    tree_write* tw2 = CONTAINING_RECORD(le2, tree_write, list_entry);
+                    
+                    if (tw2->address > tw->address) {
+                        InsertHeadList(le2->Blink, &tw->list_entry);
+                        inserted = TRUE;
+                        break;
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+                
+                if (!inserted)
+                    InsertTailList(&tree_writes, &tw->list_entry);
+            }
         }
 
         le = le->Flink;
@@ -1112,16 +1136,41 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     Status = STATUS_SUCCESS;
     
     // FIXME - merge together runs
-    // FIXME - do overlaps one-by-one
+    
+    // mark RAID5 overlaps so we can do them one by one
+    c = NULL;
+    le = tree_writes.Flink;
+    while (le != &tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
+            c = get_chunk_from_address(Vcb, tw->address);
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            UINT64 last_stripe, this_stripe;
+            
+            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
+            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
+            
+            if (last_stripe == this_stripe)
+                tw->overlap = TRUE;
+        }
+        
+        le = le->Flink;
+    }
     
     le = tree_writes.Flink;
     while (le != &tree_writes) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
         
-        Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("write_data returned %08x\n", Status);
-            goto end;
+        if (!tw->overlap) {
+            TRACE("address: %llx, overlap = %u\n", tw->address, tw->overlap);
+            
+            Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data returned %08x\n", Status);
+                goto end;
+            }
         }
         
         le = le->Flink;
@@ -1154,6 +1203,23 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         }
         
         free_write_data_stripes(wtc);
+    }
+    
+    le = tree_writes.Flink;
+    while (le != &tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (tw->overlap) {
+            TRACE("address: %llx, overlap = %u\n", tw->address, tw->overlap);
+            
+            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_complete returned %08x\n", Status);
+                goto end;
+            }
+        }
+        
+        le = le->Flink;
     }
     
 end:
