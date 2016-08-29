@@ -12,11 +12,30 @@
 
 use Data::Dumper;
 
-if (scalar(@ARGV) != 1) {
+if (scalar(@ARGV) < 1) {
     @dp=split(/\//,$0);
     
     print "Usage: ".$dp[$#dp]." [BLOCKDEVICE]\n";
     exit;
+}
+
+%devs=();
+for ($i = 1; $i <= $#ARGV; $i++) {
+    my $file;
+    open($file, $ARGV[$i]) || die "Error opening ".$ARGV[$i].": $!";
+    binmode($file);
+    
+    seek($file,0x10000,0);
+    read($file,$sb,0x1000);
+    @b=unpack("Vx28A16QQA8QQQQQQQQQVVVVVQQQQvCCCA98A256QQx240a2048a672",$sb);
+    
+    if ($b[4] ne "_BHRfS_M") {
+        die $ARGV[$i].": not Btrfs";
+    }
+    
+    @di = unpack("QQQVVVQQQVCCA16A16",$b[27]);
+    
+    $devs{$di[0]}=$file;
 }
 
 open($f,$ARGV[0]) || die "Error opening ".$ARGV[0].": $!";
@@ -29,16 +48,16 @@ my @l2p_bs=();
 read_superblock($f);
 
 print "CHUNK: \n";
-dump_tree($f, $chunktree, "", 1);
+dump_tree($chunktree, "", 1);
 print "\n";
 
 print "ROOT: \n";
-dump_tree($f, $roottree, "", 0);
+dump_tree($roottree, "", 0);
 print "\n";
 
 if ($logtree != 0) {
     print "LOG: \n";
-    dump_tree($f, $logtree, "", 0);
+    dump_tree($logtree, "", 0);
     print "\n";
 }
 
@@ -46,7 +65,7 @@ if ($logtree != 0) {
 
 foreach my $r (@rs) {
 	printf("Tree %x:\n",$r);
-	dump_tree($f, $roots{$r}, "");
+	dump_tree($roots{$r}, "");
 	print "\n";
 }
 	
@@ -126,6 +145,10 @@ sub read_superblock {
 	printf("superblock csum=%x fsuuid=%s physaddr=%x flags=%x magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%x incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x\n", $b[0], format_uuid($b[1]), $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], $b[21], incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30]);
 	$devid=format_uuid($di[12]);
 	
+	$nodesize = $b[15];
+	
+	$devs{$di[0]}=$f;
+	
 	my $bootstrap=substr($b[31],0,$b[18]);
 	
 	while (length($bootstrap)>0) {
@@ -144,6 +167,12 @@ sub read_superblock {
 		$obj{'physoffset'}=$c[10];
 		$obj{'offset'}=$b2[2];
 		$obj{'size'}=$c[0];
+		$obj{'type'}=$c[3];
+		$obj{'num_stripes'}=$c[7];
+		$obj{'devid'}=$c[9];
+		
+		# FIXME - second stripes etc.
+		
 		push @l2p_bs,\%obj;
 	}
 	
@@ -468,9 +497,9 @@ sub dump_item {
 	print "\n";
 }
 
-sub log_to_phys {
-	my ($addr,$bs)=@_;
-	my @arr;
+sub read_data {
+	my ($addr,$size,$bs)=@_;
+	my (@arr,$f,$data);
 	
 	if ($bs==1) {
 		@arr=@l2p_bs;
@@ -480,22 +509,47 @@ sub log_to_phys {
 	
 	foreach my $obj (@arr) {
 		if ($obj->{'offset'}<=$addr&&($addr-$obj->{'offset'})<$obj->{'size'}) {
-			return $obj->{'physoffset'}+$addr-$obj->{'offset'};
+			if ($obj->{'type'} & 0x80) {
+				$stripeoff=($addr-$obj->{'offset'})%0x20000;
+				$parity=(int(($addr-$obj->{'offset'})/0x20000)+2)%3;
+				$stripe=int($stripeoff/0x10000);
+				$physstripe=($parity+$stripe+1)%3;
+				
+				if ($physstripe==0) {
+					$f=$devs{$obj->{'devid'}};
+					$physoff=$obj->{'physoffset'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} elsif ($physstripe==1) {
+					$f=$devs{$obj->{'devid2'}};
+					$physoff=$obj->{'physoffset2'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} elsif ($physstripe==2) {
+					$f=$devs{$obj->{'devid3'}};
+					$physoff=$obj->{'physoffset3'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				}
+				
+				seek($f,$physoff,0);
+				read($f,$data,$size);
+			} else {
+				seek($devs{$obj->{'devid'}},$obj->{'physoffset'}+$addr-$obj->{'offset'},0);
+				read($devs{$obj->{'devid'}},$data,$size);
+			}
+			
+			return $data;
 		}
 	}
 }
 
 sub dump_tree {
-	my ($f, $addr, $pref, $bs)=@_;
-	my ($physaddr, $head, @headbits, $level, $treenum);
+	my ($addr, $pref, $bs)=@_;
+	my ($head, @headbits, $level, $treenum, $tree);
 	
-	$physaddr = log_to_phys($addr, $bs);
+	$tree = read_data($addr, $nodesize, $bs);
 	
-	seek($f, $physaddr, 0);
+	@headbits=unpack("Vx28A16QQA16QQVC",$tree);
+	if ($headbits[2] != $addr) {
+		printf STDERR sprintf("Address mismatch: expected %llx, got %llx\n", $addr, $headbits[2]);
+		exit;
+	}
 	
-	read($f, $head, 0x65);
-	
-	@headbits=unpack("Vx28A16QQA16QQVC",$head);
 	#print Dumper(@headbits)."\n";
 	print $pref;
 	printf("header csum=%08x fsid=%s addr=%x flags=%x chunk=%s gen=%x tree=%x numitems=%x level=%x\n", $headbits[0], format_uuid($headbits[1]), $headbits[2], $headbits[3], format_uuid($headbits[4]), $headbits[5], $headbits[6], $headbits[7], $headbits[8]);
@@ -508,7 +562,8 @@ sub dump_tree {
 	if ($level==0) {
 		my $headaddr=tell($f);
 		for (my $i=0;$i<$numitems;$i++) {
-			read($f, my $itemhead, 0x19);
+# 			read($f, my $itemhead, 0x19);
+			$itemhead=substr($tree,0x65+($i*0x19),0x19);
 			
 			my @ihb=unpack("QCQVV",$itemhead);
 			
@@ -516,11 +571,8 @@ sub dump_tree {
 			print $pref;
 			printf("%x,%x,%x\n",$ihb[0],$ihb[1],$ihb[2]);
 			
-			my $curpos=tell($f);
-			seek($f, $headaddr+$ihb[3], 0);
-			read($f,my $item,$ihb[4]);
+			$item=substr($tree,0x65+$ihb[3],$ihb[4]);
 			dump_item($ihb[1],$item,$pref,$ihb[0]);
-			seek($f, $curpos, 0);
 			
 			if ($treenum==3&&$ihb[1]==0xe4) {
 				my @b=unpack("QQQQVVVvv",$item);
@@ -538,6 +590,26 @@ sub dump_tree {
 						$obj{'physoffset'}=$cis[1];
 						$obj{'offset'}=$ihb[2];
 						$obj{'size'}=$b[0];
+						$obj{'type'}=$b[3];
+                                                $obj{'num_stripes'}=$b[7];
+                                                $obj{'devid'}=$cis[0];
+                                                
+                                                if ($b[7] > 1) {
+							my @cis=unpack("QQA16",$stripes);
+							$stripes=substr($stripes,32);
+							
+							$obj{'physoffset2'}=$cis[1];
+							$obj{'devid2'}=$cis[0];
+						}
+						
+						if ($b[7] > 2) {
+							my @cis=unpack("QQA16",$stripes);
+							$stripes=substr($stripes,32);
+							
+							$obj{'physoffset3'}=$cis[1];
+							$obj{'devid3'}=$cis[0];
+						}
+                                                
 						push @l2p,\%obj;
 						break;
 					}
@@ -552,16 +624,14 @@ sub dump_tree {
 		}
 	} else {
 		for (my $i=0;$i<$numitems;$i++) {
-			read($f, my $itemhead, 0x21);
+			$itemhead=substr($tree,0x65+($i*0x21),0x21);
 			
 			my @ihb=unpack("QCQQQ",$itemhead);
 			
 			print $pref;
 			printf("%x,%x,%x block=%x gen=%x\n",$ihb[0],$ihb[1],$ihb[2],$ihb[3],$ihb[4]);
 			
-			my $curpos=tell($f);
-			dump_tree($f, $ihb[3], " ".$pref, $bs);
-			seek($f,$curpos,0);
+			dump_tree($ihb[3], " ".$pref, $bs);
 		}
 	}
 }
