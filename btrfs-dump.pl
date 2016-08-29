@@ -581,39 +581,34 @@ sub dump_tree {
 				
 				my $numstripes=$b[7];
 				
-				for (my $j=0;$j<$numstripes;$j++) {
+				my @cis=unpack("QQA16",$stripes);
+				$stripes=substr($stripes,32);
+				
+				$obj{'physoffset'}=$cis[1];
+				$obj{'offset'}=$ihb[2];
+				$obj{'size'}=$b[0];
+				$obj{'type'}=$b[3];
+				$obj{'num_stripes'}=$b[7];
+				$obj{'devid'}=$cis[0];
+				
+				if ($b[7] > 1) {
 					my @cis=unpack("QQA16",$stripes);
 					$stripes=substr($stripes,32);
 					
-					if (format_uuid($cis[2]) eq $devid) {
-						#print STDERR join(',',@cis)."\n";
-						$obj{'physoffset'}=$cis[1];
-						$obj{'offset'}=$ihb[2];
-						$obj{'size'}=$b[0];
-						$obj{'type'}=$b[3];
-                                                $obj{'num_stripes'}=$b[7];
-                                                $obj{'devid'}=$cis[0];
-                                                
-                                                if ($b[7] > 1) {
-							my @cis=unpack("QQA16",$stripes);
-							$stripes=substr($stripes,32);
-							
-							$obj{'physoffset2'}=$cis[1];
-							$obj{'devid2'}=$cis[0];
-						}
-						
-						if ($b[7] > 2) {
-							my @cis=unpack("QQA16",$stripes);
-							$stripes=substr($stripes,32);
-							
-							$obj{'physoffset3'}=$cis[1];
-							$obj{'devid3'}=$cis[0];
-						}
-                                                
-						push @l2p,\%obj;
-						break;
-					}
+					$obj{'physoffset2'}=$cis[1];
+					$obj{'devid2'}=$cis[0];
 				}
+				
+				if ($b[7] > 2) {
+					print "LEN: ".length($stripes)."\n";
+					my @cis=unpack("QQA16",$stripes);
+					$stripes=substr($stripes,32);
+					
+					$obj{'physoffset3'}=$cis[1];
+					$obj{'devid3'}=$cis[0];
+				}
+				
+				push @l2p,\%obj;
 				
 # 				print Dumper(@l2p);
             }
