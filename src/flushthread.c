@@ -38,6 +38,13 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
 
+typedef struct {
+    UINT64 address;
+    UINT32 length;
+    UINT8* data;
+    LIST_ENTRY list_entry;
+} tree_write;
+
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
     
@@ -841,9 +848,13 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     write_data_context* wtc;
+    LIST_ENTRY tree_writes;
+    tree_write* tw;
     
     TRACE("(%p)\n", Vcb);
     
+    InitializeListHead(&tree_writes);
+
     for (level = 0; level <= 255; level++) {
         BOOL nothing_found = TRUE;
         
@@ -1082,17 +1093,39 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             *((UINT32*)data) = crc32;
             TRACE("setting crc32 to %08x\n", crc32);
             
-            Status = write_data(Vcb, t->new_address, data, TRUE, Vcb->superblock.node_size, wtc, NULL, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data returned %08x\n", Status);
-                goto end;
+            tw = ExAllocatePoolWithTag(PagedPool, sizeof(tree_write), ALLOC_TAG);
+            if (!tw) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
+            
+            tw->address = t->new_address;
+            tw->length = Vcb->superblock.node_size;
+            tw->data = data;
+            
+            InsertTailList(&tree_writes, &tw->list_entry); // FIXME - should be in order
         }
 
         le = le->Flink;
     }
     
     Status = STATUS_SUCCESS;
+    
+    // FIXME - merge together runs
+    // FIXME - do overlaps one-by-one
+    
+    le = tree_writes.Flink;
+    while (le != &tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_data returned %08x\n", Status);
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
     
     if (wtc->stripes.Flink != &wtc->stripes) {
         // launch writes and wait
@@ -1125,6 +1158,13 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     
 end:
     ExFreePool(wtc);
+    
+    while (!IsListEmpty(&tree_writes)) {
+        le = RemoveHeadList(&tree_writes);
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        ExFreePool(tw);
+    }
     
     return Status;
 }
