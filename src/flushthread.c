@@ -1135,7 +1135,44 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     
     Status = STATUS_SUCCESS;
     
-    // FIXME - merge together runs
+    // merge together runs
+    c = NULL;
+    le = tree_writes.Flink;
+    while (le != &tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
+            c = get_chunk_from_address(Vcb, tw->address);
+        else {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            
+            if (tw->address == tw2->address + tw2->length) {
+                data = ExAllocatePoolWithTag(NonPagedPool, tw2->length + tw->length, ALLOC_TAG);
+                
+                if (!data) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(data, tw2->data, tw2->length);
+                RtlCopyMemory(&data[tw2->length], tw->data, tw->length);
+                
+                ExFreePool(tw2->data);
+                tw2->data = data;
+                tw2->length += tw->length;
+                
+                ExFreePool(tw->data);
+                RemoveEntryList(&tw->list_entry);
+                ExFreePool(tw);
+                
+                le = tw2->list_entry.Flink;
+                continue;
+            }
+        }
+        
+        le = le->Flink;
+    }
     
     // mark RAID5 overlaps so we can do them one by one
     c = NULL;
@@ -1164,7 +1201,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
         
         if (!tw->overlap) {
-            TRACE("address: %llx, overlap = %u\n", tw->address, tw->overlap);
+            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
             
             Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
             if (!NT_SUCCESS(Status)) {
@@ -1210,7 +1247,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
         
         if (tw->overlap) {
-            TRACE("address: %llx, overlap = %u\n", tw->address, tw->overlap);
+            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
             
             Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL);
             if (!NT_SUCCESS(Status)) {
