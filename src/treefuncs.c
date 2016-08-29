@@ -50,6 +50,13 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     }
     
     th = (tree_header*)buf;
+
+#ifdef DEBUG_PARANOID
+    if (th->tree_id != r->id) {
+        ERR("tree id was %llx, expected %llx\n", th->tree_id, r->id);
+        int3;
+    }
+#endif
     
     t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!t) {
