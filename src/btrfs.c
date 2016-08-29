@@ -39,7 +39,7 @@ static WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\
 
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT devobj;
-BOOL have_sse42 = FALSE;
+BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
 LIST_ENTRY volumes;
@@ -4333,15 +4333,22 @@ static void STDCALL check_cpu() {
 #ifndef _MSC_VER
     __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
+    have_sse2 = cpuInfo[3] & bit_SSE2;
 #else
    __cpuid(cpuInfo, 1);
    have_sse42 = cpuInfo[2] & (1 << 20);
+   have_sse2 = cpuInfo[3] & (1 << 26);
 #endif
 
     if (have_sse42)
         TRACE("SSE4.2 is supported\n");
     else
         TRACE("SSE4.2 not supported\n");
+    
+    if (have_sse2)
+        TRACE("SSE2 is supported\n");
+    else
+        TRACE("SSE2 is not supported\n");
 }
 
 #ifdef _DEBUG
