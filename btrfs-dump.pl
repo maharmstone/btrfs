@@ -600,7 +600,6 @@ sub dump_tree {
 				}
 				
 				if ($b[7] > 2) {
-					print "LEN: ".length($stripes)."\n";
 					my @cis=unpack("QQA16",$stripes);
 					$stripes=substr($stripes,32);
 					
