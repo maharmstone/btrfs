@@ -714,7 +714,7 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
     UINT32 i;
     UINT8* data2 = (UINT8*)data;
     UINT32 num_reads;
-    BOOL same_stripe = FALSE;
+    BOOL same_stripe = FALSE, multiple_stripes;
     
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
@@ -780,14 +780,20 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
     }
     
     num_reads = 0;
+    multiple_stripes = (end - 1) / c->chunk_item->stripe_length != start / c->chunk_item->stripe_length;
     
     for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-        if (stripes[i].start > start) {
+        if (stripes[i].start == stripes[i].end) {
             num_reads++;
-        }
-        
-        if (stripes[i].end < end) {
-            num_reads++;
+            
+            if (multiple_stripes)
+                num_reads++;
+        } else {
+            if (stripes[i].start > start)
+                num_reads++;
+            
+            if (stripes[i].end < end)
+                num_reads++;
         }
     }
     
@@ -816,19 +822,27 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
         
         j = 0;
         for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-            if (stripes[i].start > start) {
+            if (stripes[i].start > start || stripes[i].start == stripes[i].end) {
+                ULONG readlen;
+                
                 read_stripes[j].Irp = NULL;
                 read_stripes[j].devobj = c->devices[stripenum]->devobj;
                 read_stripes[j].master = master;
                 
-                Status = make_read_irp(Irp, &read_stripes[j], start + cis[stripenum].offset, stripes[stripenum].data, stripes[i].start - start);
+                if (stripes[i].start != stripes[i].end)
+                    readlen = stripes[i].start - start;
+                else
+                    readlen = firststripesize;
+                
+                Status = make_read_irp(Irp, &read_stripes[j], start + cis[stripenum].offset, stripes[stripenum].data, readlen);
+                
                 if (!NT_SUCCESS(Status)) {
                     ERR("make_read_irp returned %08x\n", Status);
                     j++;
                     goto readend;
                 }
                 
-                stripes[stripenum].skip_start = stripes[i].start - start;
+                stripes[stripenum].skip_start = readlen;
                 
                 j++;
                 if (j == num_reads) break;
@@ -842,19 +856,24 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             stripenum = (parity + 1) % c->chunk_item->num_stripes;
             
             for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-                if (stripes[i].end < end) {
+                if ((stripes[i].start != stripes[i].end && stripes[i].end < end) || (stripes[i].start == stripes[i].end && multiple_stripes)) {
                     read_stripes[j].Irp = NULL;
                     read_stripes[j].devobj = c->devices[stripenum]->devobj;
                     read_stripes[j].master = master;
+                
+                    if (stripes[i].start == stripes[i].end) {
+                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + cis[stripenum].offset, &stripes[stripenum].data[firststripesize], laststripesize);
+                        stripes[stripenum].skip_end = laststripesize;
+                    } else {
+                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset, &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
+                        stripes[stripenum].skip_end = end - stripes[i].end;
+                    }
                     
-                    Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset, &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
                     if (!NT_SUCCESS(Status)) {
                         ERR("make_read_irp returned %08x\n", Status);
                         j++;
                         goto readend;
                     }
-                    
-                    stripes[stripenum].skip_end = end - stripes[i].end;
                     
                     j++;
                     if (j == num_reads) break;
@@ -1106,7 +1125,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             goto end;
         }
         
-        if (stripes[i].start + stripes[i].skip_start == stripes[i].end - stripes[i].skip_end) {
+        if (stripes[i].start + stripes[i].skip_start == stripes[i].end - stripes[i].skip_end || stripes[i].start == stripes[i].end) {
             stripe->status = WriteDataStatus_Ignore;
             stripe->Irp = NULL;
             stripe->buf = stripes[i].data;
