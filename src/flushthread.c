@@ -1824,17 +1824,8 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             }
             
             TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
-            TRACE("chunk_item type = %llx\n", c->chunk_item->type);
             
-            if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
-                Vcb->superblock.bytes_used += c->used - c->oldused;
-            } else if (c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_DUPLICATE || c->chunk_item->type & BLOCK_FLAG_RAID10) {
-                Vcb->superblock.bytes_used += 2 * (c->used - c->oldused);
-            } else if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
-                Vcb->superblock.bytes_used += c->chunk_item->num_stripes * (c->used - c->oldused);
-            } else { // SINGLE
-                Vcb->superblock.bytes_used += c->used - c->oldused;
-            }
+            Vcb->superblock.bytes_used += c->used - c->oldused;
             
             TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
             
