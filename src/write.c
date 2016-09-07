@@ -707,7 +707,7 @@ static NTSTATUS make_read_irp(PIRP old_irp, read_stripe* stripe, UINT64 offset, 
 
 static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes) {
     UINT64 startoff, endoff;
-    UINT16 startoffstripe, endoffstripe, stripenum, parity;
+    UINT16 startoffstripe, endoffstripe, stripenum, parity, logstripe;
     UINT64 start = 0xffffffffffffffff, end = 0;
     UINT64 pos, stripepos;
     UINT32 firststripesize, laststripesize;
@@ -935,14 +935,14 @@ readend:
         
         stripenum = (parity + 1) % c->chunk_item->num_stripes;
         
-        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        for (logstripe = 0; logstripe < c->chunk_item->num_stripes - 1; logstripe++) {
             ULONG copylen;
             
             if (pos >= length)
                 break;
             
-            if (stripes[i].start < start + firststripesize && stripes[i].start != stripes[i].end) {
-                copylen = min(start + firststripesize - stripes[i].start, length - pos);
+            if (stripes[logstripe].start < start + firststripesize && stripes[logstripe].start != stripes[logstripe].end) {
+                copylen = min(start + firststripesize - stripes[logstripe].start, length - pos);
                 
                 if (!first && copylen < c->chunk_item->stripe_length) {
                     same_stripe = TRUE;
@@ -1001,10 +1001,12 @@ readend:
     if (pos < length) {
         UINT16 firstdata;
         
-        if (!same_stripe)
+        if (!same_stripe) {
             stripenum = (parity + 1) % c->chunk_item->num_stripes;
+            i = 0;
+        } else
+            i = logstripe;
         
-        i = 0;
         while (pos < length) {
             ULONG copylen;
             
