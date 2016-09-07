@@ -619,15 +619,24 @@ exit:
 }
 
 static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LONGLONG* freespace) {
-    UINT8 factor;
+    UINT16 nfactor, dfactor;
+    UINT64 sectors_used;
     
-    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10)
-        factor = 2;
-    else
-        factor = 1;
+    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10) {
+        nfactor = 2;
+        dfactor = 1;
+    } else if (Vcb->data_flags & BLOCK_FLAG_RAID5) {
+        nfactor = Vcb->superblock.num_devices - 1;
+        dfactor = Vcb->superblock.num_devices;
+    } else {
+        nfactor = 1;
+        dfactor = 1;
+    }
     
-    *totalsize = (Vcb->superblock.total_bytes / Vcb->superblock.sector_size) / factor;
-    *freespace = ((Vcb->superblock.total_bytes - Vcb->superblock.bytes_used) / Vcb->superblock.sector_size) / factor;
+    sectors_used = Vcb->superblock.bytes_used / Vcb->superblock.sector_size;
+    
+    *totalsize = (Vcb->superblock.total_bytes / Vcb->superblock.sector_size) * nfactor / dfactor;
+    *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
 }
 
 static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
