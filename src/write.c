@@ -1176,6 +1176,14 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             } else {
                 stripe->Irp->UserBuffer = stripes[i].data + stripes[i].skip_start;
             }
+            
+#ifdef DEBUG_PARANOID
+            if (stripes[i].end < stripes[i].start + stripes[i].skip_start + stripes[i].skip_end) {
+                ERR("trying to write stripe with negative length (%llx < %llx + %x + %x)\n",
+                    stripes[i].end, stripes[i].start, stripes[i].skip_start, stripes[i].skip_end);
+                int3;
+            }
+#endif
 
             IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
             IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset + stripes[i].skip_start;
