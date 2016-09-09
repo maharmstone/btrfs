@@ -1037,6 +1037,344 @@ readend:
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes) {
+    UINT64 startoff, endoff;
+    UINT16 startoffstripe, endoffstripe, stripenum, parity1, parity2, logstripe;
+    UINT64 start = 0xffffffffffffffff, end = 0;
+    UINT64 pos, stripepos;
+    UINT32 firststripesize, laststripesize;
+    UINT32 i;
+    UINT8* data2 = (UINT8*)data;
+    UINT32 num_reads;
+    BOOL same_stripe = FALSE, multiple_stripes;
+    
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 2, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 2, &endoff, &endoffstripe);
+    
+    for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
+        UINT64 ststart, stend;
+        
+        if (startoffstripe > i) {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (startoffstripe == i) {
+            ststart = startoff;
+        } else {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length);
+        }
+
+        if (endoffstripe > i) {
+            stend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (endoffstripe == i) {
+            stend = endoff + 1;
+        } else {
+            stend = endoff - (endoff % c->chunk_item->stripe_length);
+        }
+
+        if (ststart != stend) {
+            stripes[i].start = ststart;
+            stripes[i].end = stend;
+            
+            if (ststart < start) {
+                start = ststart;
+                firststripesize = c->chunk_item->stripe_length - (ststart % c->chunk_item->stripe_length);
+            }
+
+            if (stend > end) {
+                end = stend;
+                laststripesize = stend % c->chunk_item->stripe_length;
+                if (laststripesize == 0)
+                    laststripesize = c->chunk_item->stripe_length;
+            }
+        }
+    }
+    
+    if (start == end) {
+        ERR("error: start == end (%llx)\n", start);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (startoffstripe == endoffstripe && start / c->chunk_item->stripe_length == end / c->chunk_item->stripe_length) {
+        firststripesize = end - start;
+        laststripesize = firststripesize;
+    }
+
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        stripes[i].data = ExAllocatePoolWithTag(NonPagedPool, end - start, ALLOC_TAG);
+        if (!stripes[i].data) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        if (i < c->chunk_item->num_stripes - 2) {
+            if (stripes[i].start == 0 && stripes[i].end == 0)
+                stripes[i].start = stripes[i].end = start;
+        }
+    }
+    
+    num_reads = 0;
+    multiple_stripes = (end - 1) / c->chunk_item->stripe_length != start / c->chunk_item->stripe_length;
+    
+    for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
+        if (stripes[i].start == stripes[i].end) {
+            num_reads++;
+            
+            if (multiple_stripes)
+                num_reads++;
+        } else {
+            if (stripes[i].start > start)
+                num_reads++;
+            
+            if (stripes[i].end < end)
+                num_reads++;
+        }
+    }
+    
+    if (num_reads > 0) {
+        UINT32 j;
+        read_stripe_master* master;
+        read_stripe* read_stripes;
+        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        NTSTATUS Status;
+        
+        master = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_stripe_master), ALLOC_TAG);
+        if (!master) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        read_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_stripe) * num_reads, ALLOC_TAG);
+        if (!read_stripes) {
+            ERR("out of memory\n");
+            ExFreePool(master);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        parity1 = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+        stripenum = (parity1 + 2) % c->chunk_item->num_stripes;
+        
+        j = 0;
+        for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
+            if (stripes[i].start > start || stripes[i].start == stripes[i].end) {
+                ULONG readlen;
+                
+                read_stripes[j].Irp = NULL;
+                read_stripes[j].devobj = c->devices[stripenum]->devobj;
+                read_stripes[j].master = master;
+                
+                if (stripes[i].start != stripes[i].end)
+                    readlen = stripes[i].start - start;
+                else
+                    readlen = firststripesize;
+                
+                Status = make_read_irp(Irp, &read_stripes[j], start + cis[stripenum].offset, stripes[stripenum].data, readlen);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("make_read_irp returned %08x\n", Status);
+                    j++;
+                    goto readend;
+                }
+                
+                stripes[stripenum].skip_start = readlen;
+                
+                j++;
+                if (j == num_reads) break;
+            }
+            
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+        
+        if (j < num_reads) {
+            parity1 = (((address + length - 1 - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+            stripenum = (parity1 + 2) % c->chunk_item->num_stripes;
+            
+            for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
+                if ((stripes[i].start != stripes[i].end && stripes[i].end < end) || (stripes[i].start == stripes[i].end && multiple_stripes)) {
+                    read_stripes[j].Irp = NULL;
+                    read_stripes[j].devobj = c->devices[stripenum]->devobj;
+                    read_stripes[j].master = master;
+                
+                    if (stripes[i].start == stripes[i].end) {
+                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + cis[stripenum].offset, &stripes[stripenum].data[firststripesize], laststripesize);
+                        stripes[stripenum].skip_end = laststripesize;
+                    } else {
+                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset, &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
+                        stripes[stripenum].skip_end = end - stripes[i].end;
+                    }
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("make_read_irp returned %08x\n", Status);
+                        j++;
+                        goto readend;
+                    }
+                    
+                    j++;
+                    if (j == num_reads) break;
+                }
+                
+                stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+            }
+        }
+        
+        master->stripes_left = j;
+        KeInitializeEvent(&master->event, NotificationEvent, FALSE);
+        
+        for (i = 0; i < j; i++) {
+            Status = IoCallDriver(read_stripes[i].devobj, read_stripes[i].Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("IoCallDriver returned %08x\n", Status);
+                goto readend;
+            }
+        }
+        
+        KeWaitForSingleObject(&master->event, Executive, KernelMode, FALSE, NULL);
+        
+        for (i = 0; i < j; i++) {
+            if (!NT_SUCCESS(read_stripes[i].iosb.Status)) {
+                Status = read_stripes[i].iosb.Status;
+                goto readend;
+            }
+        }
+        
+        Status = STATUS_SUCCESS;
+
+readend:
+        for (i = 0; i < j; i++) {
+            if (read_stripes[i].Irp) {
+                if (read_stripes[i].devobj->Flags & DO_DIRECT_IO) {
+                    MmUnlockPages(read_stripes[i].Irp->MdlAddress);
+                    IoFreeMdl(read_stripes[i].Irp->MdlAddress);
+                }
+                
+                IoFreeIrp(read_stripes[i].Irp); // FIXME - what if IoCallDriver fails and other Irps are still running?
+            }
+        }
+        
+        ExFreePool(read_stripes);
+        ExFreePool(master);
+        
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+    
+    pos = 0;
+    
+    parity1 = (((address - c->offset) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
+    parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
+    stripepos = 0;
+    
+    if ((address - c->offset) % (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2)) > 0) {
+        UINT16 firstdata;
+        BOOL first = TRUE;
+        
+        stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
+        
+        for (logstripe = 0; logstripe < c->chunk_item->num_stripes - 2; logstripe++) {
+            ULONG copylen;
+            
+            if (pos >= length)
+                break;
+            
+            if (stripes[logstripe].start < start + firststripesize && stripes[logstripe].start != stripes[logstripe].end) {
+                copylen = min(start + firststripesize - stripes[logstripe].start, length - pos);
+                
+                if (!first && copylen < c->chunk_item->stripe_length) {
+                    same_stripe = TRUE;
+                    break;
+                }
+
+                RtlCopyMemory(&stripes[stripenum].data[firststripesize - copylen], &data2[pos], copylen);
+                
+                pos += copylen;
+                first = FALSE;
+            }
+            
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+        
+        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
+        
+        RtlCopyMemory(stripes[parity1].data, stripes[firstdata].data, firststripesize);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity1 && i != parity2)
+                do_xor(&stripes[parity1].data[0], &stripes[i].data[0], firststripesize);
+        }
+        // FIXME - calculate Galois stripe
+        
+        if (!same_stripe) {
+            stripepos = firststripesize;
+            parity1 = parity2;
+            parity2 = (parity2 + 1) % c->chunk_item->num_stripes;
+        }
+    }
+    
+    while (length >= pos + c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2)) {
+        UINT16 firstdata;
+        
+        stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
+        
+        for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
+            RtlCopyMemory(&stripes[stripenum].data[stripepos], &data2[pos], c->chunk_item->stripe_length);
+            
+            pos += c->chunk_item->stripe_length;
+            stripenum = (stripenum +1) % c->chunk_item->num_stripes;
+        }
+        
+        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
+        
+        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[firstdata].data[stripepos], c->chunk_item->stripe_length);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity1 && i != parity2)
+                do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
+        }
+        // FIXME - calculate Galois stripe
+        
+        parity1 = parity2;
+        parity2 = (parity2 + 1) % c->chunk_item->num_stripes;
+        stripepos += c->chunk_item->stripe_length;
+    }
+    
+    if (pos < length) {
+        UINT16 firstdata;
+        
+        if (!same_stripe) {
+            stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
+            i = 0;
+        } else
+            i = logstripe;
+        
+        while (pos < length) {
+            ULONG copylen;
+            
+            copylen = min(stripes[i].end - start - stripepos, length - pos);
+
+            RtlCopyMemory(&stripes[stripenum].data[stripepos], &data2[pos], copylen);
+            
+            pos += copylen;
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+            i++;
+        }
+        
+        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
+        
+        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[firstdata].data[stripepos], laststripesize);
+        
+        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
+            if (i != parity1 && i != parity2)
+                do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], laststripesize);
+        }
+        // FIXME - calculate Galois stripe
+    }
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        stripes[i].start = start;
+        stripes[i].end = end;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c) {
     NTSTATUS Status;
     UINT32 i;
@@ -1053,11 +1391,6 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             ERR("could not get chunk for address %llx\n", address);
             return STATUS_INTERNAL_ERROR;
         }
-    }
-    
-    if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-        FIXME("RAID6 not yet supported\n");
-        return STATUS_NOT_IMPLEMENTED;
     }
     
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(write_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
@@ -1098,6 +1431,18 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid5_write(Irp, c, address, data, length, stripes);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
+            ExFreePool(stripes);
+            return Status;
+        }
+        
+        if (need_free)
+            ExFreePool(data);
+
+        need_free2 = TRUE;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        Status = prepare_raid6_write(Irp, c, address, data, length, stripes);
+        if (!NT_SUCCESS(Status)) {
+            ERR("prepare_raid6_write returned %08x\n", Status);
             ExFreePool(stripes);
             return Status;
         }
