@@ -2790,6 +2790,10 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
         }
     }
     
+    // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
+    
+    space_list_subtract2(&dev->space, NULL, 0, 0x100000, NULL);
+    
     return STATUS_SUCCESS;
 }
 
@@ -3120,6 +3124,24 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     off_start *= ci->num_stripes - 1;
 
                     off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
+                    
+                    TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
+
+                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                }
+            }
+        } else if (ci->type & BLOCK_FLAG_RAID6) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
+                
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 2));
+                    off_start *= ci->num_stripes - 2;
+
+                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 2));
                     
                     TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
 
