@@ -1037,6 +1037,56 @@ readend:
     return STATUS_SUCCESS;
 }
 
+// The code from the following functions is derived from the paper
+// "The mathematics of RAID-6", by H. Peter Anvin.
+// https://www.kernel.org/pub/linux/kernel/people/hpa/raid6.pdf
+
+#ifdef __x86_64__
+static UINT64 __inline galois_double_mask64(UINT64 v) {
+    v &= 0x8080808080808080;
+    return (v << 1) - (v >> 7);
+}
+#else
+static UINT32 __inline galois_double_mask32(UINT32 v) {
+    v &= 0x80808080;
+    return (v << 1) - (v >> 7);
+}
+#endif
+
+static void __inline galois_double(UINT8* data, UINT32 len) {
+    // FIXME - SIMD?
+    
+#ifdef __x86_64__
+    while (len > sizeof(UINT64)) {
+        UINT64 v = *((UINT64*)data), vv;
+        
+        vv = (v << 1) & 0xfefefefefefefefe;
+        vv ^= galois_double_mask64(v) & 0x1d1d1d1d1d1d1d1d;
+        *((UINT64*)data) = vv;
+        
+        data += sizeof(UINT64);
+        len -= sizeof(UINT64);
+    }
+#else
+    while (len > sizeof(UINT32)) {
+        UINT32 v = *((UINT32*)data), vv;
+        
+        vv = (v << 1) & 0xfefefefe;
+        vv ^= galois_double_mask32(v) & 0x1d1d1d1d;
+        *((UINT32*)data) = vv;
+        
+        data += sizeof(UINT32);
+        len -= sizeof(UINT32);
+    }
+#endif
+    
+    while (len > 0) {
+        data[0] = (data[0] << 1) ^ ((data[0] & 0x80) ? 0x1d : 0);
+        data++;
+        len--;
+    }
+}
+
 static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum, parity1, parity2, logstripe;
@@ -1149,7 +1199,7 @@ static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* da
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        parity1 = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+        parity1 = (((address - c->offset) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
         stripenum = (parity1 + 2) % c->chunk_item->num_stripes;
         
         j = 0;
@@ -1184,7 +1234,7 @@ static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* da
         }
         
         if (j < num_reads) {
-            parity1 = (((address + length - 1 - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+            parity1 = (((address + length - 1 - c->offset) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
             stripenum = (parity1 + 2) % c->chunk_item->num_stripes;
             
             for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
@@ -1263,7 +1313,6 @@ readend:
     stripepos = 0;
     
     if ((address - c->offset) % (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2)) > 0) {
-        UINT16 firstdata;
         BOOL first = TRUE;
         
         stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
@@ -1291,15 +1340,19 @@ readend:
             stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
         }
         
-        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
+        i = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
+        RtlCopyMemory(stripes[parity1].data, stripes[i].data, firststripesize);
+        RtlCopyMemory(stripes[parity2].data, stripes[i].data, firststripesize);
+        i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
         
-        RtlCopyMemory(stripes[parity1].data, stripes[firstdata].data, firststripesize);
-        
-        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
-            if (i != parity1 && i != parity2)
-                do_xor(&stripes[parity1].data[0], &stripes[i].data[0], firststripesize);
-        }
-        // FIXME - calculate Galois stripe
+        do {
+            do_xor(stripes[parity1].data, stripes[i].data, firststripesize);
+            
+            galois_double(stripes[parity2].data, firststripesize);
+            do_xor(stripes[parity2].data, stripes[i].data, firststripesize);
+            
+            i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
+        } while (i != parity2);
         
         if (!same_stripe) {
             stripepos = firststripesize;
@@ -1309,8 +1362,6 @@ readend:
     }
     
     while (length >= pos + c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2)) {
-        UINT16 firstdata;
-        
         stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
         
         for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
@@ -1320,15 +1371,19 @@ readend:
             stripenum = (stripenum +1) % c->chunk_item->num_stripes;
         }
         
-        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
-        
-        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[firstdata].data[stripepos], c->chunk_item->stripe_length);
-        
-        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
-            if (i != parity1 && i != parity2)
-                do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
-        }
-        // FIXME - calculate Galois stripe
+        i = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
+        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
+        RtlCopyMemory(&stripes[parity2].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
+        i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
+
+        do {
+            do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
+            
+            galois_double(&stripes[parity2].data[stripepos], c->chunk_item->stripe_length);
+            do_xor(&stripes[parity2].data[stripepos], &stripes[i].data[stripepos], c->chunk_item->stripe_length);
+            
+            i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
+        } while (i != parity2);
         
         parity1 = parity2;
         parity2 = (parity2 + 1) % c->chunk_item->num_stripes;
@@ -1336,8 +1391,6 @@ readend:
     }
     
     if (pos < length) {
-        UINT16 firstdata;
-        
         if (!same_stripe) {
             stripenum = (parity2 + 1) % c->chunk_item->num_stripes;
             i = 0;
@@ -1356,15 +1409,19 @@ readend:
             i++;
         }
         
-        firstdata = parity1 == 0 ? 2 : (parity2 == 0 ? 1 : 0);
-        
-        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[firstdata].data[stripepos], laststripesize);
-        
-        for (i = firstdata + 1; i < c->chunk_item->num_stripes; i++) {
-            if (i != parity1 && i != parity2)
-                do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], laststripesize);
-        }
-        // FIXME - calculate Galois stripe
+        i = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
+        RtlCopyMemory(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], laststripesize);
+        RtlCopyMemory(&stripes[parity2].data[stripepos], &stripes[i].data[stripepos], laststripesize);
+        i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
+
+        do {
+            do_xor(&stripes[parity1].data[stripepos], &stripes[i].data[stripepos], laststripesize);
+            
+            galois_double(&stripes[parity2].data[stripepos], laststripesize);
+            do_xor(&stripes[parity2].data[stripepos], &stripes[i].data[stripepos], laststripesize);
+            
+            i = i == 0 ? (c->chunk_item->num_stripes - 1) : (i - 1);
+        } while (i != parity2);
     }
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
