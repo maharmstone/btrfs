@@ -171,6 +171,20 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                     }
                 }
             }
+        } else if (context->type == BLOCK_FLAG_RAID6) {
+            // FIXME - check checksum
+
+            stripe->status = ReadDataStatus_Success;
+
+            if (stripes_left == 1) { // FIXME - support reconstruction with two stripes missing
+                for (i = 0; i < context->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Pending) {
+                        context->stripes[i].status = ReadDataStatus_Cancelling;
+                        IoCancelIrp(context->stripes[i].Irp);
+                        break;
+                    }
+                }
+            }
         }
             
         goto end;
@@ -247,6 +261,35 @@ static void raid5_decode(UINT64 off, UINT32 skip, read_data_context* context, CH
         
         stripe = (stripe + 1) % ci->num_stripes;
     }
+}
+
+static void raid6_reconstruct1(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
+                              BOOL first, UINT32 firststripesize, UINT16 missing) {
+    UINT16 parity1, parity2, stripe;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    UINT32 readlen;
+    
+    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %x)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, missing);
+    
+    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+    parity2 = (parity1 + 1) % ci->num_stripes;
+    
+    readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
+    
+    if (missing != parity1 && missing != parity2) {
+        RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], &context->stripes[parity1].buf[*stripeoff], readlen);
+        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+        
+        do {
+            if (stripe != missing)
+                do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
+            
+            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+        } while (stripe != parity2);
+    } else
+        TRACE("skipping parity stripe\n");
+    
+    *stripeoff += stripelen;
 }
 
 static void raid6_decode(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
@@ -977,16 +1020,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT32 pos, skip;
         int num_errors = 0;
         UINT64 off, stripeoff;
+        BOOL needs_reconstruct = FALSE;
+        UINT64 reconstruct_stripe;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_Error) {
                 num_errors++;
-                if (num_errors > 1)
+                if (num_errors > 2)
                     break;
             }
         }
         
-        if (num_errors > 0) { // FIXME - allow reconstruction
+        if (num_errors > 2) {
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].status == ReadDataStatus_Error) {
                     WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
@@ -999,6 +1044,38 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         off = addr - offset;
         off -= off % ((ci->num_stripes - 2) * ci->stripe_length);
         skip = addr - offset - off;
+        
+        // FIXME - support reconstruction with two devices missing
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                if (needs_reconstruct) {
+                    ERR("more than one stripe needs reconstruction\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit;
+                } else {
+                    needs_reconstruct = TRUE;
+                    reconstruct_stripe = i;
+                }
+            }
+        }
+        
+        if (needs_reconstruct) {
+            TRACE("reconstructing stripe %u\n", reconstruct_stripe);
+            
+            pos = 0;
+            stripeoff = 0;
+            
+            raid6_reconstruct1(off, skip, context, ci, &stripeoff, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], TRUE, firststripesize, reconstruct_stripe);
+            
+            while (stripeoff < stripeend[0] - stripestart[0]) {
+                off += (ci->num_stripes - 2) * ci->stripe_length;
+                raid6_reconstruct1(off, 0, context, ci, &stripeoff, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], FALSE, 0, reconstruct_stripe);
+            }
+            
+            off = addr - offset;
+            off -= off % ((ci->num_stripes - 2) * ci->stripe_length);
+        }
         
         pos = 0;
         stripeoff = 0;
