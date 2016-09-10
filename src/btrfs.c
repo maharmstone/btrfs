@@ -628,6 +628,9 @@ static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LO
     } else if (Vcb->data_flags & BLOCK_FLAG_RAID5) {
         nfactor = Vcb->superblock.num_devices - 1;
         dfactor = Vcb->superblock.num_devices;
+    } else if (Vcb->data_flags & BLOCK_FLAG_RAID6) {
+        nfactor = Vcb->superblock.num_devices - 2;
+        dfactor = Vcb->superblock.num_devices;
     } else {
         nfactor = 1;
         dfactor = 1;
