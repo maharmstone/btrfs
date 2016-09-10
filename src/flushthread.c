@@ -2928,6 +2928,8 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENT
         factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
         factor = c->chunk_item->num_stripes - 1;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        factor = c->chunk_item->num_stripes - 2;
     else // SINGLE, DUPLICATE, RAID1
         factor = 1;
 
