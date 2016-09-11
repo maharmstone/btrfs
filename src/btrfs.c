@@ -2958,9 +2958,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                         while (le != &volumes) {
                             volume* v = CONTAINING_RECORD(le, volume, list_entry);
             
-                            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
-                                RtlCompareMemory(&di->device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
-                            ) {
+                            if (RtlCompareMemory(&di->device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                                 PFILE_OBJECT FileObject;
                                 PDEVICE_OBJECT DeviceObject;
                                 
