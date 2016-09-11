@@ -139,33 +139,33 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     space *devdh1 = NULL, *devdh2 = NULL;
     
     for (j = 0; j < Vcb->superblock.num_devices; j++) {
-        UINT64 usage;
-        
-        usage = (Vcb->devices[j].devitem.bytes_used * 4096) / Vcb->devices[j].devitem.num_bytes;
-        
-        // favour devices which have been used the least
-        if (usage < devusage) {
-            if (!IsListEmpty(&Vcb->devices[j].space)) {
-                LIST_ENTRY* le;
-                space *dh1 = NULL, *dh2 = NULL;
-                
-                le = Vcb->devices[j].space.Flink;
-                while (le != &Vcb->devices[j].space) {
-                    space* dh = CONTAINING_RECORD(le, space, list_entry);
+        if (!Vcb->devices[j].readonly) {
+            UINT64 usage = (Vcb->devices[j].devitem.bytes_used * 4096) / Vcb->devices[j].devitem.num_bytes;
+            
+            // favour devices which have been used the least
+            if (usage < devusage) {
+                if (!IsListEmpty(&Vcb->devices[j].space)) {
+                    LIST_ENTRY* le;
+                    space *dh1 = NULL, *dh2 = NULL;
                     
-                    if (dh->size >= max_stripe_size && (!dh1 || dh->size < dh1->size)) {
-                        dh2 = dh1;
-                        dh1 = dh;
-                    }
+                    le = Vcb->devices[j].space.Flink;
+                    while (le != &Vcb->devices[j].space) {
+                        space* dh = CONTAINING_RECORD(le, space, list_entry);
+                        
+                        if (dh->size >= max_stripe_size && (!dh1 || dh->size < dh1->size)) {
+                            dh2 = dh1;
+                            dh1 = dh;
+                        }
 
-                    le = le->Flink;
-                }
-                
-                if (dh1 && (dh2 || dh1->size >= 2 * max_stripe_size)) {
-                    devnum = j;
-                    devusage = usage;
-                    devdh1 = dh1;
-                    devdh2 = dh2 ? dh2 : dh1;
+                        le = le->Flink;
+                    }
+                    
+                    if (dh1 && (dh2 || dh1->size >= 2 * max_stripe_size)) {
+                        devnum = j;
+                        devusage = usage;
+                        devdh1 = dh1;
+                        devdh2 = dh2 ? dh2 : dh1;
+                    }
                 }
             }
         }
@@ -190,6 +190,9 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
         UINT64 usage;
         BOOL skip = FALSE;
         
+        if (Vcb->devices[j].readonly)
+            continue;
+
         // skip this device if it already has a stripe
         if (i > 0) {
             for (k = 0; k < i; k++) {
