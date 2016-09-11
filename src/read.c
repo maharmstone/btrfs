@@ -364,14 +364,15 @@ static void raid6_reconstruct2(UINT64 off, UINT32 skip, read_data_context* conte
         // put qxy in missing1
         // put pxy in missing2
         
+        i = ci->num_stripes - 3;
         if (stripe == missing1 || stripe == missing2) {
             RtlZeroMemory(&context->stripes[missing1].buf[*stripeoff], readlen);
             RtlZeroMemory(&context->stripes[missing2].buf[*stripeoff], readlen);
             
             if (stripe == missing1)
-                y = 0;
+                x = i;
             else
-                x = 0;
+                y = i;
         } else {
             RtlCopyMemory(&context->stripes[missing1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
             RtlCopyMemory(&context->stripes[missing2].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
@@ -379,7 +380,7 @@ static void raid6_reconstruct2(UINT64 off, UINT32 skip, read_data_context* conte
         
         stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
         
-        i = 1;
+        i--;
         do {
             galois_double(&context->stripes[missing1].buf[*stripeoff], readlen);
             
@@ -387,12 +388,12 @@ static void raid6_reconstruct2(UINT64 off, UINT32 skip, read_data_context* conte
                 do_xor(&context->stripes[missing1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
                 do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
             } else if (stripe == missing1)
-                y = i;
-            else if (stripe == missing2)
                 x = i;
+            else if (stripe == missing2)
+                y = i;
             
             stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            i++;
+            i--;
         } while (stripe != parity2);
         
         gyx = gpow2(y > x ? (y-x) : (255-x+y));
@@ -416,7 +417,7 @@ static void raid6_reconstruct2(UINT64 off, UINT32 skip, read_data_context* conte
             qxy++;
         }
         
-        RtlCopyMemory(&context->stripes[missing2].buf[*stripeoff], &context->stripes[missing1].buf[*stripeoff], readlen);
+        do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[missing1].buf[*stripeoff], readlen);
         do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[parity1].buf[*stripeoff], readlen);
     }
     
