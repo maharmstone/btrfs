@@ -100,6 +100,8 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA    0x0100
 #define BTRFS_INCOMPAT_FLAGS_NO_HOLES           0x0200
 
+#define BTRFS_SUPERBLOCK_FLAGS_SEEDING   0x100000000
+
 #pragma pack(push, 1)
 
 typedef struct {

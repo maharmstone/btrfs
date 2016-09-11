@@ -89,6 +89,7 @@ typedef struct {
     UNICODE_STRING devpath;
     UINT64 length;
     UINT64 gen1, gen2;
+    BOOL seeding;
     BOOL processed;
     LIST_ENTRY list_entry;
 } volume;
@@ -333,6 +334,7 @@ typedef struct {
     PDEVICE_OBJECT devobj;
     DEV_ITEM devitem;
     BOOL removable;
+    BOOL readonly;
     ULONG change_count;
     UINT64 length;
     LIST_ENTRY space;

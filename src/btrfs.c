@@ -2840,6 +2840,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 
                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                 Vcb->devices[Vcb->devices_loaded].devitem.device_uuid = *uuid;
+                Vcb->devices[Vcb->devices_loaded].readonly = v->seeding;
                 Vcb->devices_loaded++;
                 
                 return &Vcb->devices[Vcb->devices_loaded - 1];
@@ -2977,6 +2978,10 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 init_device(Vcb, &Vcb->devices[i], FALSE);
+
+                                if (v->seeding)
+                                    Vcb->devices[i].readonly = TRUE;
+
                                 Vcb->devices[i].length = v->length;
                                 Vcb->devices_loaded++;
 
@@ -3675,6 +3680,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     init_device(Vcb, &Vcb->devices[0], FALSE);
+    Vcb->devices[0].readonly = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     Vcb->devices[0].length = gli.Length.QuadPart;
     
     if (Vcb->superblock.num_devices > 1)
@@ -3741,6 +3747,20 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto exit;
         }
         
+        if (Vcb->devices[0].readonly && !Vcb->readonly) {
+            Vcb->readonly = TRUE;
+            
+            for (i = 0; i < Vcb->superblock.num_devices; i++) {
+                if (!Vcb->devices[i].readonly) {
+                    Vcb->readonly = FALSE;
+                    break;
+                }
+            }
+            
+            if (Vcb->readonly)
+                WARN("setting volume to readonly as all devices are readonly\n");
+        }
+        
         if (!raid_generations_okay(Vcb)) {
             ERR("could not mount as generation mismatch\n");
             
@@ -3748,6 +3768,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
+        }
+    } else {
+        if (Vcb->devices[0].readonly) {
+            WARN("setting volume to readonly as device is readonly\n");
+            Vcb->readonly = TRUE;
         }
     }
     
