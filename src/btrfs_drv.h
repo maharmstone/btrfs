@@ -874,6 +874,10 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
 
 // in galois.c
 void galois_double(UINT8* data, UINT32 len);
+void galois_divpower(UINT8* data, UINT8 div, UINT32 readlen);
+UINT8 gpow2(UINT8 e);
+UINT8 gmul(UINT8 a, UINT8 b);
+UINT8 gdiv(UINT8 a, UINT8 b);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
