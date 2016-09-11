@@ -355,6 +355,7 @@ typedef struct {
     ERESOURCE lock;
     ERESOURCE changed_extents_lock;
     BOOL created;
+    BOOL readonly;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

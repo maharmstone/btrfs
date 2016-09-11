@@ -3015,6 +3015,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 c->used = c->oldused = 0;
                 c->cache = NULL;
                 c->created = FALSE;
+                c->readonly = FALSE;
                 
                 c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);
                 
@@ -3044,6 +3045,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
                         c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
                         TRACE("device %llu = %p\n", i, c->devices[i]);
+                        
+                        if (c->devices[i]->readonly)
+                            c->readonly = TRUE;
                     }
                 } else
                     c->devices = NULL;

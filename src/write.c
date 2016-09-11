@@ -423,6 +423,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->offset = logaddr;
     c->used = c->oldused = 0;
     c->cache = NULL;
+    c->readonly = FALSE;
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);
     InitializeListHead(&c->deleting);
