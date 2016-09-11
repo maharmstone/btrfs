@@ -468,7 +468,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     device** devices;
     UINT64 *stripestart = NULL, *stripeend = NULL;
     UINT32 firststripesize;
-    UINT16 startoffstripe;
+    UINT16 startoffstripe, allowed_missing, missing_devices = 0;
     
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -534,18 +534,25 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     if (ci->type & BLOCK_FLAG_DUPLICATE) {
         type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 0;
     } else if (ci->type & BLOCK_FLAG_RAID0) {
         type = BLOCK_FLAG_RAID0;
+        allowed_missing = 0;
     } else if (ci->type & BLOCK_FLAG_RAID1) {
         type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 1;
     } else if (ci->type & BLOCK_FLAG_RAID10) {
         type = BLOCK_FLAG_RAID10;
+        allowed_missing = 1;
     } else if (ci->type & BLOCK_FLAG_RAID5) {
         type = BLOCK_FLAG_RAID5;
+        allowed_missing = 1;
     } else if (ci->type & BLOCK_FLAG_RAID6) {
         type = BLOCK_FLAG_RAID6;
+        allowed_missing = 2;
     } else { // SINGLE
         type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 0;
     }
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
@@ -748,8 +755,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
     }
     
-    // FIXME - for RAID, check beforehand whether there's enough devices to satisfy request
-    
     KeInitializeSpinLock(&context->spin_lock);
     
     for (i = 0; i < ci->num_stripes; i++) {
@@ -759,6 +764,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
             context->stripes_left--;
+            
+            if (!devices[i])
+                missing_devices++;
         } else {
             context->stripes[i].context = (struct read_data_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
@@ -818,6 +826,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
             context->stripes[i].status = ReadDataStatus_Pending;
         }
+    }
+    
+    if (missing_devices > allowed_missing) {
+        ERR("not enough devices to service request (%u missing)\n", missing_devices);
+        Status = STATUS_UNEXPECTED_IO_ERROR;
+        goto exit;
     }
     
     for (i = 0; i < ci->num_stripes; i++) {
