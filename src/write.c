@@ -2782,17 +2782,19 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
         while (le != &fcb->Vcb->chunks) {
             c = CONTAINING_RECORD(le, chunk, list_entry);
             
-            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-            
-            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
-                    ExReleaseResourceLite(&c->lock);
-                    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-                    goto cont;
+            if (!c->readonly) {
+                ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+                
+                if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
+                        ExReleaseResourceLite(&c->lock);
+                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                        goto cont;
+                    }
                 }
+                
+                ExReleaseResourceLite(&c->lock);
             }
-            
-            ExReleaseResourceLite(&c->lock);
 
             le = le->Flink;
         }
@@ -2877,27 +2879,29 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         while (le != &Vcb->chunks) {
             c = CONTAINING_RECORD(le, chunk, list_entry);
             
-            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-            
-            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
-                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
-                    written += newlen;
-                    
-                    if (written == orig_length) {
-                        ExReleaseResourceLite(&c->lock);
-                        ExReleaseResourceLite(&Vcb->chunk_lock);
-                        return STATUS_SUCCESS;
-                    } else {
-                        done = TRUE;
-                        start_data += newlen;
-                        length -= newlen;
-                        data = &((UINT8*)data)[newlen];
-                        break;
+            if (!c->readonly) {
+                ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+                
+                if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
+                    if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
+                        written += newlen;
+                        
+                        if (written == orig_length) {
+                            ExReleaseResourceLite(&c->lock);
+                            ExReleaseResourceLite(&Vcb->chunk_lock);
+                            return STATUS_SUCCESS;
+                        } else {
+                            done = TRUE;
+                            start_data += newlen;
+                            length -= newlen;
+                            data = &((UINT8*)data)[newlen];
+                            break;
+                        }
                     }
                 }
+                
+                ExReleaseResourceLite(&c->lock);
             }
-            
-            ExReleaseResourceLite(&c->lock);
 
             le = le->Flink;
         }

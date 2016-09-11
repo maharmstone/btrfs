@@ -388,19 +388,21 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
-                ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                t->new_address = addr;
-                t->has_new_address = TRUE;
-                return STATUS_SUCCESS;
+        if (!c->readonly) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+            
+            if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
+                if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
+                    ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    t->new_address = addr;
+                    t->has_new_address = TRUE;
+                    return STATUS_SUCCESS;
+                }
             }
+            
+            ExReleaseResourceLite(&c->lock);
         }
-        
-        ExReleaseResourceLite(&c->lock);
 
         le = le->Flink;
     }
