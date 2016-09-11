@@ -1174,7 +1174,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         le = le->Flink;
     }
     
-    // mark RAID5 overlaps so we can do them one by one
+    // mark RAID5/6 overlaps so we can do them one by one
     c = NULL;
     le = tree_writes.Flink;
     while (le != &tree_writes) {
@@ -1188,6 +1188,15 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             
             last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
             this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
+            
+            if (last_stripe == this_stripe)
+                tw->overlap = TRUE;
+        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            UINT64 last_stripe, this_stripe;
+            
+            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
+            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
             
             if (last_stripe == this_stripe)
                 tw->overlap = TRUE;
