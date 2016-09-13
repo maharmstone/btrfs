@@ -1595,9 +1595,20 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     wtc->tree = FALSE;
     wtc->stripes_left = 0;
     
+    if (!c) {
+        c = get_chunk_from_address(Vcb, address);
+        if (!c) {
+            ERR("could not get chunk for address %llx\n", address);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+    
+    chunk_lock_range(c, address, length);
+    
     Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
+        chunk_unlock_range(c, address, length);
         free_write_data_stripes(wtc);
         ExFreePool(wtc);
         return Status;
@@ -1631,6 +1642,8 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         
         free_write_data_stripes(wtc);
     }
+    
+    chunk_unlock_range(c, address, length);
 
     ExFreePool(wtc);
 
