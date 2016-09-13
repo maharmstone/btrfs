@@ -2008,7 +2008,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     }
     
     if (nt->parent) {
-        td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+        td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
         if (!td) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -2066,7 +2066,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &pt->list_entry);
     
-    td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
     if (!td) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2082,7 +2082,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     InsertTailList(&pt->itemlist, &td->list_entry);
     t->paritem = td;
     
-    td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
     if (!td) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;

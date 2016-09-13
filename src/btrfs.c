@@ -2113,6 +2113,8 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->checksum_lock);
     ExDeleteResourceLite(&Vcb->chunk_lock);
     
+    ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
+    
     ZwClose(Vcb->flush_thread_handle);
 }
 
@@ -3537,6 +3539,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     traverse_ptr tp;
     fcb* root_fcb = NULL;
     ccb* root_ccb = NULL;
+    BOOL init_lookaside = FALSE;
     
     TRACE("mount_vol called\n");
     
@@ -3734,6 +3737,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->DirNotifyList);
 
     FsRtlNotifyInitializeSync(&Vcb->NotifySync);
+    
+    ExInitializePagedLookasideList(&Vcb->tree_data_lookaside, NULL, NULL, 0, sizeof(tree_data), ALLOC_TAG, 0);
+    init_lookaside = TRUE;
     
     Status = load_chunk_root(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -3955,6 +3961,9 @@ exit:
 
     if (!NT_SUCCESS(Status)) {
         if (Vcb) {
+            if (init_lookaside)
+                ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
+                
             if (Vcb->root_file)
                 ObDereferenceObject(Vcb->root_file);
             else if (Vcb->root_fileref)

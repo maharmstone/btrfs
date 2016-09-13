@@ -115,7 +115,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         }
         
         for (i = 0; i < t->header.num_items; i++) {
-            td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
                 ExFreePool(buf);
@@ -207,7 +207,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         }
         
         for (i = 0; i < t->header.num_items; i++) {
-            td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+            td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
                 ExFreePool(buf);
@@ -278,7 +278,7 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
         if (t->header.level == 0 && td->data)
             ExFreePool(td->data);
             
-        ExFreePool(td);
+        ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
     }
     
     InterlockedDecrement(&t->Vcb->open_trees);
@@ -875,7 +875,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     } else
         cmp = -1;
     
-    td = ExAllocatePoolWithTag(PagedPool, sizeof(tree_data), ALLOC_TAG);
+    td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
     if (!td) {
         ERR("out of memory\n");
         goto end;

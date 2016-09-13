@@ -492,6 +492,7 @@ typedef struct _device_extension {
     KEVENT flush_thread_finished;
     drv_threads threads;
     PFILE_OBJECT root_file;
+    PAGED_LOOKASIDE_LIST tree_data_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
 
