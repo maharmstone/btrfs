@@ -3613,12 +3613,26 @@ void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
     
     if (fcb->atts_changed) {
         if (!fcb->atts_deleted) {
-            char val[64];
+            UINT8 val[16], *val2;
+            ULONG atts = fcb->atts;
             
             TRACE("inserting new DOSATTRIB xattr\n");
-            sprintf(val, "0x%lx", fcb->atts);
-        
-            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8*)val, strlen(val), Irp, rollback);
+            
+            val2 = &val[sizeof(val) - 1];
+            
+            do {
+                UINT8 c = atts % 16;
+                *val2 = (c >= 0 && c <= 9) ? (c + '0') : (c - 0xa + 'a');
+                
+                val2--;
+                atts >>= 4;
+            } while (atts != 0);
+            
+            *val2 = 'x';
+            val2--;
+            *val2 = '0';
+            
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
