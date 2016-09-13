@@ -196,7 +196,7 @@ static NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (Vcb->need_write && !Vcb->readonly)
         do_write(Vcb, Irp, &rollback);
     
-    clear_rollback(&rollback);
+    clear_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 

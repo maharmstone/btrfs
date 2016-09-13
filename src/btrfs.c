@@ -2008,7 +2008,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         
         free_trees(Vcb);
         
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
 
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
@@ -2114,6 +2114,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->chunk_lock);
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
+    ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -2328,7 +2329,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     }
                     
                     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                    clear_rollback(&rollback);
+                    clear_rollback(Vcb, &rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                     IO_STATUS_BLOCK iosb;
                     CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
@@ -3739,6 +3740,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     FsRtlNotifyInitializeSync(&Vcb->NotifySync);
     
     ExInitializePagedLookasideList(&Vcb->tree_data_lookaside, NULL, NULL, 0, sizeof(tree_data), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->traverse_ptr_lookaside, NULL, NULL, 0, sizeof(traverse_ptr), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
     Status = load_chunk_root(Vcb, Irp);
@@ -3961,8 +3963,10 @@ exit:
 
     if (!NT_SUCCESS(Status)) {
         if (Vcb) {
-            if (init_lookaside)
+            if (init_lookaside) {
                 ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
+                ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
+            }
                 
             if (Vcb->root_file)
                 ObDereferenceObject(Vcb->root_file);

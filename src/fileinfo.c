@@ -1883,7 +1883,7 @@ end:
     }
     
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     else
         do_rollback(Vcb, &rollback);
 
@@ -2060,7 +2060,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
 
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     else
         do_rollback(Vcb, &rollback);
 
@@ -2398,7 +2398,7 @@ end:
     }
     
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     else
         do_rollback(Vcb, &rollback);
 

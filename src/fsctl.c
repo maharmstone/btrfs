@@ -283,7 +283,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     free_trees(Vcb);
     
-    clear_rollback(&rollback);
+    clear_rollback(Vcb, &rollback);
     
     InitializeListHead(&rollback);
     
@@ -520,7 +520,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     else
         do_rollback(Vcb, &rollback);
 
@@ -1030,7 +1030,7 @@ end:
     if (!NT_SUCCESS(Status))
         do_rollback(Vcb, &rollback);
     else
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
@@ -1612,7 +1612,7 @@ end:
     if (!NT_SUCCESS(Status))
         do_rollback(Vcb, &rollback);
     else
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);
@@ -1806,7 +1806,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     
     free_trees(Vcb);
     
-    clear_rollback(&rollback);
+    clear_rollback(Vcb, &rollback);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
@@ -1947,7 +1947,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 
                 free_trees(Vcb);
                 
-                clear_rollback(&rollback);
+                clear_rollback(Vcb, &rollback);
                 
                 flush_fcb_caches(Vcb);
                 

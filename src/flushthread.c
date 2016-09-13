@@ -4816,7 +4816,7 @@ static void do_flush(device_extension* Vcb) {
     
     free_trees(Vcb);
     
-    clear_rollback(&rollback);
+    clear_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 

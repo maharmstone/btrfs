@@ -118,7 +118,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, PIRP Irp) {
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(Vcb, &rollback);
     else
         do_rollback(Vcb, &rollback);
     
@@ -453,7 +453,7 @@ clearcache:
         return Status;
     }
     
-    clear_rollback(&rollback);
+    clear_rollback(Vcb, &rollback);
     
     c->cache->deleted = TRUE;
     mark_fcb_dirty(c->cache);

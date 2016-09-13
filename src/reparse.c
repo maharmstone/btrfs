@@ -339,7 +339,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(fcb->Vcb, &rollback);
     else
         do_rollback(fcb->Vcb, &rollback);
 
@@ -513,7 +513,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
+        clear_rollback(fcb->Vcb, &rollback);
     else
         do_rollback(fcb->Vcb, &rollback);
     

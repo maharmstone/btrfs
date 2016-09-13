@@ -493,6 +493,7 @@ typedef struct _device_extension {
     drv_threads threads;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
+    PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -735,7 +736,7 @@ tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned i
 NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp, const char* func, const char* file, unsigned int line);
 NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp,
                                const char* func, const char* file, unsigned int line);
-void clear_rollback(LIST_ENTRY* rollback);
+void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);

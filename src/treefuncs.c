@@ -945,7 +945,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     // FIXME - free this correctly
     
-    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
     if (!tp2) {
         ERR("out of memory\n");
         goto end;
@@ -1018,7 +1018,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
         t = t->parent;
     }
     
-    tp2 = ExAllocatePoolWithTag(PagedPool, sizeof(traverse_ptr), ALLOC_TAG);
+    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
     if (!tp2) {
         ERR("out of memory\n");
         return;
@@ -1030,7 +1030,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
 }
 
-void clear_rollback(LIST_ENTRY* rollback) {
+void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
     rollback_item* ri;
     
     while (!IsListEmpty(rollback)) {
@@ -1040,6 +1040,9 @@ void clear_rollback(LIST_ENTRY* rollback) {
         switch (ri->type) {
             case ROLLBACK_INSERT_ITEM:
             case ROLLBACK_DELETE_ITEM:
+                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, ri->ptr);
+                break;
+                
             case ROLLBACK_ADD_SPACE:
             case ROLLBACK_SUBTRACT_SPACE:
             case ROLLBACK_INSERT_EXTENT:
@@ -1078,7 +1081,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         tp->tree->size -= sizeof(internal_node);
                 }
                 
-                ExFreePool(tp);
+                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, tp);
                 break;
             }
                 
@@ -1096,7 +1099,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         tp->tree->size += sizeof(internal_node);
                 }
                 
-                ExFreePool(tp);
+                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, tp);
                 break;
             }
             

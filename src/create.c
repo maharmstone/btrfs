@@ -3684,7 +3684,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);
         else
-            clear_rollback(&rollback);
+            clear_rollback(Vcb, &rollback);
         
         if (!skip_lock)
             ExReleaseResourceLite(&Vcb->tree_lock);
