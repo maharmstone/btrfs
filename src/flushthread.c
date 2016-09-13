@@ -3711,7 +3711,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
                     
                     c->devices[i]->devitem.bytes_used -= de->length;
                     
-                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, rollback);
+                    space_list_add2(Vcb, &c->devices[i]->space, NULL, cis[i].offset, de->length, rollback);
                 }
             } else
                 WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
@@ -3719,7 +3719,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
             UINT64 len = c->chunk_item->size / factor;
             
             c->devices[i]->devitem.bytes_used -= len;
-            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, rollback);
+            space_list_add2(Vcb, &c->devices[i]->space, NULL, cis[i].offset, len, rollback);
         }
     }
     

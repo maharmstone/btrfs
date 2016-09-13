@@ -451,7 +451,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
         
-        space_list_subtract2(&stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL);
+        space_list_subtract2(Vcb, &stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL);
     }
     
     success = TRUE;
@@ -2359,7 +2359,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
     re->fcb = fcb;
     re->ext = ext;
     
-    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
+    add_rollback(fcb->Vcb, rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
 static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, LIST_ENTRY* rollback) {
@@ -2415,7 +2415,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
         re->fcb = fcb;
         re->ext = ext;
         
-        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
+        add_rollback(fcb->Vcb, rollback, ROLLBACK_DELETE_EXTENT, re);
     }
 }
 

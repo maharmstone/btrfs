@@ -2115,6 +2115,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
     ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
+    ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -2798,7 +2799,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
     
     // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
     
-    space_list_subtract2(&dev->space, NULL, 0, 0x100000, NULL);
+    space_list_subtract2(Vcb, &dev->space, NULL, 0, 0x100000, NULL);
     
     return STATUS_SUCCESS;
 }
@@ -3741,6 +3742,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExInitializePagedLookasideList(&Vcb->tree_data_lookaside, NULL, NULL, 0, sizeof(tree_data), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->traverse_ptr_lookaside, NULL, NULL, 0, sizeof(traverse_ptr), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->rollback_item_lookaside, NULL, NULL, 0, sizeof(rollback_item), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
     Status = load_chunk_root(Vcb, Irp);
@@ -3966,6 +3968,7 @@ exit:
             if (init_lookaside) {
                 ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
                 ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
             }
                 
             if (Vcb->root_file)

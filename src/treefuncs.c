@@ -19,12 +19,6 @@
 
 // #define DEBUG_TREE_LOCKS
 
-typedef struct {
-    enum rollback_type type;
-    void* ptr;
-    LIST_ENTRY list_entry;
-} rollback_item;
-
 NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp, const char* func, const char* file, unsigned int line) {
     UINT8* buf;
     NTSTATUS Status;
@@ -790,7 +784,7 @@ free_shared:
     }
 }
 
-void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
+void add_rollback(device_extension* Vcb, LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     rollback_item* ri;
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
@@ -954,7 +948,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     tp2->tree = tp.tree;
     tp2->item = td;
     
-    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
+    add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
     
     success = TRUE;
 
@@ -1027,7 +1021,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     tp2->tree = tp->tree;
     tp2->item = tp->item;
 
-    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
+    add_rollback(Vcb, rollback, ROLLBACK_DELETE_ITEM, tp2);
 }
 
 void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
@@ -1170,9 +1164,9 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                     ExAcquireResourceExclusiveLite(&rs->chunk->lock, TRUE);
                 
                 if (ri->type == ROLLBACK_ADD_SPACE)
-                    space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                    space_list_subtract2(Vcb, rs->list, rs->list_size, rs->address, rs->length, NULL);
                 else
-                    space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL);
+                    space_list_add2(Vcb, rs->list, rs->list_size, rs->address, rs->length, NULL);
                 
                 if (rs->chunk) {
                     LIST_ENTRY* le2 = le->Blink;
@@ -1186,9 +1180,9 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                             
                             if (rs2->chunk == rs->chunk) {
                                 if (ri2->type == ROLLBACK_ADD_SPACE)
-                                    space_list_subtract2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
+                                    space_list_subtract2(Vcb, rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
                                 else
-                                    space_list_add2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
+                                    space_list_add2(Vcb, rs2->list, rs2->list_size, rs2->address, rs2->length, NULL);
                                 
                                 ExFreePool(rs2);
                                 RemoveEntryList(&ri2->list_entry);
