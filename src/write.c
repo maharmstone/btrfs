@@ -432,6 +432,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     InitializeListHead(&c->deleting);
     InitializeListHead(&c->changed_extents);
     
+    InitializeListHead(&c->range_locks);
+    KeInitializeSpinLock(&c->range_locks_spinlock);
+    KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
+    
     ExInitializeResourceLite(&c->lock);
     ExInitializeResourceLite(&c->changed_extents_lock);
     

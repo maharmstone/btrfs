@@ -341,6 +341,12 @@ typedef struct {
 } device;
 
 typedef struct {
+    UINT64 start;
+    UINT64 length;
+    LIST_ENTRY list_entry;
+} range_lock;
+
+typedef struct {
     CHUNK_ITEM* chunk_item;
     UINT32 size;
     UINT64 offset;
@@ -352,6 +358,9 @@ typedef struct {
     LIST_ENTRY space_size;
     LIST_ENTRY deleting;
     LIST_ENTRY changed_extents;
+    LIST_ENTRY range_locks;
+    KSPIN_LOCK range_locks_spinlock;
+    KEVENT range_locks_event;
     ERESOURCE lock;
     ERESOURCE changed_extents_lock;
     BOOL created;
@@ -634,6 +643,8 @@ NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
 void mark_fileref_dirty(file_ref* fileref);
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);
+void chunk_lock_range(chunk* c, UINT64 start, UINT64 length);
+void chunk_unlock_range(chunk* c, UINT64 start, UINT64 length);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

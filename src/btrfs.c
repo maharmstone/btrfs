@@ -3063,6 +3063,10 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 InitializeListHead(&c->space_size);
                 InitializeListHead(&c->deleting);
                 InitializeListHead(&c->changed_extents);
+                
+                InitializeListHead(&c->range_locks);
+                KeInitializeSpinLock(&c->range_locks_spinlock);
+                KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 
@@ -4407,6 +4411,78 @@ BOOL is_file_name_valid(PUNICODE_STRING us) {
         return FALSE;
     
     return TRUE;
+}
+
+void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
+    LIST_ENTRY* le;
+    BOOL locked;
+    range_lock* rl;
+    
+    while (TRUE) {
+        KIRQL irql;
+        
+        locked = FALSE;
+        
+        KeAcquireSpinLock(&c->range_locks_spinlock, &irql);
+        
+        le = c->range_locks.Flink;
+        while (le != &c->range_locks) {
+            rl = CONTAINING_RECORD(le, range_lock, list_entry);
+            
+            if (rl->start < start + length && rl->start + rl->length > start) {
+                locked = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!locked) {
+            rl = ExAllocatePoolWithTag(NonPagedPool, sizeof(range_lock), ALLOC_TAG);
+            if (!rl) {
+                ERR("out of memory\n");
+                KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+                return;
+            }
+            
+            rl->start = start;
+            rl->length = length;
+            InsertTailList(&c->range_locks, &rl->list_entry);
+            
+            KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+            return;
+        }
+        
+        KeClearEvent(&c->range_locks_event);
+        
+        KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+        
+        KeWaitForSingleObject(&c->range_locks_event, UserRequest, KernelMode, FALSE, NULL);
+    }
+}
+
+void chunk_unlock_range(chunk* c, UINT64 start, UINT64 length) {
+    KIRQL irql;
+    LIST_ENTRY* le;
+    
+    KeAcquireSpinLock(&c->range_locks_spinlock, &irql);
+    
+    le = c->range_locks.Flink;
+    while (le != &c->range_locks) {
+        range_lock* rl = CONTAINING_RECORD(le, range_lock, list_entry);
+        
+        if (rl->start == start && rl->length == length) {
+            RemoveEntryList(&rl->list_entry);
+            ExFreePool(rl);
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    KeSetEvent(&c->range_locks_event, 0, FALSE);
+    
+    KeReleaseSpinLock(&c->range_locks_spinlock, irql);
 }
 
 #ifdef _DEBUG
