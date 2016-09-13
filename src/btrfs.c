@@ -2981,8 +2981,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 init_device(Vcb, &Vcb->devices[i], FALSE);
 
-                                if (v->seeding)
-                                    Vcb->devices[i].readonly = TRUE;
+                                Vcb->devices[i].readonly = v->seeding ? TRUE : FALSE;
 
                                 Vcb->devices[i].length = v->length;
                                 Vcb->devices_loaded++;
