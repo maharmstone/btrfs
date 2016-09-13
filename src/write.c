@@ -2492,14 +2492,6 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 //     }
 // #endif
     
-    if (data) {
-        Status = do_write_data(Vcb, address, data, length, changed_sector_list, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_write_data returned %08x\n", Status);
-            return FALSE;
-        }
-    }
-    
     // add extent data to inode
     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
     if (!ed) {
@@ -2539,6 +2531,14 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     add_changed_extent_ref(c, address, length, fcb->subvol->id, fcb->inode, start_data, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
     
     ExReleaseResourceLite(&c->changed_extents_lock);
+    
+    ExReleaseResourceLite(&c->lock);
+      
+    if (data) {
+        Status = do_write_data(Vcb, address, data, length, changed_sector_list, Irp);
+        if (!NT_SUCCESS(Status))
+            ERR("do_write_data returned %08x\n", Status);
+    }
 
     return TRUE;
 }
@@ -2790,7 +2790,6 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
                 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
                     if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
-                        ExReleaseResourceLite(&c->lock);
                         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                         goto cont;
                     }
@@ -2812,10 +2811,8 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
-                    ExReleaseResourceLite(&c->lock);
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen))
                     goto cont;
-                }
             }
             
             ExReleaseResourceLite(&c->lock);
@@ -2885,25 +2882,22 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             if (!c->readonly) {
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                 
-                if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
-                    if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
-                        written += newlen;
-                        
-                        if (written == orig_length) {
-                            ExReleaseResourceLite(&c->lock);
-                            ExReleaseResourceLite(&Vcb->chunk_lock);
-                            return STATUS_SUCCESS;
-                        } else {
-                            done = TRUE;
-                            start_data += newlen;
-                            length -= newlen;
-                            data = &((UINT8*)data)[newlen];
-                            break;
-                        }
+                if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
+                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
+                    written += newlen;
+                    
+                    if (written == orig_length) {
+                        ExReleaseResourceLite(&Vcb->chunk_lock);
+                        return STATUS_SUCCESS;
+                    } else {
+                        done = TRUE;
+                        start_data += newlen;
+                        length -= newlen;
+                        data = &((UINT8*)data)[newlen];
+                        break;
                     }
-                }
-                
-                ExReleaseResourceLite(&c->lock);
+                } else
+                    ExReleaseResourceLite(&c->lock);
             }
 
             le = le->Flink;
@@ -2922,23 +2916,20 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
-            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen) {
-                if (insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
-                    written += newlen;
-                    
-                    if (written == orig_length) {
-                        ExReleaseResourceLite(&c->lock);
-                        return STATUS_SUCCESS;
-                    } else {
-                        done = TRUE;
-                        start_data += newlen;
-                        length -= newlen;
-                        data = &((UINT8*)data)[newlen];
-                    }
+            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
+                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
+                written += newlen;
+                
+                if (written == orig_length)
+                    return STATUS_SUCCESS;
+                else {
+                    done = TRUE;
+                    start_data += newlen;
+                    length -= newlen;
+                    data = &((UINT8*)data)[newlen];
                 }
-            }
-            
-            ExReleaseResourceLite(&c->lock);
+            } else            
+                ExReleaseResourceLite(&c->lock);
         } else
             ExReleaseResourceLite(&Vcb->chunk_lock);
         

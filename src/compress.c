@@ -445,7 +445,6 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
-                    ExReleaseResourceLite(&c->lock);
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -472,8 +471,6 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
-                ExReleaseResourceLite(&c->lock);
-                
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
                 
@@ -833,7 +830,6 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
-                    ExReleaseResourceLite(&c->lock);
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -860,8 +856,6 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, changed_sector_list, Irp, rollback, compression, end_data - start_data)) {
-                ExReleaseResourceLite(&c->lock);
-                
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
                 

@@ -578,7 +578,6 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length)) {
-                    ExReleaseResourceLite(&c->lock);
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     return STATUS_SUCCESS;
                 }
@@ -600,10 +599,8 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length)) {
-                ExReleaseResourceLite(&c->lock);
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length))
                 return STATUS_SUCCESS;
-            }
         }
         
         ExReleaseResourceLite(&c->lock);
