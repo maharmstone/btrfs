@@ -3205,35 +3205,35 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
+        searchkey.obj_id = c->offset;
+        searchkey.offset = c->chunk_item->size;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (!keycmp(&searchkey, &tp.item->key)) {
+            if (tp.item->size >= sizeof(BLOCK_GROUP_ITEM)) {
+                bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
+                
+                c->used = c->oldused = bgi->used;
+                
+                TRACE("chunk %llx has %llx bytes used\n", c->offset, c->used);
+            } else {
+                ERR("(%llx;%llx,%x,%llx) is %u bytes, expected %u\n",
+                    Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+            }
+        }
+            
+//         if (addr >= c->offset && (addr - c->offset) < c->chunk_item->size && c->chunk_item->num_stripes > 0) {
+//             cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+// 
+//             return (addr - c->offset) + cis->offset;
+//         }
+            
         if (!c->readonly) {
-            searchkey.obj_id = c->offset;
-            searchkey.offset = c->chunk_item->size;
-            
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                return Status;
-            }
-            
-            if (!keycmp(&searchkey, &tp.item->key)) {
-                if (tp.item->size >= sizeof(BLOCK_GROUP_ITEM)) {
-                    bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
-                    
-                    c->used = c->oldused = bgi->used;
-                    
-                    TRACE("chunk %llx has %llx bytes used\n", c->offset, c->used);
-                } else {
-                    ERR("(%llx;%llx,%x,%llx) is %u bytes, expected %u\n",
-                        Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
-                }
-            }
-            
-//             if (addr >= c->offset && (addr - c->offset) < c->chunk_item->size && c->chunk_item->num_stripes > 0) {
-//                 cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-//     
-//                 return (addr - c->offset) + cis->offset;
-//             }
-            
             // FIXME - make sure we free occasionally after doing one of these, or we
             // might use up a lot of memory with a big disk.
             
