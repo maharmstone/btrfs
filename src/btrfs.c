@@ -3487,8 +3487,8 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     
     threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
     
-    if (Vcb->threads.pending_jobs >= Vcb->threads.num_threads)
-        return FALSE;
+//     if (Vcb->threads.pending_jobs >= Vcb->threads.num_threads)
+//         return FALSE;
     
     if (Vcb->threads.threads[threadnum].quit)
         return FALSE;
