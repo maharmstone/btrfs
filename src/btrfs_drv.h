@@ -410,6 +410,8 @@ typedef struct {
 
 typedef struct {
     PIRP Irp;
+    PFILE_OBJECT FileObject;
+    BOOL flush;
     LIST_ENTRY list_entry;
 } thread_job;
 
