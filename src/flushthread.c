@@ -375,7 +375,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, Irp, rollback)) {
+        if (!origchunk->readonly && insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, Irp, rollback)) {
             t->new_address = addr;
             t->has_new_address = TRUE;
             return STATUS_SUCCESS;
