@@ -1577,16 +1577,18 @@ end:
     return Status;
 }
 
-static void get_raid5_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
+static void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
     UINT64 startoff, endoff;
-    UINT16 startoffstripe, endoffstripe;
+    UINT16 startoffstripe, endoffstripe, datastripes;
     UINT64 start = 0xffffffffffffffff, end = 0, logend;
     UINT16 i;
     
-    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
-    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
+    datastripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, datastripes, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, datastripes, &endoff, &endoffstripe);
 
-    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+    for (i = 0; i < datastripes; i++) {
         UINT64 ststart, stend;
         
         if (startoffstripe > i) {
@@ -1614,11 +1616,11 @@ static void get_raid5_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64
         }
     }
     
-    *lockaddr = c->offset + ((start / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) +
+    *lockaddr = c->offset + ((start / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * datastripes) +
                 start % c->chunk_item->stripe_length;
                
-    logend = c->offset + ((end / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));    
-    logend += c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2);
+    logend = c->offset + ((end / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * datastripes);
+    logend += c->chunk_item->stripe_length * (datastripes - 1);
     logend += end % c->chunk_item->stripe_length == 0 ? c->chunk_item->stripe_length : (end % c->chunk_item->stripe_length);
     *locklen = logend - *lockaddr;
 }
@@ -1650,8 +1652,8 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         }
     }
     
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5)
-        get_raid5_lock_range(c, address, length, &lockaddr, &locklen);
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+        get_raid56_lock_range(c, address, length, &lockaddr, &locklen);
     else {
         lockaddr = address;
         locklen = length;
