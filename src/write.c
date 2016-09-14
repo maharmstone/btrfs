@@ -1577,9 +1577,56 @@ end:
     return Status;
 }
 
+static void get_raid5_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
+    UINT64 startoff, endoff;
+    UINT16 startoffstripe, endoffstripe;
+    UINT64 start = 0xffffffffffffffff, end = 0, logend;
+    UINT16 i;
+    
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
+
+    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        UINT64 ststart, stend;
+        
+        if (startoffstripe > i) {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (startoffstripe == i) {
+            ststart = startoff;
+        } else {
+            ststart = startoff - (startoff % c->chunk_item->stripe_length);
+        }
+
+        if (endoffstripe > i) {
+            stend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        } else if (endoffstripe == i) {
+            stend = endoff + 1;
+        } else {
+            stend = endoff - (endoff % c->chunk_item->stripe_length);
+        }
+
+        if (ststart != stend) {
+            if (ststart < start)
+                start = ststart;
+
+            if (stend > end)
+                end = stend;
+        }
+    }
+    
+    *lockaddr = c->offset + ((start / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) +
+                start % c->chunk_item->stripe_length;
+               
+    logend = c->offset + ((end / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));    
+    logend += c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2);
+    logend += end % c->chunk_item->stripe_length == 0 ? c->chunk_item->stripe_length : (end % c->chunk_item->stripe_length);
+    *locklen = logend - *lockaddr;
+}
+
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c) {
     write_data_context* wtc;
     NTSTATUS Status;
+    UINT64 lockaddr, locklen;
 // #ifdef DEBUG_PARANOID
 //     UINT8* buf2;
 // #endif
@@ -1603,12 +1650,19 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         }
     }
     
-    chunk_lock_range(c, address, length);
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+        get_raid5_lock_range(c, address, length, &lockaddr, &locklen);
+    else {
+        lockaddr = address;
+        locklen = length;
+    }
+    
+    chunk_lock_range(c, lockaddr, locklen);
     
     Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
-        chunk_unlock_range(c, address, length);
+        chunk_unlock_range(c, lockaddr, locklen);
         free_write_data_stripes(wtc);
         ExFreePool(wtc);
         return Status;
@@ -1643,7 +1697,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         free_write_data_stripes(wtc);
     }
     
-    chunk_unlock_range(c, address, length);
+    chunk_unlock_range(c, lockaddr, locklen);
 
     ExFreePool(wtc);
 
