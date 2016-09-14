@@ -3646,7 +3646,6 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
             EXTENT_DATA* ed = ext->data;
             EXTENT_DATA2* ed2 = ed->type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ed->data;
             UINT64 len;
-            BOOL nocow;
             
             len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
             
@@ -3656,9 +3655,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
             if (ext->offset > start + written + length)
                 break;
             
-            nocow = (ext->unique && fcb->inode_item.flags & BTRFS_INODE_NODATACOW) || ed->type == EXTENT_TYPE_PREALLOC;
-           
-            if (nocow) {
+            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == EXTENT_TYPE_PREALLOC) && ext->unique) {
                 if (max(last_cow_start, start + written) < ext->offset) {
                     UINT64 start_write = max(last_cow_start, start + written);
                     
