@@ -129,6 +129,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     th->address = t.new_address;
     th->tree_id = subvol->id;
     th->generation = Vcb->superblock.generation;
+    th->fs_uuid = Vcb->superblock.uuid;
     
     if (th->level == 0) {
         UINT32 i;
