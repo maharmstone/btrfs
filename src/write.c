@@ -3767,9 +3767,6 @@ nextitem:
         }
     }
     
-    // FIXME - make extending work again (here?)
-    // FIXME - make maximum extent size 128 MB again (here?)
-    
 #ifdef DEBUG_PARANOID
     last_off = 0xffffffffffffffff;
     
