@@ -1392,3 +1392,178 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
     
     return 0;
 }
+
+
+static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = size;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (keycmp(&searchkey, &tp.item->key)) {
+        ERR("couldn't find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return 0;
+    }
+    
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+        EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+        
+        return eiv0->refcount;
+    } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        return 0;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    
+    return ei->refcount;
+}
+
+BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+    UINT64 rc, rcrun, root = 0, inode = 0;
+    UINT32 len;
+    EXTENT_ITEM* ei;
+    UINT8* ptr;
+    BOOL b;
+    
+    rc = get_extent_refcount(Vcb, address, size, Irp);
+
+    if (rc == 1)
+        return TRUE;
+    
+    if (rc == 0)
+        return FALSE;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = size;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        WARN("error - find_item returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (keycmp(&tp.item->key, &searchkey)) {
+        WARN("could not find (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return FALSE;
+    }
+    
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+        return FALSE;
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return FALSE;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    
+    len = tp.item->size - sizeof(EXTENT_ITEM);
+    ptr = (UINT8*)&ei[1];
+    
+    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
+            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            return FALSE;
+        }
+        
+        len -= sizeof(EXTENT_ITEM2);
+        ptr += sizeof(EXTENT_ITEM2);
+    }
+    
+    rcrun = 0;
+    
+    // Loop through inline extent entries
+    
+    while (len > 0) {
+        UINT8 secttype = *ptr;
+        ULONG sectlen = get_extent_data_len(secttype);
+        UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+        
+        len--;
+        
+        if (sectlen > len) {
+            WARN("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            return FALSE;
+        }
+
+        if (sectlen == 0) {
+            WARN("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+            return FALSE;
+        }
+        
+        if (secttype == TYPE_EXTENT_DATA_REF) {
+            EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(UINT8));
+            
+            if (root == 0 && inode == 0) {
+                root = sectedr->root;
+                inode = sectedr->objid;
+            } else if (root != sectedr->root || inode != sectedr->objid)
+                return FALSE;
+        } else {
+            WARN("unhandled extent type %x\n", secttype);
+            return FALSE;
+        }
+        
+        len -= sectlen;
+        ptr += sizeof(UINT8) + sectlen;
+        rcrun += sectcount;
+    }
+    
+    if (rcrun == rc)
+        return TRUE;
+
+    // Loop through non-inlines if some refs still unaccounted for
+    
+    do {
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
+        
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_EXTENT_DATA_REF) {
+            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
+            
+            if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
+                WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                     tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+                return FALSE;
+            }
+            
+            if (root == 0 && inode == 0) {
+                root = edr->root;
+                inode = edr->objid;
+            } else if (root != edr->root || inode != edr->objid)
+                return FALSE;
+            
+            rcrun += edr->count;
+        }
+        
+        if (rcrun == rc)
+            return TRUE;
+        
+        if (b) {
+            tp = next_tp;
+            
+            if (tp.item->key.obj_id > searchkey.obj_id)
+                break;
+        }
+    } while (b);
+    
+    // If we reach this point, there's still some refs unaccounted for somewhere.
+    // Return FALSE in case we mess things up elsewhere.
+    
+    return FALSE;
+}

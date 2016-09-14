@@ -881,6 +881,7 @@ NTSTATUS decrease_extent_refcount_old(device_extension* Vcb, UINT64 address, UIN
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback);
 UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, PIRP Irp);
+BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 
 // in worker-thread.c
 void STDCALL worker_thread(void* context);

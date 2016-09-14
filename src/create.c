@@ -1134,42 +1134,6 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
     return deleted;
 }
 
-static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    EXTENT_ITEM* ei;
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return 0;
-    }
-    
-    if (keycmp(&searchkey, &tp.item->key)) {
-        ERR("couldn't find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return 0;
-    }
-    
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-        EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
-        
-        return eiv0->refcount;
-    } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
-        return 0;
-    }
-    
-    ei = (EXTENT_ITEM*)tp.item->data;
-    
-    return ei->refcount;
-}
-
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
@@ -1317,7 +1281,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         goto nextitem;
                     
                     if (ed2->size != 0)
-                        unique = get_extent_refcount(fcb->Vcb, ed2->address, ed2->size, Irp) == 1;
+                        unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
                 }
                 
                 ext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
