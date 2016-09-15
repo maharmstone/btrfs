@@ -27,7 +27,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, PIR
     NTSTATUS Status;
     fcb* fcb;
     
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &fcb, Irp);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return Status;
@@ -293,7 +293,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
     num_entries = fsi->num_entries;
     num_bitmaps = fsi->num_bitmaps;
     
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache, Irp);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, NULL, &c->cache, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return STATUS_NOT_FOUND;

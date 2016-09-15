@@ -904,7 +904,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         }
                         
                         ExAcquireResourceExclusiveLite(&me->fileref->fcb->Vcb->fcb_lock, TRUE);
-                        Status = open_fcb(me->fileref->fcb->Vcb, subvol, inode, di->type, &utf8, me->fileref->fcb, &fcb, Irp);
+                        Status = open_fcb(me->fileref->fcb->Vcb, subvol, inode, di->type, &utf8, me->fileref->fcb, &fcb, PagedPool, Irp);
                         ExReleaseResourceLite(&me->fileref->fcb->Vcb->fcb_lock);
                         
                         if (!NT_SUCCESS(Status)) {
@@ -1531,7 +1531,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL, NULL, Irp);
+    Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL, NULL, PagedPool, Irp);
     ExReleaseResourceLite(&Vcb->fcb_lock);
 
     if (NT_SUCCESS(Status)) {
@@ -1564,7 +1564,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     if (!related) {
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL, NULL, Irp);
+        Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL, NULL, PagedPool, Irp);
         ExReleaseResourceLite(&Vcb->fcb_lock);
 
         if (!NT_SUCCESS(Status)) {
@@ -2198,7 +2198,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL, NULL, Irp);
+    Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL, NULL, PagedPool, Irp);
     ExReleaseResourceLite(&Vcb->fcb_lock);
 
     if (NT_SUCCESS(Status)) {
@@ -2232,7 +2232,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
     if (!related) {
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL, NULL, Irp);
+        Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL, NULL, PagedPool, Irp);
         ExReleaseResourceLite(&Vcb->fcb_lock);
 
         if (!NT_SUCCESS(Status)) {
@@ -3496,7 +3496,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     hardlink* hl;
     file_ref *parfr, *fr;
     
-    Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb, Irp);
+    Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return Status;

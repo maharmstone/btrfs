@@ -49,7 +49,7 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
         return 0;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb, Irp);
+    Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         ExReleaseResourceLite(&Vcb->fcb_lock);

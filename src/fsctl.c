@@ -431,7 +431,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     RtlCopyMemory(fr->utf8.Buffer, utf8->Buffer, utf8->Length);
     
-    Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb, Irp);
+    Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         free_fileref(fr);
@@ -605,7 +605,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, Irp);
     
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
@@ -656,7 +656,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
 
-        Status = open_fileref(Vcb, &fr, &nameus, fileref, FALSE, NULL, NULL, Irp);
+        Status = open_fileref(Vcb, &fr, &nameus, fileref, FALSE, NULL, NULL, PagedPool, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08x\n", Status);
@@ -777,7 +777,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     InitializeListHead(&rollback);
     
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, Irp);
     
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
