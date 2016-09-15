@@ -3433,6 +3433,37 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
+        // Make sure paging files don't have any extents marked as being prealloc,
+        // as this would mean we'd have to lock exclusively when writing.
+        if (Stack->Flags & SL_OPEN_PAGING_FILE) {
+            LIST_ENTRY* le;
+            BOOL changed = FALSE;
+            
+            ExAcquireResourceExclusiveLite(fileref->fcb->Header.Resource, TRUE);
+            
+            le = fileref->fcb->extents.Flink;
+            
+            while (le != &fileref->fcb->extents) {
+                extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+                
+                if (ext->data->type == EXTENT_TYPE_PREALLOC) {
+                    ext->data->type = EXTENT_TYPE_REGULAR;
+                    changed = TRUE;
+                }
+                
+                le = le->Flink;
+            }
+            
+            ExReleaseResourceLite(fileref->fcb->Header.Resource);
+            
+            if (changed) {
+                fileref->fcb->extents_changed = TRUE;
+                mark_fcb_dirty(fileref->fcb);
+            }
+            
+            fileref->fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
+        }
+        
 #ifdef DEBUG_FCB_REFCOUNTS
         oc = InterlockedIncrement(&fileref->fcb->open_count);
         ERR("fcb %p: open_count now %i\n", fileref->fcb, oc);
