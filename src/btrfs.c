@@ -830,6 +830,20 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
             break;
         }
+        
+#ifdef _MSC_VER // not in mingw yet
+        case FileFsSectorSizeInformation:
+        {
+            FILE_FS_SECTOR_SIZE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
+            
+            Status = FsRtlGetSectorSizeInformation(Vcb->Vpb->RealDevice, data);
+            
+            if (!NT_SUCCESS(Status))
+                ERR("FsRtlGetSectorSizeInformation returned %08x\n", Status);
+  
+            break;
+        }
+#endif
 
         default:
             Status = STATUS_INVALID_PARAMETER;
