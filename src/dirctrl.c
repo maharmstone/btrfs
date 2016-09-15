@@ -212,6 +212,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation ||
+        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation ||
         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileNamesInformation) {
         
         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, de->name, de->namelen);
@@ -378,8 +379,45 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
         }
 
         case FileIdFullDirectoryInformation:
-            FIXME("STUB: FileIdFullDirectoryInformation\n");
-            break;
+        {
+            FILE_ID_FULL_DIR_INFORMATION* fifdi = buf;
+            
+            TRACE("FileIdFullDirectoryInformation\n");
+            
+            needed = sizeof(FILE_ID_FULL_DIR_INFORMATION) - sizeof(WCHAR) + stringlen;
+            
+            if (needed > *len) {
+                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                return STATUS_BUFFER_OVERFLOW;
+            }
+            
+//             if (!buf)
+//                 return STATUS_INVALID_POINTER;
+            
+            fifdi->NextEntryOffset = 0;
+            fifdi->FileIndex = 0;
+            fifdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
+            fifdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
+            fifdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
+            fifdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
+            fifdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fifdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
+            fifdi->FileAttributes = atts;
+            fifdi->FileNameLength = stringlen;
+            fifdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
+            fifdi->FileId.QuadPart = inode;
+            
+            Status = RtlUTF8ToUnicodeN(fifdi->FileName, stringlen, &stringlen, de->name, de->namelen);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                return Status;
+            }
+            
+            *len -= needed;
+            
+            return STATUS_SUCCESS;
+        }
 
         case FileNamesInformation:
         {
