@@ -585,14 +585,14 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context->tree = is_tree;
     context->type = type;
     
-    stripestart = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
+    stripestart = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
     if (!stripestart) {
         ERR("out of memory\n");
         ExFreePool(context);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    stripeend = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
+    stripeend = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
     if (!stripeend) {
         ERR("out of memory\n");
         ExFreePool(stripestart);
@@ -886,7 +886,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
         
         pos = 0;
-        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
+        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -985,7 +985,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
         
         pos = 0;
-        stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
+        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
