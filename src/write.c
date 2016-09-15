@@ -1659,12 +1659,12 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         locklen = length;
     }
     
-    chunk_lock_range(c, lockaddr, locklen);
+    chunk_lock_range(Vcb, c, lockaddr, locklen);
     
     Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
-        chunk_unlock_range(c, lockaddr, locklen);
+        chunk_unlock_range(Vcb, c, lockaddr, locklen);
         free_write_data_stripes(wtc);
         ExFreePool(wtc);
         return Status;
@@ -1699,7 +1699,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         free_write_data_stripes(wtc);
     }
     
-    chunk_unlock_range(c, lockaddr, locklen);
+    chunk_unlock_range(Vcb, c, lockaddr, locklen);
 
     ExFreePool(wtc);
 

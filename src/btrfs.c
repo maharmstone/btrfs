@@ -2116,6 +2116,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
     ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
     ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
+    ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -3765,6 +3766,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->tree_data_lookaside, NULL, NULL, 0, sizeof(tree_data), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->traverse_ptr_lookaside, NULL, NULL, 0, sizeof(traverse_ptr), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->rollback_item_lookaside, NULL, NULL, 0, sizeof(rollback_item), ALLOC_TAG, 0);
+    ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
     Status = load_chunk_root(Vcb, Irp);
@@ -3991,6 +3993,7 @@ exit:
                 ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
                 ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
                 ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
+                ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
             }
                 
             if (Vcb->root_file)
@@ -4431,7 +4434,7 @@ BOOL is_file_name_valid(PUNICODE_STRING us) {
     return TRUE;
 }
 
-void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
+void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length) {
     LIST_ENTRY* le;
     BOOL locked;
     range_lock* rl;
@@ -4456,7 +4459,7 @@ void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
         }
         
         if (!locked) {
-            rl = ExAllocatePoolWithTag(NonPagedPool, sizeof(range_lock), ALLOC_TAG);
+            rl = ExAllocateFromNPagedLookasideList(&Vcb->range_lock_lookaside);
             if (!rl) {
                 ERR("out of memory\n");
                 KeReleaseSpinLock(&c->range_locks_spinlock, irql);
@@ -4480,7 +4483,7 @@ void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
     }
 }
 
-void chunk_unlock_range(chunk* c, UINT64 start, UINT64 length) {
+void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length) {
     KIRQL irql;
     LIST_ENTRY* le;
     
@@ -4492,7 +4495,7 @@ void chunk_unlock_range(chunk* c, UINT64 start, UINT64 length) {
         
         if (rl->start == start && rl->length == length) {
             RemoveEntryList(&rl->list_entry);
-            ExFreePool(rl);
+            ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, rl);
             break;
         }
         

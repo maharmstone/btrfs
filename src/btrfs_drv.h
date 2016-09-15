@@ -507,6 +507,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
     PAGED_LOOKASIDE_LIST rollback_item_lookaside;
+    NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -646,8 +647,8 @@ NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
 void mark_fileref_dirty(file_ref* fileref);
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);
-void chunk_lock_range(chunk* c, UINT64 start, UINT64 length);
-void chunk_unlock_range(chunk* c, UINT64 start, UINT64 length);
+void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
+void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

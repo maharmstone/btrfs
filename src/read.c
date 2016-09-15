@@ -1616,17 +1616,17 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         locklen = to_read;
                     }
                     
-                    chunk_lock_range(c, lockaddr, locklen);
+                    chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
-                        chunk_unlock_range(c, lockaddr, locklen);
+                        chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                         ExFreePool(buf);
                         goto exit;
                     }
                     
-                    chunk_unlock_range(c, lockaddr, locklen);
+                    chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
