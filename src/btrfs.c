@@ -3485,7 +3485,8 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     ULONG threadnum;
     thread_job* tj;
-    BOOL cleanup = Irp->Flags & IRP_CLOSE_OPERATION;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    BOOL cleanup = IrpSp->MajorFunction == IRP_MJ_CLEANUP;
     
     threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
     
@@ -3506,8 +3507,6 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     }
     
     if (cleanup) {
-        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-        
         tj->Irp = NULL;
         tj->flush = TRUE;
         tj->FileObject = IrpSp->FileObject;
