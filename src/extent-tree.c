@@ -1042,7 +1042,7 @@ static NTSTATUS populate_extent_refs_from_tree(device_extension* Vcb, UINT64 tre
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = read_data(Vcb, tree_address, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL);
+    Status = read_data(Vcb, tree_address, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned %08x\n", Status);
         ExFreePool(buf);

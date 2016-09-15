@@ -459,7 +459,7 @@ static void raid6_decode(UINT64 off, UINT32 skip, read_data_context* context, CH
     }
 }
 
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp) {
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -477,11 +477,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (Vcb->log_to_phys_loaded) {
-        chunk* c = get_chunk_from_address(Vcb, addr);
-        
         if (!c) {
-            ERR("get_chunk_from_address failed\n");
-            return STATUS_INTERNAL_ERROR;
+            c = get_chunk_from_address(Vcb, addr);
+            
+            if (!c) {
+                ERR("get_chunk_from_address failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
         }
         
         ci = c->chunk_item;
@@ -1560,7 +1562,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT32 to_read, read;
                     UINT8* buf;
                     UINT32 *csum, bumpoff = 0;
-                    UINT64 addr;
+                    UINT64 addr, lockaddr, locklen;
+                    chunk* c;
                     
                     read = len - off;
                     if (read > length) read = length;
@@ -1598,12 +1601,32 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     } else
                         csum = NULL;
                     
-                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("read_data returned %08x\n", Status);
+                    c = get_chunk_from_address(fcb->Vcb, addr);
+                    
+                    if (!c) {
+                        ERR("get_chunk_from_address(%llx) failed\n", addr);
                         ExFreePool(buf);
                         goto exit;
                     }
+                    
+                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+                        get_raid56_lock_range(c, addr, to_read, &lockaddr, &locklen);
+                    else {
+                        lockaddr = addr;
+                        locklen = to_read;
+                    }
+                    
+                    chunk_lock_range(c, lockaddr, locklen);
+                    
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_data returned %08x\n", Status);
+                        chunk_unlock_range(c, lockaddr, locklen);
+                        ExFreePool(buf);
+                        goto exit;
+                    }
+                    
+                    chunk_unlock_range(c, lockaddr, locklen);
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         RtlCopyMemory(data + bytes_read, buf + bumpoff, read);

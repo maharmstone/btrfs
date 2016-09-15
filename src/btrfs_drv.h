@@ -343,6 +343,7 @@ typedef struct {
 typedef struct {
     UINT64 start;
     UINT64 length;
+    PETHREAD thread;
     LIST_ENTRY list_entry;
 } range_lock;
 
@@ -798,6 +799,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
 NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address);
+void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -850,7 +852,7 @@ void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk** pc, PIRP Irp);
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp);
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
 

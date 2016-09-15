@@ -1577,7 +1577,7 @@ end:
     return Status;
 }
 
-static void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
+void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, datastripes;
     UINT64 start = 0xffffffffffffffff, end = 0, logend;

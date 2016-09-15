@@ -4447,7 +4447,7 @@ void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
         while (le != &c->range_locks) {
             rl = CONTAINING_RECORD(le, range_lock, list_entry);
             
-            if (rl->start < start + length && rl->start + rl->length > start) {
+            if (rl->start < start + length && rl->start + rl->length > start && rl->thread != PsGetCurrentThread()) {
                 locked = TRUE;
                 break;
             }
@@ -4465,6 +4465,7 @@ void chunk_lock_range(chunk* c, UINT64 start, UINT64 length) {
             
             rl->start = start;
             rl->length = length;
+            rl->thread = PsGetCurrentThread();
             InsertTailList(&c->range_locks, &rl->list_entry);
             
             KeReleaseSpinLock(&c->range_locks_spinlock, irql);

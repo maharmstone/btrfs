@@ -36,7 +36,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, &c, Irp);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, &c, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned 0x%08x\n", Status);
         ExFreePool(buf);
