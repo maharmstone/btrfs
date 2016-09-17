@@ -159,6 +159,7 @@ typedef struct _fcb {
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
     ANSI_STRING ea_xattr;
+    ULONG ealen;
     LIST_ENTRY hardlinks;
     struct _file_ref* fileref;
     

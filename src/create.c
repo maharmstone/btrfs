@@ -1229,6 +1229,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
+    fcb->ealen = 0;
+    
     if (get_xattr(Vcb, subvol, inode, EA_EA, EA_EA_HASH, &eadata, &ealen, Irp)) {
         ULONG offset;
         
@@ -1238,8 +1240,22 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
             ExFreePool(eadata);
         } else {
+            FILE_FULL_EA_INFORMATION* eainfo;
             fcb->ea_xattr.Buffer = (char*)eadata;
             fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
+            
+            fcb->ealen = 4;
+            
+            // calculate ealen
+            eainfo = (FILE_FULL_EA_INFORMATION*)eadata;
+            do {
+                fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+                
+                if (eainfo->NextEntryOffset == 0)
+                    break;
+                
+                eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+            } while (TRUE);
         }
     }
     
@@ -2173,6 +2189,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (ea && ealen > 0) {
         FILE_FULL_EA_INFORMATION* eainfo;
         
+        fcb->ealen = 4;
+        
         // capitalize EA names
         eainfo = ea;
         do {
@@ -2182,6 +2200,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
             s.Buffer = eainfo->EaName;
             
             RtlUpperString(&s, &s);
+            
+            fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
             
             if (eainfo->NextEntryOffset == 0)
                 break;
@@ -3421,6 +3441,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     goto exit;
                 }
                 
+                fileref->fcb->ealen = 4;
+                
                 // capitalize EA name
                 eainfo = Irp->AssociatedIrp.SystemBuffer;
                 do {
@@ -3430,6 +3452,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     s.Buffer = eainfo->EaName;
                     
                     RtlUpperString(&s, &s);
+                    
+                    fileref->fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
                     
                     if (eainfo->NextEntryOffset == 0)
                         break;
@@ -3460,6 +3484,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = 0;
                     
                     fileref->fcb->ea_changed = TRUE;
+                    fileref->fcb->ealen = 0;
                 }
             }
             

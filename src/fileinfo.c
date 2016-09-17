@@ -2699,7 +2699,13 @@ static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fc
     *length -= sizeof(FILE_EA_INFORMATION);
     
     // FIXME - should this be the reparse tag for symlinks?
-    eai->EaSize = fcb->ea_xattr.Length;
+    
+    /* This value appears to be the size of the structure NTFS stores on disk, and not,
+     * as might be expected, the size of FILE_FULL_EA_INFORMATION (which is what we store).
+     * The formula is 4 bytes as a header, followed by 5 + NameLength + ValueLength for each
+     * item. */
+    
+    eai->EaSize = fcb->ealen;
     
     return STATUS_SUCCESS;
 }
