@@ -1981,7 +1981,8 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options, file_ref** pfr, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options,
+                                     FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -2152,6 +2153,24 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     fcb->sd_dirty = TRUE;
+    
+    if (ea && ealen > 0) {
+        fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, ealen, ALLOC_TAG);
+        if (!fcb->ea_xattr.Buffer) {
+            ERR("out of memory\n");
+        
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(fcb);
+            ExReleaseResource(&Vcb->fcb_lock);
+            
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
+        RtlCopyMemory(fcb->ea_xattr.Buffer, ea, ealen);
+        
+        fcb->ea_changed = TRUE;
+    }
     
     hl = ExAllocatePoolWithTag(pool_type, sizeof(hardlink), ALLOC_TAG);
     if (!hl) {
@@ -2328,7 +2347,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         
         RtlCopyMemory(fpus2.Buffer, fpus->Buffer, fpus2.Length);
         
-        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, &newpar, rollback);
+        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, rollback);
     
         if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08x\n", Status);
@@ -2630,7 +2649,18 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             goto end;
         }
         
-        Status = file_create2(Irp, Vcb, &fpus, parfileref, options, &fileref, rollback);
+        if (Irp->AssociatedIrp.SystemBuffer && IrpSp->Parameters.Create.EaLength > 0) {
+            ULONG offset;
+            
+            Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
+            if (!NT_SUCCESS(Status)) {
+                ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                goto end;
+            }
+        }
+        
+        Status = file_create2(Irp, Vcb, &fpus, parfileref, options, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength,
+                              &fileref, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08x\n", Status);

@@ -3658,6 +3658,19 @@ void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
         fcb->reparse_xattr_changed = FALSE;
     }
     
+    if (fcb->ea_changed) {
+        if (fcb->ea_xattr.Buffer && fcb->ea_xattr.Length > 0) {
+            Status = set_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp, rollback);
+        
+        fcb->ea_changed = FALSE;
+    }
+    
 end:
     fcb->dirty = FALSE;
     
