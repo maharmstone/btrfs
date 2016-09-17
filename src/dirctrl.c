@@ -37,10 +37,12 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     ULONG tag = 0, br;
     NTSTATUS Status;
     
-    // FIXME - will this slow things down?
-    
-    if (type == BTRFS_TYPE_SYMLINK)
-        return IO_REPARSE_TAG_SYMLINK;
+    if (type == BTRFS_TYPE_SYMLINK) {
+        if (called_from_lxss())
+            return IO_REPARSE_TAG_LXSS_SYMLINK;
+        else
+            return IO_REPARSE_TAG_SYMLINK;
+    }
     
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)
         return 0;

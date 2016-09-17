@@ -71,6 +71,8 @@
 
 #define READ_AHEAD_GRANULARITY COMPRESSED_EXTENT_SIZE // really ought to be a multiple of COMPRESSED_EXTENT_SIZE
 
+#define IO_REPARSE_TAG_LXSS_SYMLINK 0xa000001d // undocumented?
+
 #ifdef _MSC_VER
 #define try __try
 #define except __except
@@ -1060,6 +1062,18 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 
 #ifndef S_IXOTH
 #define S_IXOTH (S_IXGRP >> 3)
+#endif
+
+// LXSS programs can be distinguished by the fact they have a NULL PEB.
+#ifdef _AMD64_
+    static __inline BOOL called_from_lxss() {
+        UINT8* proc = (UINT8*)PsGetCurrentProcess();
+        ULONG_PTR* peb = (ULONG_PTR*)&proc[0x3f8];
+        
+        return !*peb;
+    }
+#else
+#define called_from_lxss() FALSE
 #endif
 
 #endif
