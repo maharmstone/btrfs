@@ -4336,10 +4336,31 @@ exit:
     return Status;
 }
 
+typedef struct {
+    ANSI_STRING name;
+    ANSI_STRING value;
+    UCHAR flags;
+    LIST_ENTRY list_entry;
+} ea_item;
+
 NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    NTSTATUS Status;
     BOOL top_level;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb;
+    ccb* ccb;
+    FILE_FULL_EA_INFORMATION* ffei;
+    ULONG offset;
+    LIST_ENTRY ealist;
+    ea_item* item;
+    FILE_FULL_EA_INFORMATION* ea;
+    LIST_ENTRY* le;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     FsRtlEnterFileSystem();
 
@@ -4350,18 +4371,249 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
-    FIXME("STUB: set ea\n");
-    Status = STATUS_NOT_IMPLEMENTED;
+    // FIXME - check permissions
     
-    if (Vcb->readonly)
+    if (Vcb->readonly) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
+        goto end;
+    }
     
-    // FIXME - return STATUS_ACCESS_DENIED if subvol readonly
+    ffei = map_user_buffer(Irp);
+    if (!ffei) {
+        ERR("could not get output buffer\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
     
+    Status = IoCheckEaBufferValidity(ffei, IrpSp->Parameters.SetEa.Length, &offset);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+        goto end;
+    }
+    
+    if (!FileObject) {
+        ERR("no file object\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("no fcb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb) {
+        ERR("no ccb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    InitializeListHead(&ealist);
+    
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    if (fcb->ea_xattr.Length > 0) {
+        ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
+        
+        do {
+            item = ExAllocatePoolWithTag(PagedPool, sizeof(ea_item), ALLOC_TAG);
+            if (!item) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end2;
+            }
+            
+            item->name.Length = item->name.MaximumLength = ea->EaNameLength;
+            item->name.Buffer = ea->EaName;
+            
+            item->value.Length = item->value.MaximumLength = ea->EaValueLength;
+            item->value.Buffer = &ea->EaName[ea->EaNameLength + 1];
+            
+            item->flags = ea->Flags;
+            
+            InsertTailList(&ealist, &item->list_entry);
+            
+            if (ea->NextEntryOffset == 0)
+                break;
+            
+            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+        } while (TRUE);
+    }
+    
+    ea = ffei;
+    
+    do {
+        STRING s;
+        BOOL found = FALSE;
+        
+        s.Length = s.MaximumLength = ea->EaNameLength;
+        s.Buffer = ea->EaName;
+        
+        RtlUpperString(&s, &s);
+        
+        le = ealist.Flink;
+        while (le != &ealist) {
+            item = CONTAINING_RECORD(le, ea_item, list_entry);
+            
+            if (item->name.Length == s.Length &&
+                RtlCompareMemory(item->name.Buffer, s.Buffer, s.Length) == s.Length) {
+                item->flags = ea->Flags;
+                item->value.Length = item->value.MaximumLength = ea->EaValueLength;
+                item->value.Buffer = &ea->EaName[ea->EaNameLength + 1];
+                found = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!found) {
+            item = ExAllocatePoolWithTag(PagedPool, sizeof(ea_item), ALLOC_TAG);
+            if (!item) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end2;
+            }
+            
+            item->name.Length = item->name.MaximumLength = ea->EaNameLength;
+            item->name.Buffer = ea->EaName;
+            
+            item->value.Length = item->value.MaximumLength = ea->EaValueLength;
+            item->value.Buffer = &ea->EaName[ea->EaNameLength + 1];
+            
+            item->flags = ea->Flags;
+            
+            InsertTailList(&ealist, &item->list_entry);
+        }
+        
+        if (ea->NextEntryOffset == 0)
+            break;
+        
+        ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+    } while (TRUE);
+    
+    // remove entries with zero-length value
+    le = ealist.Flink;
+    while (le != &ealist) {
+        LIST_ENTRY* le2 = le->Flink;
+        
+        item = CONTAINING_RECORD(le, ea_item, list_entry);
+        
+        if (item->value.Length == 0) {
+            RemoveEntryList(&item->list_entry);
+            ExFreePool(item);
+        }
+        
+        le = le2;
+    }
+    
+    if (IsListEmpty(&ealist)) {
+        fcb->ealen = 0;
+        
+        if (fcb->ea_xattr.Buffer)
+            ExFreePool(fcb->ea_xattr.Buffer);
+        
+        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = 0;
+        fcb->ea_xattr.Buffer = NULL;
+    } else {
+        ULONG size = 0;
+        char *buf, *oldbuf;
+        
+        le = ealist.Flink;
+        while (le != &ealist) {
+            item = CONTAINING_RECORD(le, ea_item, list_entry);
+            
+            if (size % 4 > 0)
+                size += 4 - (size % 4);
+            
+            size += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + item->name.Length + 1 + item->value.Length;
+            
+            le = le->Flink;
+        }
+        
+        buf = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end2;
+        }
+        
+        oldbuf = fcb->ea_xattr.Buffer;
+        
+        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = size;
+        fcb->ea_xattr.Buffer = buf;
+        
+        fcb->ealen = 4;
+        ea = NULL;
+        
+        le = ealist.Flink;
+        while (le != &ealist) {
+            item = CONTAINING_RECORD(le, ea_item, list_entry);
+            
+            if (ea) {
+                ea->NextEntryOffset = offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + ea->EaValueLength;
+                
+                if (ea->NextEntryOffset % 4 > 0)
+                    ea->NextEntryOffset += 4 - (ea->NextEntryOffset % 4);
+                
+                ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+            } else
+                ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
+            
+            ea->NextEntryOffset = 0;
+            ea->Flags = item->flags;
+            ea->EaNameLength = item->name.Length;
+            ea->EaValueLength = item->value.Length;
+            
+            RtlCopyMemory(ea->EaName, item->name.Buffer, item->name.Length);
+            ea->EaName[item->name.Length] = 0;
+            RtlCopyMemory(&ea->EaName[item->name.Length + 1], item->value.Buffer, item->value.Length);
+            
+            fcb->ealen += 5 + item->name.Length + item->value.Length;
+            
+            le = le->Flink;
+        }
+        
+        if (oldbuf)
+            ExFreePool(oldbuf);
+    }
+    
+    fcb->ea_changed = TRUE;
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.sequence++;
+    fcb->inode_item.st_ctime = now;
+    
+    mark_fcb_dirty(fcb);
+    
+    send_notification_fileref(ccb->fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED);
+    
+    Status = STATUS_SUCCESS;
+    
+end2:
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+    while (!IsListEmpty(&ealist)) {
+        le = RemoveHeadList(&ealist);
+        
+        item = CONTAINING_RECORD(le, ea_item, list_entry);
+        
+        ExFreePool(item);
+    }
+    
+end:
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
 
-    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
 exit:
     if (top_level) 
