@@ -231,6 +231,7 @@ typedef struct _ccb {
     ACCESS_MASK access;
     file_ref* fileref;
     UNICODE_STRING filename;
+    ULONG ea_index;
 } ccb;
 
 // typedef struct _log_to_phys {

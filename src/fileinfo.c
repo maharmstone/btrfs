@@ -4120,6 +4120,14 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb;
+    ccb* ccb;
+    FILE_FULL_EA_INFORMATION* ffei;
+    ULONG retlen = 0;
+    
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     FsRtlEnterFileSystem();
 
@@ -4130,11 +4138,115 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
-    FIXME("STUB: query ea\n");
-    Status = STATUS_NOT_IMPLEMENTED;
+    ffei = map_user_buffer(Irp);
+    if (!ffei) {
+        ERR("could not get output buffer\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
     
+    if (!FileObject) {
+        ERR("no file object\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb) {
+        ERR("no fcb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb) {
+        ERR("no ccb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    
+    if (fcb->ea_xattr.Length == 0)
+        goto end2;
+    
+    if (IrpSp->Parameters.QueryEa.EaList) {
+        // FIXME - look through list
+    } else {
+        FILE_FULL_EA_INFORMATION *ea, *out;
+        ULONG index;
+        
+        if (IrpSp->Flags & SL_INDEX_SPECIFIED) {
+            // The index is 1-based
+            if (IrpSp->Parameters.QueryEa.EaIndex == 0) {
+                Status = STATUS_NONEXISTENT_EA_ENTRY;
+                goto end;
+            } else
+                index = IrpSp->Parameters.QueryEa.EaIndex - 1;
+        } else if (IrpSp->Flags & SL_RESTART_SCAN)
+            index = ccb->ea_index = 0;
+        else
+            index = ccb->ea_index;
+        
+        ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
+        
+        if (index > 0) {
+            ULONG i;
+            
+            for (i = 0; i < index; i++) {
+                if (ea->NextEntryOffset == 0) // last item
+                    goto end2;
+                
+                ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+            }
+        }
+        
+        out = NULL;
+        
+        do {
+            UINT8 padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
+            
+            if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
+                Status = retlen == 0 ? STATUS_BUFFER_TOO_SMALL : STATUS_BUFFER_OVERFLOW;
+                goto end2;
+            }
+            
+            retlen += padding;
+        
+            if (out) {
+                out->NextEntryOffset = offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
+                out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
+            } else
+                out = ffei;
+                
+            out->NextEntryOffset = 0;
+            out->Flags = ea->Flags;
+            out->EaNameLength = ea->EaNameLength;
+            out->EaValueLength = ea->EaValueLength;
+            RtlCopyMemory(out->EaName, ea->EaName, ea->EaNameLength + ea->EaValueLength + 1);
+            
+            retlen += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
+            
+            if (!(IrpSp->Flags & SL_INDEX_SPECIFIED))
+                ccb->ea_index++;
+            
+            if (ea->NextEntryOffset == 0 || IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
+                break;
+            
+            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+        } while (TRUE);
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end2:
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+end:
     Irp->IoStatus.Status = Status;
-    Irp->IoStatus.Information = 0;
+    Irp->IoStatus.Information = NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW ? retlen : 0;
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
 
