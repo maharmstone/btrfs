@@ -3392,6 +3392,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             
             if (Irp->AssociatedIrp.SystemBuffer && Stack->Parameters.Create.EaLength > 0) {
                 ULONG offset;
+                FILE_FULL_EA_INFORMATION* eainfo;
                 
                 Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
                 if (!NT_SUCCESS(Status)) {
@@ -3401,6 +3402,22 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     ExReleaseResource(&Vcb->fcb_lock);
                     goto exit;
                 }
+                
+                // capitalize EA name
+                eainfo = Irp->AssociatedIrp.SystemBuffer;
+                do {
+                    STRING s;
+                    
+                    s.Length = s.MaximumLength = eainfo->EaNameLength;
+                    s.Buffer = eainfo->EaName;
+                    
+                    RtlUpperString(&s, &s);
+                    
+                    if (eainfo->NextEntryOffset == 0)
+                        break;
+                    
+                    eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                } while (TRUE);
                 
                 if (fileref->fcb->ea_xattr.Buffer)
                     ExFreePool(fileref->fcb->ea_xattr.Buffer);
