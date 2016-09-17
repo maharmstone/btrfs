@@ -773,6 +773,8 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             
             if (!NT_SUCCESS(Status))
                 ERR("FsRtlGetSectorSizeInformation returned %08x\n", Status);
+            else
+                BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);
   
             break;
         }
