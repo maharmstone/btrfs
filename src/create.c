@@ -2171,6 +2171,24 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->sd_dirty = TRUE;
     
     if (ea && ealen > 0) {
+        FILE_FULL_EA_INFORMATION* eainfo;
+        
+        // capitalize EA names
+        eainfo = ea;
+        do {
+            STRING s;
+            
+            s.Length = s.MaximumLength = eainfo->EaNameLength;
+            s.Buffer = eainfo->EaName;
+            
+            RtlUpperString(&s, &s);
+            
+            if (eainfo->NextEntryOffset == 0)
+                break;
+            
+            eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+        } while (TRUE);
+        
         fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, ealen, ALLOC_TAG);
         if (!fcb->ea_xattr.Buffer) {
             ERR("out of memory\n");
