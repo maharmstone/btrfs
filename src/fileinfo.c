@@ -2695,11 +2695,11 @@ static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMAT
     return STATUS_SUCCESS;
 }  
     
-static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fcb* fcb, LONG* length) {
     *length -= sizeof(FILE_EA_INFORMATION);
     
     // FIXME - should this be the reparse tag for symlinks?
-    eai->EaSize = 0;
+    eai->EaSize = fcb->ea_xattr.Length;
     
     return STATUS_SUCCESS;
 }
@@ -3819,7 +3819,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 fill_in_file_internal_information(&fai->InternalInformation, fcb->inode, &length);
             
             if (length > 0)
-                fill_in_file_ea_information(&fai->EaInformation, &length);
+                fill_in_file_ea_information(&fai->EaInformation, fcb, &length);
             
             if (length > 0)
                 fill_in_file_access_information(&fai->AccessInformation, &length);
@@ -3903,7 +3903,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileEaInformation\n");
             
-            Status = fill_in_file_ea_information(eai, &length);
+            Status = fill_in_file_ea_information(eai, fcb, &length);
             
             break;
         }
