@@ -4371,8 +4371,6 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
-    // FIXME - check permissions
-    
     if (Vcb->readonly) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
         goto end;
@@ -4410,6 +4408,12 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (!ccb) {
         ERR("no ccb\n");
         Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_EA)) {
+        WARN("insufficient privileges\n");
+        Status = STATUS_ACCESS_DENIED;
         goto end;
     }
     
