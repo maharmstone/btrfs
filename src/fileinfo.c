@@ -4173,7 +4173,78 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end2;
     
     if (IrpSp->Parameters.QueryEa.EaList) {
-        // FIXME - look through list
+        FILE_FULL_EA_INFORMATION *ea, *out;
+        FILE_GET_EA_INFORMATION* in;
+        
+        in = IrpSp->Parameters.QueryEa.EaList;
+        do {
+            STRING s;
+            
+            s.Length = s.MaximumLength = in->EaNameLength;
+            s.Buffer = in->EaName;
+            
+            RtlUpperString(&s, &s);
+            
+            if (in->NextEntryOffset == 0)
+                break;
+            
+            in = (FILE_GET_EA_INFORMATION*)(((UINT8*)in) + in->NextEntryOffset);
+        } while (TRUE);
+        
+        ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
+        out = NULL;
+        
+        do {
+            BOOL found = FALSE;
+            
+            in = IrpSp->Parameters.QueryEa.EaList;
+            do {
+                if (in->EaNameLength == ea->EaNameLength &&
+                    RtlCompareMemory(in->EaName, ea->EaName, in->EaNameLength) == in->EaNameLength) {
+                    found = TRUE;
+                    break;
+                }
+                
+                if (in->NextEntryOffset == 0)
+                    break;
+            
+                in = (FILE_GET_EA_INFORMATION*)(((UINT8*)in) + in->NextEntryOffset);
+            } while (TRUE);
+            
+            if (found) {
+                UINT8 padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
+                
+                if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    retlen = 0;
+                    goto end2;
+                }
+                
+                retlen += padding;
+            
+                if (out) {
+                    out->NextEntryOffset = offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
+                    out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
+                } else
+                    out = ffei;
+                    
+                out->NextEntryOffset = 0;
+                out->Flags = ea->Flags;
+                out->EaNameLength = ea->EaNameLength;
+                out->EaValueLength = ea->EaValueLength;
+                RtlCopyMemory(out->EaName, ea->EaName, ea->EaNameLength + ea->EaValueLength + 1);
+                
+                retlen += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
+                
+                if (IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
+                    break;
+            }
+            
+            if (ea->NextEntryOffset == 0)
+                break;
+            
+            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+        } while (TRUE);
     } else {
         FILE_FULL_EA_INFORMATION *ea, *out;
         ULONG index;
