@@ -999,6 +999,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 case FileDirectoryInformation:
                 case FileIdBothDirectoryInformation:
                 case FileFullDirectoryInformation:
+                case FileIdFullDirectoryInformation:
                     length -= length % 8;
                     break;
                     
