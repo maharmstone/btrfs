@@ -17,6 +17,8 @@
 
 #include "btrfs_drv.h"
 
+#define IO_REPARSE_TAG_LXSS_SYMLINK 0xa000001d // undocumented?
+
 NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen) {
     USHORT subnamelen, printnamelen, i;
     ULONG stringlen;
@@ -129,7 +131,7 @@ end:
     return Status;
 }
 
-static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rdb, ULONG buflen, LIST_ENTRY* rollback) {
+static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rdb, ULONG buflen, BOOL write, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     ULONG minlen;
     ULONG tlength;
@@ -139,57 +141,62 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, REPARSE_DATA_BUFFER* rd
     BTRFS_TIME now;
     USHORT i;
     
-    minlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + sizeof(WCHAR);
-    if (buflen < minlen) {
-        WARN("buffer was less than minimum length (%u < %u)\n", buflen, minlen);
-        return STATUS_INVALID_PARAMETER;
+    if (write) {
+        minlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + sizeof(WCHAR);
+        if (buflen < minlen) {
+            WARN("buffer was less than minimum length (%u < %u)\n", buflen, minlen);
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        subname.Buffer = &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)];
+        subname.MaximumLength = subname.Length = rdb->SymbolicLinkReparseBuffer.SubstituteNameLength;
+        
+        TRACE("substitute name = %.*S\n", subname.Length / sizeof(WCHAR), subname.Buffer);
     }
-    
-    subname.Buffer = &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)];
-    subname.MaximumLength = subname.Length = rdb->SymbolicLinkReparseBuffer.SubstituteNameLength;
-    
-    TRACE("substitute name = %.*S\n", subname.Length / sizeof(WCHAR), subname.Buffer);
     
     fileref->fcb->type = BTRFS_TYPE_SYMLINK;
     
     fileref->fcb->inode_item.st_mode |= __S_IFLNK;
     
-    Status = truncate_file(fileref->fcb, 0, Irp, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("truncate_file returned %08x\n", Status);
-        return Status;
-    }
-    
-    Status = RtlUnicodeToUTF8N(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N 1 failed with error %08x\n", Status);
-        return Status;
-    }
-    
-    target.MaximumLength = target.Length;
-    target.Buffer = ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
-    if (!target.Buffer) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    Status = RtlUnicodeToUTF8N(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N 2 failed with error %08x\n", Status);
+    if (write) {
+        Status = truncate_file(fileref->fcb, 0, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("truncate_file returned %08x\n", Status);
+            return Status;
+        }
+        
+        Status = RtlUnicodeToUTF8N(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUnicodeToUTF8N 1 failed with error %08x\n", Status);
+            return Status;
+        }
+        
+        target.MaximumLength = target.Length;
+        target.Buffer = ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
+        if (!target.Buffer) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        Status = RtlUnicodeToUTF8N(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUnicodeToUTF8N 2 failed with error %08x\n", Status);
+            ExFreePool(target.Buffer);
+            return Status;
+        }
+        
+        for (i = 0; i < target.Length; i++) {
+            if (target.Buffer[i] == '\\')
+                target.Buffer[i] = '/';
+        }
+        
+        offset.QuadPart = 0;
+        tlength = target.Length;
+        Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, &tlength, FALSE, TRUE,
+                            TRUE, FALSE, rollback);
         ExFreePool(target.Buffer);
-        return Status;
-    }
-    
-    for (i = 0; i < target.Length; i++) {
-        if (target.Buffer[i] == '\\')
-            target.Buffer[i] = '/';
-    }
-    
-    offset.QuadPart = 0;
-    tlength = target.Length;
-    Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, &tlength, FALSE, TRUE,
-                         TRUE, FALSE, rollback);
-    ExFreePool(target.Buffer);
+    } else
+        Status = STATUS_SUCCESS;
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -276,8 +283,9 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     RtlCopyMemory(&tag, buffer, sizeof(ULONG));
     
-    if (fcb->type == BTRFS_TYPE_FILE && tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) {
-        Status = set_symlink(Irp, fileref, rdb, buflen, &rollback);
+    if (fcb->type == BTRFS_TYPE_FILE &&
+        ((tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) || tag == IO_REPARSE_TAG_LXSS_SYMLINK)) {
+        Status = set_symlink(Irp, fileref, rdb, buflen, tag == IO_REPARSE_TAG_SYMLINK, &rollback);
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {
         LARGE_INTEGER offset, time;
