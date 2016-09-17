@@ -17,8 +17,6 @@
 
 #include "btrfs_drv.h"
 
-#define IO_REPARSE_TAG_LXSS_SYMLINK 0xa000001d // undocumented?
-
 NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen) {
     USHORT subnamelen, printnamelen, i;
     ULONG stringlen;
@@ -34,70 +32,87 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
-        data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
-        if (!data) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
-        Status = read_file(fcb, (UINT8*)data, 0, fcb->inode_item.st_size, NULL, NULL);
-        
-        if (!NT_SUCCESS(Status)) {
-            ERR("read_file returned %08x\n", Status);
-            ExFreePool(data);
-            goto end;
-        }
-        
-        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, fcb->inode_item.st_size);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-            ExFreePool(data);
-            goto end;
-        }
-        
-        subnamelen = stringlen;
-        printnamelen = stringlen;
-        
-        reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
-        
-        if (buflen < reqlen) {
-            Status = STATUS_BUFFER_OVERFLOW;
-            goto end;
-        }
-        
-        rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-        rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
-        rdb->Reserved = 0;
-        
-        rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
-        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
-        rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
-        rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
-        rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
-        
-        Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                                stringlen, &stringlen, data, fcb->inode_item.st_size);
+        if (called_from_lxss()) {
+            reqlen = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(UINT32);
+            
+            if (buflen < reqlen) {
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto end;
+            }
+            
+            rdb->ReparseTag = IO_REPARSE_TAG_LXSS_SYMLINK;
+            rdb->ReparseDataLength = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(UINT32);
+            rdb->Reserved = 0;
+            
+            *((UINT32*)rdb->GenericReparseBuffer.DataBuffer) = 1;
+            
+            *retlen = reqlen;
+        } else {
+            data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+            if (!data) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
+            Status = read_file(fcb, (UINT8*)data, 0, fcb->inode_item.st_size, NULL, NULL);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_file returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+            
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, fcb->inode_item.st_size);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+            
+            subnamelen = stringlen;
+            printnamelen = stringlen;
+            
+            reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
+            
+            if (buflen < reqlen) {
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto end;
+            }
+            
+            rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+            rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+            rdb->Reserved = 0;
+            
+            rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
+            rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
+            rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
+            rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
+            rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
+            
+            Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                                    stringlen, &stringlen, data, fcb->inode_item.st_size);
 
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+            
+            for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
+                if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
+                    rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
+            }
+            
+            RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
+                        &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+                        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
+            
+            *retlen = reqlen;
+            
             ExFreePool(data);
-            goto end;
         }
-        
-        for (i = 0; i < stringlen / sizeof(WCHAR); i++) {
-            if (rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] == '/')
-                rdb->SymbolicLinkReparseBuffer.PathBuffer[(rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)) + i] = '\\';
-        }
-        
-        RtlCopyMemory(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.PrintNameOffset / sizeof(WCHAR)],
-                    &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                    rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
-        
-        *retlen = reqlen;
-        
-        ExFreePool(data);
         
         Status = STATUS_SUCCESS;
     } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
