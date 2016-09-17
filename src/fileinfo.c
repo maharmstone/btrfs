@@ -4115,3 +4115,70 @@ exit:
     
     return Status;
 }
+
+NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    BOOL top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+
+    FsRtlEnterFileSystem();
+
+    top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
+    FIXME("STUB: query ea\n");
+    Status = STATUS_NOT_IMPLEMENTED;
+    
+    Irp->IoStatus.Status = Status;
+    Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+
+exit:
+    if (top_level) 
+        IoSetTopLevelIrp(NULL);
+    
+    FsRtlExitFileSystem();
+
+    return Status;
+}
+
+NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    BOOL top_level;
+
+    FsRtlEnterFileSystem();
+
+    top_level = is_top_level(Irp);
+    
+    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
+        Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    }
+    
+    FIXME("STUB: set ea\n");
+    Status = STATUS_NOT_IMPLEMENTED;
+    
+    if (Vcb->readonly)
+        Status = STATUS_MEDIA_WRITE_PROTECTED;
+    
+    // FIXME - return STATUS_ACCESS_DENIED if subvol readonly
+    
+    Irp->IoStatus.Status = Status;
+    Irp->IoStatus.Information = 0;
+
+    IoCompleteRequest( Irp, IO_NO_INCREMENT );
+    
+exit:
+    if (top_level) 
+        IoSetTopLevelIrp(NULL);
+    
+    FsRtlExitFileSystem();
+
+    return Status;
+}
