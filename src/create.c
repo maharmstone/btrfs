@@ -3374,6 +3374,44 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 }
             }
             
+            if (Irp->AssociatedIrp.SystemBuffer && Stack->Parameters.Create.EaLength > 0) {
+                ULONG offset;
+                
+                Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fileref(fileref);
+                    ExReleaseResource(&Vcb->fcb_lock);
+                    goto exit;
+                }
+                
+                if (fileref->fcb->ea_xattr.Buffer)
+                    ExFreePool(fileref->fcb->ea_xattr.Buffer);
+                
+                fileref->fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, Stack->Parameters.Create.EaLength, ALLOC_TAG);
+                if (!fileref->fcb->ea_xattr.Buffer) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fileref(fileref);
+                    ExReleaseResource(&Vcb->fcb_lock);
+                    goto exit;
+                }
+                
+                fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = Stack->Parameters.Create.EaLength;
+                RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength);
+            } else {
+                if (fileref->fcb->ea_xattr.Length > 0) {
+                    ExFreePool(fileref->fcb->ea_xattr.Buffer);
+                    fileref->fcb->ea_xattr.Buffer = NULL;
+                    fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = 0;
+                    
+                    fileref->fcb->ea_changed = TRUE;
+                }
+            }
+            
             filter = FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
             
             mark_fcb_dirty(fileref->fcb);
