@@ -1140,6 +1140,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     NTSTATUS Status;
     fcb* fcb;
     BOOL b;
+    UINT8* eadata;
+    UINT16 ealen;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1224,6 +1226,20 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen, Irp)) {
             fcb->reparse_xattr.Buffer = (char*)xattrdata;
             fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
+        }
+    }
+    
+    if (get_xattr(Vcb, subvol, inode, EA_EA, EA_EA_HASH, &eadata, &ealen, Irp)) {
+        ULONG offset;
+        
+        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, ealen, &offset);
+        
+        if (!NT_SUCCESS(Status)) {
+            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+            ExFreePool(eadata);
+        } else {
+            fcb->ea_xattr.Buffer = (char*)eadata;
+            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
         }
     }
     
