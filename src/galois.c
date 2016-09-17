@@ -94,7 +94,7 @@ UINT8 gdiv(UINT8 a, UINT8 b) {
 // "The mathematics of RAID-6", by H. Peter Anvin.
 // https://www.kernel.org/pub/linux/kernel/people/hpa/raid6.pdf
 
-#ifdef __x86_64__
+#ifdef _AMD64_
 static UINT64 __inline galois_double_mask64(UINT64 v) {
     v &= 0x8080808080808080;
     return (v << 1) - (v >> 7);
@@ -109,7 +109,7 @@ static UINT32 __inline galois_double_mask32(UINT32 v) {
 void galois_double(UINT8* data, UINT32 len) {
     // FIXME - SIMD?
     
-#ifdef __x86_64__
+#ifdef _AMD64_
     while (len > sizeof(UINT64)) {
         UINT64 v = *((UINT64*)data), vv;
         
