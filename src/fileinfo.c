@@ -4173,6 +4173,12 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
     
+    if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_READ_EA | FILE_WRITE_EA))) {
+        WARN("insufficient privileges\n");
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
     if (fcb->ea_xattr.Length == 0)
