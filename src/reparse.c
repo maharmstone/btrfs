@@ -240,7 +240,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     // It isn't documented what permissions FSCTL_SET_REPARSE_POINT needs, but CreateSymbolicLinkW
     // creates a file with FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE.
-    if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_ATTRIBUTES)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
