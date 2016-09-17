@@ -63,6 +63,8 @@
 #define EA_REPARSE "system.reparse"
 #define EA_REPARSE_HASH 0x786f6167
 
+#define EA_EA "user.EA"
+
 #define MAX_EXTENT_SIZE 0x8000000 // 128 MB
 #define COMPRESSED_EXTENT_SIZE 0x20000 // 128 KB
 
@@ -155,6 +157,7 @@ typedef struct _fcb {
     LIST_ENTRY extents;
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
+    ANSI_STRING ea_xattr;
     LIST_ENTRY hardlinks;
     struct _file_ref* fileref;
     
@@ -166,6 +169,7 @@ typedef struct _fcb {
     BOOL atts_changed, atts_deleted;
     BOOL extents_changed;
     BOOL reparse_xattr_changed;
+    BOOL ea_changed;
     BOOL created;
     
     BOOL ads;

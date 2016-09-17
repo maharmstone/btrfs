@@ -562,6 +562,23 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         
         RtlCopyMemory(fcb->reparse_xattr.Buffer, oldfcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
     }
+    
+    if (oldfcb->ea_xattr.Buffer && oldfcb->ea_xattr.Length > 0) {
+        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = oldfcb->ea_xattr.Length;
+        
+        fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->ea_xattr.MaximumLength, ALLOC_TAG);
+        if (!fcb->ea_xattr.Buffer) {
+            ERR("out of memory\n");
+            
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(fcb);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+            
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(fcb->ea_xattr.Buffer, oldfcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
+    }
 
 end:
     *pfcb = fcb;
@@ -1108,6 +1125,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->dummyfcb->atts_deleted = me->fileref->fcb->atts_deleted;
                     me->dummyfcb->extents_changed = me->fileref->fcb->extents_changed;
                     me->dummyfcb->reparse_xattr_changed = me->fileref->fcb->reparse_xattr_changed;
+                    me->dummyfcb->ea_changed = me->fileref->fcb->ea_changed;
                 }
                 
                 me->dummyfcb->created = me->fileref->fcb->created;
@@ -1131,6 +1149,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->fcb->atts_changed = defda != me->fileref->fcb->atts;
                     me->fileref->fcb->extents_changed = !IsListEmpty(&me->fileref->fcb->extents);
                     me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
+                    me->fileref->fcb->ea_changed = !!me->fileref->fcb->ea_xattr.Buffer;
                     
                     le2 = me->fileref->fcb->extents.Flink;
                     while (le2 != &me->fileref->fcb->extents) {

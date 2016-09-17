@@ -1830,6 +1830,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     if (fcb->reparse_xattr.Buffer)
         ExFreePool(fcb->reparse_xattr.Buffer);
     
+    if (fcb->ea_xattr.Buffer)
+        ExFreePool(fcb->ea_xattr.Buffer);
+    
     if (fcb->adsdata.Buffer)
         ExFreePool(fcb->adsdata.Buffer);
     
