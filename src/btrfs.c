@@ -2265,8 +2265,6 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         }
         
         if (oc == 0) {
-            BOOL queued = FALSE;
-            
             if (!Vcb->removing) {
                 LIST_ENTRY rollback;
         
@@ -2288,29 +2286,26 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                     clear_rollback(Vcb, &rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
-                    if (!add_thread_job(Vcb, Irp)) {
-                        IO_STATUS_BLOCK iosb;
-                        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
-                        
-                        if (!NT_SUCCESS(iosb.Status)) {
-                            ERR("CcFlushCache returned %08x\n", iosb.Status);
-                        }
+                    IO_STATUS_BLOCK iosb;
+                    CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+                    
+                    if (!NT_SUCCESS(iosb.Status)) {
+                        ERR("CcFlushCache returned %08x\n", iosb.Status);
+                    }
 
-                        if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
-                            ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
-                            ExReleaseResourceLite(fcb->Header.PagingIoResource);
-                        }
+                    if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
+                        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
+                        ExReleaseResourceLite(fcb->Header.PagingIoResource);
+                    }
 
-                        CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
-                        
-                        TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
-                            FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
-                    } else
-                        queued = TRUE;
+                    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                    
+                    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
+                        FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 }
             }
             
-            if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb && !queued)
+            if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
                 CcUninitializeCacheMap(FileObject, NULL, NULL);
         }
         
@@ -3445,8 +3440,6 @@ static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     ULONG threadnum;
     thread_job* tj;
-    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    BOOL cleanup = IrpSp->MajorFunction == IRP_MJ_CLEANUP;
     
     threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
     
@@ -3458,24 +3451,13 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     
     tj = ExAllocatePoolWithTag(NonPagedPool, sizeof(thread_job), ALLOC_TAG);
     if (!tj) {
-        if (!cleanup) {
-            Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
-            Irp->IoStatus.Information = 0;
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        }
+        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+        Irp->IoStatus.Information = 0;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return FALSE;
     }
     
-    if (cleanup) {
-        tj->Irp = NULL;
-        tj->flush = TRUE;
-        tj->FileObject = IrpSp->FileObject;
-        
-        ObReferenceObject(tj->FileObject);
-    } else {
-        tj->Irp = Irp;
-        tj->flush = FALSE;
-    }
+    tj->Irp = Irp;
     
     InterlockedIncrement(&Vcb->threads.pending_jobs);
     

@@ -64,31 +64,11 @@ void do_write_job(device_extension* Vcb, PIRP Irp) {
     TRACE("returning %08x\n", Status);
 }
 
-static void do_flush_job(PFILE_OBJECT FileObject) {
-    IO_STATUS_BLOCK iosb;
-    fcb* fcb = FileObject->FsContext;
-    
-    CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
-    
-    if (!NT_SUCCESS(iosb.Status)) {
-        ERR("CcFlushCache returned %08x\n", iosb.Status);
-    }
-
-    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
-    
-    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
-        FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
-    
-    ObDereferenceObject(FileObject);
-}
-
 static void do_job(drv_thread* thread, LIST_ENTRY* le) {
     thread_job* tj = CONTAINING_RECORD(le, thread_job, list_entry);
     PIO_STACK_LOCATION IrpSp = tj->Irp ? IoGetCurrentIrpStackLocation(tj->Irp) : NULL;
     
-    if (tj->flush) {
-        do_flush_job(tj->FileObject);
-    } else if (IrpSp->MajorFunction == IRP_MJ_READ) {
+    if (IrpSp->MajorFunction == IRP_MJ_READ) {
         do_read_job(tj->Irp);
     } else if (IrpSp->MajorFunction == IRP_MJ_WRITE) {
         do_write_job(thread->DeviceObject->DeviceExtension, tj->Irp);
