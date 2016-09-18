@@ -2804,6 +2804,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                 Vcb->devices[Vcb->devices_loaded].devitem.device_uuid = *uuid;
                 Vcb->devices[Vcb->devices_loaded].readonly = v->seeding;
+                Vcb->devices[Vcb->devices_loaded].removable = FALSE;
                 Vcb->devices_loaded++;
                 
                 return &Vcb->devices[Vcb->devices_loaded - 1];
