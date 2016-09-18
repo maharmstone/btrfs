@@ -469,7 +469,8 @@ end:
 }
 
 static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
-                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8, PIRP Irp) {
+                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8,
+                                                    BOOL case_sensitive, PIRP Irp) {
     DIR_ITEM* di;
     KEY searchkey;
     traverse_ptr tp;
@@ -534,7 +535,7 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
                         us.Buffer = utf16;
                         us.Length = us.MaximumLength = (USHORT)stringlen;
                         
-                        if (FsRtlAreNamesEqual(filename, &us, TRUE, NULL)) {
+                        if (FsRtlAreNamesEqual(filename, &us, !case_sensitive, NULL)) {
                             UINT64 index;
                             
                             if (di->key.obj_type == TYPE_ROOT_ITEM) {
@@ -623,7 +624,7 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
                                     file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
                                     
                                     if (fr2->index == index) {
-                                        if (fr2->deleted || !FsRtlAreNamesEqual(&fr2->filepart, filename, TRUE, NULL)) {
+                                        if (fr2->deleted || !FsRtlAreNamesEqual(&fr2->filepart, filename, !case_sensitive, NULL)) {
                                             goto byindex;
                                         }
                                         break;
@@ -650,6 +651,9 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
             }
         }
     }
+    
+    if (case_sensitive)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
     
 byindex:
     Status = find_file_in_dir_index(fr, filename, subvol, inode, type, pindex, utf8, Irp);
@@ -743,7 +747,8 @@ file_ref* create_fileref() {
 }
 
 NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
-                                  root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8, PIRP Irp) {
+                                  root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8,
+                                  BOOL case_sensitive, PIRP Irp) {
     char* fn;
     UINT32 crc32;
     ULONG utf8len;
@@ -773,7 +778,7 @@ NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filenam
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
     TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
     
-    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8, Irp);
+    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8, case_sensitive, Irp);
 }
 
 static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr, PIRP Irp) {
@@ -1656,7 +1661,8 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset, POOL_TYPE pooltype, PIRP Irp) {
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset,
+                      POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     ULONG i, num_parts;
@@ -1850,7 +1856,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 UINT8 type;
                 ANSI_STRING utf8;
                 
-                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8, Irp);
+                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8, case_sensitive, Irp);
                 if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
@@ -2361,7 +2367,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 }
 
 static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
-                              PIRP Irp, ULONG options, POOL_TYPE pool_type, LIST_ENTRY* rollback) {
+                              PIRP Irp, ULONG options, POOL_TYPE pool_type, BOOL case_sensitive, LIST_ENTRY* rollback) {
     file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
     static char xapref[] = "user.";
@@ -2382,7 +2388,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     parfileref = *pparfileref;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, Irp);
+    Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, case_sensitive, Irp);
     ExReleaseResource(&Vcb->fcb_lock);
     
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
@@ -2621,7 +2627,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         related = NULL;
     
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL, pool_type, Irp);
+    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
     ExReleaseResource(&Vcb->fcb_lock);
     
     if (!NT_SUCCESS(Status))
@@ -2692,7 +2698,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     }
     
     if (stream.Length > 0) {
-        Status = create_stream(Vcb, &fileref, &parfileref, &fpus, &stream, Irp, options, pool_type, rollback);
+        Status = create_stream(Vcb, &fileref, &parfileref, &fpus, &stream, Irp, options, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("create_stream returned %08x\n", Status);
             goto end;
@@ -3165,7 +3171,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset, pool_type, Irp);
+        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset,
+                              pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
         ExReleaseResource(&Vcb->fcb_lock);
     }
     

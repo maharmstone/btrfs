@@ -887,7 +887,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             ExFreePool(us.Buffer);
         
         if (!found) {
-            Status = find_file_in_dir(fcb->Vcb, &ccb->query_string, fileref, &found_subvol, &found_inode, &found_type, &found_index, &utf8, Irp);
+            Status = find_file_in_dir(fcb->Vcb, &ccb->query_string, fileref, &found_subvol, &found_inode, &found_type, &found_index, &utf8, FALSE, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 Status = STATUS_NO_SUCH_FILE;
