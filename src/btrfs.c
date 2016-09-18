@@ -4292,6 +4292,23 @@ static NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PI
     
     TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
     
+    if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_MOUNTDEV_QUERY_STABLE_GUID) {
+        MOUNTDEV_STABLE_GUID* msg = Irp->UserBuffer;
+        TRACE("IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
+        
+        if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_STABLE_GUID)) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        RtlCopyMemory(&msg->StableGuid, &Vcb->superblock.uuid, sizeof(GUID));
+        
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
+        
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
     if (!FileObject) {
         ERR("FileObject was NULL\n");
         Status = STATUS_INVALID_PARAMETER;
