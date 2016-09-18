@@ -2207,7 +2207,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         ned->type = ed->type;
                         ned2->address = ed2->address;
                         ned2->size = ed2->size;
-                        ned2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - ext->offset));
+                        ned2->offset = ed2->offset + (end_data - ext->offset);
                         ned2->num_bytes = ed2->num_bytes - (end_data - ext->offset);
 
                         newext->offset = end_data;
@@ -2251,7 +2251,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         ned->type = ed->type;
                         ned2->address = ed2->address;
                         ned2->size = ed2->size;
-                        ned2->offset = ed2->address == 0 ? 0 : ed2->offset;
+                        ned2->offset = ed2->offset;
                         ned2->num_bytes = start_data - ext->offset;
 
                         newext->offset = ext->offset;
@@ -2330,7 +2330,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         neda->type = ed->type;
                         neda2->address = ed2->address;
                         neda2->size = ed2->size;
-                        neda2->offset = ed2->address == 0 ? 0 : ed2->offset;
+                        neda2->offset = ed2->offset;
                         neda2->num_bytes = start_data - ext->offset;
 
                         nedb2 = (EXTENT_DATA2*)&nedb->data[0];
@@ -2343,7 +2343,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         nedb->type = ed->type;
                         nedb2->address = ed2->address;
                         nedb2->size = ed2->size;
-                        nedb2->offset = ed2->address == 0 ? 0 : (ed2->offset + (end_data - ext->offset));
+                        nedb2->offset = ed2->offset + (end_data - ext->offset);
                         nedb2->num_bytes = ext->offset + len - end_data;
                         
                         newext1->offset = ext->offset;
