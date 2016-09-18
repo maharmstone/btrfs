@@ -1036,6 +1036,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             t->header.address = t->new_address;
             t->header.generation = Vcb->superblock.generation;
             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
+            t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
             t->header.fs_uuid = Vcb->superblock.uuid;
             t->has_address = TRUE;
             
