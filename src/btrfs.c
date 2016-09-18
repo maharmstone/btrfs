@@ -2999,8 +2999,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                     
                     if (!c->devices) {
                         ERR("out of memory\n");
-                        ExFreePool(c);
                         ExFreePool(c->chunk_item);
+                        ExFreePool(c);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
@@ -3008,6 +3008,13 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                         c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
                         TRACE("device %llu = %p\n", i, c->devices[i]);
                         
+                        if (!c->devices[i]) {
+                            ERR("missing device\n");
+                            ExFreePool(c->chunk_item);
+                            ExFreePool(c);
+                            return STATUS_INTERNAL_ERROR;
+                        }
+                            
                         if (c->devices[i]->readonly)
                             c->readonly = TRUE;
                     }
