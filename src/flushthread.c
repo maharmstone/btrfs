@@ -46,6 +46,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } tree_write;
 
+static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback);
+
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
     
@@ -1786,6 +1788,17 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             le2 = le3;
         }
         
+        // This is usually done by update_chunks, but we have to check again in case any new chunks
+        // have been allocated since.
+        if (c->created) {
+            Status = create_chunk(Vcb, c, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("create_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&c->lock);
+                goto end;
+            }
+        }
+
         if (c->used != c->oldused) {
             searchkey.obj_id = c->offset;
             searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
