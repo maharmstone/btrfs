@@ -652,10 +652,10 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
         }
     }
     
+byindex:
     if (case_sensitive)
         return STATUS_OBJECT_NAME_NOT_FOUND;
     
-byindex:
     Status = find_file_in_dir_index(fr, filename, subvol, inode, type, pindex, utf8, Irp);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("find_file_in_dir_index returned %08x\n", Status);
