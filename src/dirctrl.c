@@ -177,7 +177,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                     if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
                         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
                         IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation) {
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation || 
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
                         
                         BOOL dotfile = de->namelen > 1 && de->name[0] == '.';
 
