@@ -624,6 +624,15 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
 
+/* We only have 64 bits for a file ID, which isn't technically enough to be
+ * unique on Btrfs. We fudge it by having three bytes for the subvol and
+ * five for the inode, which should be good enough.
+ * Inodes are also 64 bits on Linux, but the Linux driver seems to get round
+ * this by tricking it into thinking subvols are separate volumes. */
+static UINT64 __inline make_file_id(root* r, UINT64 inode) {
+    return (r->id << 40) | (inode & 0xffffffffff);
+}
+
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment );

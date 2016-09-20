@@ -2687,10 +2687,10 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMATION* fii, UINT64 inode, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMATION* fii, fcb* fcb, LONG* length) {
     *length -= sizeof(FILE_INTERNAL_INFORMATION);
     
-    fii->IndexNumber.QuadPart = inode;
+    fii->IndexNumber.QuadPart = make_file_id(fcb->subvol, fcb->inode);
     
     return STATUS_SUCCESS;
 }  
@@ -3822,7 +3822,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 fill_in_file_standard_information(&fai->StandardInformation, fcb, fileref, &length);
             
             if (length > 0)
-                fill_in_file_internal_information(&fai->InternalInformation, fcb->inode, &length);
+                fill_in_file_internal_information(&fai->InternalInformation, fcb, &length);
             
             if (length > 0)
                 fill_in_file_ea_information(&fai->EaInformation, fcb, &length);
@@ -3920,7 +3920,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileInternalInformation\n");
             
-            Status = fill_in_file_internal_information(fii, fcb->inode, &length);
+            Status = fill_in_file_internal_information(fii, fcb, &length);
             
             break;
         }

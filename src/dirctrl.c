@@ -367,7 +367,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
-            fibdi->FileId.QuadPart = inode;
+            fibdi->FileId.QuadPart = make_file_id(r, inode);
             
             Status = RtlUTF8ToUnicodeN(fibdi->FileName, stringlen, &stringlen, de->name, de->namelen);
 
@@ -408,7 +408,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = stringlen;
             fifdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
-            fifdi->FileId.QuadPart = inode;
+            fifdi->FileId.QuadPart = make_file_id(r, inode);
             
             Status = RtlUTF8ToUnicodeN(fifdi->FileName, stringlen, &stringlen, de->name, de->namelen);
 
