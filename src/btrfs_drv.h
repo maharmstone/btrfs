@@ -872,6 +872,9 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb);
 NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback);
 
+// in galois.c
+void galois_double(UINT8* data, UINT32 len);
+
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {

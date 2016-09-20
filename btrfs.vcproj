@@ -477,6 +477,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\galois.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\pnp.c"
 				>
 			</File>
