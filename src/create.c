@@ -1092,7 +1092,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
 // }
 // #endif
 
-static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
+static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name, BOOL case_sensitive) {
     LIST_ENTRY* le;
     file_ref *c, *deleted = NULL;
     NTSTATUS Status;
@@ -1100,13 +1100,39 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
 #ifdef DEBUG_FCB_REFCOUNTS
     ULONG rc;
 #endif
+    
+    if (case_sensitive) {
+        le = dir->children.Flink;
+        while (le != &dir->children) {
+            c = CONTAINING_RECORD(le, file_ref, list_entry);
+            
+            if (c->refcount > 0 && c->filepart.Length == name->Length &&
+                RtlCompareMemory(c->filepart.Buffer, name->Buffer, name->Length) == name->Length) {
+                if (c->deleted) {
+                    deleted = c;
+                } else {
+#ifdef DEBUG_FCB_REFCOUNTS
+                    rc = InterlockedIncrement(&c->refcount);
+                    WARN("fileref %p: refcount now %i (%S)\n", c, rc, file_desc_fileref(c));
+#else
+                    InterlockedIncrement(&c->refcount);
+#endif
+                    return c;
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        goto end;
+    }
 
     Status = RtlUpcaseUnicodeString(&ucus, name, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
         return NULL;
     }
-    
+        
     le = dir->children.Flink;
     while (le != &dir->children) {
         c = CONTAINING_RECORD(le, file_ref, list_entry);
@@ -1131,10 +1157,11 @@ static file_ref* search_fileref_children(file_ref* dir, PUNICODE_STRING name) {
         le = le->Flink;
     }
     
+    ExFreePool(ucus.Buffer);
+    
+end:
     if (deleted)
         increase_fileref_refcount(deleted);
-    
-    ExFreePool(ucus.Buffer);
     
     return deleted;
 }
@@ -1766,7 +1793,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     for (i = 0; i < num_parts; i++) {
         BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
         
-        sf2 = search_fileref_children(sf, &parts[i]);
+        sf2 = search_fileref_children(sf, &parts[i], case_sensitive);
         
         if (sf2 && sf2->fcb->type != BTRFS_TYPE_DIRECTORY && !lastpart) {
             WARN("passed path including file as subdirectory\n");
