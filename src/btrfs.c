@@ -2694,6 +2694,79 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
             tp = next_tp;
     } while (b);
     
+    if (!Vcb->readonly && !Vcb->data_reloc_root) {
+        root* reloc_root;
+        INODE_ITEM* ii;
+        ULONG irlen;
+        INODE_REF* ir;
+        LARGE_INTEGER time;
+        BTRFS_TIME now;
+        LIST_ENTRY rollback;
+        
+        InitializeListHead(&rollback);
+        
+        WARN("data reloc root doesn't exist, creating it\n");
+        
+        Status = create_root(Vcb, BTRFS_ROOT_DATA_RELOC, &reloc_root, FALSE, 0, Irp, &rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("create_root returned %08x\n", Status);
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
+        
+        reloc_root->root_item.inode.generation = 1;
+        reloc_root->root_item.inode.st_size = 3;
+        reloc_root->root_item.inode.st_blocks = Vcb->superblock.node_size;
+        reloc_root->root_item.inode.st_nlink = 1;
+        reloc_root->root_item.inode.st_mode = 040755;
+        reloc_root->root_item.inode.flags = 0xffffffff80000000;
+        reloc_root->root_item.objid = SUBVOL_ROOT_INODE;
+        reloc_root->root_item.bytes_used = Vcb->superblock.node_size;
+        
+        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        if (!ii) {
+            ERR("out of memory\n");
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
+        
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &now);
+        
+        RtlZeroMemory(ii, sizeof(INODE_ITEM));
+        ii->generation = Vcb->superblock.generation;
+        ii->st_blocks = Vcb->superblock.node_size;
+        ii->st_nlink = 1;
+        ii->st_mode = 040755;
+        ii->st_atime = now;
+        ii->st_ctime = now;
+        ii->st_mtime = now;
+        
+        insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, &rollback);
+
+        irlen = offsetof(INODE_REF, name[0]) + 2;
+        ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
+        if (!ir) {
+            ERR("out of memory\n");
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
+        
+        ir->index = 0;
+        ir->n = 2;
+        ir->name[0] = '.';
+        ir->name[1] = '.';
+        
+        insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp, &rollback);
+        
+        clear_rollback(Vcb, &rollback);
+        
+        Vcb->data_reloc_root = reloc_root;
+        Vcb->need_write = TRUE;
+    }
+    
+end:
     return STATUS_SUCCESS;
 }
 
