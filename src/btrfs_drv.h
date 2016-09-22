@@ -235,6 +235,7 @@ typedef struct _ccb {
     file_ref* fileref;
     UNICODE_STRING filename;
     ULONG ea_index;
+    BOOL case_sensitive;
 } ccb;
 
 // typedef struct _log_to_phys {

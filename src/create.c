@@ -2783,6 +2783,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
     ccb->access = access_state->OriginalDesiredAccess;
+    ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
     
 #ifdef DEBUG_FCB_REFCOUNTS
     oc = InterlockedIncrement(&fileref->fcb->open_count);
@@ -3581,6 +3582,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
         ccb->access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
+        ccb->case_sensitive = Stack->Flags & SL_CASE_SENSITIVE;
         
         ccb->fileref = fileref;
         
