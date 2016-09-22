@@ -46,6 +46,7 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define BTRFS_ROOT_FSTREE       5
 #define BTRFS_ROOT_CHECKSUM     7
 #define BTRFS_ROOT_UUID         9
+#define BTRFS_ROOT_DATA_RELOC   0xFFFFFFFFFFFFFFF7
 
 #define BTRFS_COMPRESSION_NONE  0
 #define BTRFS_COMPRESSION_ZLIB  1
