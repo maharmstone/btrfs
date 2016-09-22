@@ -280,6 +280,100 @@ sub inode_flags {
     }
 }
 
+sub format_balance {
+	my ($s)=@_;
+	my (@b,$flags,@f,$fl,$t);
+	
+	@b=unpack("QVVQQQQQQQVVVV",$s);
+	
+	$flags=$b[9];
+	
+# #define BTRFS_BALANCE_ARGS_PROFILES	(1ULL << 0)
+# #define BTRFS_BALANCE_ARGS_USAGE	(1ULL << 1)
+# #define BTRFS_BALANCE_ARGS_DEVID	(1ULL << 2)
+# #define BTRFS_BALANCE_ARGS_DRANGE	(1ULL << 3)
+# #define BTRFS_BALANCE_ARGS_VRANGE	(1ULL << 4)
+# #define BTRFS_BALANCE_ARGS_LIMIT	(1ULL << 5)
+# #define BTRFS_BALANCE_ARGS_LIMIT_RANGE	(1ULL << 6)
+# #define BTRFS_BALANCE_ARGS_STRIPES_RANGE (1ULL << 7)
+# #define BTRFS_BALANCE_ARGS_USAGE_RANGE	(1ULL << 10)
+
+	$t=sprintf("profiles=%x",$b[0]);
+	
+	if ($flags & (1 << 10)) {
+		$t.=sprintf(" usage=%x",($b[2] << 32) | $b[1]);
+	} elsif ($flags & (1 << 1)) {
+		$t.=sprintf(" usage=%x..%x",$b[1],$b[2]);
+	}
+	
+	$t.=sprintf(" devid=%x pstart=%x pend=%x vstart=%x vend=%x target=%x",$b[3],$b[4],$b[5],$b[6],$b[7],$b[8]);
+	
+	@f=();
+	$fl=$flags;
+	if ($fl & (1 << 0)) {
+		push @f,"profiles";
+		$fl &= ~(1 << 0);
+	}
+	if ($fl & (1 << 1)) {
+		push @f,"usage";
+		$fl &= ~(1 << 1);
+	}
+	if ($fl & (1 << 2)) {
+		push @f,"devid";
+		$fl &= ~(1 << 2);
+	}
+	if ($fl & (1 << 3)) {
+		push @f,"drange";
+		$fl &= ~(1 << 3);
+	}
+	if ($fl & (1 << 4)) {
+		push @f,"vrange";
+		$fl &= ~(1 << 4);
+	}
+	if ($fl & (1 << 5)) {
+		push @f,"limit";
+		$fl &= ~(1 << 5);
+	}
+	if ($fl & (1 << 6)) {
+		push @f,"limitrange";
+		$fl &= ~(1 << 6);
+	}
+	if ($fl & (1 << 7)) {
+		push @f,"stripesrange";
+		$fl &= ~(1 << 7);
+	}
+	if ($fl & (1 << 8)) {
+		push @f,"convert";
+		$fl &= ~(1 << 8);
+	}
+	if ($fl & (1 << 9)) {
+		push @f,"soft";
+		$fl &= ~(1 << 9);
+	}
+	if ($fl & (1 << 10)) {
+		push @f,"usagerange";
+		$fl &= ~(1 << 10);
+	}
+	
+	if ($fl != 0 || $#f == -1) {
+		push @f,$fl;
+	}
+	
+	$t.=sprintf(" flags=%s",join(',',@f));
+	
+	if ($flags & (1 << 5)) {
+		$t.=sprintf(" limit=%x",($b[11] << 32) | $b[10]);
+	} elsif ($flags & (1 << 6)) {
+		$t.=sprintf(" limit=%x..%x",$b[11],$b[10]);
+	}
+	
+	if ($flags & (1 << 7)) {
+		$t.=sprintf(" stripes=%x..%x",$b[12],$b[13]);
+	}
+	
+	return $t;
+}
+
 sub dump_item {
 	my ($type,$s,$pref,$id)=@_;
 	my (@b);
@@ -464,6 +558,33 @@ sub dump_item {
 			
 			printf(" stripe(%u) devid=%x offset=%x devuuid=%s",$i,$b[0],$b[1],format_uuid($b[2]));
 		}
+	} elsif ($type == 0xf8 && $id == 0xfffffffffffffffc) { # balance
+		my ($fl,@f);
+		
+		@b=unpack("Q",$s);
+		$s=substr($s,8);
+		
+		$fl=$b[0];
+		@f=();
+		if ($fl & (1 << 0)) {
+			push @f,"data";
+			$fl &= ~(1 << 0);
+		}
+		if ($fl & (1 << 1)) {
+			push @f,"system";
+			$fl &= ~(1 << 1);
+		}
+		if ($fl & (1 << 2)) {
+			push @f,"metadata";
+			$fl &= ~(1 << 2);
+		}
+		if ($fl!=0 || $#f==-1) {
+			push @f,$fl;
+		}
+		
+		printf("balance flags=%s data=(%s) metadata=(%s) sys=(%s)",join(',',@f),format_balance(substr($s,0,0x88)),format_balance(substr($s,0x88,0x88)),format_balance(substr($s,0x110,0x88)));
+		
+		$s=substr($s,0x1b8);
 	} elsif ($type == 0xf9) { # DEV_STATS
 		print "dev_stats";
 		
