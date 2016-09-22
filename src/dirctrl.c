@@ -837,10 +837,14 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         UNICODE_STRING us;
         LIST_ENTRY* le;
         
-        Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            goto end;
+        us.Buffer = NULL;
+        
+        if (!ccb->case_sensitive) {
+            Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, TRUE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                goto end;
+            }
         }
         
         ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
@@ -848,11 +852,17 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         le = fileref->children.Flink;
         while (le != &fileref->children) {
             file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
-                
-            if (!fr2->deleted && fr2->filepart_uc.Length == us.Length &&
-                RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-                found = TRUE;
             
+            if (!fr2->deleted) {
+                if (!ccb->case_sensitive && fr2->filepart_uc.Length == us.Length &&
+                    RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length)
+                    found = TRUE;
+                else if (ccb->case_sensitive && fr2->filepart.Length == ccb->query_string.Length &&
+                    RtlCompareMemory(fr2->filepart.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length)
+                    found = TRUE;
+            }
+                
+            if (found) {
                 if (fr2->fcb->subvol == fcb->subvol) {
                     de.key.obj_id = fr2->fcb->inode;
                     de.key.obj_type = TYPE_INODE_ITEM;
@@ -939,7 +949,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         di_uni_fn.Length = di_uni_fn.MaximumLength = stringlen;
         di_uni_fn.Buffer = uni_fn;
         
-        while (!FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, TRUE, NULL)) {
+        while (!FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, !ccb->case_sensitive, NULL)) {
             if (de.name_alloc)
                 ExFreePool(de.name);
             
@@ -1053,7 +1063,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                         di_uni_fn.Buffer = uni_fn;
                     }
                     
-                    if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, TRUE, NULL)) {
+                    if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &di_uni_fn, !ccb->case_sensitive, NULL)) {
                         curitem = (UINT8*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
                         count++;
                         
