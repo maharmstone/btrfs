@@ -2500,7 +2500,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     NTSTATUS Status;
     superblock* sb;
     unsigned int i, to_read;
-    UINT32 crc32;
+    UINT8 valid_superblocks;
     
     to_read = sector_align(sizeof(superblock), device->SectorSize);
     
@@ -2511,8 +2511,11 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     }
     
     i = 0;
+    valid_superblocks = 0;
     
     while (superblock_addrs[i] > 0) {
+        UINT32 crc32;
+        
         if (i > 0 && superblock_addrs[i] + sizeof(superblock) > length)
             break;
         
@@ -2523,27 +2526,28 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
             return Status;
         }
         
-        // FIXME - check checksum before accepting?
-        
         TRACE("got superblock %u!\n", i);
-
-        if (i == 0 || sb->generation > Vcb->superblock.generation)
+        
+        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        
+        if (crc32 != *((UINT32*)sb->checksum))
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+        else if (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation) {
             RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
+            valid_superblocks++;
+        }
         
         i++;
     }
     
     ExFreePool(sb);
     
-    crc32 = calc_crc32c(0xffffffff, (UINT8*)&Vcb->superblock.uuid, (ULONG)sizeof(superblock) - sizeof(Vcb->superblock.checksum));
-    crc32 = ~crc32;
-    TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)Vcb->superblock.checksum));
-    
-    if (crc32 != *((UINT32*)Vcb->superblock.checksum))
-        return STATUS_INTERNAL_ERROR; // FIXME - correct error?
+    if (valid_superblocks == 0) {
+        ERR("could not find any valid superblocks\n");
+        return STATUS_INTERNAL_ERROR;
+    }
     
     TRACE("label is %s\n", Vcb->superblock.label);
-//     utf8_to_utf16(Vcb->superblock.label, Vcb->label, MAX_LABEL_SIZE * sizeof(WCHAR));
     
     return STATUS_SUCCESS;
 }
