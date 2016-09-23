@@ -345,6 +345,7 @@ typedef struct {
     DEV_ITEM devitem;
     BOOL removable;
     BOOL readonly;
+    BOOL ssd;
     ULONG change_count;
     UINT64 length;
     LIST_ENTRY space;

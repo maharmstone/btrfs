@@ -25,6 +25,7 @@
 #else
 #include <intrin.h>
 #endif
+#include <ntddscsi.h>
 #include "btrfs.h"
 #include <winioctl.h>
 #include <mountdev.h>
@@ -2933,6 +2934,9 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
 static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     NTSTATUS Status;
     GET_LENGTH_INFORMATION gli;
+    ULONG aptelen;
+    ATA_PASS_THROUGH_EX* apte;
+    UINT16* words;
     
     dev->removable = is_device_removable(dev->devobj);
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
@@ -2946,6 +2950,43 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
         
         dev->length = gli.Length.QuadPart;
     }
+    
+    dev->ssd = FALSE;
+
+    aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
+    apte = ExAllocatePoolWithTag(NonPagedPool, aptelen, ALLOC_TAG);
+    if (!apte) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlZeroMemory(apte, aptelen);
+    
+    apte->Length = sizeof(ATA_PASS_THROUGH_EX);
+    apte->AtaFlags = ATA_FLAGS_DATA_IN;
+    apte->DataTransferLength = aptelen - sizeof(ATA_PASS_THROUGH_EX);
+    apte->TimeOutValue = 3;
+    apte->DataBufferOffset = apte->Length;
+    apte->CurrentTaskFile[6] = 0xec; // IDENTIFY DEVICE
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, apte, aptelen,
+                       apte, aptelen, TRUE, NULL);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("error calling ATA IDENTIFY DEVICE: %08x\n", Status);
+    } else {
+        words = (UINT16*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        
+        if (words[217] == 1) {
+            dev->ssd = TRUE;
+            TRACE("device identified as SSD\n");
+        } else if (words[217] == 0)
+            TRACE("no rotational speed returned, assuming not SSD\n");
+        else
+            TRACE("rotational speed of %u RPM\n", words[217]);
+    }
+    
+    ExFreePool(apte);
 }
 
 static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
