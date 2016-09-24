@@ -962,9 +962,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
                 if (context->stripes[i].status == ReadDataStatus_CRCError || context->stripes[i+1].status == ReadDataStatus_CRCError) {
-                    if (context->stripes[i].status == ReadDataStatus_Success || context->stripes[i+1].status == ReadDataStatus_Success) {
-                        // FIXME - write good data over bad
-                    } else if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError) {
+                    if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError) {
                         UINT16 start, left;
                         UINT32 j, k, l;
                         
@@ -1026,15 +1024,40 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                                 left = context->sectors_per_stripe;
                             }
                         }
-                        
-                        // FIXME - write good data over bad
-                        
-                        context->stripes[i].status = ReadDataStatus_Success;
-                    } else {
+                    } else if (context->stripes[i].status != ReadDataStatus_Success && context->stripes[i+1].status == ReadDataStatus_Success) {
                         ERR("unrecoverable checksum error\n");
                         Status = STATUS_CRC_ERROR;
                         goto exit;
                     }
+                    
+                    if (!Vcb->readonly) {
+                        UINT16 rightstripe, l;
+                        // write good data over bad
+                        
+                        if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError)
+                            rightstripe = 0;
+                        else {
+                            for (l = 0; l < ci->sub_stripes; l++) {
+                                if (context->stripes[i+l].status == ReadDataStatus_Success) {
+                                    rightstripe = l;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        for (l = 0; l < ci->sub_stripes; l++) {
+                            if (context->stripes[i+l].status == ReadDataStatus_CRCError && devices[i+l] && !devices[i+l]->readonly) {
+                                Status = write_data_phys(devices[i+l]->devobj, cis[i+l].offset + stripestart[i+l],
+                                                         context->stripes[i+rightstripe].buf, stripeend[i+l] - stripestart[i+l]);
+                                
+                                if (!NT_SUCCESS(Status))
+                                    WARN("write_data_phys returned %08x\n", Status);
+                            }
+                        }
+                    }
+                    
+                    if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError)
+                        context->stripes[i].status = ReadDataStatus_Success;
                 }
             }
         }
