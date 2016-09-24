@@ -779,7 +779,9 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             data->ByteOffsetForPartitionAlignment = 0;
             
             data->Flags = SSINFO_FLAGS_ALIGNED_DEVICE | SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE;
-            // FIXME - query for TRIM and add SSINFO_FLAGS_TRIM_ENABLED if it is supported
+            
+            if (Vcb->trim)
+                data->Flags |= SSINFO_FLAGS_TRIM_ENABLED;
             
             BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);
   
@@ -2958,6 +2960,7 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     }
     
     dev->ssd = FALSE;
+    dev->trim = FALSE;
 
     aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
     apte = ExAllocatePoolWithTag(NonPagedPool, aptelen, ALLOC_TAG);
@@ -2990,6 +2993,13 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
             TRACE("no rotational speed returned, assuming not SSD\n");
         else
             TRACE("rotational speed of %u RPM\n", idd->NominalMediaRotationRate);
+        
+        if (idd->DataSetManagementFeature.SupportsTrim) {
+            dev->trim = TRUE;
+            Vcb->trim = TRUE;
+            TRACE("TRIM supported\n");
+        } else
+            TRACE("TRIM not supported\n");
     }
     
     ExFreePool(apte);

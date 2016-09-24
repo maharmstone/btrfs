@@ -346,6 +346,7 @@ typedef struct {
     BOOL removable;
     BOOL readonly;
     BOOL ssd;
+    BOOL trim;
     ULONG change_count;
     UINT64 length;
     LIST_ENTRY space;
@@ -468,6 +469,7 @@ typedef struct _device_extension {
     BOOL readonly;
     BOOL removing;
     BOOL locked;
+    BOOL trim;
     PFILE_OBJECT locked_fileobj;
     fcb* volume_fcb;
     file_ref* root_fileref;
