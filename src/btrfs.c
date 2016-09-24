@@ -54,6 +54,8 @@ UINT32 mount_compress_type = 0;
 UINT32 mount_zlib_level = 3;
 UINT32 mount_flush_interval = 30;
 UINT32 mount_max_inline = 2048;
+UINT32 mount_raid5_recalculation = 1;
+UINT32 mount_raid6_recalculation = 1;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 
