@@ -80,8 +80,10 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                 
-                if (crc32 != *((UINT32*)th->csum))
+                if (crc32 != *((UINT32*)th->csum)) {
                     stripe->status = ReadDataStatus_CRCError;
+                    goto end;
+                }
             } else if (context->csum) {
                 for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
@@ -105,7 +107,17 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
             // no point checking the checksum here, as there's nothing we can do
             stripe->status = ReadDataStatus_Success;
         } else if (context->type == BLOCK_FLAG_RAID10) {
-            if (context->csum) {
+            if (context->tree) {
+                tree_header* th = (tree_header*)stripe->buf;
+                UINT32 crc32;
+                
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                
+                if (crc32 != *((UINT32*)th->csum)) {
+                    stripe->status = ReadDataStatus_CRCError;
+                    goto end;
+                }
+            } else if (context->csum) {
                 UINT16 start, left;
                 UINT32 j;
                 
