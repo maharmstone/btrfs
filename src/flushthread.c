@@ -58,7 +58,7 @@ static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
+NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
     NTSTATUS Status;
     LARGE_INTEGER offset;
     PIRP Irp;
@@ -117,7 +117,6 @@ static NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, v
 
     IoSetCompletionRoutine(Irp, write_completion, context, TRUE, TRUE, TRUE);
 
-    // FIXME - support multiple devices
     Status = IoCallDriver(device, Irp);
     
     if (Status == STATUS_PENDING) {

@@ -1051,11 +1051,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].status == ReadDataStatus_Success) {
                     RtlCopyMemory(buf, context->stripes[i].buf, length);
-                    Status = STATUS_SUCCESS;
-                    
-                    // FIXME - write good data over bad
-                    
-                    goto exit;
+                    goto raid1write;
                 }
             }
             
@@ -1080,8 +1076,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 UINT16 j;
                 BOOL success = FALSE;
                 
-                // FIXME - write good data over bad
-                
                 for (j = 0; j < ci->num_stripes; j++) {
                     if (context->stripes[j].status == ReadDataStatus_CRCError) {
                         UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[j].buf + (i * context->sector_size), context->sector_size);
@@ -1098,6 +1092,20 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     ERR("unrecoverable checksum error at %llx\n", addr + (i * context->sector_size));
                     Status = STATUS_CRC_ERROR;
                     goto exit;
+                }
+            }
+            
+raid1write:
+            // write good data over bad
+            
+            if (!Vcb->readonly) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_CRCError && devices[i] && !devices[i]->readonly) {
+                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], buf, length);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
                 }
             }
             
