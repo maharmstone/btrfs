@@ -29,6 +29,7 @@
 #include "btrfs.h"
 #include <winioctl.h>
 #include <mountdev.h>
+#include <ata.h>
 
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
@@ -2941,7 +2942,7 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     GET_LENGTH_INFORMATION gli;
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
-    UINT16* words;
+    IDENTIFY_DEVICE_DATA* idd;
     
     dev->removable = is_device_removable(dev->devobj);
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
@@ -2980,15 +2981,15 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     if (!NT_SUCCESS(Status)) {
         ERR("error calling ATA IDENTIFY DEVICE: %08x\n", Status);
     } else {
-        words = (UINT16*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
         
-        if (words[217] == 1) {
+        if (idd->NominalMediaRotationRate == 1) {
             dev->ssd = TRUE;
             TRACE("device identified as SSD\n");
-        } else if (words[217] == 0)
+        } else if (idd->NominalMediaRotationRate == 0)
             TRACE("no rotational speed returned, assuming not SSD\n");
         else
-            TRACE("rotational speed of %u RPM\n", words[217]);
+            TRACE("rotational speed of %u RPM\n", idd->NominalMediaRotationRate);
     }
     
     ExFreePool(apte);
