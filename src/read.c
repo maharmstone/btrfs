@@ -134,7 +134,6 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
                     
                     if (crc32 != context->csum[j]) {
-                        int3;
                         stripe->status = ReadDataStatus_CRCError;
                         goto end;
                     }
@@ -946,9 +945,99 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_RAID10) {
+        BOOL checksum_error = FALSE;
         UINT32 pos, *stripeoff;
         UINT8 stripe;
         read_data_stripe** stripes;
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_CRCError) {
+                checksum_error = TRUE;
+                break;
+            }
+        }
+        
+        if (checksum_error) {
+            // FIXME - update dev stats
+            
+            for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
+                if (context->stripes[i].status == ReadDataStatus_CRCError || context->stripes[i+1].status == ReadDataStatus_CRCError) {
+                    if (context->stripes[i].status == ReadDataStatus_Success || context->stripes[i+1].status == ReadDataStatus_Success) {
+                        // FIXME - write good data over bad
+                    } else if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError) {
+                        UINT16 start, left;
+                        UINT32 j, k, l;
+                        
+                        if (context->tree) {
+                            ERR("unrecoverable checksum error\n");
+                            Status = STATUS_CRC_ERROR;
+                            goto exit;
+                        }
+                        
+                        // checksum errors on both stripes - we need to check sector by sector
+                        
+                        if (context->startoffstripe == context->stripes[i].stripenum) {
+                            start = 0;
+                            left = context->sectors_per_stripe - context->firstoff;
+                        } else {
+                            UINT16 ns;
+                            
+                            if (context->startoffstripe > context->stripes[i].stripenum)
+                                ns = context->stripes[i].stripenum + (context->num_stripes / 2) - context->startoffstripe;
+                            else
+                                ns = context->stripes[i].stripenum - context->startoffstripe;
+                            
+                            if (context->firstoff == 0)
+                                start = context->sectors_per_stripe * ns;
+                            else
+                                start = (context->sectors_per_stripe - context->firstoff) + (context->sectors_per_stripe * (ns - 1));
+                            
+                            left = context->sectors_per_stripe;
+                        }
+                        
+                        j = start;
+                        for (k = 0; k < (stripeend[i] - stripestart[i]) / context->sector_size; k++) {
+                            BOOL success = FALSE;
+                            
+                            for (l = 0; l < ci->sub_stripes; l++) {
+                                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i+l].buf + (k * context->sector_size), context->sector_size);
+                                
+                                if (crc32 == context->csum[j]) {
+                                    if (l > 0) 
+                                        RtlCopyMemory(context->stripes[i].buf + (k * context->sector_size), context->stripes[i+l].buf + (k * context->sector_size),
+                                                      context->sector_size);
+                                    
+                                    success = TRUE;
+                                    break;
+                                }
+                            }
+                            
+                            if (!success) {
+                                ERR("unrecoverable checksum error\n");
+                                Status = STATUS_CRC_ERROR;
+                                goto exit;
+                            }
+                            
+                            j++;
+                            left--;
+                            
+                            if (left == 0) {
+                                j += context->sectors_per_stripe;
+                                left = context->sectors_per_stripe;
+                            }
+                        }
+                        
+                        // FIXME - write good data over bad
+                        
+                        context->stripes[i].status = ReadDataStatus_Success;
+                    } else {
+                        ERR("unrecoverable checksum error\n");
+                        Status = STATUS_CRC_ERROR;
+                        goto exit;
+                    }
+                }
+            }
+        }
         
         stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripes) {
@@ -970,14 +1059,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
             
             if (!stripes[i / ci->sub_stripes]) {
-                for (j = 0; j < ci->sub_stripes; j++) {
-                    if (context->stripes[i+j].status == ReadDataStatus_CRCError) {
-                        WARN("stripe %llu had a checksum error\n", i+j);
-                        Status = STATUS_CRC_ERROR;
-                        goto exit;
-                    }
-                }
-                
                 for (j = 0; j < ci->sub_stripes; j++) {
                     if (context->stripes[i+j].status == ReadDataStatus_Error) {
                         WARN("stripe %llu returned error %08x\n", i+j, context->stripes[i+j].iosb.Status);
