@@ -760,8 +760,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     KeInitializeSpinLock(&context->spin_lock);
     
     for (i = 0; i < ci->num_stripes; i++) {
-        PIO_STACK_LOCATION IrpSp;
-        
         if (!devices[i] || stripestart[i] == stripeend[i]) {
             context->stripes[i].status = ReadDataStatus_MissingDevice;
             context->stripes[i].buf = NULL;
@@ -769,7 +767,19 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             if (!devices[i])
                 missing_devices++;
-        } else {
+        }
+    }
+      
+    if (missing_devices > allowed_missing) {
+        ERR("not enough devices to service request (%u missing)\n", missing_devices);
+        Status = STATUS_UNEXPECTED_IO_ERROR;
+        goto exit;
+    }
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        PIO_STACK_LOCATION IrpSp;
+        
+        if (devices[i] && stripestart[i] != stripeend[i]) {
             context->stripes[i].context = (struct read_data_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
             
@@ -828,12 +838,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
             context->stripes[i].status = ReadDataStatus_Pending;
         }
-    }
-    
-    if (missing_devices > allowed_missing) {
-        ERR("not enough devices to service request (%u missing)\n", missing_devices);
-        Status = STATUS_UNEXPECTED_IO_ERROR;
-        goto exit;
     }
     
     for (i = 0; i < ci->num_stripes; i++) {
@@ -1032,23 +1036,33 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        // check if any of the stripes succeeded
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Success) {
-                RtlCopyMemory(buf, context->stripes[i].buf, length);
-                Status = STATUS_SUCCESS;
-                goto exit;
-            }
-        }
-        
-        // if not, see if we got a checksum error
+        BOOL checksum_error = FALSE;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_CRCError) {
-#ifdef _DEBUG
-                WARN("stripe %llu had a checksum error\n", i);
+                checksum_error = TRUE;
+                break;
+            }
+        }
+        
+        if (checksum_error) {
+            // FIXME - update dev stats
+            
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Success) {
+                    RtlCopyMemory(buf, context->stripes[i].buf, length);
+                    Status = STATUS_SUCCESS;
+                    
+                    // FIXME - write good data over bad
+                    
+                    goto exit;
+                }
+            }
+            
+            if (context->tree || ci->num_stripes == 1) { // unable to recover from checksum error
+                ERR("unrecoverable checksum error at %llx\n", addr);
                 
+#ifdef _DEBUG
                 if (context->tree) {
                     tree_header* th = (tree_header*)context->stripes[i].buf;
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
@@ -1056,8 +1070,47 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
                 }
 #endif
-                
                 Status = STATUS_CRC_ERROR;
+                goto exit;
+            }
+            
+            // checksum errors on both stripes - we need to check sector by sector
+            
+            for (i = 0; i < (stripeend[0] - stripestart[0]) / context->sector_size; i++) {
+                UINT16 j;
+                BOOL success = FALSE;
+                
+                // FIXME - write good data over bad
+                
+                for (j = 0; j < ci->num_stripes; j++) {
+                    if (context->stripes[j].status == ReadDataStatus_CRCError) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[j].buf + (i * context->sector_size), context->sector_size);
+                        
+                        if (crc32 == context->csum[i]) {
+                            RtlCopyMemory(buf + (i * context->sector_size), context->stripes[j].buf + (i * context->sector_size), context->sector_size);
+                            success = TRUE;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!success) {
+                    ERR("unrecoverable checksum error at %llx\n", addr + (i * context->sector_size));
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
+            }
+            
+            Status = STATUS_SUCCESS;
+            goto exit;
+        }
+        
+        // check if any of the stripes succeeded
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Success) {
+                RtlCopyMemory(buf, context->stripes[i].buf, length);
+                Status = STATUS_SUCCESS;
                 goto exit;
             }
         }
