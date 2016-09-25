@@ -2049,18 +2049,18 @@ raid1write:
                 }
             }
             
-//             // write good data over bad
-//             
-//             if (!Vcb->readonly) {
-//                 for (i = 0; i < ci->num_stripes; i++) {
-//                     if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-//                         Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
-//                         
-//                         if (!NT_SUCCESS(Status))
-//                             WARN("write_data_phys returned %08x\n", Status);
-//                     }
-//                 }
-//             }
+            // write good data over bad
+            
+            if (!Vcb->readonly) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
+                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
+                }
+            }
         }
         
         Status = STATUS_SUCCESS;
