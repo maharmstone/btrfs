@@ -170,11 +170,9 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 }
             }
         } else if (context->type == BLOCK_FLAG_RAID5) {
-            // FIXME - check checksum
-            
             stripe->status = ReadDataStatus_Success;
             
-            if (stripes_left == 1) {
+            if (stripes_left == 1 && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -1509,6 +1507,38 @@ raid1write:
                     }
                 }
             }
+        }
+        
+        if (!context->tree && !context->csum) {
+            UINT32* parity_buf;
+            
+            // We are reading a nodatacsum extent. Even though there's no checksum, we
+            // can still identify errors by checking if the parity is consistent.
+            
+            parity_buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[0] - stripestart[0], ALLOC_TAG);
+            
+            if (!parity_buf) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
+            
+            RtlCopyMemory(parity_buf, context->stripes[0].buf, stripeend[0] - stripestart[0]);
+            
+            for (i = 0; i < ci->num_stripes; i++) {
+                do_xor((UINT8*)parity_buf, context->stripes[i].buf, stripeend[0] - stripestart[0]);
+            }
+            
+            for (i = 0; i < (stripeend[0] - stripestart[0]) / sizeof(UINT32); i++) {
+                if (parity_buf[i] != 0) {
+                    ERR("parity error on nodatacsum inode\n");
+                    ExFreePool(parity_buf);
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
+            }
+            
+            ExFreePool(parity_buf);
         }
         
         Status = STATUS_SUCCESS;
