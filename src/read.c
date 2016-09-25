@@ -928,7 +928,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                             }
                         }
                         
-//                         context->stripes[parity1].rewrite = TRUE;
+                        context->stripes[parity1].rewrite = TRUE;
                         
                         ExFreePool(parity);
                         goto success;
@@ -1019,7 +1019,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                                 do_xor(buf2, &context->stripes[parity1].buf[bufoff], node_size);
                                 
                                 RtlCopyMemory(&context->stripes[j].buf[bufoff], buf2, node_size);
-//                                 context->stripes[j].rewrite = TRUE;
+                                context->stripes[j].rewrite = TRUE;
                                 
                                 RtlCopyMemory(buf + *pos, parity, node_size);
                                 ExFreePool(parity);
@@ -1040,7 +1040,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                 
 success:
                 RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos, node_size);
-//                 context->stripes[stripe].rewrite = TRUE;
+                context->stripes[stripe].rewrite = TRUE;
             }
             
             *pos += copylen;
