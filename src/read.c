@@ -284,7 +284,6 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
     
     while (TRUE) {
         if (stripe == parity) {
-            // FIXME - also check parity is correct
             *stripeoff += stripelen;
             return TRUE;
         }
@@ -323,6 +322,69 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                     context->stripes[stripe].rewrite = TRUE;
                 }
             }
+            
+            *pos += copylen;
+            
+            if (*pos == length)
+                return TRUE;
+            
+            skip = 0;
+        }
+        
+        stripe = (stripe + 1) % ci->num_stripes;
+    }
+    
+    return FALSE;
+}
+
+static BOOL raid5_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+                                                UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size) {
+    UINT16 parity, stripe;
+    BOOL first = *pos == 0;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    
+    parity = ((off / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
+    
+    stripe = (parity + 1) % ci->num_stripes;
+    
+    while (TRUE) {
+        if (stripe == parity) {
+            *stripeoff += stripelen;
+            return TRUE;
+        }
+        
+        if (skip >= ci->stripe_length) {
+            skip -= ci->stripe_length;
+        } else {
+            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
+            tree_header* th = (tree_header*)buf;
+            UINT32 crc32;
+            
+            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+            
+            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum)) {
+                UINT16 j, firststripe = stripe == 0 ? 1 : 0;
+                
+                RtlCopyMemory(buf + *pos, &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+                
+                for (j = firststripe + 1; j < ci->num_stripes; j++) {
+                    if (j != stripe) {
+                        do_xor(buf + *pos, &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+                    }
+                }
+                
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
+                
+                if (crc32 != *((UINT32*)th->csum)) {
+                    ERR("unrecoverable checksum error\n");
+                    return FALSE;
+                }
+            }
+            
+            RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos, copylen);
+            context->stripes[stripe].rewrite = TRUE;
             
             *pos += copylen;
             
@@ -1388,13 +1450,8 @@ raid1write:
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
-                // FIXME - try and reconstruct from parity
-                
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-                Status = STATUS_CRC_ERROR;
-                goto exit;
-            }
+            if (crc32 != *((UINT32*)th->csum))
+                checksum_error = TRUE;
         } else if (csum) {
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
@@ -1480,18 +1537,28 @@ raid1write:
                 }
             }
             
-            pos = 0;
-            stripeoff = 0;
-            if (!raid5_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, csum, Vcb->superblock.sector_size)) {
-                Status = STATUS_CRC_ERROR;
-                goto exit;
-            }
-            
-            while (pos < length) {
-                off += (ci->num_stripes - 1) * ci->stripe_length;
-                if (!raid5_decode_with_checksum(off, 0, context, ci, &stripeoff, buf, &pos, length, 0, csum, Vcb->superblock.sector_size)) {
+            if (context->tree) {
+                pos = 0;
+                stripeoff = 0;
+                if (!raid5_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+                    ERR("unrecoverable metadata checksum error\n");
                     Status = STATUS_CRC_ERROR;
                     goto exit;
+                }
+            } else {
+                pos = 0;
+                stripeoff = 0;
+                if (!raid5_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, csum, Vcb->superblock.sector_size)) {
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
+                
+                while (pos < length) {
+                    off += (ci->num_stripes - 1) * ci->stripe_length;
+                    if (!raid5_decode_with_checksum(off, 0, context, ci, &stripeoff, buf, &pos, length, 0, csum, Vcb->superblock.sector_size)) {
+                        Status = STATUS_CRC_ERROR;
+                        goto exit;
+                    }
                 }
             }
             
