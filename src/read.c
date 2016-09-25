@@ -33,6 +33,7 @@ typedef struct {
     struct read_data_context* context;
     UINT8* buf;
     UINT16 stripenum;
+    BOOL rewrite;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_data_status status;
@@ -319,6 +320,9 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                         ERR("unrecoverable checksum error\n");
                         return FALSE;
                     }
+                    
+                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos + (i * sector_size), sector_size);
+                    context->stripes[stripe].rewrite = TRUE;
                 }
             }
             
@@ -1478,8 +1482,6 @@ raid1write:
                 }
             }
             
-            // FIXME - write good data over bad
-            
             pos = 0;
             stripeoff = 0;
             if (!raid5_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, csum, Vcb->superblock.sector_size)) {
@@ -1492,6 +1494,19 @@ raid1write:
                 if (!raid5_decode_with_checksum(off, 0, context, ci, &stripeoff, buf, &pos, length, 0, csum, Vcb->superblock.sector_size)) {
                     Status = STATUS_CRC_ERROR;
                     goto exit;
+                }
+            }
+            
+            // write good data over bad
+            
+            if (!Vcb->readonly) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
+                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
                 }
             }
         }
