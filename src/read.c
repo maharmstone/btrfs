@@ -316,7 +316,7 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                         return FALSE;
                     }
                     
-                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos + (i * sector_size), sector_size);
+                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], buf + *pos + (i * sector_size), sector_size);
                     context->stripes[stripe].rewrite = TRUE;
                 }
             }
@@ -806,9 +806,241 @@ static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                     }
                     
 success:
-                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos + (i * sector_size), sector_size);
+                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], buf + *pos + (i * sector_size), sector_size);
                     context->stripes[stripe].rewrite = TRUE;
                 }
+            }
+            
+            *pos += copylen;
+            
+            if (*pos == length)
+                return TRUE;
+            
+            skip = 0;
+        }
+        
+        stripe = (stripe + 1) % ci->num_stripes;
+    }
+}
+
+static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+                                                UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size) {
+    UINT16 parity1, parity2, stripe;
+    BOOL first = *pos == 0;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    
+    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+    parity2 = (parity1 + 1) % ci->num_stripes;
+    stripe = (parity1 + 2) % ci->num_stripes;
+    
+    while (TRUE) {
+        if (stripe == parity1) {
+            *stripeoff += stripelen;
+            return TRUE;
+        }
+        
+        if (skip >= ci->stripe_length) {
+            skip -= ci->stripe_length;
+        } else {
+            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
+            tree_header* th = (tree_header*)buf;
+            UINT32 crc32;
+            
+            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+            
+            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
+            
+            if (crc32 != *((UINT32*)th->csum)) {
+                UINT16 j, firststripe;
+                
+                if (parity2 == 0 && stripe == 1)
+                    firststripe = 2;
+                else if (parity2 == 0 || stripe == 0)
+                    firststripe = 1;
+                else
+                    firststripe = 0;
+                
+                RtlCopyMemory(buf + *pos, &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                
+                for (j = firststripe + 1; j < ci->num_stripes; j++) {
+                    if (j != stripe && j != parity2) {
+                        do_xor(buf + *pos, &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                    }
+                }
+                
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
+                
+                if (crc32 != *((UINT32*)th->csum)) {
+                    UINT8 *parity, *buf2;
+                    UINT16 rs, div;
+                    tree_header* th2;
+                    
+                    // assume p is wrong
+                    
+                    parity = ExAllocatePoolWithTag(NonPagedPool, node_size, ALLOC_TAG);
+                    if (!parity) {
+                        ERR("out of memory\n");
+                        return FALSE;
+                    }
+                    
+                    rs = (parity1 + ci->num_stripes - 1) % ci->num_stripes;
+                    j = ci->num_stripes - 3;
+                    
+                    if (rs == stripe) {
+                        RtlZeroMemory(parity, node_size);
+                        div = j;
+                    } else
+                        RtlCopyMemory(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                    
+                    rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
+                    j--;
+                    while (rs != parity2) {
+                        galois_double(parity, node_size);
+                        
+                        if (rs != stripe)
+                            do_xor(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                        else
+                            div = j;
+        
+                        rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
+                        j--;
+                    }
+                    
+                    do_xor(parity, &context->stripes[parity2].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                    
+                    if (div != 0)
+                        galois_divpower(parity, div, node_size);
+                    
+                    th2 = (tree_header*)parity;
+                    
+                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
+                
+                    if (crc32 == *((UINT32*)th2->csum)) {
+                        RtlCopyMemory(buf + *pos, parity, node_size);
+                        
+                        // recalculate p
+                        RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen], parity, node_size);
+                        
+                        for (j = 0; j < ci->num_stripes; j++) {
+                            if (j != stripe && j != parity1 && j != parity2) {
+                                do_xor(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen],
+                                        &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
+                            }
+                        }
+                        
+//                         context->stripes[parity1].rewrite = TRUE;
+                        
+                        ExFreePool(parity);
+                        goto success;
+                    }
+                    
+                    // assume another of the data stripes is wrong
+                    
+                    buf2 = ExAllocatePoolWithTag(NonPagedPool, node_size, ALLOC_TAG);
+                    if (!buf2) {
+                        ERR("out of memory\n");
+                        ExFreePool(parity);
+                        return FALSE;
+                    }
+                    
+                    j = (parity2 + 1) % ci->num_stripes;
+                    
+                    while (j != parity1) {
+                        if (j != stripe) {
+                            UINT16 curstripe, k;
+                            UINT32 bufoff = *stripeoff + skip - ci->stripe_length + stripelen;
+                            UINT16 x, y;
+                            UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
+                        
+                            curstripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+                            
+                            // put qxy in parity
+                            // put pxy in buf2
+                            
+                            k = ci->num_stripes - 3;
+                            if (curstripe == stripe || curstripe == j) {
+                                RtlZeroMemory(parity, node_size);
+                                RtlZeroMemory(buf2, node_size);
+                                
+                                if (curstripe == stripe)
+                                    x = k;
+                                else
+                                    y = k;
+                            } else {
+                                RtlCopyMemory(parity, &context->stripes[curstripe].buf[bufoff], node_size);
+                                RtlCopyMemory(buf2, &context->stripes[curstripe].buf[bufoff], node_size);
+                            }
+                            
+                            curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
+                            
+                            k--;
+                            do {
+                                galois_double(parity, node_size);
+                                
+                                if (curstripe != stripe && curstripe != j) {
+                                    do_xor(parity, &context->stripes[curstripe].buf[bufoff], node_size);
+                                    do_xor(buf2, &context->stripes[curstripe].buf[bufoff], node_size);
+                                } else if (curstripe == stripe)
+                                    x = k;
+                                else if (curstripe == j)
+                                    y = k;
+                                
+                                curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
+                                k--;
+                            } while (curstripe != parity2);
+                            
+                            gyx = gpow2(y > x ? (y-x) : (255-x+y));
+                            gx = gpow2(255-x);
+
+                            denom = gdiv(1, gyx ^ 1);
+                            a = gmul(gyx, denom);
+                            b = gmul(gx, denom);
+                            
+                            p = &context->stripes[parity1].buf[bufoff];
+                            q = &context->stripes[parity2].buf[bufoff];
+                            pxy = buf2;
+                            qxy = parity; 
+                            
+                            for (k = 0; k < node_size; k++) {
+                                *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
+                                
+                                p++;
+                                q++;
+                                pxy++;
+                                qxy++;
+                            }
+                            
+                            th2 = (tree_header*)parity;
+                    
+                            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
+                        
+                            if (crc32 == *((UINT32*)th2->csum)) {
+                                do_xor(buf2, parity, node_size);
+                                do_xor(buf2, &context->stripes[parity1].buf[bufoff], node_size);
+                                
+                                RtlCopyMemory(&context->stripes[j].buf[bufoff], buf2, node_size);
+//                                 context->stripes[j].rewrite = TRUE;
+                                
+                                RtlCopyMemory(buf + *pos, parity, node_size);
+                                ExFreePool(parity);
+                                ExFreePool(buf2);
+                                goto success;
+                            }
+                        }
+                        
+                        j = (j + 1) % ci->num_stripes;
+                    }
+                        
+                    ExFreePool(parity);
+                    ExFreePool(buf2);
+                    
+                    ERR("unrecoverable checksum error\n");
+                    return FALSE;
+                }
+                
+success:
+                RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos, node_size);
+//                 context->stripes[stripe].rewrite = TRUE;
             }
             
             *pos += copylen;
@@ -1923,11 +2155,8 @@ raid1write:
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-                Status = STATUS_CRC_ERROR;
-                goto exit;
-            }
+            if (crc32 != *((UINT32*)th->csum))
+                checksum_error = TRUE;
         } else if (csum) {
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
@@ -2025,13 +2254,13 @@ raid1write:
             }
             
             if (context->tree) {
-//                 pos = 0;
-//                 stripeoff = 0;
-//                 if (!raid5_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
-//                     ERR("unrecoverable metadata checksum error\n");
-//                     Status = STATUS_CRC_ERROR;
-//                     goto exit;
-//                 }
+                pos = 0;
+                stripeoff = 0;
+                if (!raid6_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+                    ERR("unrecoverable metadata checksum error\n");
+                    Status = STATUS_CRC_ERROR;
+                    goto exit;
+                }
             } else {
                 pos = 0;
                 stripeoff = 0;
