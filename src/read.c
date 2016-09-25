@@ -182,8 +182,6 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 }
             }
         } else if (context->type == BLOCK_FLAG_RAID6) {
-            // FIXME - check checksum
-
             stripe->status = ReadDataStatus_Success;
 
             if (stripes_left == 2) {
@@ -589,6 +587,77 @@ static void raid6_decode(UINT64 off, UINT32 skip, read_data_context* context, CH
             
             if (*pos == length)
                 return;
+            
+            skip = 0;
+        }
+        
+        stripe = (stripe + 1) % ci->num_stripes;
+    }
+}
+
+static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+                                       UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32* csum, UINT32 sector_size) {
+    UINT16 parity1, parity2, stripe;
+    BOOL first = *pos == 0;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    
+    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+    parity2 = (parity1 + 1) % ci->num_stripes;
+    stripe = (parity1 + 2) % ci->num_stripes;
+    
+    while (TRUE) {
+        if (stripe == parity1) {
+            *stripeoff += stripelen;
+            return TRUE;
+        }
+        
+        if (skip >= ci->stripe_length) {
+            skip -= ci->stripe_length;
+        } else {
+            UINT32 i;
+            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
+            
+            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
+            
+            for (i = 0; i < copylen / sector_size; i ++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
+                
+                if (crc32 != csum[i]) {
+                    UINT16 j, firststripe;
+                    
+                    if (parity2 == 0 && stripe == 1)
+                        firststripe = 2;
+                    else if (parity2 == 0 || stripe == 0)
+                        firststripe = 1;
+                    else
+                        firststripe = 0;
+                    
+                    RtlCopyMemory(buf + *pos + (i * sector_size),
+                                  &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                    
+                    for (j = firststripe + 1; j < ci->num_stripes; j++) {
+                        if (j != stripe && j != parity2) {
+                            do_xor(buf + *pos + (i * sector_size), &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                        }
+                    }
+                    
+                    crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
+                    
+                    if (crc32 != csum[i]) {
+                        // FIXME - handle case where two dodgy stripes
+                        ERR("unrecoverable checksum error\n");
+                        return FALSE;
+                    }
+                    
+                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos + (i * sector_size), sector_size);
+                    context->stripes[stripe].rewrite = TRUE;
+                }
+            }
+            
+            *pos += copylen;
+            
+            if (*pos == length)
+                return TRUE;
             
             skip = 0;
         }
@@ -1615,6 +1684,7 @@ raid1write:
         UINT64 off, stripeoff;
         UINT8 needs_reconstruct = 0;
         UINT16 missing1, missing2;
+        BOOL checksum_error = FALSE;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -1706,11 +1776,134 @@ raid1write:
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 
                 if (crc32 != csum[i]) {
-                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
+                    checksum_error = TRUE;
+                    break;
+                }
+            }
+        }
+        
+        if (checksum_error) {
+            for (i = 0; i < needs_reconstruct; i++) {
+                PIO_STACK_LOCATION IrpSp;
+                UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
+                
+                // re-run Irps that we cancelled
+                
+                if (context->stripes[reconstruct_stripe].Irp) {
+                    if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
+                        MmUnlockPages(context->stripes[reconstruct_stripe].Irp->MdlAddress);
+                        IoFreeMdl(context->stripes[reconstruct_stripe].Irp->MdlAddress);
+                    }
+                    IoFreeIrp(context->stripes[reconstruct_stripe].Irp);
+                }
+                
+                if (!Irp) {
+                    context->stripes[reconstruct_stripe].Irp = IoAllocateIrp(devices[reconstruct_stripe]->devobj->StackSize, FALSE);
+                    
+                    if (!context->stripes[reconstruct_stripe].Irp) {
+                        ERR("IoAllocateIrp failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                } else {
+                    context->stripes[reconstruct_stripe].Irp = IoMakeAssociatedIrp(Irp, devices[reconstruct_stripe]->devobj->StackSize);
+                    
+                    if (!context->stripes[reconstruct_stripe].Irp) {
+                        ERR("IoMakeAssociatedIrp failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                }
+                
+                IrpSp = IoGetNextIrpStackLocation(context->stripes[reconstruct_stripe].Irp);
+                IrpSp->MajorFunction = IRP_MJ_READ;
+                
+                if (devices[reconstruct_stripe]->devobj->Flags & DO_BUFFERED_IO) {
+                    FIXME("FIXME - buffered IO\n");
+                } else if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
+                    context->stripes[reconstruct_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[reconstruct_stripe].buf,
+                                                                                         stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], FALSE, FALSE, NULL);
+                    if (!context->stripes[reconstruct_stripe].Irp->MdlAddress) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    MmProbeAndLockPages(context->stripes[reconstruct_stripe].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                } else {
+                    context->stripes[reconstruct_stripe].Irp->UserBuffer = context->stripes[reconstruct_stripe].buf;
+                }
+
+                IrpSp->Parameters.Read.Length = stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe];
+                IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[reconstruct_stripe] + cis[reconstruct_stripe].offset;
+                
+                context->stripes[reconstruct_stripe].Irp->UserIosb = &context->stripes[reconstruct_stripe].iosb;
+                
+                IoSetCompletionRoutine(context->stripes[reconstruct_stripe].Irp, read_data_completion, &context->stripes[reconstruct_stripe], TRUE, TRUE, TRUE);
+
+                context->stripes[reconstruct_stripe].status = ReadDataStatus_Pending;
+            }
+             
+            if (needs_reconstruct > 0) {
+                context->stripes_left = needs_reconstruct;
+                KeClearEvent(&context->Event);
+                
+                for (i = 0; i < needs_reconstruct; i++) {
+                    UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
+                    
+                    IoCallDriver(devices[reconstruct_stripe]->devobj, context->stripes[reconstruct_stripe].Irp);
+                }
+                
+                KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+                
+                for (i = 0; i < needs_reconstruct; i++) {
+                    UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
+                    
+                    if (context->stripes[reconstruct_stripe].status != ReadDataStatus_Success) {
+                        ERR("unrecoverable checksum error\n");
+                        Status = STATUS_CRC_ERROR;
+                        goto exit;
+                    }
+                }
+            }
+            
+            if (context->tree) {
+//                 pos = 0;
+//                 stripeoff = 0;
+//                 if (!raid5_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+//                     ERR("unrecoverable metadata checksum error\n");
+//                     Status = STATUS_CRC_ERROR;
+//                     goto exit;
+//                 }
+            } else {
+                pos = 0;
+                stripeoff = 0;
+                if (!raid6_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, csum, Vcb->superblock.sector_size)) {
                     Status = STATUS_CRC_ERROR;
                     goto exit;
                 }
+                
+                while (pos < length) {
+                    off += (ci->num_stripes - 1) * ci->stripe_length;
+                    if (!raid6_decode_with_checksum(off, 0, context, ci, &stripeoff, buf, &pos, length, 0, csum, Vcb->superblock.sector_size)) {
+                        Status = STATUS_CRC_ERROR;
+                        goto exit;
+                    }
+                }
             }
+            
+//             // write good data over bad
+//             
+//             if (!Vcb->readonly) {
+//                 for (i = 0; i < ci->num_stripes; i++) {
+//                     if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
+//                         Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+//                         
+//                         if (!NT_SUCCESS(Status))
+//                             WARN("write_data_phys returned %08x\n", Status);
+//                     }
+//                 }
+//             }
         }
         
         Status = STATUS_SUCCESS;
