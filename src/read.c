@@ -644,11 +644,74 @@ static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                     crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
                     
                     if (crc32 != csum[i]) {
-                        // FIXME - handle case where two dodgy stripes
+                        UINT8* parity;
+                        UINT16 rs, div;
+                        
+                        // assume p is wrong
+                        
+                        parity = ExAllocatePoolWithTag(NonPagedPool, sector_size, ALLOC_TAG);
+                        if (!parity) {
+                            ERR("out of memory\n");
+                            return FALSE;
+                        }
+                        
+                        rs = (parity1 + ci->num_stripes - 1) % ci->num_stripes;
+                        j = ci->num_stripes - 3;
+                        
+                        if (rs == stripe) {
+                            RtlZeroMemory(parity, sector_size);
+                            div = j;
+                        } else
+                            RtlCopyMemory(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                        
+                        rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
+                        j--;
+                        while (rs != parity2) {
+                            galois_double(parity, sector_size);
+                            
+                            if (rs != stripe)
+                                do_xor(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                            else
+                                div = j;
+            
+                            rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
+                            j--;
+                        }
+                        
+                        do_xor(parity, &context->stripes[parity2].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                        
+                        if (div != 0)
+                            galois_divpower(parity, div, sector_size);
+                        
+                        crc32 = ~calc_crc32c(0xffffffff, parity, sector_size);
+                        if (crc32 == csum[i]) {
+                            RtlCopyMemory(buf + *pos + (i * sector_size), parity, sector_size);
+                            
+                            // recalculate p
+                            RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], parity, sector_size);
+                            
+                            for (j = 0; j < ci->num_stripes; j++) {
+                                if (j != stripe && j != parity1 && j != parity2) {
+                                    do_xor(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)],
+                                           &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
+                                }
+                            }
+                            
+                            context->stripes[parity1].rewrite = TRUE;
+                            
+                            ExFreePool(parity);
+                            goto success;
+                        }
+                        
+                        ExFreePool(parity);
+                        
+                        // FIXME - assume one of the data stripes is wrong
+                        
                         ERR("unrecoverable checksum error\n");
                         return FALSE;
                     }
                     
+success:
                     RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos + (i * sector_size), sector_size);
                     context->stripes[stripe].rewrite = TRUE;
                 }
