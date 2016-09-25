@@ -644,7 +644,7 @@ static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                     crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
                     
                     if (crc32 != csum[i]) {
-                        UINT8* parity;
+                        UINT8 *parity, *buf2;
                         UINT16 rs, div;
                         
                         // assume p is wrong
@@ -703,9 +703,103 @@ static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
                             goto success;
                         }
                         
-                        ExFreePool(parity);
+                        // assume another of the data stripes is wrong
                         
-                        // FIXME - assume one of the data stripes is wrong
+                        buf2 = ExAllocatePoolWithTag(NonPagedPool, sector_size, ALLOC_TAG);
+                        if (!buf2) {
+                            ERR("out of memory\n");
+                            ExFreePool(parity);
+                            return FALSE;
+                        }
+                        
+                        j = (parity2 + 1) % ci->num_stripes;
+                        
+                        while (j != parity1) {
+                            if (j != stripe) {
+                                UINT16 curstripe, k;
+                                UINT32 bufoff = *stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size);
+                                UINT16 x, y;
+                                UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
+                            
+                                curstripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+                                
+                                // put qxy in parity
+                                // put pxy in buf2
+                                
+                                k = ci->num_stripes - 3;
+                                if (curstripe == stripe || curstripe == j) {
+                                    RtlZeroMemory(parity, sector_size);
+                                    RtlZeroMemory(buf2, sector_size);
+                                    
+                                    if (curstripe == stripe)
+                                        x = k;
+                                    else
+                                        y = k;
+                                } else {
+                                    RtlCopyMemory(parity, &context->stripes[curstripe].buf[bufoff], sector_size);
+                                    RtlCopyMemory(buf2, &context->stripes[curstripe].buf[bufoff], sector_size);
+                                }
+                                
+                                curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
+                                
+                                k--;
+                                do {
+                                    galois_double(parity, sector_size);
+                                    
+                                    if (curstripe != stripe && curstripe != j) {
+                                        do_xor(parity, &context->stripes[curstripe].buf[bufoff], sector_size);
+                                        do_xor(buf2, &context->stripes[curstripe].buf[bufoff], sector_size);
+                                    } else if (curstripe == stripe)
+                                        x = k;
+                                    else if (curstripe == j)
+                                        y = k;
+                                    
+                                    curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
+                                    k--;
+                                } while (curstripe != parity2);
+                                
+                                gyx = gpow2(y > x ? (y-x) : (255-x+y));
+                                gx = gpow2(255-x);
+
+                                denom = gdiv(1, gyx ^ 1);
+                                a = gmul(gyx, denom);
+                                b = gmul(gx, denom);
+                                
+                                p = &context->stripes[parity1].buf[bufoff];
+                                q = &context->stripes[parity2].buf[bufoff];
+                                pxy = buf2;
+                                qxy = parity; 
+                                
+                                for (k = 0; k < sector_size; k++) {
+                                    *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
+                                    
+                                    p++;
+                                    q++;
+                                    pxy++;
+                                    qxy++;
+                                }
+                                
+                                crc32 = ~calc_crc32c(0xffffffff, parity, sector_size);
+                                
+                                if (crc32 == csum[i]) {
+                                    do_xor(buf2, parity, sector_size);
+                                    do_xor(buf2, &context->stripes[parity1].buf[bufoff], sector_size);
+                                    
+                                    RtlCopyMemory(&context->stripes[j].buf[bufoff], buf2, sector_size);
+                                    context->stripes[j].rewrite = TRUE;
+                                    
+                                    RtlCopyMemory(buf + *pos + (i * sector_size), parity, sector_size);
+                                    ExFreePool(parity);
+                                    ExFreePool(buf2);
+                                    goto success;
+                                }
+                            }
+                            
+                            j = (j + 1) % ci->num_stripes;
+                        }
+                            
+                        ExFreePool(parity);
+                        ExFreePool(buf2);
                         
                         ERR("unrecoverable checksum error\n");
                         return FALSE;
