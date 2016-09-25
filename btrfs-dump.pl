@@ -652,6 +652,28 @@ sub read_data {
 				
 				seek($f,$physoff,0);
 				read($f,$data,$size);
+			} elsif ($obj->{'type'} & 0x100) { # RAID6
+				$stripeoff=($addr-$obj->{'offset'})%0x20000;
+				$parity=(int(($addr-$obj->{'offset'})/0x20000)+3)%4;
+				$stripe=int($stripeoff/0x10000);
+				$physstripe=($parity+$stripe+1)%4;
+				
+				if ($physstripe==0) {
+					$f=$devs{$obj->{'devid'}};
+					$physoff=$obj->{'physoffset'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} elsif ($physstripe==1) {
+					$f=$devs{$obj->{'devid2'}};
+					$physoff=$obj->{'physoffset2'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} elsif ($physstripe==2) {
+					$f=$devs{$obj->{'devid3'}};
+					$physoff=$obj->{'physoffset3'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} elsif ($physstripe==3) {
+					$f=$devs{$obj->{'devid4'}};
+					$physoff=$obj->{'physoffset4'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				}
+				
+				seek($f,$physoff,0);
+				read($f,$data,$size);
 			} elsif ($obj->{'type'} & 0x40) { # RAID10
 				$stripeoff=($addr-$obj->{'offset'})%0x20000;
 				$stripe=int($stripeoff/0x10000);
@@ -670,7 +692,7 @@ sub read_data {
 				seek($devs{$obj->{'devid'}},$obj->{'physoffset'}+$addr-$obj->{'offset'},0);
 				read($devs{$obj->{'devid'}},$data,$size);
 			}
-			# FIXME - handle RAID0 and RAID6
+			# FIXME - handle RAID0
 			
 			return $data;
 		}
@@ -744,6 +766,14 @@ sub dump_tree {
 					
 					$obj{'physoffset3'}=$cis[1];
 					$obj{'devid3'}=$cis[0];
+				}
+				
+				if ($b[7] > 3) {
+					my @cis=unpack("QQA16",$stripes);
+					$stripes=substr($stripes,32);
+					
+					$obj{'physoffset4'}=$cis[1];
+					$obj{'devid4'}=$cis[0];
 				}
 				
 				push @l2p,\%obj;
