@@ -184,7 +184,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID6) {
             stripe->status = ReadDataStatus_Success;
 
-            if (stripes_left == 2) {
+            if (stripes_left == 2 && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -1055,6 +1055,40 @@ success:
     }
 }
 
+static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
+                                          BOOL first, UINT32 firststripesize, UINT8* scratch) {
+    UINT16 parity1, parity2, stripe;
+    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
+    UINT32 readlen, i;
+    
+    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %p)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, scratch);
+    
+    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+    parity2 = (parity1 + 1) % ci->num_stripes;
+    
+    readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
+    
+    RtlCopyMemory(scratch, &context->stripes[parity1].buf[*stripeoff], readlen);
+    stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+    
+    do {
+        do_xor(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
+        
+        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+    } while (stripe != parity2);
+    
+    for (i = 0; i < readlen; i++) {
+        if (scratch[i] != 0) {
+            ERR("unrecoverable checksum error\n");
+            return STATUS_CRC_ERROR;
+        }
+    }
+    
+    *stripeoff += stripelen;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -1839,7 +1873,7 @@ raid1write:
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT32 pos, skip;
         int num_errors = 0;
-        UINT64 off, stripeoff;
+        UINT64 off, stripeoff, origoff;
         BOOL needs_reconstruct = FALSE;
         UINT64 reconstruct_stripe;
         BOOL checksum_error = FALSE;
@@ -1865,6 +1899,7 @@ raid1write:
         off = addr - offset;
         off -= off % ((ci->num_stripes - 1) * ci->stripe_length);
         skip = addr - offset - off;
+        origoff = off;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_Cancelled) {
@@ -1996,6 +2031,7 @@ raid1write:
             }
             
             if (context->tree) {
+                off = origoff;
                 pos = 0;
                 stripeoff = 0;
                 if (!raid5_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
@@ -2004,6 +2040,7 @@ raid1write:
                     goto exit;
                 }
             } else {
+                off = origoff;
                 pos = 0;
                 stripeoff = 0;
                 if (!raid5_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, csum, Vcb->superblock.sector_size)) {
@@ -2070,7 +2107,7 @@ raid1write:
     } else if (type == BLOCK_FLAG_RAID6) {
         UINT32 pos, skip;
         int num_errors = 0;
-        UINT64 off, stripeoff;
+        UINT64 off, stripeoff, origoff;
         UINT8 needs_reconstruct = 0;
         UINT16 missing1, missing2;
         BOOL checksum_error = FALSE;
@@ -2096,6 +2133,7 @@ raid1write:
         off = addr - offset;
         off -= off % ((ci->num_stripes - 2) * ci->stripe_length);
         skip = addr - offset - off;
+        origoff = off;
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].status == ReadDataStatus_Cancelled) {
@@ -2138,8 +2176,7 @@ raid1write:
                 }
             }
             
-            off = addr - offset;
-            off -= off % ((ci->num_stripes - 2) * ci->stripe_length);
+            off = origoff;
         }
         
         pos = 0;
@@ -2253,6 +2290,8 @@ raid1write:
                 }
             }
             
+            off = origoff;
+            
             if (context->tree) {
                 pos = 0;
                 stripeoff = 0;
@@ -2290,6 +2329,39 @@ raid1write:
                     }
                 }
             }
+        }
+        
+        if (!context->tree && !context->csum) {
+            UINT8* scratch;
+            
+            scratch = ExAllocatePoolWithTag(NonPagedPool, ci->stripe_length, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
+            
+            off = origoff;
+            stripeoff = 0;
+            Status = check_raid6_nocsum_parity(off, skip, context, ci, &stripeoff, stripeend[0] - stripestart[0], TRUE, firststripesize, scratch);
+            if (!NT_SUCCESS(Status)) {
+                ERR("check_raid6_nocsum_parity returned %08x\n", Status);
+                ExFreePool(scratch);
+                goto exit;
+            }
+                
+            while (stripeoff < stripeend[0] - stripestart[0]) {
+                off += (ci->num_stripes - 2) * ci->stripe_length;
+                Status = check_raid6_nocsum_parity(off, 0, context, ci, &stripeoff, stripeend[0] - stripestart[0], FALSE, 0, scratch);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("check_raid6_nocsum_parity returned %08x\n", Status);
+                    ExFreePool(scratch);
+                    goto exit;
+                }
+            }
+            
+            ExFreePool(scratch);
         }
         
         Status = STATUS_SUCCESS;
