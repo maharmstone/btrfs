@@ -1086,6 +1086,9 @@ static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_con
     }
     
     if (bad) {
+        UINT16 missing;
+        UINT8* buf2;
+        
         // assume parity is bad
         stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
         RtlCopyMemory(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
@@ -1116,6 +1119,50 @@ static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_con
             context->stripes[parity1].rewrite = TRUE;
             goto end;
         }
+        
+        // assume one of the data stripes is bad
+        
+        buf2 = ExAllocatePoolWithTag(NonPagedPool, readlen, ALLOC_TAG);
+        if (!buf2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        missing = (parity2 + 1) % ci->num_stripes;
+        while (missing != parity1) {
+            RtlCopyMemory(scratch, &context->stripes[parity1].buf[*stripeoff], readlen);
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (i != parity1 && i != parity2 && i != missing) {
+                    do_xor(scratch, &context->stripes[i].buf[*stripeoff], readlen);
+                }
+            }
+            
+            stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+            RtlCopyMemory(buf2, stripe == missing ? scratch : &context->stripes[stripe].buf[*stripeoff], readlen);
+            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+            
+            do {
+                galois_double(buf2, readlen);
+                
+                do_xor(buf2, stripe == missing ? scratch : &context->stripes[stripe].buf[*stripeoff], readlen);
+                
+                stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+            } while (stripe != parity2);
+            
+            if (RtlCompareMemory(buf2, &context->stripes[parity2].buf[*stripeoff], readlen) == readlen) {
+                WARN("recovering from invalid data stripe\n");
+                
+                RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], scratch, readlen);
+                ExFreePool(buf2);
+                
+                context->stripes[missing].rewrite = TRUE;
+                goto end;
+            }
+            
+            missing = (missing + 1) % ci->num_stripes;
+        }
+        
+        ExFreePool(buf2);
         
         ERR("unrecoverable checksum error\n");
         return STATUS_CRC_ERROR;
@@ -2217,6 +2264,40 @@ raid1write:
             off = origoff;
         }
         
+        if (!context->tree && !context->csum) {
+            UINT8* scratch;
+            
+            scratch = ExAllocatePoolWithTag(NonPagedPool, ci->stripe_length, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
+            
+            stripeoff = 0;
+            Status = check_raid6_nocsum_parity(off, skip, context, ci, &stripeoff, stripeend[0] - stripestart[0], TRUE, firststripesize, scratch);
+            if (!NT_SUCCESS(Status)) {
+                ERR("check_raid6_nocsum_parity returned %08x\n", Status);
+                ExFreePool(scratch);
+                goto exit;
+            }
+                
+            while (stripeoff < stripeend[0] - stripestart[0]) {
+                off += (ci->num_stripes - 2) * ci->stripe_length;
+                Status = check_raid6_nocsum_parity(off, 0, context, ci, &stripeoff, stripeend[0] - stripestart[0], FALSE, 0, scratch);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("check_raid6_nocsum_parity returned %08x\n", Status);
+                    ExFreePool(scratch);
+                    goto exit;
+                }
+            }
+            
+            ExFreePool(scratch);
+            
+            off = origoff;
+        }
+        
         pos = 0;
         stripeoff = 0;
         raid6_decode(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize);
@@ -2354,39 +2435,6 @@ raid1write:
                     }
                 }
             }
-        }
-        
-        if (!context->tree && !context->csum) {
-            UINT8* scratch;
-            
-            scratch = ExAllocatePoolWithTag(NonPagedPool, ci->stripe_length, ALLOC_TAG);
-            if (!scratch) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto exit;
-            }
-            
-            off = origoff;
-            stripeoff = 0;
-            Status = check_raid6_nocsum_parity(off, skip, context, ci, &stripeoff, stripeend[0] - stripestart[0], TRUE, firststripesize, scratch);
-            if (!NT_SUCCESS(Status)) {
-                ERR("check_raid6_nocsum_parity returned %08x\n", Status);
-                ExFreePool(scratch);
-                goto exit;
-            }
-                
-            while (stripeoff < stripeend[0] - stripestart[0]) {
-                off += (ci->num_stripes - 2) * ci->stripe_length;
-                Status = check_raid6_nocsum_parity(off, 0, context, ci, &stripeoff, stripeend[0] - stripestart[0], FALSE, 0, scratch);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("check_raid6_nocsum_parity returned %08x\n", Status);
-                    ExFreePool(scratch);
-                    goto exit;
-                }
-            }
-            
-            ExFreePool(scratch);
         }
         
         // write good data over bad
