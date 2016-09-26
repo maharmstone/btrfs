@@ -765,7 +765,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
             specific_file = TRUE;
-            if (FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
+            if (!ccb->case_sensitive || FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
                 has_wildcard = TRUE;
                 specific_file = FALSE;
             }
