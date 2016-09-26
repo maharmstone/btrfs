@@ -48,7 +48,7 @@ typedef struct {
     LONG stripes_left;
     UINT64 type;
     UINT32 sector_size;
-    UINT16 firstoff, startoffstripe, sectors_per_stripe;
+    UINT16 firstoff, startoffstripe, sectors_per_stripe, stripes_cancel;
     UINT32* csum;
     BOOL tree;
     read_data_stripe* stripes;
@@ -172,7 +172,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID5) {
             stripe->status = ReadDataStatus_Success;
             
-            if (stripes_left == 1 && (context->csum || context->tree)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -184,7 +184,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID6) {
             stripe->status = ReadDataStatus_Success;
 
-            if (stripes_left == 2 && (context->csum || context->tree)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -1428,6 +1428,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripestart[i] = start;
             stripeend[i] = end;
         }
+        
+        context->stripes_cancel = Vcb->options.raid5_recalculation;
     } else if (type == BLOCK_FLAG_RAID6) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe;
@@ -1470,6 +1472,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripestart[i] = start;
             stripeend[i] = end;
         }
+        
+        context->stripes_cancel = Vcb->options.raid6_recalculation;
     }
     
     KeInitializeSpinLock(&context->spin_lock);
