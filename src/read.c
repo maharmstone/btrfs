@@ -43,6 +43,7 @@ typedef struct {
     KEVENT Event;
     NTSTATUS Status;
     chunk* c;
+    UINT64 address;
     UINT32 buflen;
     UINT64 num_stripes;
     LONG stripes_left;
@@ -81,7 +82,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                 
-                if (crc32 != *((UINT32*)th->csum)) {
+                if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
                     stripe->status = ReadDataStatus_CRCError;
                     goto end;
                 }
@@ -114,7 +115,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                 
-                if (crc32 != *((UINT32*)th->csum)) {
+                if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
                     stripe->status = ReadDataStatus_CRCError;
                     goto end;
                 }
@@ -335,7 +336,7 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
     return FALSE;
 }
 
-static BOOL raid5_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+static BOOL raid5_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
                                                 UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size) {
     UINT16 parity, stripe;
     BOOL first = *pos == 0;
@@ -362,7 +363,7 @@ static BOOL raid5_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
             
             crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
+            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                 UINT16 j, firststripe = stripe == 0 ? 1 : 0;
                 
                 RtlCopyMemory(buf + *pos, &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
@@ -375,7 +376,7 @@ static BOOL raid5_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
                 
-                if (crc32 != *((UINT32*)th->csum)) {
+                if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                     ERR("unrecoverable checksum error\n");
                     return FALSE;
                 }
@@ -823,7 +824,7 @@ success:
     }
 }
 
-static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
+static BOOL raid6_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
                                                 UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size) {
     UINT16 parity1, parity2, stripe;
     BOOL first = *pos == 0;
@@ -850,7 +851,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
             
             crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
+            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                 UINT16 j, firststripe;
                 
                 if (parity2 == 0 && stripe == 1)
@@ -870,7 +871,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
                 
-                if (crc32 != *((UINT32*)th->csum)) {
+                if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                     UINT8 *parity, *buf2;
                     UINT16 rs, div;
                     tree_header* th2;
@@ -915,7 +916,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                     
                     crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
                 
-                    if (crc32 == *((UINT32*)th2->csum)) {
+                    if (addr != th2->address || crc32 == *((UINT32*)th2->csum)) {
                         RtlCopyMemory(buf + *pos, parity, node_size);
                         
                         // recalculate p
@@ -1014,7 +1015,7 @@ static BOOL raid6_decode_with_checksum_metadata(UINT64 off, UINT32 skip, read_da
                     
                             crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
                         
-                            if (crc32 == *((UINT32*)th2->csum)) {
+                            if (addr != th2->address || crc32 == *((UINT32*)th2->csum)) {
                                 do_xor(buf2, parity, node_size);
                                 do_xor(buf2, &context->stripes[parity1].buf[bufoff], node_size);
                                 
@@ -1478,6 +1479,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     KeInitializeSpinLock(&context->spin_lock);
     
+    context->address = addr;
+    
     for (i = 0; i < ci->num_stripes; i++) {
         if (!devices[i] || stripestart[i] == stripeend[i]) {
             context->stripes[i].status = ReadDataStatus_MissingDevice;
@@ -1646,7 +1649,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
+            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
                 Status = STATUS_CRC_ERROR;
                 goto exit;
@@ -1851,7 +1854,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum)) {
+            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
                 Status = STATUS_CRC_ERROR;
                 goto exit;
@@ -2032,7 +2035,7 @@ raid1write:
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum))
+            if (addr != th->address || crc32 != *((UINT32*)th->csum))
                 checksum_error = TRUE;
         } else if (csum) {
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
@@ -2123,7 +2126,7 @@ raid1write:
                 off = origoff;
                 pos = 0;
                 stripeoff = 0;
-                if (!raid5_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+                if (!raid5_decode_with_checksum_metadata(addr, off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
                     ERR("unrecoverable metadata checksum error\n");
                     Status = STATUS_CRC_ERROR;
                     goto exit;
@@ -2315,7 +2318,7 @@ raid1write:
             tree_header* th = (tree_header*)buf;
             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
             
-            if (crc32 != *((UINT32*)th->csum))
+            if (addr != th->address || crc32 != *((UINT32*)th->csum))
                 checksum_error = TRUE;
         } else if (csum) {
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
@@ -2418,7 +2421,7 @@ raid1write:
             if (context->tree) {
                 pos = 0;
                 stripeoff = 0;
-                if (!raid6_decode_with_checksum_metadata(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+                if (!raid6_decode_with_checksum_metadata(addr, off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
                     ERR("unrecoverable metadata checksum error\n");
                     Status = STATUS_CRC_ERROR;
                     goto exit;
