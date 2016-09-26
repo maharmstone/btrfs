@@ -1060,6 +1060,7 @@ static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_con
     UINT16 parity1, parity2, stripe;
     UINT32 stripelen = first ? firststripesize : ci->stripe_length;
     UINT32 readlen, i;
+    BOOL bad = FALSE;
     
     TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %p)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, scratch);
     
@@ -1079,11 +1080,48 @@ static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_con
     
     for (i = 0; i < readlen; i++) {
         if (scratch[i] != 0) {
-            ERR("unrecoverable checksum error\n");
-            return STATUS_CRC_ERROR;
+            bad = TRUE;
+            break;
         }
     }
     
+    if (bad) {
+        // assume parity is bad
+        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+        RtlCopyMemory(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
+        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+        
+        do {
+            galois_double(scratch, readlen);
+            
+            do_xor(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
+            
+            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+        } while (stripe != parity2);
+        
+        if (RtlCompareMemory(scratch, &context->stripes[parity2].buf[*stripeoff], readlen) == readlen) {
+            WARN("recovering from invalid parity stripe\n");
+            
+            // recalc p
+            stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
+            RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
+            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+        
+            do {
+                do_xor(&context->stripes[parity1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
+                
+                stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
+            } while (stripe != parity2);
+            
+            context->stripes[parity1].rewrite = TRUE;
+            goto end;
+        }
+        
+        ERR("unrecoverable checksum error\n");
+        return STATUS_CRC_ERROR;
+    }
+    
+end:
     *stripeoff += stripelen;
     
     return STATUS_SUCCESS;
@@ -2316,19 +2354,6 @@ raid1write:
                     }
                 }
             }
-            
-            // write good data over bad
-            
-            if (!Vcb->readonly) {
-                for (i = 0; i < ci->num_stripes; i++) {
-                    if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
-                        
-                        if (!NT_SUCCESS(Status))
-                            WARN("write_data_phys returned %08x\n", Status);
-                    }
-                }
-            }
         }
         
         if (!context->tree && !context->csum) {
@@ -2362,6 +2387,19 @@ raid1write:
             }
             
             ExFreePool(scratch);
+        }
+        
+        // write good data over bad
+        
+        if (!Vcb->readonly) {
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
+                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                    
+                    if (!NT_SUCCESS(Status))
+                        WARN("write_data_phys returned %08x\n", Status);
+                }
+            }
         }
         
         Status = STATUS_SUCCESS;
