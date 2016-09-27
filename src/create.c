@@ -2463,8 +2463,8 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     parfileref = newpar;
     *pparfileref = parfileref;
     
-    if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK) {
-        WARN("parent not file or symlink\n");
+    if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK && parfileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+        WARN("parent not file, directory, or symlink\n");
         return STATUS_INVALID_PARAMETER;
     }
     
