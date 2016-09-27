@@ -1803,6 +1803,13 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             goto end;
         }
         
+        if (sf2 && sf2->deleted) {
+            TRACE("element in path has been deleted\n");
+            free_fileref(sf2);
+            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            goto end;
+        }
+        
         if (!sf2) {
             if (has_stream && i == num_parts - 1) {
                 UNICODE_STRING streamname;
