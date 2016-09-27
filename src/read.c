@@ -2923,7 +2923,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     TRACE("offset = %llx, length = %x\n", start, length);
     TRACE("paging_io = %s, no cache = %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE", Irp->Flags & IRP_NOCACHE ? "TRUE" : "FALSE");
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY)
+    if (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY)
         return STATUS_INVALID_DEVICE_REQUEST;
     
     if (!(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForReadAccess(&fcb->lock, Irp)) {
