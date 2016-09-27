@@ -3952,12 +3952,6 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FilePositionInformation\n");
             
-            if ((Irp->RequestorMode != KernelMode && !(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA))) || !(ccb->options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))) {
-                WARN("insufficient privileges\n");
-                Status = STATUS_ACCESS_DENIED;
-                goto exit;
-            }
-            
             Status = fill_in_file_position_information(fpi, FileObject, &length);
             
             break;
