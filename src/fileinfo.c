@@ -72,6 +72,9 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
                 
         fcb->atts_changed = TRUE;
         
+        if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)
+            fbi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
+        
         if (defda == fbi->FileAttributes)
             fcb->atts_deleted = TRUE;
         
