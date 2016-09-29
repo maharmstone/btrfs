@@ -2989,19 +2989,21 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
         goto end;
     }
     
-    si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
-    if (!si) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+        si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
+        if (!si) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        si->name.Length = si->name.MaximumLength = 0;
+        si->name.Buffer = NULL;
+        si->size = fileref->fcb->inode_item.st_size;
+        si->ignore = FALSE;
+        
+        InsertTailList(&streamlist, &si->list_entry);
     }
-    
-    si->name.Length = si->name.MaximumLength = 0;
-    si->name.Buffer = NULL;
-    si->size = fileref->fcb->inode_item.st_size;
-    si->ignore = FALSE;
-    
-    InsertTailList(&streamlist, &si->list_entry);
     
     do {
         if (tp.item->key.obj_id == fileref->fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
