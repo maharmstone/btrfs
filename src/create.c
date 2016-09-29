@@ -21,6 +21,8 @@
 
 extern PDEVICE_OBJECT devobj;
 
+static WCHAR datastring[] = L"::$DATA";
+
 static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
@@ -1761,6 +1763,9 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     }
     
     if (fnus->Length == 0) {
+        num_parts = 0;
+    } else if (fnus->Length == wcslen(datastring) * sizeof(WCHAR) &&
+               RtlCompareMemory(fnus->Buffer, datastring, wcslen(datastring) * sizeof(WCHAR)) == wcslen(datastring) * sizeof(WCHAR)) {
         num_parts = 0;
     } else {
         Status = split_path(&fnus2, &parts, &num_parts, &has_stream);
