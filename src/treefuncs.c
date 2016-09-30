@@ -395,6 +395,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                                           const char* func, const char* file, unsigned int line) {
     int cmp;
     tree_data *td, *lasttd;
+    KEY key2;
     
     TRACE("(%p, %p, %p, %p, %u)\n", Vcb, t, tp, searchkey, ignore);
     
@@ -404,8 +405,10 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
     
     if (!td) return STATUS_NOT_FOUND;
     
+    key2 = *searchkey;
+    
     do {
-        cmp = keycmp(searchkey, &td->key);
+        cmp = keycmp(key2, td->key);
 //         TRACE("(%u) comparing (%x,%x,%x) to (%x,%x,%x) - %i (ignore = %s)\n", t->header.level, (UINT32)searchkey->obj_id, searchkey->obj_type, (UINT32)searchkey->offset, (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset, cmp, td->ignore ? "TRUE" : "FALSE");
         if (cmp == 1) {
             lasttd = td;
@@ -419,7 +422,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
                 td = next_item(t, td);
             
             if (td) {
-                cmp = keycmp(searchkey, &td->key);
+                cmp = keycmp(key2, td->key);
                 
                 if (cmp != 0) {
                     td = origtd;
@@ -859,7 +862,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     
     if (tp.item) {
         TRACE("tp.item->key = %p\n", &tp.item->key);
-        cmp = keycmp(&searchkey, &tp.item->key);
+        cmp = keycmp(searchkey, tp.item->key);
         
         if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
@@ -898,7 +901,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         paritem = tp.tree->paritem;
         while (paritem) {
 //             ERR("paritem = %llx,%x,%llx, tp.item->key = %llx,%x,%llx\n", paritem->key.obj_id, paritem->key.obj_type, paritem->key.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-            if (!keycmp(&paritem->key, &tp.item->key)) {
+            if (!keycmp(paritem->key, tp.item->key)) {
                 paritem->key = searchkey;
             } else
                 break;

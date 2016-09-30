@@ -542,7 +542,7 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
         return;
     }
     
-    if (keycmp(&searchkey, &tp2.item->key)) {
+    if (keycmp(searchkey, tp2.item->key)) {
         ERR("could not find %llx,%x,%llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return;
     }
@@ -907,7 +907,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                         return Status;
                     }
                     
-                    if (keycmp(&searchkey, &tp.item->key)) {
+                    if (keycmp(searchkey, tp.item->key)) {
 //                         traverse_ptr next_tp;
 //                         BOOL b;
 //                         tree_data* paritem;
@@ -1492,7 +1492,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 return Status;
             }
             
-            if (keycmp(&searchkey, &tp.item->key)) {
+            if (keycmp(searchkey, tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -1810,7 +1810,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
             
-            if (keycmp(&searchkey, &tp.item->key)) {
+            if (keycmp(searchkey, tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 int3;
                 Status = STATUS_INTERNAL_ERROR;
@@ -2383,7 +2383,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             return Status;
         }
         
-        if (!keycmp(&tp.item->key, &searchkey)) {
+        if (!keycmp(tp.item->key, searchkey)) {
             EXTENT_ITEM_SKINNY_METADATA* eism;
             
             if (tp.item->size > 0) {
@@ -2740,7 +2740,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
             if (!NT_SUCCESS(Status)) {
                 WARN("find_item returned %08x\n", Status);
             } else {
-                if (!keycmp(&tp.item->key, &searchkey))
+                if (!keycmp(tp.item->key, searchkey))
                     delete_tree_item(Vcb, &tp, rollback);
                 else
                     WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
@@ -2809,7 +2809,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp,
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         ERR("error - could not find DEV_ITEM for device %llx\n", device->devitem.dev_id);
         return STATUS_INTERNAL_ERROR;
     }
@@ -2886,7 +2886,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     while (le != &Vcb->sys_chunks) {
         sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
         
-        if (keycmp(&sc2->key, &sc->key) == 1)
+        if (keycmp(sc2->key, sc->key) == 1)
             break;
         
         le = le->Flink;
@@ -3041,7 +3041,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, root* subvol, UINT64 in
     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
     maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
     
-    if (!keycmp(&tp.item->key, &searchkey)) { // key exists
+    if (!keycmp(tp.item->key, searchkey)) { // key exists
         UINT8* newdata;
         ULONG size = tp.item->size;
         
@@ -3186,7 +3186,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
         return FALSE;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) { // key exists
+    if (!keycmp(tp.item->key, searchkey)) { // key exists
         ULONG size = tp.item->size;
         
         if (tp.item->size < sizeof(DIR_ITEM)) {
@@ -3552,7 +3552,7 @@ void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
                 goto end;
             }
             
-            if (keycmp(&tp.item->key, &searchkey)) {
+            if (keycmp(tp.item->key, searchkey)) {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
                 goto end;
             } else
@@ -3718,7 +3718,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
             return Status;
         }
 
-        if (!keycmp(&tp.item->key, &searchkey)) {
+        if (!keycmp(tp.item->key, searchkey)) {
             delete_tree_item(Vcb, &tp, rollback);
         }
     }
@@ -3744,7 +3744,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
                 return Status;
             }
             
-            if (!keycmp(&tp.item->key, &searchkey)) {
+            if (!keycmp(tp.item->key, searchkey)) {
                 delete_tree_item(Vcb, &tp, rollback);
                 
                 if (tp.item->size >= sizeof(DEV_EXTENT)) {
@@ -3780,7 +3780,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
                 return Status;
             }
             
-            if (keycmp(&tp.item->key, &searchkey)) {
+            if (keycmp(tp.item->key, searchkey)) {
                 ERR("error - could not find DEV_ITEM for device %llx\n", searchkey.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -3819,7 +3819,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
             return Status;
         }
         
-        if (!keycmp(&tp.item->key, &searchkey))
+        if (!keycmp(tp.item->key, searchkey))
             delete_tree_item(Vcb, &tp, rollback);
         else
             WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
@@ -3969,7 +3969,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(ROOT_REF)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
             return STATUS_INTERNAL_ERROR;
@@ -4053,7 +4053,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         ULONG rrsize = tp.item->size + sizeof(ROOT_REF) - 1 + rr->n;
         UINT8* rr2;
         
@@ -4104,7 +4104,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey) && tp.item->size > 0) {
+    if (!keycmp(tp.item->key, searchkey) && tp.item->size > 0) {
         datalen = tp.item->size;
         
         data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
@@ -4132,7 +4132,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey))
+    if (!keycmp(tp.item->key, searchkey))
         delete_tree_item(Vcb, &tp, rollback);
     
     if (datalen > 0) {
@@ -4379,7 +4379,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, PIRP Irp, LIST_ENTRY* rollback)
             return Status;
         }
         
-        if (!keycmp(&searchkey, &tp.item->key)) {
+        if (!keycmp(searchkey, tp.item->key)) {
             delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         }
@@ -4517,7 +4517,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, PIRP Irp, LIST_ENTRY* rollback)
             return Status;
         }
         
-        if (!keycmp(&searchkey, &tp.item->key)) {
+        if (!keycmp(searchkey, tp.item->key)) {
             delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
             TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         } else

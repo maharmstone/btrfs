@@ -569,12 +569,12 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             goto end;
         }
         
-        if (keycmp(&tp.item->key, &searchkey) == -1) {
+        if (keycmp(tp.item->key, searchkey) == -1) {
             if (find_next_item(fileref->fcb->Vcb, &tp, &next_tp, FALSE, Irp))
                 tp = next_tp;
         }
         
-        if (keycmp(&tp.item->key, &searchkey) != -1 && tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (keycmp(tp.item->key, searchkey) != -1 && tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             do {
                 if (fr) {
                     if (fr->index <= tp.item->key.offset && !fr->deleted) {

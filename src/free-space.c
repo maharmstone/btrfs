@@ -272,7 +272,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         TRACE("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return STATUS_NOT_FOUND;
     }
@@ -724,7 +724,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return Status;
         }
         
-        if (!keycmp(&searchkey, &tp.item->key))
+        if (!keycmp(searchkey, tp.item->key))
             delete_tree_item(Vcb, &tp, rollback);
         
         fsi->key.obj_id = c->cache->inode;
@@ -776,7 +776,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return Status;
         }
         
-        if (keycmp(&searchkey, &tp.item->key)) {
+        if (keycmp(searchkey, tp.item->key)) {
             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             return STATUS_INTERNAL_ERROR;
         }
@@ -820,7 +820,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return Status;
         }
         
-        if (keycmp(&searchkey, &tp.item->key)) {
+        if (keycmp(searchkey, tp.item->key)) {
             INODE_ITEM* ii;
             
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
@@ -851,7 +851,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return Status;
         }
         
-        if (keycmp(&searchkey, &tp.item->key)) {
+        if (keycmp(searchkey, tp.item->key)) {
             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             return STATUS_INTERNAL_ERROR;
         }
@@ -1210,7 +1210,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
         return Status;
     }
     
-    if (keycmp(&searchkey, &tp.item->key)) {
+    if (keycmp(searchkey, tp.item->key)) {
         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return STATUS_INTERNAL_ERROR;
     }

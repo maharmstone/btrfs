@@ -640,10 +640,18 @@ static UINT64 __inline make_file_id(root* r, UINT64 inode) {
     return (r->id << 40) | (inode & 0xffffffffff);
 }
 
+#define keycmp(key1, key2)\
+    ((key1.obj_id < key2.obj_id) ? -1 :\
+    ((key1.obj_id > key2.obj_id) ? 1 :\
+    ((key1.obj_type < key2.obj_type) ? -1 :\
+    ((key1.obj_type > key2.obj_type) ? 1 :\
+    ((key1.offset < key2.offset) ? -1 :\
+    ((key1.offset > key2.offset) ? 1 :\
+    0))))))
+
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment );
-int keycmp(const KEY* key1, const KEY* key2);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);

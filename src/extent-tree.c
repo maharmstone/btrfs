@@ -358,7 +358,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
             return Status;
         }
         
-        if (!keycmp(&tp.item->key, &searchkey)) {
+        if (!keycmp(tp.item->key, searchkey)) {
             if (tp.item->size < datalen) {
                 ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp.item->size, datalen);
                 return STATUS_INTERNAL_ERROR;
@@ -676,7 +676,7 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
         return Status;
     }
     
-    if (keycmp(&tp2.item->key, &searchkey)) {
+    if (keycmp(tp2.item->key, searchkey)) {
         ERR("(%llx,%x,%llx) not found\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
@@ -1098,7 +1098,7 @@ NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 s
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         WARN("extent item not found for address %llx, size %llx\n", address, size);
         return STATUS_SUCCESS;
     }
@@ -1255,7 +1255,7 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
         return 0;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {    
+    if (!keycmp(searchkey, tp.item->key)) {    
         if (tp.item->size < sizeof(EXTENT_DATA_REF))
             ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
         else {    
@@ -1410,7 +1410,7 @@ static UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         return 0;
     }
     
-    if (keycmp(&searchkey, &tp.item->key)) {
+    if (keycmp(searchkey, tp.item->key)) {
         ERR("couldn't find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return 0;
     }
@@ -1458,7 +1458,7 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
         return FALSE;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         WARN("could not find (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return FALSE;
     }

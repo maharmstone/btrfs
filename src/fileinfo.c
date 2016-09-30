@@ -215,7 +215,7 @@ static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 ino
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         ULONG iersize = tp.item->size + sizeof(INODE_EXTREF) - 1 + utf8->Length;
         UINT8* ier2;
         UINT32 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
@@ -283,7 +283,7 @@ NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         ULONG irsize = tp.item->size + sizeof(INODE_REF) - 1 + utf8->Length;
         UINT8* ir2;
         UINT32 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);

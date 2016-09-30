@@ -239,28 +239,6 @@ UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment )
     return NumberToBeAligned;
 }
 
-int keycmp(const KEY* key1, const KEY* key2) {
-    if (key1->obj_id < key2->obj_id) {
-        return -1;
-    } else if (key1->obj_id > key2->obj_id) {
-        return 1;
-    }
-    
-    if (key1->obj_type < key2->obj_type) {
-        return -1;
-    } else if (key1->obj_type > key2->obj_type) {
-        return 1;
-    }
-    
-    if (key1->offset < key2->offset) {
-        return -1;
-    } else if (key1->offset > key2->offset) {
-        return 1;
-    }
-    
-    return 0;
-}
-
 BOOL is_top_level(PIRP Irp) {
     if (!IoGetTopLevelIrp()) {
         IoSetTopLevelIrp(Irp);
@@ -370,7 +348,7 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
         return FALSE;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         TRACE("could not find item (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return FALSE;
     }
@@ -438,7 +416,7 @@ NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) {
+    if (!keycmp(tp.item->key, searchkey)) {
         ULONG maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         if (tp.item->size + disize > maxlen) {
@@ -862,7 +840,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //         return;
 //     }
 //     
-//     while (TRUE/*keycmp(&tp.item->key, &endkey) < 1*/) {
+//     while (TRUE/*keycmp(tp.item->key, endkey) < 1*/) {
 //         tp.item->ignore = TRUE;
 //         add_to_tree_cache(tc, tp.tree);
 //         
@@ -1280,7 +1258,7 @@ NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, U
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(DIR_ITEM)) {
             WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         } else {
@@ -1351,7 +1329,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(INODE_REF)) {
             WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
         } else {
@@ -1436,7 +1414,7 @@ NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UIN
         return Status;
     }
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(INODE_EXTREF)) {
             WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_EXTREF));
         } else {
@@ -3310,7 +3288,7 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
             return Status;
         }
         
-        if (!keycmp(&searchkey, &tp.item->key)) {
+        if (!keycmp(searchkey, tp.item->key)) {
             if (tp.item->size >= sizeof(BLOCK_GROUP_ITEM)) {
                 bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
                 
@@ -3480,7 +3458,7 @@ static root* find_default_subvol(device_extension* Vcb, PIRP Irp) {
             goto end;
         }
         
-        if (keycmp(&tp.item->key, &searchkey)) {
+        if (keycmp(tp.item->key, searchkey)) {
             ERR("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             goto end;
         }

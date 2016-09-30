@@ -332,7 +332,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
         
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
-    } while (NT_SUCCESS(Status) && !keycmp(&searchkey, &tp.item->key));
+    } while (NT_SUCCESS(Status) && !keycmp(searchkey, tp.item->key));
     
     *root_num = r->id;
     
@@ -839,7 +839,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
         
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
-    } while (NT_SUCCESS(Status) && !keycmp(&searchkey, &tp.item->key));
+    } while (NT_SUCCESS(Status) && !keycmp(searchkey, tp.item->key));
     
     *root_num = r->id;
     

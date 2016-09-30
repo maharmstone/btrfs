@@ -39,7 +39,7 @@ static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) {
+    if (!keycmp(tp.item->key, searchkey)) {
         INODE_REF* ir;
         ULONG len;
         
@@ -96,7 +96,7 @@ static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT6
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) {
+    if (!keycmp(tp.item->key, searchkey)) {
         INODE_EXTREF* ier;
         ULONG len;
         
@@ -153,7 +153,7 @@ static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 sub
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         ERR("couldn't find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return STATUS_INTERNAL_ERROR;
     }
@@ -195,7 +195,7 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
         return Status;
     }
 
-    if (keycmp(&tp.item->key, &searchkey) == -1) {
+    if (keycmp(tp.item->key, searchkey) == -1) {
         if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp)) {
             tp = next_tp;
             
@@ -494,7 +494,7 @@ static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNIC
     
     TRACE("found item %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
     
-    if (!keycmp(&searchkey, &tp.item->key)) {
+    if (!keycmp(searchkey, tp.item->key)) {
         UINT32 size = tp.item->size;
         
         // found by hash
@@ -837,7 +837,7 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
         goto end;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey)) {
+    if (!keycmp(tp.item->key, searchkey)) {
         if (tp.item->size < sizeof(DIR_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         } else {
@@ -1625,7 +1625,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         ERR("error - could not find key for xattr\n");
         free_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
@@ -2554,7 +2554,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         return Status;
     }
     
-    if (!keycmp(&tp.item->key, &searchkey))
+    if (!keycmp(tp.item->key, searchkey))
         overhead = tp.item->size;
     else
         overhead = 0;
