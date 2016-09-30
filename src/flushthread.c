@@ -4604,12 +4604,19 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     NTSTATUS Status;
     LIST_ENTRY* le;
     BOOL cache_changed = FALSE;
-    
+#ifdef DEBUG_FLUSH_TIMES
+    UINT64 filerefs = 0, fcbs = 0;
+    LARGE_INTEGER freq, time1, time2;
+#endif
 #ifdef DEBUG_WRITE_LOOPS
     UINT loops = 0;
 #endif
     
     TRACE("(%p)\n", Vcb);
+
+#ifdef DEBUG_FLUSH_TIMES
+    time1 = KeQueryPerformanceCounter(&freq);
+#endif
     
     while (!IsListEmpty(&Vcb->dirty_filerefs)) {
         dirty_fileref* dirt;
@@ -4621,8 +4628,20 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         flush_fileref(dirt->fileref, Irp, rollback);
         free_fileref(dirt->fileref);
         ExFreePool(dirt);
+
+#ifdef DEBUG_FLUSH_TIMES
+        filerefs++;
+#endif
     }
     
+#ifdef DEBUG_FLUSH_TIMES
+    time2 = KeQueryPerformanceCounter(NULL);
+
+    ERR("flushed %llu filerefs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
+
+    time1 = KeQueryPerformanceCounter(&freq);
+#endif
+
     // We process deleted streams first, so we don't run over our xattr
     // limit unless we absolutely have to.
     
@@ -4639,6 +4658,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             flush_fcb(dirt->fcb, FALSE, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
+
+#ifdef DEBUG_FLUSH_TIMES
+            fcbs++;
+#endif
         }
         
         le = le2;
@@ -4657,11 +4680,21 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             flush_fcb(dirt->fcb, FALSE, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
+
+#ifdef DEBUG_FLUSH_TIMES
+            fcbs++;
+#endif
         }
         
         le = le2;
     }
     
+#ifdef DEBUG_FLUSH_TIMES
+    time2 = KeQueryPerformanceCounter(NULL);
+
+    ERR("flushed %llu fcbs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
+#endif
+
     convert_shared_data_refs(Vcb, Irp, rollback);
     
     ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);

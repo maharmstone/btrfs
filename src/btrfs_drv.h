@@ -40,6 +40,7 @@
 #ifdef _DEBUG
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
+// #define DEBUG_FLUSH_TIMES
 #define DEBUG_PARANOID
 #endif
 
