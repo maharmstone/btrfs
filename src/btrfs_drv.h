@@ -324,10 +324,16 @@ typedef struct _root {
     LIST_ENTRY list_entry;
 } root;
 
+enum batch_operation {
+    Batch_Insert,
+    Batch_SetXattr,
+};
+
 typedef struct {
     KEY key;
     void* data;
     UINT16 datalen;
+    enum batch_operation operation;
     LIST_ENTRY list_entry;
 } batch_item;
 
