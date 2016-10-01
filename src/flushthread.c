@@ -633,7 +633,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         return Status;
     }
     
-    if (keycmp(&tp.item->key, &searchkey)) {
+    if (keycmp(tp.item->key, searchkey)) {
         ERR("could not find %llx,%x,%llx in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         int3;
         return STATUS_INTERNAL_ERROR;
