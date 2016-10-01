@@ -4701,11 +4701,10 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
     
     TRACE("root: %llx\n", br->r->id);
     
-    // FIXME - optimize
-    
     le = br->items.Flink;
     while (le != &br->items) {
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        LIST_ENTRY *le2, *listhead;
         traverse_ptr tp, *tp2;
         KEY tree_end;
         BOOL no_end;
@@ -4759,6 +4758,82 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         tp.tree->size += bi->datalen + sizeof(leaf_node);
         tp.tree->write = TRUE;
         
+        // FIXME - free this correctly
+        tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+        if (!tp2) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        tp2->tree = tp.tree;
+        tp2->item = td;
+        
+        add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+        
+        listhead = &td->list_entry;
+        
+        le2 = le->Flink;
+        while (le2 != &br->items) {
+            batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
+            
+            if (no_end || keycmp(bi2->key, tree_end) == -1) {
+                LIST_ENTRY* le3;
+                BOOL inserted = FALSE;
+                
+                // FIXME
+                td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                if (!td) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                td->key = bi2->key;
+                td->size = bi2->datalen;
+                td->data = bi2->data;
+                td->ignore = FALSE;
+                td->inserted = TRUE;
+                
+                le3 = listhead->Flink;
+                while (le3 != &tp.tree->itemlist) {
+                    tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
+                    
+                    // FIXME
+                    if (keycmp(bi2->key, td2->key) == -1) {
+                        InsertHeadList(le3->Blink, &td->list_entry);
+                        inserted = TRUE;
+                        break;
+                    }
+                    
+                    le3 = le3->Flink;
+                }
+                
+                if (!inserted)
+                    InsertTailList(&tp.tree->itemlist, &td->list_entry);
+                
+                tp.tree->header.num_items++;
+                tp.tree->size += bi2->datalen + sizeof(leaf_node);
+                
+                // FIXME - free this correctly
+                tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                if (!tp2) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                tp2->tree = tp.tree;
+                tp2->item = td;
+                
+                add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                
+                listhead = &td->list_entry;
+                
+                le = le2;
+            } else
+                break;
+            
+            le2 = le2->Flink;
+        }
+        
         t = tp.tree;
         while (t) {
             if (t->paritem && t->paritem->ignore) {
@@ -4773,22 +4848,10 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
             t = t->parent;
         }
         
-        // FIXME - free this correctly
-        
-        tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-        if (!tp2) {
-            ERR("out of memory\n");
-            return;
-        }
-        
-        tp2->tree = tp.tree;
-        tp2->item = td;
-        
-        add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
-        
         le = le->Flink;
     }
     
+    // FIXME - remove as we are going along
     while (!IsListEmpty(&br->items)) {
         LIST_ENTRY* le = RemoveHeadList(&br->items);
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
