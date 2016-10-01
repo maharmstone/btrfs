@@ -4167,7 +4167,7 @@ static NTSTATUS add_root_items_to_cache(device_extension* Vcb, PIRP Irp, LIST_EN
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_fileref(file_ref* fileref, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
     // if fileref created and then immediately deleted, do nothing
@@ -4218,8 +4218,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, PIRP Irp, LIST_ENTRY* rollback)
         }
         
         RtlCopyMemory(di2, di, disize);
-              
-        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di, disize, NULL, Irp, rollback)) {
+
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index,
+                                    di, disize, Batch_Insert, Irp, rollback)) {
             ERR("insert_tree_item failed\n");
             Status = STATUS_INTERNAL_ERROR;
             return Status;
@@ -4573,7 +4574,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         
         dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
         
-        flush_fileref(dirt->fileref, Irp, rollback);
+        flush_fileref(dirt->fileref, &batchlist, Irp, rollback);
         free_fileref(dirt->fileref);
         ExFreePool(dirt);
 
@@ -4581,6 +4582,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         filerefs++;
 #endif
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp, rollback);
     
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);
