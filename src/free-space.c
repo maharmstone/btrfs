@@ -45,7 +45,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, PIR
     
     fcb->deleted = TRUE;
     
-    flush_fcb(fcb, FALSE, Irp, rollback);
+    flush_fcb(fcb, FALSE, NULL, Irp, rollback);
     
     free_fcb(fcb);
 
@@ -752,7 +752,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         Vcb->root_root->lastinode = c->cache->inode;
         
-        flush_fcb(c->cache, TRUE, Irp, rollback);
+        flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
         
         *changed = TRUE;
     } else if (new_cache_size > c->cache->inode_item.st_size) {
@@ -801,7 +801,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->inode_item.st_size = new_cache_size;
         c->cache->inode_item.st_blocks = new_cache_size;
         
-        flush_fcb(c->cache, TRUE, Irp, rollback);
+        flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
     
         *changed = TRUE;
     } else {
@@ -1196,7 +1196,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     c->cache->inode_item.sequence++;
     c->cache->inode_item.st_ctime = *now;
     
-    flush_fcb(c->cache, TRUE, Irp, rollback);
+    flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
     
     // update free_space item
     

@@ -3294,7 +3294,76 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP
     return STATUS_SUCCESS;
 }
 
-void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
+typedef struct {
+    root* r;
+    LIST_ENTRY items;
+    LIST_ENTRY list_entry;
+} batch_root;
+
+static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
+                                   void* data, UINT16 datalen, PIRP Irp, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    batch_root* br = NULL;
+    batch_item* bi;
+    
+    if (!batchlist) {
+        return insert_tree_item(Vcb, r, objid, objtype, offset, data, datalen, NULL, Irp, rollback);
+    }
+    
+    le = batchlist->Flink;
+    while (le != batchlist) {
+        batch_root* br2 = CONTAINING_RECORD(le, batch_root, list_entry);
+        
+        if (br2->r == r) {
+            br = br2;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!br) {
+        br = ExAllocatePoolWithTag(PagedPool, sizeof(batch_root), ALLOC_TAG);
+        if (!br) {
+            ERR("out of memory\n");
+            return FALSE;
+        }
+        
+        br->r = r;
+        InitializeListHead(&br->items);
+        InsertTailList(batchlist, &br->list_entry);
+    }
+    
+    bi = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
+    if (!bi) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
+    bi->key.obj_id = objid;
+    bi->key.obj_type = objtype;
+    bi->key.offset = offset;
+    bi->data = data;
+    bi->datalen = datalen;
+    
+    le = br->items.Blink;
+    while (le != &br->items) {
+        batch_item* bi2 = CONTAINING_RECORD(le, batch_item, list_entry);
+        
+        if (keycmp(bi2->key, bi->key) == -1) {
+            InsertHeadList(&bi2->list_entry, &bi->list_entry);
+            return TRUE;
+        }
+        
+        le = le->Blink;
+    }
+    
+    InsertHeadList(&br->items, &bi->list_entry);
+    
+    return TRUE;
+}
+
+void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
@@ -3610,8 +3679,8 @@ void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback) {
         
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
         
-        if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
+        if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM), Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
             goto end;
         }
     }
@@ -3704,7 +3773,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY
     if (c->cache) {
         c->cache->deleted = TRUE;
         
-        flush_fcb(c->cache, TRUE, Irp, rollback);
+        flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
         
         free_fcb(c->cache);
         
@@ -4600,9 +4669,48 @@ static void convert_shared_data_refs(device_extension* Vcb, PIRP Irp, LIST_ENTRY
     }
 }
 
+static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    
+    TRACE("root: %llx\n", br->r->id);
+    
+    // FIXME - optimize
+    
+    le = br->items.Flink;
+    while (le != &br->items) {
+        batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        
+        TRACE("(%llx,%x,%llx)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        
+        if (!insert_tree_item(Vcb, br->r, bi->key.obj_id, bi->key.obj_type, bi->key.offset, bi->data, bi->datalen, NULL, Irp, rollback)) {
+            ERR("insert_tree_item failed\n");
+        }
+        
+        le = le->Flink;
+    }
+    
+    while (!IsListEmpty(&br->items)) {
+        LIST_ENTRY* le = RemoveHeadList(&br->items);
+        batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        
+        ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
+    }
+}
+
+static void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+    while (!IsListEmpty(batchlist)) {
+        LIST_ENTRY* le = RemoveHeadList(batchlist);
+        batch_root* br2 = CONTAINING_RECORD(le, batch_root, list_entry);
+        
+        commit_batch_list_root(Vcb, br2, Irp, rollback);
+        
+        ExFreePool(br2);
+    }
+}
+
 NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    LIST_ENTRY* le;
+    LIST_ENTRY *le, batchlist;
     BOOL cache_changed = FALSE;
 #ifdef DEBUG_FLUSH_TIMES
     UINT64 filerefs = 0, fcbs = 0;
@@ -4613,6 +4721,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 #endif
     
     TRACE("(%p)\n", Vcb);
+    
+    InitializeListHead(&batchlist);
 
 #ifdef DEBUG_FLUSH_TIMES
     time1 = KeQueryPerformanceCounter(&freq);
@@ -4655,7 +4765,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (dirt->fcb->deleted && dirt->fcb->ads) {
             RemoveEntryList(le);
             
-            flush_fcb(dirt->fcb, FALSE, Irp, rollback);
+            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
 
@@ -4677,7 +4787,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (dirt->fcb->subvol != Vcb->root_root || dirt->fcb->deleted) {
             RemoveEntryList(le);
             
-            flush_fcb(dirt->fcb, FALSE, Irp, rollback);
+            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
 
@@ -4688,6 +4798,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         
         le = le2;
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp, rollback);
     
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);

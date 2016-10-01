@@ -309,6 +309,13 @@ typedef struct _tree {
 } tree;
 
 typedef struct {
+    KEY key;
+    void* data;
+    UINT16 datalen;
+    LIST_ENTRY list_entry;
+} batch_item;
+
+typedef struct {
 //     KSPIN_LOCK load_tree_lock;
     ERESOURCE load_tree_lock;
 } root_nonpaged;
@@ -522,6 +529,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
     PAGED_LOOKASIDE_LIST rollback_item_lookaside;
+    PAGED_LOOKASIDE_LIST batch_item_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
@@ -886,7 +894,7 @@ void do_unlock_volume(device_extension* Vcb);
 void STDCALL flush_thread(void* context);
 NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
-void flush_fcb(fcb* fcb, BOOL cache, PIRP Irp, LIST_ENTRY* rollback);
+void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length);
 
 // in read.c

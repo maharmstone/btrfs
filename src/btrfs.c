@@ -2058,6 +2058,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
     ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
     ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
+    ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
@@ -3825,6 +3826,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->tree_data_lookaside, NULL, NULL, 0, sizeof(tree_data), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->traverse_ptr_lookaside, NULL, NULL, 0, sizeof(traverse_ptr), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->rollback_item_lookaside, NULL, NULL, 0, sizeof(rollback_item), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
@@ -4052,6 +4054,7 @@ exit:
                 ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
                 ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
                 ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
+                ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
             }
                 
