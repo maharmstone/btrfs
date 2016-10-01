@@ -327,6 +327,7 @@ typedef struct _root {
 enum batch_operation {
     Batch_Insert,
     Batch_SetXattr,
+    Batch_DirItem,
 };
 
 typedef struct {
@@ -678,7 +679,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
 void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line);
 BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp);
-NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
 fcb* create_fcb(POOL_TYPE pool_type);

@@ -1252,94 +1252,118 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 }
 
 static void handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* rollback) {
-    if (bi->operation == Batch_SetXattr) {
+    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
-        if (td->size < sizeof(DIR_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
-        } else {
-            UINT8* newdata;
-            ULONG size = td->size;
-            DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
-            DIR_ITEM* xa = (DIR_ITEM*)td->data;
-            
-            while (TRUE) {
-                ULONG oldxasize;
+        if (bi->operation == Batch_SetXattr) {
+            if (td->size < sizeof(DIR_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+            } else {
+                UINT8* newdata;
+                ULONG size = td->size;
+                DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
+                DIR_ITEM* xa = (DIR_ITEM*)td->data;
                 
-                if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
-                    break;
-                }
-                
-                oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-                
-                if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
-                    UINT64 pos;
+                while (TRUE) {
+                    ULONG oldxasize;
                     
-                    // replace
-                    
-                    if (td->size + bi->datalen - oldxasize > maxlen) {
-                        ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
+                    if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                        ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
                         break;
                     }
                     
-                    newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
-                    if (!newdata) {
-                        ERR("out of memory\n");
-                        return;
-                    }
+                    oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
                     
-                    pos = (UINT8*)xa - td->data;
-                    if (pos + oldxasize < td->size) { // copy after changed xattr
-                        RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
-                    }
-                    
-                    if (pos > 0) { // copy before changed xattr
-                        RtlCopyMemory(newdata, td->data, pos);
-                        xa = (DIR_ITEM*)(newdata + pos);
-                    } else
-                        xa = (DIR_ITEM*)newdata;
-                    
-                    RtlCopyMemory(xa, bi->data, bi->datalen);
-                    
-                    bi->datalen = td->size + bi->datalen - oldxasize;
-                    
-                    ExFreePool(bi->data);
-                    bi->data = newdata;
-                    
-                    break;
-                }
-                
-                if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
-                    // not found, add to end of data
-                    
-                    if (td->size + bi->datalen > maxlen) {
-                        ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                    if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
+                        UINT64 pos;
+                        
+                        // replace
+                        
+                        if (td->size + bi->datalen - oldxasize > maxlen) {
+                            ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
+                            break;
+                        }
+                        
+                        newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
+                        if (!newdata) {
+                            ERR("out of memory\n");
+                            return;
+                        }
+                        
+                        pos = (UINT8*)xa - td->data;
+                        if (pos + oldxasize < td->size) { // copy after changed xattr
+                            RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
+                        }
+                        
+                        if (pos > 0) { // copy before changed xattr
+                            RtlCopyMemory(newdata, td->data, pos);
+                            xa = (DIR_ITEM*)(newdata + pos);
+                        } else
+                            xa = (DIR_ITEM*)newdata;
+                        
+                        RtlCopyMemory(xa, bi->data, bi->datalen);
+                        
+                        bi->datalen = td->size + bi->datalen - oldxasize;
+                        
+                        ExFreePool(bi->data);
+                        bi->data = newdata;
+                        
                         break;
                     }
                     
-                    newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
-                    if (!newdata) {
-                        ERR("out of memory\n");
-                        return;
-                    }
-                    
-                    RtlCopyMemory(newdata, td->data, td->size);
-                    
-                    xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
-                    RtlCopyMemory(xa, bi->data, bi->datalen);
-                    
-                    bi->datalen += td->size;
-                    
-                    ExFreePool(bi->data);
-                    bi->data = newdata;
+                    if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
+                        // not found, add to end of data
+                        
+                        if (td->size + bi->datalen > maxlen) {
+                            ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                            break;
+                        }
+                        
+                        newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                        if (!newdata) {
+                            ERR("out of memory\n");
+                            return;
+                        }
+                        
+                        RtlCopyMemory(newdata, td->data, td->size);
+                        
+                        xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
+                        RtlCopyMemory(xa, bi->data, bi->datalen);
+                        
+                        bi->datalen += td->size;
+                        
+                        ExFreePool(bi->data);
+                        bi->data = newdata;
 
-                    break;
-                } else {
-                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-                    size -= oldxasize;
+                        break;
+                    } else {
+                        xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                        size -= oldxasize;
+                    }
                 }
             }
+        } else if (bi->operation == Batch_DirItem) {
+            UINT8* newdata;
+            
+            if (td->size + bi->datalen > maxlen) {
+                ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                return;
+            }
+            
+            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+            if (!newdata) {
+                ERR("out of memory\n");
+                return;
+            }
+            
+            RtlCopyMemory(newdata, td->data, td->size);
+            
+            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+
+            bi->datalen += td->size;
+            
+            ExFreePool(bi->data);
+            bi->data = newdata;
         }
         
         newtd->data = bi->data;

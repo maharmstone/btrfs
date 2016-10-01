@@ -400,53 +400,6 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
     return FALSE;
 }
 
-NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    UINT8* di2;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_DIR_ITEM;
-    searchkey.offset = crc32;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(tp.item->key, searchkey)) {
-        ULONG maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-        
-        if (tp.item->size + disize > maxlen) {
-            WARN("DIR_ITEM was longer than maxlen (%u + %u > %u)\n", tp.item->size, disize, maxlen);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
-        if (!di2) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        if (tp.item->size > 0)
-            RtlCopyMemory(di2, tp.item->data, tp.item->size);
-        
-        RtlCopyMemory(di2 + tp.item->size, di, disize);
-        
-        delete_tree_item(Vcb, &tp, rollback);
-        
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di2, tp.item->size + disize, NULL, Irp, rollback);
-        
-        ExFreePool(di);
-    } else {
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di, disize, NULL, Irp, rollback);
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
