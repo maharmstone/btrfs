@@ -4669,8 +4669,35 @@ static void convert_shared_data_refs(device_extension* Vcb, PIRP Irp, LIST_ENTRY
     }
 }
 
+static void find_tree_end(tree* t, KEY* tree_end, BOOL* no_end) {
+    tree* p;
+    
+    p = t;
+    do {
+        tree_data* pi;
+        
+        if (!p->parent) {
+            *no_end = TRUE;
+            return;
+        }
+        
+        pi = p->paritem;
+        
+        if (pi->list_entry.Flink != &p->parent->itemlist) {
+            tree_data* td = CONTAINING_RECORD(pi->list_entry.Flink, tree_data, list_entry);
+            
+            *tree_end = td->key;
+            *no_end = FALSE;
+            return;
+        }
+        
+        p = p->parent;
+    } while (p);
+}
+
 static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
+    NTSTATUS Status;
     
     TRACE("root: %llx\n", br->r->id);
     
@@ -4679,12 +4706,85 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
     le = br->items.Flink;
     while (le != &br->items) {
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        traverse_ptr tp, *tp2;
+        KEY tree_end;
+        BOOL no_end;
+        tree_data* td;
+        int cmp;
+        tree* t;
         
         TRACE("(%llx,%x,%llx)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
         
-        if (!insert_tree_item(Vcb, br->r, bi->key.obj_id, bi->key.obj_type, bi->key.offset, bi->data, bi->datalen, NULL, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
+        Status = find_item(Vcb, br->r, &tp, &bi->key, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND
+            ERR("find_item returned %08x\n", Status);
+            return;
         }
+        
+        find_tree_end(tp.tree, &tree_end, &no_end);
+        
+        td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+        if (!td) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        td->key = bi->key;
+        td->size = bi->datalen;
+        td->data = bi->data;
+        td->ignore = FALSE;
+        td->inserted = TRUE;
+        
+        cmp = keycmp(bi->key, tp.item->key);
+        
+        if (cmp == -1) { // very first key in root
+            tree_data* paritem;
+            
+            InsertHeadList(&tp.tree->itemlist, &td->list_entry);
+
+            paritem = tp.tree->paritem;
+            while (paritem) {
+                if (!keycmp(paritem->key, tp.item->key)) {
+                    paritem->key = bi->key;
+                } else
+                    break;
+                
+                paritem = paritem->treeholder.tree->paritem;
+            }
+        } else {
+            InsertHeadList(&tp.item->list_entry, &td->list_entry);
+        }
+        
+        tp.tree->header.num_items++;
+        tp.tree->size += bi->datalen + sizeof(leaf_node);
+        tp.tree->write = TRUE;
+        
+        t = tp.tree;
+        while (t) {
+            if (t->paritem && t->paritem->ignore) {
+                t->paritem->ignore = FALSE;
+                t->parent->header.num_items++;
+                t->parent->size += sizeof(internal_node);
+                
+                // FIXME - do we need to add a rollback entry here?
+            }
+
+            t->header.generation = Vcb->superblock.generation;
+            t = t->parent;
+        }
+        
+        // FIXME - free this correctly
+        
+        tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+        if (!tp2) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        tp2->tree = tp.tree;
+        tp2->item = td;
+        
+        add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
         
         le = le->Flink;
     }
