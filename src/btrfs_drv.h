@@ -309,13 +309,6 @@ typedef struct _tree {
 } tree;
 
 typedef struct {
-    KEY key;
-    void* data;
-    UINT16 datalen;
-    LIST_ENTRY list_entry;
-} batch_item;
-
-typedef struct {
 //     KSPIN_LOCK load_tree_lock;
     ERESOURCE load_tree_lock;
 } root_nonpaged;
@@ -330,6 +323,19 @@ typedef struct _root {
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
 } root;
+
+typedef struct {
+    KEY key;
+    void* data;
+    UINT16 datalen;
+    LIST_ENTRY list_entry;
+} batch_item;
+
+typedef struct {
+    root* r;
+    LIST_ENTRY items;
+    LIST_ENTRY list_entry;
+} batch_root;
 
 typedef struct {
     tree* tree;
@@ -804,6 +810,8 @@ void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(device_extension* Vcb, LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
+void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback);
+void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 
 #define find_item(Vcb, r, tp, searchkey, ignore, Irp) _find_item(Vcb, r, tp, searchkey, ignore, Irp, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore, Irp) _find_next_item(Vcb, tp, next_tp, ignore, Irp, funcname, __FILE__, __LINE__)
@@ -908,7 +916,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in free-space.c
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp);
-NTSTATUS clear_free_space_cache(device_extension* Vcb, PIRP Irp);
+NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 offset, UINT64 size);

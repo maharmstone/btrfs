@@ -1208,3 +1208,223 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
         ExFreePool(ri);
     }
 }
+
+static void find_tree_end(tree* t, KEY* tree_end, BOOL* no_end) {
+    tree* p;
+    
+    p = t;
+    do {
+        tree_data* pi;
+        
+        if (!p->parent) {
+            *no_end = TRUE;
+            return;
+        }
+        
+        pi = p->paritem;
+        
+        if (pi->list_entry.Flink != &p->parent->itemlist) {
+            tree_data* td = CONTAINING_RECORD(pi->list_entry.Flink, tree_data, list_entry);
+            
+            *tree_end = td->key;
+            *no_end = FALSE;
+            return;
+        }
+        
+        p = p->parent;
+    } while (p);
+}
+
+void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
+    while (!IsListEmpty(batchlist)) {
+        LIST_ENTRY* le = RemoveHeadList(batchlist);
+        batch_root* br = CONTAINING_RECORD(le, batch_root, list_entry);
+        
+        while (!IsListEmpty(&br->items)) {
+            LIST_ENTRY* le2 = RemoveHeadList(&br->items);
+            batch_item* bi = CONTAINING_RECORD(le2, batch_item, list_entry);
+            
+            ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
+        }
+        
+        ExFreePool(br);
+    }
+}
+
+static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    TRACE("root: %llx\n", br->r->id);
+    
+    le = br->items.Flink;
+    while (le != &br->items) {
+        batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        LIST_ENTRY *le2, *listhead;
+        traverse_ptr tp, *tp2;
+        KEY tree_end;
+        BOOL no_end;
+        tree_data* td;
+        int cmp;
+        tree* t;
+        
+        TRACE("(%llx,%x,%llx)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        
+        Status = find_item(Vcb, br->r, &tp, &bi->key, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND
+            ERR("find_item returned %08x\n", Status);
+            return;
+        }
+        
+        find_tree_end(tp.tree, &tree_end, &no_end);
+        
+        td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+        if (!td) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        td->key = bi->key;
+        td->size = bi->datalen;
+        td->data = bi->data;
+        td->ignore = FALSE;
+        td->inserted = TRUE;
+        
+        cmp = keycmp(bi->key, tp.item->key);
+        
+        if (cmp == -1) { // very first key in root
+            tree_data* paritem;
+            
+            InsertHeadList(&tp.tree->itemlist, &td->list_entry);
+
+            paritem = tp.tree->paritem;
+            while (paritem) {
+                if (!keycmp(paritem->key, tp.item->key)) {
+                    paritem->key = bi->key;
+                } else
+                    break;
+                
+                paritem = paritem->treeholder.tree->paritem;
+            }
+        } else {
+            InsertHeadList(&tp.item->list_entry, &td->list_entry);
+        }
+        
+        tp.tree->header.num_items++;
+        tp.tree->size += bi->datalen + sizeof(leaf_node);
+        tp.tree->write = TRUE;
+        
+        if (rollback) {
+            // FIXME - free this correctly
+            tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+            if (!tp2) {
+                ERR("out of memory\n");
+                return;
+            }
+            
+            tp2->tree = tp.tree;
+            tp2->item = td;
+
+            add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+        }
+        
+        listhead = &td->list_entry;
+        
+        le2 = le->Flink;
+        while (le2 != &br->items) {
+            batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
+            
+            if (no_end || keycmp(bi2->key, tree_end) == -1) {
+                LIST_ENTRY* le3;
+                BOOL inserted = FALSE;
+                
+                td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                if (!td) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                td->key = bi2->key;
+                td->size = bi2->datalen;
+                td->data = bi2->data;
+                td->ignore = FALSE;
+                td->inserted = TRUE;
+                
+                le3 = listhead->Flink;
+                while (le3 != &tp.tree->itemlist) {
+                    tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
+                    
+                    if (keycmp(bi2->key, td2->key) == -1) {
+                        InsertHeadList(le3->Blink, &td->list_entry);
+                        inserted = TRUE;
+                        break;
+                    }
+                    
+                    le3 = le3->Flink;
+                }
+                
+                if (!inserted)
+                    InsertTailList(&tp.tree->itemlist, &td->list_entry);
+                
+                tp.tree->header.num_items++;
+                tp.tree->size += bi2->datalen + sizeof(leaf_node);
+                
+                if (rollback) {
+                    // FIXME - free this correctly
+                    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                    if (!tp2) {
+                        ERR("out of memory\n");
+                        return;
+                    }
+                    
+                    tp2->tree = tp.tree;
+                    tp2->item = td;
+                    
+                    add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                }
+                
+                listhead = &td->list_entry;
+                
+                le = le2;
+            } else
+                break;
+            
+            le2 = le2->Flink;
+        }
+        
+        t = tp.tree;
+        while (t) {
+            if (t->paritem && t->paritem->ignore) {
+                t->paritem->ignore = FALSE;
+                t->parent->header.num_items++;
+                t->parent->size += sizeof(internal_node);
+                
+                // FIXME - do we need to add a rollback entry here?
+            }
+
+            t->header.generation = Vcb->superblock.generation;
+            t = t->parent;
+        }
+        
+        le = le->Flink;
+    }
+    
+    // FIXME - remove as we are going along
+    while (!IsListEmpty(&br->items)) {
+        LIST_ENTRY* le = RemoveHeadList(&br->items);
+        batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        
+        ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
+    }
+}
+
+void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+    while (!IsListEmpty(batchlist)) {
+        LIST_ENTRY* le = RemoveHeadList(batchlist);
+        batch_root* br2 = CONTAINING_RECORD(le, batch_root, list_entry);
+        
+        commit_batch_list_root(Vcb, br2, Irp, rollback);
+        
+        ExFreePool(br2);
+    }
+}

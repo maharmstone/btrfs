@@ -3619,7 +3619,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = NULL;
     GET_LENGTH_INFORMATION gli;
     UINT64 i;
-    LIST_ENTRY* le;
+    LIST_ENTRY *le, batchlist;
     KEY searchkey;
     traverse_ptr tp;
     fcb* root_fcb = NULL;
@@ -3897,15 +3897,20 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
+    InitializeListHead(&batchlist);
+    
     // We've already increased the generation by one
     if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) {
         WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
-        Status = clear_free_space_cache(Vcb, Irp);
+        Status = clear_free_space_cache(Vcb, &batchlist, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("clear_free_space_cache returned %08x\n", Status);
+            clear_batch_list(Vcb, &batchlist);
             goto exit;
         }
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp, NULL);
     
     Vcb->volume_fcb = create_fcb(NonPagedPool);
     if (!Vcb->volume_fcb) {

@@ -23,7 +23,7 @@
 
 // #define DEBUG_SPACE_LISTS
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     
@@ -45,14 +45,14 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, PIR
     
     fcb->deleted = TRUE;
     
-    flush_fcb(fcb, FALSE, NULL, Irp, rollback);
+    flush_fcb(fcb, FALSE, batchlist, Irp, rollback);
     
     free_fcb(fcb);
 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS clear_free_space_cache(device_extension* Vcb, PIRP Irp) {
+NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -86,7 +86,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, PIRP Irp) {
                 else {
                     LIST_ENTRY* le;
                     
-                    Status = remove_free_space_inode(Vcb, fsi->key.obj_id, Irp, &rollback);
+                    Status = remove_free_space_inode(Vcb, fsi->key.obj_id, batchlist, Irp, &rollback);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
@@ -612,7 +612,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     UINT64 num_entries, new_cache_size, i;
@@ -752,7 +752,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         Vcb->root_root->lastinode = c->cache->inode;
         
-        flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
+        flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
         
         *changed = TRUE;
     } else if (new_cache_size > c->cache->inode_item.st_size) {
@@ -801,7 +801,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->inode_item.st_size = new_cache_size;
         c->cache->inode_item.st_blocks = new_cache_size;
         
-        flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
+        flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
     
         *changed = TRUE;
     } else {
@@ -870,17 +870,19 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 }
 
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
+    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
     NTSTATUS Status;
 
     *changed = FALSE;
+    
+    InitializeListHead(&batchlist);
     
     while (le != &Vcb->chunks_changed) {
         BOOL b;
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
 
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        Status = allocate_cache_chunk(Vcb, c, &b, Irp, rollback);
+        Status = allocate_cache_chunk(Vcb, c, &b, &batchlist, Irp, rollback);
         ExReleaseResourceLite(&c->lock);
         
         if (b)
@@ -888,11 +890,14 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
         
         if (!NT_SUCCESS(Status)) {
             ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+            clear_batch_list(Vcb, &batchlist);
             return Status;
         }
         
         le = le->Flink;
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp, rollback);
     
     return STATUS_SUCCESS;
 }
@@ -1145,7 +1150,7 @@ static void space_list_merge(device_extension* Vcb, LIST_ENTRY* spacelist, LIST_
     }
 }
 
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1196,7 +1201,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     c->cache->inode_item.sequence++;
     c->cache->inode_item.st_ctime = *now;
     
-    flush_fcb(c->cache, TRUE, NULL, Irp, rollback);
+    flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
     
     // update free_space item
     
@@ -1260,7 +1265,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 }
 
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->chunks_changed.Flink;
+    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
     NTSTATUS Status;
     chunk* c;
     LARGE_INTEGER time;
@@ -1269,20 +1274,25 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
+    InitializeListHead(&batchlist);
+    
     while (le != &Vcb->chunks_changed) {
         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        Status = update_chunk_cache(Vcb, c, &now, Irp, rollback);
+        Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp, rollback);
         ExReleaseResourceLite(&c->lock);
 
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
+            clear_batch_list(Vcb, &batchlist);
             return Status;
         }
         
         le = le->Flink;
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp, rollback);
     
     return STATUS_SUCCESS;
 }
