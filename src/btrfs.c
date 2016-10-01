@@ -770,12 +770,17 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         {
             FILE_FS_SECTOR_SIZE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
             
-            Status = FsRtlGetSectorSizeInformation(Vcb->Vpb->RealDevice, data);
+            data->LogicalBytesPerSector = Vcb->superblock.sector_size;
+            data->PhysicalBytesPerSectorForAtomicity = Vcb->superblock.sector_size;
+            data->PhysicalBytesPerSectorForPerformance = Vcb->superblock.sector_size;
+            data->FileSystemEffectivePhysicalBytesPerSectorForAtomicity = Vcb->superblock.sector_size;
+            data->ByteOffsetForSectorAlignment = 0;
+            data->ByteOffsetForPartitionAlignment = 0;
             
-            if (!NT_SUCCESS(Status))
-                ERR("FsRtlGetSectorSizeInformation returned %08x\n", Status);
-            else
-                BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);
+            data->Flags = SSINFO_FLAGS_ALIGNED_DEVICE | SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE;
+            // FIXME - query for TRIM and add SSINFO_FLAGS_TRIM_ENABLED if it is supported
+            
+            BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);
   
             break;
         }
