@@ -1804,14 +1804,14 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             WARN("passed path including file as subdirectory\n");
             free_fileref(sf2);
             
-            Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
+            Status = STATUS_OBJECT_PATH_NOT_FOUND;
             goto end;
         }
         
         if (sf2 && sf2->deleted) {
             TRACE("element in path has been deleted\n");
             free_fileref(sf2);
-            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
             goto end;
         }
         
