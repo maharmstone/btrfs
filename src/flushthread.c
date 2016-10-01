@@ -3024,12 +3024,8 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
 
 static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32,
                                   UINT8* data, UINT16 datalen, PIRP Irp, LIST_ENTRY* rollback) {
-//     KEY searchkey;
-//     traverse_ptr tp;
     ULONG xasize;
-//     ULONG maxlen;
     DIR_ITEM* xa;
-//     NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %s, %08x, %p, %u)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
     
@@ -3053,143 +3049,6 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     
     if (!insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_SetXattr, Irp, rollback))
         return STATUS_INTERNAL_ERROR;
-    
-//     searchkey.obj_id = inode;
-//     searchkey.obj_type = TYPE_XATTR_ITEM;
-//     searchkey.offset = crc32;
-//     
-//     Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         return Status;
-//     }
-//     
-//     xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
-//     maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-//     
-//     if (!keycmp(tp.item->key, searchkey)) { // key exists
-//         UINT8* newdata;
-//         ULONG size = tp.item->size;
-//         
-//         xa = (DIR_ITEM*)tp.item->data;
-//         
-//         if (tp.item->size < sizeof(DIR_ITEM)) {
-//             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-//         } else {
-//             while (TRUE) {
-//                 ULONG oldxasize;
-//                 
-//                 if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-//                     ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-//                     break;
-//                 }
-//                 
-//                 oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-//                 
-//                 if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
-//                     UINT64 pos;
-//                     
-//                     // replace
-//                     
-//                     if (tp.item->size + xasize - oldxasize > maxlen) {
-//                         ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", tp.item->size, xasize, oldxasize, maxlen);
-//                         return STATUS_INTERNAL_ERROR;
-//                     }
-//                     
-//                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize - oldxasize, ALLOC_TAG);
-//                     if (!newdata) {
-//                         ERR("out of memory\n");
-//                         return STATUS_INSUFFICIENT_RESOURCES;
-//                     }
-//                     
-//                     pos = (UINT8*)xa - tp.item->data;
-//                     if (pos + oldxasize < tp.item->size) { // copy after changed xattr
-//                         RtlCopyMemory(newdata + pos + xasize, tp.item->data + pos + oldxasize, tp.item->size - pos - oldxasize);
-//                     }
-//                     
-//                     if (pos > 0) { // copy before changed xattr
-//                         RtlCopyMemory(newdata, tp.item->data, pos);
-//                         xa = (DIR_ITEM*)(newdata + pos);
-//                     } else
-//                         xa = (DIR_ITEM*)newdata;
-//                     
-//                     xa->key.obj_id = 0;
-//                     xa->key.obj_type = 0;
-//                     xa->key.offset = 0;
-//                     xa->transid = Vcb->superblock.generation;
-//                     xa->m = datalen;
-//                     xa->n = (UINT16)strlen(name);
-//                     xa->type = BTRFS_TYPE_EA;
-//                     RtlCopyMemory(xa->name, name, strlen(name));
-//                     RtlCopyMemory(xa->name + strlen(name), data, datalen);
-//                     
-//                     delete_tree_item(Vcb, &tp, rollback);
-//                     insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize - oldxasize, NULL, Irp, rollback);
-//                     
-//                     break;
-//                 }
-//                 
-//                 if ((UINT8*)xa - (UINT8*)tp.item->data + oldxasize >= size) {
-//                     // not found, add to end of data
-//                     
-//                     if (tp.item->size + xasize > maxlen) {
-//                         ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", tp.item->size, xasize, maxlen);
-//                         return STATUS_INTERNAL_ERROR;
-//                     }
-//                     
-//                     newdata = ExAllocatePoolWithTag(PagedPool, tp.item->size + xasize, ALLOC_TAG);
-//                     if (!newdata) {
-//                         ERR("out of memory\n");
-//                         return STATUS_INSUFFICIENT_RESOURCES;
-//                     }
-//                     
-//                     RtlCopyMemory(newdata, tp.item->data, tp.item->size);
-//                     
-//                     xa = (DIR_ITEM*)((UINT8*)newdata + tp.item->size);
-//                     xa->key.obj_id = 0;
-//                     xa->key.obj_type = 0;
-//                     xa->key.offset = 0;
-//                     xa->transid = Vcb->superblock.generation;
-//                     xa->m = datalen;
-//                     xa->n = (UINT16)strlen(name);
-//                     xa->type = BTRFS_TYPE_EA;
-//                     RtlCopyMemory(xa->name, name, strlen(name));
-//                     RtlCopyMemory(xa->name + strlen(name), data, datalen);
-//                     
-//                     delete_tree_item(Vcb, &tp, rollback);
-//                     insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, tp.item->size + xasize, NULL, Irp, rollback);
-//                     
-//                     break;
-//                 } else {
-//                     xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-//                     size -= oldxasize;
-//                 }
-//             }
-//         }
-//     } else {
-//         if (xasize > maxlen) {
-//             ERR("DIR_ITEM would be over maximum size (%u > %u)\n", xasize, maxlen);
-//             return STATUS_INTERNAL_ERROR;
-//         }
-//         
-//         xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
-//         if (!xa) {
-//             ERR("out of memory\n");
-//             return STATUS_INSUFFICIENT_RESOURCES;
-//         }
-//         
-//         xa->key.obj_id = 0;
-//         xa->key.obj_type = 0;
-//         xa->key.offset = 0;
-//         xa->transid = Vcb->superblock.generation;
-//         xa->m = datalen;
-//         xa->n = (UINT16)strlen(name);
-//         xa->type = BTRFS_TYPE_EA;
-//         RtlCopyMemory(xa->name, name, strlen(name));
-//         RtlCopyMemory(xa->name + strlen(name), data, datalen);
-//         
-//         insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, NULL, Irp, rollback);
-//     }
     
     return STATUS_SUCCESS;
 }
@@ -3361,6 +3220,7 @@ static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb,
     bi->key.offset = offset;
     bi->data = data;
     bi->datalen = datalen;
+    bi->operation = operation;
     
     le = br->items.Blink;
     while (le != &br->items) {

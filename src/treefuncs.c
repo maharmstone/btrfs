@@ -1251,6 +1251,130 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
     }
 }
 
+static void handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* rollback) {
+    if (bi->operation == Batch_SetXattr) {
+        UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
+        
+        if (td->size < sizeof(DIR_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+        } else {
+            UINT8* newdata;
+            ULONG size = td->size;
+            DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
+            DIR_ITEM* xa = (DIR_ITEM*)td->data;
+            
+            while (TRUE) {
+                ULONG oldxasize;
+                
+                if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                    ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+                    break;
+                }
+                
+                oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+                
+                if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
+                    UINT64 pos;
+                    
+                    // replace
+                    
+                    if (td->size + bi->datalen - oldxasize > maxlen) {
+                        ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
+                        break;
+                    }
+                    
+                    newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
+                    if (!newdata) {
+                        ERR("out of memory\n");
+                        return;
+                    }
+                    
+                    pos = (UINT8*)xa - td->data;
+                    if (pos + oldxasize < td->size) { // copy after changed xattr
+                        RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
+                    }
+                    
+                    if (pos > 0) { // copy before changed xattr
+                        RtlCopyMemory(newdata, td->data, pos);
+                        xa = (DIR_ITEM*)(newdata + pos);
+                    } else
+                        xa = (DIR_ITEM*)newdata;
+                    
+                    RtlCopyMemory(xa, bi->data, bi->datalen);
+                    
+                    bi->datalen = td->size + bi->datalen - oldxasize;
+                    
+                    ExFreePool(bi->data);
+                    bi->data = newdata;
+                    
+                    break;
+                }
+                
+                if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
+                    // not found, add to end of data
+                    
+                    if (td->size + bi->datalen > maxlen) {
+                        ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                        break;
+                    }
+                    
+                    newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                    if (!newdata) {
+                        ERR("out of memory\n");
+                        return;
+                    }
+                    
+                    RtlCopyMemory(newdata, td->data, td->size);
+                    
+                    xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
+                    RtlCopyMemory(xa, bi->data, bi->datalen);
+                    
+                    bi->datalen += td->size;
+                    
+                    ExFreePool(bi->data);
+                    bi->data = newdata;
+
+                    break;
+                } else {
+                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                    size -= oldxasize;
+                }
+            }
+        }
+        
+        newtd->data = bi->data;
+        newtd->size = bi->datalen;
+        
+        // delete old item
+        if (!td->ignore) {
+            traverse_ptr* tp2;
+            
+            td->ignore = TRUE;
+        
+            t->header.num_items--;
+            t->size -= sizeof(leaf_node) + td->size;
+            
+            if (rollback) {
+                tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                if (!tp2) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                tp2->tree = t;
+                tp2->item = td;
+    
+                add_rollback(Vcb, rollback, ROLLBACK_DELETE_ITEM, tp2);
+            }
+        }
+        
+        InsertHeadList(&td->list_entry, &newtd->list_entry);
+    } else {
+        ERR("(%llx,%x,%llx) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        int3;
+    }
+}
+
 static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
@@ -1306,6 +1430,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 
                 paritem = paritem->treeholder.tree->paritem;
             }
+        } else if (cmp == 0) { // item already exists
+            handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, rollback);
         } else {
             InsertHeadList(&tp.item->list_entry, &td->list_entry);
         }
@@ -1350,14 +1476,22 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 td->ignore = FALSE;
                 td->inserted = TRUE;
                 
-                le3 = listhead->Flink;
+                le3 = listhead;
                 while (le3 != &tp.tree->itemlist) {
                     tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
                     
-                    if (keycmp(bi2->key, td2->key) == -1) {
-                        InsertHeadList(le3->Blink, &td->list_entry);
-                        inserted = TRUE;
-                        break;
+                    if (!td2->ignore) {
+                        cmp = keycmp(bi2->key, td2->key);
+
+                        if (cmp == 0) {
+                            handle_batch_collision(Vcb, bi2, tp.tree, td2, td, rollback);
+                            inserted = TRUE;
+                            break;
+                        } else if (cmp == -1) {
+                            InsertHeadList(le3->Blink, &td->list_entry);
+                            inserted = TRUE;
+                            break;
+                        }
                     }
                     
                     le3 = le3->Flink;
