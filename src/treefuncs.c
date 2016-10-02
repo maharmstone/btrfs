@@ -1252,7 +1252,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 }
 
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
-    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef) {
+    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef || bi->operation == Batch_InodeExtRef) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         if (bi->operation == Batch_SetXattr) {
@@ -1287,7 +1287,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
                         if (!newdata) {
                             ERR("out of memory\n");
-                            return FALSE;
+                            return TRUE;
                         }
                         
                         pos = (UINT8*)xa - td->data;
@@ -1322,7 +1322,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                         if (!newdata) {
                             ERR("out of memory\n");
-                            return FALSE;
+                            return TRUE;
                         }
                         
                         RtlCopyMemory(newdata, td->data, td->size);
@@ -1347,13 +1347,13 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
             
             if (td->size + bi->datalen > maxlen) {
                 ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                return FALSE;
+                return TRUE;
             }
             
             newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
             if (!newdata) {
                 ERR("out of memory\n");
-                return FALSE;
+                return TRUE;
             }
             
             RtlCopyMemory(newdata, td->data, td->size);
@@ -1383,7 +1383,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
                     if (!ier) {
                         ERR("out of memory\n");
-                        return FALSE;
+                        return TRUE;
                     }
                     
                     ier->dir = bi->key.offset;
@@ -1395,7 +1395,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     if (!bi2) {
                         ERR("out of memory\n");
                         ExFreePool(ier);
-                        return FALSE;
+                        return TRUE;
                     }
                     
                     bi2->key.obj_id = bi->key.obj_id;
@@ -1403,7 +1403,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     bi2->key.offset = calc_crc32c((UINT32)ier->dir, (UINT8*)ier->name, ier->n);
                     bi2->data = ier;
                     bi2->datalen = ierlen;
-                    bi2->operation = Batch_Insert;
+                    bi2->operation = Batch_InodeExtRef;
                     
                     le = bi->list_entry.Flink;
                     while (le != listhead) {
@@ -1423,14 +1423,36 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     return TRUE;
                 } else {
                     ERR("INODE_REF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                    return FALSE;
+                    return TRUE;
                 }
             }
             
             newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
             if (!newdata) {
                 ERR("out of memory\n");
-                return FALSE;
+                return TRUE;
+            }
+            
+            RtlCopyMemory(newdata, td->data, td->size);
+            
+            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+
+            bi->datalen += td->size;
+            
+            ExFreePool(bi->data);
+            bi->data = newdata;
+        } else if (bi->operation == Batch_InodeExtRef) {
+            UINT8* newdata;
+            
+            if (td->size + bi->datalen > maxlen) {
+                ERR("INODE_EXTREF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                return TRUE;
+            }
+            
+            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+            if (!newdata) {
+                ERR("out of memory\n");
+                return TRUE;
             }
             
             RtlCopyMemory(newdata, td->data, td->size);
