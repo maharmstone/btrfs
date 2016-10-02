@@ -1252,7 +1252,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 }
 
 static void handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* rollback) {
-    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem) {
+    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         if (bi->operation == Batch_SetXattr) {
@@ -1347,6 +1347,29 @@ static void handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
             
             if (td->size + bi->datalen > maxlen) {
                 ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                return;
+            }
+            
+            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+            if (!newdata) {
+                ERR("out of memory\n");
+                return;
+            }
+            
+            RtlCopyMemory(newdata, td->data, td->size);
+            
+            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+
+            bi->datalen += td->size;
+            
+            ExFreePool(bi->data);
+            bi->data = newdata;
+        } else if (bi->operation == Batch_InodeRef) {
+            UINT8* newdata;
+            
+            if (td->size + bi->datalen > maxlen) {
+                ERR("INODE_REF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                // FIXME - add INODE_EXTREF in this case
                 return;
             }
             

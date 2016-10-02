@@ -328,6 +328,7 @@ enum batch_operation {
     Batch_Insert,
     Batch_SetXattr,
     Batch_DirItem,
+    Batch_InodeRef,
 };
 
 typedef struct {

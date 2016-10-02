@@ -4431,7 +4431,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             RtlCopyMemory(ir->name, fileref->utf8.Buffer, ir->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_Insert, Irp, rollback)) {
+                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_InodeRef, Irp, rollback)) {
                 ERR("insert_tree_item_batch failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
