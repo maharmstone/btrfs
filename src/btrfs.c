@@ -310,6 +310,12 @@ static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
         return FALSE;
     }
     
+    if (tp.item->key.obj_type == TYPE_INODE_ITEM || (tp.item->key.obj_type == TYPE_ROOT_ITEM && !(tp.item->key.obj_id & 0x8000000000000000))) {
+        r->lastinode = tp.item->key.obj_id;
+        TRACE("last inode for tree %llx is %llx\n", r->id, r->lastinode);
+        return TRUE;
+    }
+    
     while (find_prev_item(Vcb, &tp, &prev_tp, FALSE, Irp)) {
         tp = prev_tp;
         
