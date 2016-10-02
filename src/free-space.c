@@ -693,10 +693,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         c->cache->subvol = Vcb->root_root;
         
-        if (Vcb->root_root->lastinode == 0)
-            get_last_inode(Vcb, Vcb->root_root, Irp);
-        
-        c->cache->inode = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+        c->cache->inode = InterlockedIncrement64(&Vcb->root_root->lastinode);
         
         c->cache->type = BTRFS_TYPE_FILE;
         c->cache->created = TRUE;
@@ -749,8 +746,6 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
         
         c->cache->extents_changed = TRUE;
-        
-        Vcb->root_root->lastinode = c->cache->inode;
         
         flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
         

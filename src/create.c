@@ -2118,10 +2118,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     mark_fcb_dirty(parfileref->fcb);
     
-    if (parfileref->fcb->subvol->lastinode == 0)
-        get_last_inode(Vcb, parfileref->fcb->subvol, Irp);
-    
-    inode = parfileref->fcb->subvol->lastinode + 1;
+    inode = InterlockedIncrement64(&parfileref->fcb->subvol->lastinode);
     
     type = options & FILE_DIRECTORY_FILE ? BTRFS_TYPE_DIRECTORY : BTRFS_TYPE_FILE;
     
@@ -2145,8 +2142,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     if (IrpSp->Parameters.Create.FileAttributes == FILE_ATTRIBUTE_NORMAL)
         IrpSp->Parameters.Create.FileAttributes = defda;
-    
-    parfileref->fcb->subvol->lastinode++;
     
     fcb = create_fcb(pool_type);
     if (!fcb) {

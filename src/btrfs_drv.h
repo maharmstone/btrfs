@@ -315,9 +315,9 @@ typedef struct {
 
 typedef struct _root {
     UINT64 id;
+    LONGLONG lastinode; // signed so we can use InterlockedIncrement64
     tree_holder treeholder;
     root_nonpaged* nonpaged;
-    UINT64 lastinode;
     ROOT_ITEM root_item;
     UNICODE_STRING path;
     LIST_ENTRY fcbs;
@@ -680,7 +680,6 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
 void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line);
-BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp);
 NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
 fcb* create_fcb(POOL_TYPE pool_type);

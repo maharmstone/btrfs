@@ -289,16 +289,15 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // create new root
     
-    if (Vcb->root_root->lastinode == 0)
-        get_last_inode(Vcb, Vcb->root_root, Irp);
-    
-    id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+    id = InterlockedIncrement64(&Vcb->root_root->lastinode);
     Status = create_root(Vcb, id, &r, TRUE, Vcb->superblock.generation, Irp, &rollback);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
         goto end;
     }
+    
+    r->lastinode = subvol->lastinode;
     
     if (!Vcb->uuid_root) {
         root* uuid_root;
@@ -392,7 +391,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     }
     
     RtlCopyMemory(tp.item->data, &r->root_item, sizeof(ROOT_ITEM));
-    Vcb->root_root->lastinode = r->id;
     
     // update ROOT_ITEM of original subvol
     
@@ -792,12 +790,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         goto end;
     }
     
-    if (Vcb->root_root->lastinode == 0)
-        get_last_inode(Vcb, Vcb->root_root, Irp);
-    
     // FIXME - make sure rollback removes new roots from internal structures
     
-    id = Vcb->root_root->lastinode > 0x100 ? (Vcb->root_root->lastinode + 1) : 0x101;
+    id = InterlockedIncrement64(&Vcb->root_root->lastinode);
     Status = create_root(Vcb, id, &r, FALSE, 0, Irp, &rollback);
     
     if (!NT_SUCCESS(Status)) {
@@ -1022,8 +1017,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     mark_fcb_dirty(fcb);
     
-    Vcb->root_root->lastinode = id;
-
     Status = STATUS_SUCCESS;    
     
 end:

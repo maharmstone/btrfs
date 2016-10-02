@@ -999,11 +999,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 if (!me->fileref->fcb->ads) {
                     LIST_ENTRY* le2;
                     
-                    if (destdir->fcb->subvol->lastinode == 0)
-                        get_last_inode(destdir->fcb->Vcb, destdir->fcb->subvol, Irp);
-
                     me->fileref->fcb->subvol = destdir->fcb->subvol;
-                    me->fileref->fcb->inode = ++destdir->fcb->subvol->lastinode; // FIXME - do proper function for this
+                    me->fileref->fcb->inode = InterlockedIncrement64(&destdir->fcb->subvol->lastinode);
                     me->fileref->fcb->inode_item.st_nlink = 1;
                     
                     defda = get_file_attributes(me->fileref->fcb->Vcb, &me->fileref->fcb->inode_item, me->fileref->fcb->subvol, me->fileref->fcb->inode,
