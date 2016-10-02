@@ -17,7 +17,7 @@
 
 #include "btrfs_drv.h"
 
-NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, DWORD* retlen) {
+NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, ULONG_PTR* retlen) {
     USHORT subnamelen, printnamelen, i;
     ULONG stringlen;
     DWORD reqlen;
@@ -117,11 +117,15 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         Status = STATUS_SUCCESS;
     } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
         if (fcb->type == BTRFS_TYPE_FILE) {
-            Status = read_file(fcb, buffer, 0, buflen, retlen, NULL);
+            ULONG len;
+            
+            Status = read_file(fcb, buffer, 0, buflen, &len, NULL);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);
             }
+            
+            *retlen = len;
         } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
             if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG)) {
                 Status = STATUS_NOT_A_REPARSE_POINT;
