@@ -4407,21 +4407,33 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index,
                                     di, disize, Batch_Insert, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
+            ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM, crc32,
                                     di2, disize, Batch_DirItem, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
+            ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_inode_ref returned %08x\n", Status);
-                return Status;
+            INODE_REF* ir;
+            
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->utf8.Length, ALLOC_TAG);
+            if (!ir) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            ir->index = fileref->index;
+            ir->n = fileref->utf8.Length;
+            RtlCopyMemory(ir->name, fileref->utf8.Buffer, ir->n);
+        
+            if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
+                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_Insert, Irp, rollback)) {
+                ERR("insert_tree_item_batch failed\n");
+                return STATUS_INTERNAL_ERROR;
             }
         } else {
             ULONG rrlen;
