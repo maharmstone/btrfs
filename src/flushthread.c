@@ -3243,6 +3243,7 @@ typedef struct {
     UINT64 address;
     UINT64 length;
     BOOL changed;
+    chunk* chunk;
     LIST_ENTRY list_entry;
 } extent_range;
 
@@ -3286,6 +3287,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 er->address = ed2->address;
                 er->length = ed2->size;
                 er->changed = FALSE;
+                er->chunk = NULL;
                 
                 InsertHeadList(le2->Blink, &er->list_entry);
                 num_extents++;
@@ -3301,6 +3303,34 @@ cont:
     if (num_extents < 2)
         goto end;
     
+    le = extent_ranges.Flink;
+    while (le != &extent_ranges) {
+        er = CONTAINING_RECORD(le, extent_range, list_entry);
+        
+        if (!er->chunk) {
+            LIST_ENTRY* le2;
+            
+            er->chunk = get_chunk_from_address(fcb->Vcb, er->address);
+            
+            if (!er->chunk) {
+                ERR("get_chunk_from_address(%llx) failed\n", er->address);
+                goto end;
+            }
+            
+            le2 = le->Flink;
+            while (le2 != &extent_ranges) {
+                extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
+                
+                if (!er2->chunk && er2->address >= er->chunk->offset && er2->address < er->chunk->offset + er->chunk->chunk_item->size)
+                    er2->chunk = er->chunk;
+                
+                le2 = le2->Flink;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
     // merge together adjacent extents
     le = extent_ranges.Flink;
     while (le != &extent_ranges) {
@@ -3309,20 +3339,22 @@ cont:
         if (le->Flink != &extent_ranges && er->length < MAX_EXTENT_SIZE) {
             extent_range* er2 = CONTAINING_RECORD(le->Flink, extent_range, list_entry);
             
-            if (er2->address == er->address + er->length) {
-                if (er->length + er2->length <= MAX_EXTENT_SIZE) {
-                    er->length += er2->length;
-                    er->changed = TRUE;
-                    
-                    RemoveEntryList(&er2->list_entry);
-                    ExFreePool(er2);
-                    
-                    changed = TRUE;
-                    continue;
-//                 } else { // FIXME - make changing of beginning of offset work
-//                     er2->length = er2->address + er->length - er->address - MAX_EXTENT_SIZE;
-//                     er2->address = er->address + MAX_EXTENT_SIZE;
-//                     er->length = MAX_EXTENT_SIZE;
+            if (er->chunk == er2->chunk) {
+                if (er2->address == er->address + er->length) {
+                    if (er->length + er2->length <= MAX_EXTENT_SIZE) {
+                        er->length += er2->length;
+                        er->changed = TRUE;
+                        
+                        RemoveEntryList(&er2->list_entry);
+                        ExFreePool(er2);
+                        
+                        changed = TRUE;
+                        continue;
+//                     } else { // FIXME - make changing of beginning of offset work
+//                         er2->length = er2->address + er->length - er->address - MAX_EXTENT_SIZE;
+//                         er2->address = er->address + MAX_EXTENT_SIZE;
+//                         er->length = MAX_EXTENT_SIZE;
+                    }
                 }
             }
         }
@@ -3349,15 +3381,9 @@ cont:
                     
                     if (ed2->address >= er2->address && ed2->address + ed2->size <= er2->address + er2->length && er2->changed) {
                         NTSTATUS Status;
-                        chunk* c = get_chunk_from_address(fcb->Vcb, ed2->address);
                         
-                        if (!c) {
-                            ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
-                            goto end;
-                        }
-                        
-                        Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, ed2->size, Irp);
+                        Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                                           -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, ed2->size, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08x\n", Status);
                             goto end;
@@ -3368,8 +3394,8 @@ cont:
                         ed2->size = er2->length;
                         ext->data->decoded_size = ed2->size;
                         
-                        add_changed_extent_ref(c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                        add_changed_extent_ref(er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                               1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
                         
                         break;
                     }
