@@ -3250,6 +3250,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
     LIST_ENTRY extent_ranges;
     extent_range* er;
     BOOL changed = FALSE;
+    UINT32 num_extents = 0;
     
     InitializeListHead(&extent_ranges);
     
@@ -3285,6 +3286,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 er->length = ed2->size;
                 
                 InsertHeadList(le2->Blink, &er->list_entry);
+                num_extents++;
             }
         }
         
@@ -3293,6 +3295,9 @@ cont:
     }
     
     // FIXME - truncate end or beginning of extent if unused
+    
+    if (num_extents < 2)
+        goto end;
     
     // merge together adjacent extents
     le = extent_ranges.Flink;
