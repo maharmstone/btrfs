@@ -1115,7 +1115,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         if (c) {
                             Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
                                                                re->fcb->inode, re->ext->offset - ed2->offset, -1,
-                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, NULL);
+                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, NULL);
                             
                             if (!NT_SUCCESS(Status))
                                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -1144,7 +1144,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         if (c) {
                             Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
                                                                re->fcb->inode, re->ext->offset - ed2->offset, 1,
-                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, NULL);
+                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, NULL);
                             
                             if (!NT_SUCCESS(Status))
                                 ERR("update_changed_extent_ref returned %08x\n", Status);

@@ -1826,6 +1826,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
     ce->count = 0;
     ce->old_count = 0;
     ce->no_csum = no_csum;
+    ce->superseded = FALSE;
     InitializeListHead(&ce->refs);
     InitializeListHead(&ce->old_refs);
     
@@ -1835,7 +1836,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
 }
 
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
-                                   BOOL no_csum, UINT64 new_size, PIRP Irp) {
+                                   BOOL no_csum, BOOL superseded, UINT64 new_size, PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -1902,6 +1903,10 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
             ce->count += count;
             cer->edr.count += count;
             Status = STATUS_SUCCESS;
+            
+            if (superseded)
+                ce->superseded = TRUE;
+            
             goto end;
         }
         
@@ -1943,6 +1948,9 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
     InsertTailList(&ce->refs, &cer->list_entry);
     
     ce->count += count;
+    
+    if (superseded)
+        ce->superseded = TRUE;
     
     Status = STATUS_SUCCESS;
     
@@ -2165,7 +2173,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -2278,7 +2286,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -2492,7 +2500,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-static void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count, BOOL no_csum) {
+void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count, BOOL no_csum) {
     changed_extent* ce;
     changed_extent_ref* cer;
     LIST_ENTRY* le;
@@ -2616,226 +2624,226 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     return TRUE;
 }
 
-static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                        LIST_ENTRY* changed_sector_list, extent* ext, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
-    EXTENT_DATA* ed;
-    EXTENT_DATA2 *ed2, *ed2orig;
-    extent* newext;
-    UINT64 addr, origsize;
-    NTSTATUS Status;
-    LIST_ENTRY* le;
-    
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data,
-                                                              length, data, changed_sector_list, ext, c, rollback);
-    
-    ed2orig = (EXTENT_DATA2*)ext->data->data;
-    
-    origsize = ed2orig->size;
-    addr = ed2orig->address + ed2orig->size;
-    
-    Status = write_data_complete(Vcb, addr, data, length, Irp, c);
-    if (!NT_SUCCESS(Status)) {
-        ERR("write_data returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    le = fcb->extents.Flink;
-    while (le != &fcb->extents) {
-        extent* ext2 = CONTAINING_RECORD(le, extent, list_entry);
-            
-        if (!ext2->ignore && (ext2->data->type == EXTENT_TYPE_REGULAR || ext2->data->type == EXTENT_TYPE_PREALLOC)) {
-            EXTENT_DATA2* ed2b = (EXTENT_DATA2*)ext2->data->data;
-            
-            if (ed2b->address == ed2orig->address) {
-                ed2b->size = origsize + length;
-                ext2->data->decoded_size = origsize + length;
-            }
-        }
-                
-        le = le->Flink;
-    }
-    
-    ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-    if (!ed) {
-        ERR("out of memory\n");
-        return FALSE;
-    }
-    
-    newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-    if (!newext) {
-        ERR("out of memory\n");
-        ExFreePool(ed);
-        return FALSE;
-    }
-    
-    RtlCopyMemory(ed, ext->data, ext->datalen);
-
-    ed2 = (EXTENT_DATA2*)ed->data;
-    ed2->offset = ed2orig->offset + ed2orig->num_bytes;
-    ed2->num_bytes = length;
-    
-    RtlCopyMemory(newext, ext, sizeof(extent));
-    newext->offset = ext->offset + ed2orig->num_bytes;
-    newext->data = ed;
-    
-    InsertHeadList(&ext->list_entry, &newext->list_entry);
-    
-    add_insert_extent_rollback(rollback, fcb, newext);
-    
-    Status = update_changed_extent_ref(Vcb, c, ed2orig->address, origsize, fcb->subvol->id, fcb->inode, newext->offset - ed2->offset,
-                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
-
-    if (!NT_SUCCESS(Status)) {
-        ERR("update_changed_extent_ref returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    if (changed_sector_list) {
-        int i;
-        changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-        if (!sc) {
-            ERR("out of memory\n");
-            return FALSE;
-        }
-        
-        sc->ol.key = addr;
-        sc->length = length / Vcb->superblock.sector_size;
-        sc->deleted = FALSE;
-        
-        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-        if (!sc->checksums) {
-            ERR("out of memory\n");
-            ExFreePool(sc);
-            return FALSE;
-        }
-        
-        for (i = 0; i < sc->length; i++) {
-            sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        }
-        insert_into_ordered_list(changed_sector_list, &sc->ol);
-    }
-    
-    increase_chunk_usage(c, length);
-      
-    space_list_subtract(Vcb, c, FALSE, addr, length, NULL); // no rollback as we don't reverse extending the extent
-     
-    fcb->inode_item.st_blocks += length;
-    
-    return TRUE;
-}
-
-static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            LIST_ENTRY* changed_sector_list, PIRP Irp, UINT64* written, LIST_ENTRY* rollback) {
-    BOOL success = FALSE;
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
-    chunk* c;
-    LIST_ENTRY* le;
-    space* s;
-    extent* ext = NULL;
-    
-    le = fcb->extents.Flink;
-    
-    while (le != &fcb->extents) {
-        extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!nextext->ignore) {
-            if (nextext->offset == start_data) {
-                ext = nextext;
-                break;
-            } else if (nextext->offset > start_data)
-                break;
-            
-            ext = nextext;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!ext)
-        return FALSE;
-
-    if (!ext->unique) {
-        TRACE("extent was not unique\n");
-        return FALSE;
-    }
-    
-    ed = ext->data;
-    
-    if (ext->datalen < sizeof(EXTENT_DATA)) {
-        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-        return FALSE;
-    }
-    
-    if (ed->type != EXTENT_TYPE_REGULAR) {
-        TRACE("not extending extent which is not EXTENT_TYPE_REGULAR\n");
-        return FALSE;
-    }
-    
-    ed2 = (EXTENT_DATA2*)ed->data;
-    
-    if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-        return FALSE;
-    }
-
-    if (ext->offset + ed2->num_bytes != start_data) {
-        TRACE("last EXTENT_DATA does not run up to start_data (%llx + %llx != %llx)\n", ext->offset, ed2->num_bytes, start_data);
-        return FALSE;
-    }
-    
-    if (ed->compression != BTRFS_COMPRESSION_NONE) {
-        TRACE("not extending a compressed extent\n");
-        return FALSE;
-    }
-    
-    if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
-        WARN("encryption not supported\n");
-        return FALSE;
-    }
-    
-    if (ed->encoding != BTRFS_ENCODING_NONE) {
-        WARN("other encodings not supported\n");
-        return FALSE;
-    }
-    
-    if (ed2->size - ed2->offset != ed2->num_bytes) {
-        TRACE("last EXTENT_DATA does not run all the way to the end of the extent\n");
-        return FALSE;
-    }
-    
-    if (ed2->size >= MAX_EXTENT_SIZE) {
-        TRACE("extent size was too large to extend (%llx >= %llx)\n", ed2->size, (UINT64)MAX_EXTENT_SIZE);
-        return FALSE;
-    }
-    
-    c = get_chunk_from_address(Vcb, ed2->address);
-    
-    ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-    
-    le = c->space.Flink;
-    while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
-        
-        if (s->address == ed2->address + ed2->size) {
-            UINT64 newlen = min(min(s->size, length), MAX_EXTENT_SIZE - ed2->size);
-            
-            success = extend_data(Vcb, fcb, start_data, newlen, data, changed_sector_list, ext, c, Irp, rollback);
-            
-            if (success)
-                *written += newlen;
-            
-            break;
-        } else if (s->address > ed2->address + ed2->size)
-            break;
-        
-        le = le->Flink;
-    }
-    
-    ExReleaseResourceLite(&c->lock);
-    
-    return success;
-}
+// static BOOL extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
+//                         LIST_ENTRY* changed_sector_list, extent* ext, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
+//     EXTENT_DATA* ed;
+//     EXTENT_DATA2 *ed2, *ed2orig;
+//     extent* newext;
+//     UINT64 addr, origsize;
+//     NTSTATUS Status;
+//     LIST_ENTRY* le;
+//     
+//     TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data,
+//                                                               length, data, changed_sector_list, ext, c, rollback);
+//     
+//     ed2orig = (EXTENT_DATA2*)ext->data->data;
+//     
+//     origsize = ed2orig->size;
+//     addr = ed2orig->address + ed2orig->size;
+//     
+//     Status = write_data_complete(Vcb, addr, data, length, Irp, c);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("write_data returned %08x\n", Status);
+//         return FALSE;
+//     }
+//     
+//     le = fcb->extents.Flink;
+//     while (le != &fcb->extents) {
+//         extent* ext2 = CONTAINING_RECORD(le, extent, list_entry);
+//             
+//         if (!ext2->ignore && (ext2->data->type == EXTENT_TYPE_REGULAR || ext2->data->type == EXTENT_TYPE_PREALLOC)) {
+//             EXTENT_DATA2* ed2b = (EXTENT_DATA2*)ext2->data->data;
+//             
+//             if (ed2b->address == ed2orig->address) {
+//                 ed2b->size = origsize + length;
+//                 ext2->data->decoded_size = origsize + length;
+//             }
+//         }
+//                 
+//         le = le->Flink;
+//     }
+//     
+//     ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+//     if (!ed) {
+//         ERR("out of memory\n");
+//         return FALSE;
+//     }
+//     
+//     newext = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+//     if (!newext) {
+//         ERR("out of memory\n");
+//         ExFreePool(ed);
+//         return FALSE;
+//     }
+//     
+//     RtlCopyMemory(ed, ext->data, ext->datalen);
+// 
+//     ed2 = (EXTENT_DATA2*)ed->data;
+//     ed2->offset = ed2orig->offset + ed2orig->num_bytes;
+//     ed2->num_bytes = length;
+//     
+//     RtlCopyMemory(newext, ext, sizeof(extent));
+//     newext->offset = ext->offset + ed2orig->num_bytes;
+//     newext->data = ed;
+//     
+//     InsertHeadList(&ext->list_entry, &newext->list_entry);
+//     
+//     add_insert_extent_rollback(rollback, fcb, newext);
+//     
+//     Status = update_changed_extent_ref(Vcb, c, ed2orig->address, origsize, fcb->subvol->id, fcb->inode, newext->offset - ed2->offset,
+//                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+// 
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("update_changed_extent_ref returned %08x\n", Status);
+//         return FALSE;
+//     }
+//     
+//     if (changed_sector_list) {
+//         int i;
+//         changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+//         if (!sc) {
+//             ERR("out of memory\n");
+//             return FALSE;
+//         }
+//         
+//         sc->ol.key = addr;
+//         sc->length = length / Vcb->superblock.sector_size;
+//         sc->deleted = FALSE;
+//         
+//         sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+//         if (!sc->checksums) {
+//             ERR("out of memory\n");
+//             ExFreePool(sc);
+//             return FALSE;
+//         }
+//         
+//         for (i = 0; i < sc->length; i++) {
+//             sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+//         }
+//         insert_into_ordered_list(changed_sector_list, &sc->ol);
+//     }
+//     
+//     increase_chunk_usage(c, length);
+//       
+//     space_list_subtract(Vcb, c, FALSE, addr, length, NULL); // no rollback as we don't reverse extending the extent
+//      
+//     fcb->inode_item.st_blocks += length;
+//     
+//     return TRUE;
+// }
+// 
+// static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
+//                             LIST_ENTRY* changed_sector_list, PIRP Irp, UINT64* written, LIST_ENTRY* rollback) {
+//     BOOL success = FALSE;
+//     EXTENT_DATA* ed;
+//     EXTENT_DATA2* ed2;
+//     chunk* c;
+//     LIST_ENTRY* le;
+//     space* s;
+//     extent* ext = NULL;
+//     
+//     le = fcb->extents.Flink;
+//     
+//     while (le != &fcb->extents) {
+//         extent* nextext = CONTAINING_RECORD(le, extent, list_entry);
+//         
+//         if (!nextext->ignore) {
+//             if (nextext->offset == start_data) {
+//                 ext = nextext;
+//                 break;
+//             } else if (nextext->offset > start_data)
+//                 break;
+//             
+//             ext = nextext;
+//         }
+//         
+//         le = le->Flink;
+//     }
+//     
+//     if (!ext)
+//         return FALSE;
+// 
+//     if (!ext->unique) {
+//         TRACE("extent was not unique\n");
+//         return FALSE;
+//     }
+//     
+//     ed = ext->data;
+//     
+//     if (ext->datalen < sizeof(EXTENT_DATA)) {
+//         ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
+//         return FALSE;
+//     }
+//     
+//     if (ed->type != EXTENT_TYPE_REGULAR) {
+//         TRACE("not extending extent which is not EXTENT_TYPE_REGULAR\n");
+//         return FALSE;
+//     }
+//     
+//     ed2 = (EXTENT_DATA2*)ed->data;
+//     
+//     if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//         ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+//         return FALSE;
+//     }
+// 
+//     if (ext->offset + ed2->num_bytes != start_data) {
+//         TRACE("last EXTENT_DATA does not run up to start_data (%llx + %llx != %llx)\n", ext->offset, ed2->num_bytes, start_data);
+//         return FALSE;
+//     }
+//     
+//     if (ed->compression != BTRFS_COMPRESSION_NONE) {
+//         TRACE("not extending a compressed extent\n");
+//         return FALSE;
+//     }
+//     
+//     if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+//         WARN("encryption not supported\n");
+//         return FALSE;
+//     }
+//     
+//     if (ed->encoding != BTRFS_ENCODING_NONE) {
+//         WARN("other encodings not supported\n");
+//         return FALSE;
+//     }
+//     
+//     if (ed2->size - ed2->offset != ed2->num_bytes) {
+//         TRACE("last EXTENT_DATA does not run all the way to the end of the extent\n");
+//         return FALSE;
+//     }
+//     
+//     if (ed2->size >= MAX_EXTENT_SIZE) {
+//         TRACE("extent size was too large to extend (%llx >= %llx)\n", ed2->size, (UINT64)MAX_EXTENT_SIZE);
+//         return FALSE;
+//     }
+//     
+//     c = get_chunk_from_address(Vcb, ed2->address);
+//     
+//     ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+//     
+//     le = c->space.Flink;
+//     while (le != &c->space) {
+//         s = CONTAINING_RECORD(le, space, list_entry);
+//         
+//         if (s->address == ed2->address + ed2->size) {
+//             UINT64 newlen = min(min(s->size, length), MAX_EXTENT_SIZE - ed2->size);
+//             
+//             success = extend_data(Vcb, fcb, start_data, newlen, data, changed_sector_list, ext, c, Irp, rollback);
+//             
+//             if (success)
+//                 *written += newlen;
+//             
+//             break;
+//         } else if (s->address > ed2->address + ed2->size)
+//             break;
+//         
+//         le = le->Flink;
+//     }
+//     
+//     ExReleaseResourceLite(&c->lock);
+//     
+//     return success;
+// }
 
 static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
@@ -2925,17 +2933,17 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     
     // FIXME - split data up if not enough space for just one extent
     
-    if (start_data > 0) {
-        try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, &written, rollback);
-        
-        if (written == length)
-            return STATUS_SUCCESS;
-        else if (written > 0) {
-            start_data += written;
-            length -= written;
-            data = &((UINT8*)data)[written];
-        }
-    }
+//     if (start_data > 0) {
+//         try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, &written, rollback);
+//         
+//         if (written == length)
+//             return STATUS_SUCCESS;
+//         else if (written > 0) {
+//             start_data += written;
+//             length -= written;
+//             data = &((UINT8*)data)[written];
+//         }
+//     }
     
     flags = Vcb->data_flags;
     
@@ -3400,7 +3408,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -3488,7 +3496,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -3611,7 +3619,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, ed2->size, Irp);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
