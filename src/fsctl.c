@@ -919,6 +919,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     rootfcb->created = TRUE;
     
+    r->lastinode = rootfcb->inode;
+    
     // add INODE_REF
     
     irsize = sizeof(INODE_REF) - 1 + strlen(DOTDOT);
