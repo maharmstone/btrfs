@@ -3242,6 +3242,7 @@ static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb,
 typedef struct {
     UINT64 address;
     UINT64 length;
+    BOOL changed;
     LIST_ENTRY list_entry;
 } extent_range;
 
@@ -3284,6 +3285,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 
                 er->address = ed2->address;
                 er->length = ed2->size;
+                er->changed = FALSE;
                 
                 InsertHeadList(le2->Blink, &er->list_entry);
                 num_extents++;
@@ -3310,6 +3312,7 @@ cont:
             if (er2->address == er->address + er->length) {
                 if (er->length + er2->length <= MAX_EXTENT_SIZE) {
                     er->length += er2->length;
+                    er->changed = TRUE;
                     
                     RemoveEntryList(&er2->list_entry);
                     ExFreePool(er2);
@@ -3344,7 +3347,7 @@ cont:
                 while (le2 != &extent_ranges) {
                     extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
                     
-                    if (ed2->address >= er2->address && ed2->address + ed2->size <= er2->address + er2->length) {
+                    if (ed2->address >= er2->address && ed2->address + ed2->size <= er2->address + er2->length && er2->changed) {
                         NTSTATUS Status;
                         chunk* c = get_chunk_from_address(fcb->Vcb, ed2->address);
                         
