@@ -3358,7 +3358,7 @@ cont:
                             NTSTATUS Status;
                             
                             Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, ed2->size, Irp);
+                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08x\n", Status);
                                 goto end;
@@ -3464,7 +3464,7 @@ cont:
                         NTSTATUS Status;
                         
                         Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                           -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, ed2->size, Irp);
+                                                           -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08x\n", Status);
                             goto end;
@@ -3595,7 +3595,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;

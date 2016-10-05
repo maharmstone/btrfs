@@ -1027,7 +1027,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                                     ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                                 } else {
                                     Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ed2->address, ed2->size, me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
-                                                                       ext->offset - ed2->offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                                                       ext->offset - ed2->offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
                                     
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("update_changed_extent_ref returned %08x\n", Status);

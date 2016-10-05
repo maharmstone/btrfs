@@ -1836,7 +1836,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
 }
 
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
-                                   BOOL no_csum, BOOL superseded, UINT64 new_size, PIRP Irp) {
+                                   BOOL no_csum, BOOL superseded, PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -1892,8 +1892,6 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
             goto end;
         }
     }
-    
-    ce->size = new_size;
     
     le = ce->refs.Flink;
     while (le != &ce->refs) {
@@ -2173,7 +2171,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -2286,7 +2284,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08x\n", Status);
                                     goto end;
@@ -3406,7 +3404,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -3494,7 +3492,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
@@ -3617,7 +3615,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
-                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, ed2->size, Irp);
+                                               fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("update_changed_extent_ref returned %08x\n", Status);
