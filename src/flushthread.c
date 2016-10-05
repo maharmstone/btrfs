@@ -3244,6 +3244,8 @@ typedef struct {
     UINT64 length;
     BOOL changed;
     chunk* chunk;
+    UINT64 skip_start;
+    UINT64 skip_end;
     LIST_ENTRY list_entry;
 } extent_range;
 
@@ -3251,7 +3253,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
     LIST_ENTRY* le;
     LIST_ENTRY extent_ranges;
     extent_range* er;
-    BOOL changed = FALSE;
+    BOOL changed = FALSE, truncating = FALSE;
     UINT32 num_extents = 0;
     
     InitializeListHead(&extent_ranges);
@@ -3270,9 +3272,11 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 while (le2 != &extent_ranges) {
                     extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
                     
-                    if (er2->address == ed2->address)
+                    if (er2->address == ed2->address) {
+                        er2->skip_start = min(er2->skip_start, ed2->offset);
+                        er2->skip_end = min(er2->skip_end, ed2->size - ed2->offset - ed2->num_bytes);
                         goto cont;
-                    else if (er2->address > ed2->address)
+                    } else if (er2->address > ed2->address)
                         break;
                     
                     le2 = le2->Flink;
@@ -3288,6 +3292,11 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 er->length = ed2->size;
                 er->changed = FALSE;
                 er->chunk = NULL;
+                er->skip_start = ed2->offset;
+                er->skip_end = ed2->size - ed2->offset - ed2->num_bytes;
+                
+                if (er->skip_start != 0 || er->skip_end != 0)
+                    truncating = TRUE;
                 
                 InsertHeadList(le2->Blink, &er->list_entry);
                 num_extents++;
@@ -3298,9 +3307,7 @@ cont:
         le = le->Flink;
     }
     
-    // FIXME - truncate end or beginning of extent if unused
-    
-    if (num_extents < 2)
+    if (num_extents == 0 && !truncating)
         goto end;
     
     le = extent_ranges.Flink;
@@ -3330,6 +3337,80 @@ cont:
         
         le = le->Flink;
     }
+    
+    if (truncating) {
+        // truncate end of extent if unused
+        // FIXME - also truncate beginning
+        
+        le = extent_ranges.Flink;
+        while (le != &extent_ranges) {
+            er = CONTAINING_RECORD(le, extent_range, list_entry);
+            
+            if (er->skip_end > 0) {
+                LIST_ENTRY* le2 = fcb->extents.Flink;
+                while (le2 != &fcb->extents) {
+                    extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+                    
+                    if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                
+                        if (ed2->size != 0 && ed2->address == er->address) {
+                            NTSTATUS Status;
+                            
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, ed2->size, Irp);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("update_changed_extent_ref returned %08x\n", Status);
+                                goto end;
+                            }
+                            
+                            ext->data->decoded_size -= er->skip_end;
+                            ed2->size -= er->skip_end;
+                            
+                            add_changed_extent_ref(er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                        }
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+                
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                    LIST_ENTRY changed_sector_list;
+                    
+                    changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                    if (!sc) {
+                        ERR("out of memory\n");
+                        goto end;
+                    }
+                    
+                    sc->ol.key = er->address + er->length - er->skip_end;
+                    sc->checksums = NULL;
+                    sc->length = er->skip_end / fcb->Vcb->superblock.sector_size;
+
+                    sc->deleted = TRUE;
+                    
+                    InitializeListHead(&changed_sector_list);
+                    insert_into_ordered_list(&changed_sector_list, &sc->ol);
+                    
+                    ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
+                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+                    ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
+                }
+                
+                decrease_chunk_usage(er->chunk, er->skip_end);
+                
+                space_list_add(fcb->Vcb, er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
+                
+                er->length -= er->skip_end;
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
+    if (num_extents < 2)
+        goto end;
     
     // merge together adjacent extents
     le = extent_ranges.Flink;
