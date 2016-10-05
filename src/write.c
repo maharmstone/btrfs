@@ -2114,7 +2114,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->offset = ext->offset;
                         newext1->data = ned1;
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + size;
-                        newext1->unique = FALSE;
+                        newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
                         
                         size = ext->offset + len - end_data;
@@ -2150,7 +2150,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext2->offset = end_data;
                         newext2->data = ned2;
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + size;
-                        newext2->unique = FALSE;
+                        newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
@@ -2357,13 +2357,13 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->offset = ext->offset;
                         newext1->data = neda;
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
-                        newext1->unique = FALSE;
+                        newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
                         
                         newext2->offset = end_data;
                         newext2->data = nedb;
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
-                        newext2->unique = FALSE;
+                        newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
@@ -2377,8 +2377,6 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 
         le = le2;
     }
-    
-    // FIXME - do bitmap analysis of changed extents, and free what we can
     
     Status = STATUS_SUCCESS;
 
@@ -3387,7 +3385,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->offset = ext->offset;
         newext1->data = ned;
         newext1->datalen = ext->datalen;
-        newext1->unique = FALSE;
+        newext1->unique = ext->unique;
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
@@ -3396,7 +3394,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->offset = end_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
-        newext2->unique = FALSE;
+        newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
@@ -3475,7 +3473,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->offset = ext->offset;
         newext1->data = ned;
         newext1->datalen = ext->datalen;
-        newext1->unique = FALSE;
+        newext1->unique = ext->unique;
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
@@ -3484,7 +3482,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->offset = start_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
-        newext2->unique = FALSE;
+        newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
@@ -3589,7 +3587,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->offset = ext->offset;
         newext1->data = ned;
         newext1->datalen = ext->datalen;
-        newext1->unique = FALSE;
+        newext1->unique = ext->unique;
         newext1->ignore = FALSE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
@@ -3598,7 +3596,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->offset = start_data;
         newext2->data = nedb;
         newext2->datalen = ext->datalen;
-        newext2->unique = FALSE;
+        newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
@@ -3607,7 +3605,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->offset = end_data;
         newext3->data = nedc;
         newext3->datalen = ext->datalen;
-        newext3->unique = FALSE;
+        newext3->unique = ext->unique;
         newext3->ignore = FALSE;
         InsertHeadList(&newext2->list_entry, &newext3->list_entry);
         
