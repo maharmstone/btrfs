@@ -3309,7 +3309,7 @@ cont:
         le = le->Flink;
     }
     
-    if (num_extents == 0 && !truncating)
+    if (num_extents == 0 || (num_extents == 1 && !truncating))
         goto end;
     
     le = extent_ranges.Flink;
