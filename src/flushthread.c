@@ -3341,12 +3341,71 @@ cont:
     }
     
     if (truncating) {
-        // truncate end of extent if unused
-        // FIXME - also truncate beginning
+        // truncate beginning or end of extent if unused
         
         le = extent_ranges.Flink;
         while (le != &extent_ranges) {
             er = CONTAINING_RECORD(le, extent_range, list_entry);
+            
+            if (er->skip_start > 0) {
+                LIST_ENTRY* le2 = fcb->extents.Flink;
+                while (le2 != &fcb->extents) {
+                    extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+                    
+                    if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                
+                        if (ed2->size != 0 && ed2->address == er->address) {
+                            NTSTATUS Status;
+                            
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, TRUE, Irp);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("update_changed_extent_ref returned %08x\n", Status);
+                                goto end;
+                            }
+                            
+                            ext->data->decoded_size -= er->skip_start;
+                            ed2->size -= er->skip_start;
+                            ed2->address += er->skip_start;
+                            ed2->offset -= er->skip_start;
+                            
+                            add_changed_extent_ref(er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                        }
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+                
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                    LIST_ENTRY changed_sector_list;
+                    
+                    changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+                    if (!sc) {
+                        ERR("out of memory\n");
+                        goto end;
+                    }
+                    
+                    sc->ol.key = er->address;
+                    sc->checksums = NULL;
+                    sc->length = er->skip_start / fcb->Vcb->superblock.sector_size;
+
+                    sc->deleted = TRUE;
+                    
+                    InitializeListHead(&changed_sector_list);
+                    insert_into_ordered_list(&changed_sector_list, &sc->ol);
+                    
+                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
+                }
+                
+                decrease_chunk_usage(er->chunk, er->skip_start);
+                
+                space_list_add(fcb->Vcb, er->chunk, TRUE, er->address, er->skip_start, NULL);
+                
+                er->address += er->skip_start;
+                er->length -= er->skip_start;
+            }
             
             if (er->skip_end > 0) {
                 LIST_ENTRY* le2 = fcb->extents.Flink;
@@ -3395,9 +3454,7 @@ cont:
                     InitializeListHead(&changed_sector_list);
                     insert_into_ordered_list(&changed_sector_list, &sc->ol);
                     
-                    ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
                     commit_checksum_changes(fcb->Vcb, &changed_sector_list);
-                    ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
                 }
                 
                 decrease_chunk_usage(er->chunk, er->skip_end);
