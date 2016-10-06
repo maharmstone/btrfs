@@ -3723,8 +3723,10 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 
                 RtlCopyMemory(ed, ext->data, ext->datalen);
                 
-                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset, ed, ext->datalen, NULL, Irp, rollback)) {
-                    ERR("insert_tree_item failed\n");
+                if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset,
+                                    ed, ext->datalen, Batch_Insert, Irp, rollback)) {
+                    ERR("insert_tree_item_batch failed\n");
+                    Status = STATUS_INTERNAL_ERROR;
                     goto end;
                 }
                 
