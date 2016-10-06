@@ -3242,6 +3242,7 @@ static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb,
 typedef struct {
     UINT64 address;
     UINT64 length;
+    UINT64 offset;
     BOOL changed;
     chunk* chunk;
     UINT64 skip_start;
@@ -3290,6 +3291,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 
                 er->address = ed2->address;
                 er->length = ed2->size;
+                er->offset = ext->offset - ed2->offset;
                 er->changed = FALSE;
                 er->chunk = NULL;
                 er->skip_start = ed2->offset;
@@ -3421,7 +3423,7 @@ cont:
             extent_range* er2 = CONTAINING_RECORD(le->Flink, extent_range, list_entry);
             
             if (er->chunk == er2->chunk) {
-                if (er2->address == er->address + er->length) {
+                if (er2->address == er->address + er->length && er2->offset >= er->offset + er->length) {
                     if (er->length + er2->length <= MAX_EXTENT_SIZE) {
                         er->length += er2->length;
                         er->changed = TRUE;
