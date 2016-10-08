@@ -1705,6 +1705,7 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
             while (runlength != 0) {
                 do {
                     ULONG rl;
+                    UINT64 off;
                     
                     if (runlength * sizeof(UINT32) > MAX_CSUM_SIZE)
                         rl = MAX_CSUM_SIZE / sizeof(UINT32);
@@ -1721,7 +1722,9 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
                     
                     RtlCopyMemory(data, &checksums[index], sizeof(UINT32) * rl);
                     
-                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, startaddr + (index * Vcb->superblock.sector_size), data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
+                    off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
+                    
+                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
                         ERR("insert_tree_item failed\n");
                         ExFreePool(data);
                         ExFreePool(bmparr);
