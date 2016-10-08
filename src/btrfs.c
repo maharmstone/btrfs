@@ -4546,7 +4546,7 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
         
         if (rl->start == start && rl->length == length) {
             RemoveEntryList(&rl->list_entry);
-            ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, rl);
+            ExFreeToNPagedLookasideList(&Vcb->range_lock_lookaside, rl);
             break;
         }
         
