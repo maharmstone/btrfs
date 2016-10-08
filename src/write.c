@@ -1652,19 +1652,18 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         }
     }
     
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
         get_raid56_lock_range(c, address, length, &lockaddr, &locklen);
-    else {
-        lockaddr = address;
-        locklen = length;
+        chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
-    
-    chunk_lock_range(Vcb, c, lockaddr, locklen);
     
     Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
-        chunk_unlock_range(Vcb, c, lockaddr, locklen);
+        
+        if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+            chunk_unlock_range(Vcb, c, lockaddr, locklen);
+        
         free_write_data_stripes(wtc);
         ExFreePool(wtc);
         return Status;
@@ -1699,7 +1698,8 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         free_write_data_stripes(wtc);
     }
     
-    chunk_unlock_range(Vcb, c, lockaddr, locklen);
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+        chunk_unlock_range(Vcb, c, lockaddr, locklen);
 
     ExFreePool(wtc);
 

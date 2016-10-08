@@ -3019,24 +3019,25 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         goto exit;
                     }
                     
-                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
                         get_raid56_lock_range(c, addr, to_read, &lockaddr, &locklen);
-                    else {
-                        lockaddr = addr;
-                        locklen = to_read;
+                        chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     }
                     
-                    chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
-                        chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
+                        
+                        if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+                            chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
+                        
                         ExFreePool(buf);
                         goto exit;
                     }
                     
-                    chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
+                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+                        chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
