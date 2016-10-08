@@ -1165,6 +1165,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     UINT64 *stripestart = NULL, *stripeend = NULL;
     UINT32 firststripesize;
     UINT16 startoffstripe, allowed_missing, missing_devices = 0;
+#ifdef DEBUG_STATS
+    LARGE_INTEGER time1, time2;
+#endif
     
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -1544,6 +1547,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
     }
     
+#ifdef DEBUG_STATS
+    if (!is_tree)
+        time1 = KeQueryPerformanceCounter(NULL);
+#endif
+    
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status != ReadDataStatus_MissingDevice) {
             IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
@@ -1551,6 +1559,14 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
 
     KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+   
+#ifdef DEBUG_STATS
+    if (!is_tree) {
+        time2 = KeQueryPerformanceCounter(NULL);
+        
+        Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
+    }
+#endif
     
     // check if any of the devices return a "user-induced" error
     
@@ -1635,6 +1651,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 goto exit;
             }
         } else if (csum) {
+#ifdef DEBUG_STATS
+            time1 = KeQueryPerformanceCounter(NULL);
+#endif
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 
@@ -1644,6 +1663,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     goto exit;
                 }
             }
+#ifdef DEBUG_STATS
+            time2 = KeQueryPerformanceCounter(NULL);
+            
+            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
         }
         
         Status = STATUS_SUCCESS;
@@ -1860,6 +1884,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     }
                 } else if (context->csum) {
                     UINT32 j;
+                    
+#ifdef DEBUG_STATS
+                    time1 = KeQueryPerformanceCounter(NULL);
+#endif
         
                     for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
                         UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
@@ -1870,6 +1898,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                             break;
                         }
                     }
+#ifdef DEBUG_STATS
+                    time2 = KeQueryPerformanceCounter(NULL);
+                    
+                    Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
                 }
             } else if (context->stripes[i].status == ReadDataStatus_Cancelled) {
                 cancelled++;
@@ -1947,6 +1980,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 context->stripes_cancel = 0;
                 KeClearEvent(&context->Event);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree)
+                    time1 = KeQueryPerformanceCounter(NULL);
+#endif
+
                 for (i = 0; i < ci->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
@@ -1955,6 +1993,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 
                 KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree) {
+                    time2 = KeQueryPerformanceCounter(NULL);
+                    
+                    Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
+                }
+#endif
                 for (i = 0; i < ci->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Success) {
                         if (context->tree) {
@@ -1970,6 +2015,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                         } else if (context->csum) {
                             UINT32 j;
                             
+#ifdef DEBUG_STATS
+                            time1 = KeQueryPerformanceCounter(NULL);
+#endif
                             for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
                                 UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
                                 
@@ -1979,6 +2027,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                                     break;
                                 }
                             }
+#ifdef DEBUG_STATS
+                            time2 = KeQueryPerformanceCounter(NULL);
+                            
+                            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
                         }
                     }
                 }
@@ -2012,6 +2065,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 UINT16 j;
                 BOOL success = FALSE;
                 
+#ifdef DEBUG_STATS
+                time1 = KeQueryPerformanceCounter(NULL);
+#endif
+                
                 for (j = 0; j < ci->num_stripes; j++) {
                     if (context->stripes[j].status == ReadDataStatus_CRCError) {
                         UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[j].buf + (i * context->sector_size), context->sector_size);
@@ -2024,6 +2081,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     }
                 }
                 
+#ifdef DEBUG_STATS
+                time2 = KeQueryPerformanceCounter(NULL);
+
+                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
                 if (!success) {
                     ERR("unrecoverable checksum error at %llx\n", addr + (i * context->sector_size));
                     Status = STATUS_CRC_ERROR;
@@ -2147,6 +2209,9 @@ raid1write:
             if (addr != th->address || crc32 != *((UINT32*)th->csum))
                 checksum_error = TRUE;
         } else if (csum) {
+#ifdef DEBUG_STATS
+            time1 = KeQueryPerformanceCounter(NULL);
+#endif
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 
@@ -2155,6 +2220,11 @@ raid1write:
                     break;
                 }
             }
+#ifdef DEBUG_STATS
+            time2 = KeQueryPerformanceCounter(NULL);
+            
+            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
         }
         
         if (checksum_error) {
@@ -2220,10 +2290,23 @@ raid1write:
                 context->stripes_left = 1;
                 KeClearEvent(&context->Event);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree)
+                    time1 = KeQueryPerformanceCounter(NULL);
+#endif
+    
                 IoCallDriver(devices[reconstruct_stripe]->devobj, context->stripes[reconstruct_stripe].Irp);
                 
                 KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree) {
+                    time2 = KeQueryPerformanceCounter(NULL);
+                    
+                    Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
+                }
+#endif
+    
                 if (context->stripes[reconstruct_stripe].status != ReadDataStatus_Success) {
                     ERR("unrecoverable checksum error\n");
                     Status = STATUS_CRC_ERROR;
@@ -2430,6 +2513,9 @@ raid1write:
             if (addr != th->address || crc32 != *((UINT32*)th->csum))
                 checksum_error = TRUE;
         } else if (csum) {
+#ifdef DEBUG_STATS
+            time1 = KeQueryPerformanceCounter(NULL);
+#endif
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                 
@@ -2438,6 +2524,11 @@ raid1write:
                     break;
                 }
             }
+#ifdef DEBUG_STATS
+            time2 = KeQueryPerformanceCounter(NULL);
+            
+            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
         }
         
         if (checksum_error) {
@@ -2506,6 +2597,11 @@ raid1write:
                 context->stripes_left = needs_reconstruct;
                 KeClearEvent(&context->Event);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree)
+                    time1 = KeQueryPerformanceCounter(NULL);
+#endif
+                
                 for (i = 0; i < needs_reconstruct; i++) {
                     UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
                     
@@ -2514,6 +2610,14 @@ raid1write:
                 
                 KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
                 
+#ifdef DEBUG_STATS
+                if (!is_tree) {
+                    time2 = KeQueryPerformanceCounter(NULL);
+                    
+                    Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
+                }
+#endif
+    
                 for (i = 0; i < needs_reconstruct; i++) {
                     UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
                     
@@ -2782,6 +2886,9 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
     UINT64 bytes_read = 0;
     UINT64 last_end;
     LIST_ENTRY* le;
+#ifdef DEBUG_STATS
+    LARGE_INTEGER time1, time2;
+#endif
     
     TRACE("(%p, %p, %llx, %llx, %p)\n", fcb, data, start, length, pbr);
     
@@ -2793,6 +2900,10 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
         Status = STATUS_END_OF_FILE;
         goto exit;        
     }
+    
+#ifdef DEBUG_STATS
+    time1 = KeQueryPerformanceCounter(NULL);
+#endif
 
     le = fcb->extents.Flink;
 
@@ -3010,6 +3121,14 @@ nextitem:
     Status = STATUS_SUCCESS;
     if (pbr)
         *pbr = bytes_read;
+    
+#ifdef DEBUG_STATS
+    time2 = KeQueryPerformanceCounter(NULL);
+    
+    fcb->Vcb->stats.num_reads++;
+    fcb->Vcb->stats.data_read += bytes_read;
+    fcb->Vcb->stats.read_total_time += time2.QuadPart - time1.QuadPart;
+#endif
     
 exit:
     return Status;

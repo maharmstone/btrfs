@@ -41,6 +41,7 @@
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
 // #define DEBUG_FLUSH_TIMES
+// #define DEBUG_STATS
 #define DEBUG_PARANOID
 #endif
 
@@ -483,11 +484,24 @@ typedef struct {
 #define VCB_TYPE_VOLUME     1
 #define VCB_TYPE_PARTITION0 2
 
+#ifdef DEBUG_STATS
+typedef struct {
+    UINT64 num_reads;
+    UINT64 data_read;
+    UINT64 read_total_time;
+    UINT64 read_csum_time;
+    UINT64 read_disk_time;
+} debug_stats;
+#endif
+
 typedef struct _device_extension {
     UINT32 type;
     mount_options options;
     PVPB Vpb;
     device* devices;
+#ifdef DEBUG_STATS
+    debug_stats stats;
+#endif
     UINT64 devices_loaded;
 //     DISK_GEOMETRY geometry;
     superblock superblock;

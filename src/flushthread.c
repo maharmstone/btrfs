@@ -5354,6 +5354,20 @@ end:
     return Status;
 }
 
+#ifdef DEBUG_STATS
+static void print_stats(device_extension* Vcb) {
+    ERR("READ STATS:\n");
+    ERR("number of reads: %llu\n", Vcb->stats.num_reads);
+    ERR("data read: %llu bytes\n", Vcb->stats.data_read);
+    ERR("total time taken: %llu\n", Vcb->stats.read_total_time);
+    ERR("csum time taken: %llu\n", Vcb->stats.read_csum_time);
+    ERR("disk time taken: %llu\n", Vcb->stats.read_disk_time);
+    ERR("other time taken: %llu\n", Vcb->stats.read_total_time - Vcb->stats.read_csum_time - Vcb->stats.read_disk_time);
+    
+    RtlZeroMemory(&Vcb->stats, sizeof(debug_stats));
+}
+#endif
+
 static void do_flush(device_extension* Vcb) {
     LIST_ENTRY rollback;
     
@@ -5362,6 +5376,10 @@ static void do_flush(device_extension* Vcb) {
     FsRtlEnterFileSystem();
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+#ifdef DEBUG_STATS
+    print_stats(Vcb);
+#endif
 
     if (Vcb->need_write && !Vcb->readonly)
         do_write(Vcb, NULL, &rollback);
