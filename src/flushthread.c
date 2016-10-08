@@ -3670,31 +3670,33 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             }
         }
         
-        // delete existing EXTENT_DATA items
-        
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = 0;
-        
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-        
-        do {
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-                delete_tree_item(fcb->Vcb, &tp, rollback);
+        if (!fcb->created) {
+            // delete existing EXTENT_DATA items
             
-            b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
+            searchkey.obj_id = fcb->inode;
+            searchkey.obj_type = TYPE_EXTENT_DATA;
+            searchkey.offset = 0;
             
-            if (b) {
-                tp = next_tp;
-                
-                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                    break;
+            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                goto end;
             }
-        } while (b);
+            
+            do {
+                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                
+                b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
+                
+                if (b) {
+                    tp = next_tp;
+                    
+                    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                        break;
+                }
+            } while (b);
+        }
         
         if (!fcb->deleted) {
             // add new EXTENT_DATAs
