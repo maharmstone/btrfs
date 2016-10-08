@@ -848,6 +848,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         if (keycmp(searchkey, tp.item->key)) {
             ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            int3;
             return STATUS_INTERNAL_ERROR;
         }
         
