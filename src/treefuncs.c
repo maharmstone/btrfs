@@ -909,9 +909,8 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
             paritem = paritem->treeholder.tree->paritem;
         }
         
-    } else {          
-        InsertAfter(&tp.tree->itemlist, &td->list_entry, &tp.item->list_entry); // FIXME - we don't need this
-    }
+    } else
+        InsertHeadList(&tp.item->list_entry, &td->list_entry);
     
     tp.tree->header.num_items++;
     tp.tree->size += size + sizeof(leaf_node);

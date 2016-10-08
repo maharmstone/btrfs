@@ -1002,17 +1002,6 @@ static __inline void print_open_trees(device_extension* Vcb) {
     }
 }
 
-static __inline void InsertAfter(LIST_ENTRY* head, LIST_ENTRY* item, LIST_ENTRY* before) {
-    item->Flink = before->Flink;
-    before->Flink = item;
-    item->Blink = before;
-
-    if (item->Flink != head)
-        item->Flink->Blink = item;
-    else
-        head->Blink = item;
-}
-
 static __inline BOOL write_fcb_compressed(fcb* fcb) {
     // make sure we don't accidentally write the cache inodes or pagefile compressed
     if (fcb->subvol->id == BTRFS_ROOT_ROOT || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
