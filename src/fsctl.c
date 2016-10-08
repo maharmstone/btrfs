@@ -482,8 +482,12 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
     fcb->inode_item.st_size += utf8->Length * 2;
-    fcb->inode_item.st_ctime = now;
-    fcb->inode_item.st_mtime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_write_time)
+        fcb->inode_item.st_mtime = now;
     
     mark_fcb_dirty(fcb);
     
@@ -1014,8 +1018,12 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.st_size += utf8.Length * 2;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_ctime = now;
-    fcb->inode_item.st_mtime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_write_time)
+        fcb->inode_item.st_mtime = now;
     
     mark_fcb_dirty(fcb);
     
@@ -1584,8 +1592,12 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_ctime = now;
-    fcb->inode_item.st_mtime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_write_time)
+        fcb->inode_item.st_mtime = now;
     
     fcb->extents_changed = TRUE;
     mark_fcb_dirty(fcb);

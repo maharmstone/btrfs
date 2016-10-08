@@ -860,7 +860,10 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     win_time_to_unix(time, &now);
     
     fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
+    
     fcb->inode_item.sequence++;
     
     if (flags & OWNER_SECURITY_INFORMATION) {

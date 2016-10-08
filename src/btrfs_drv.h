@@ -238,6 +238,10 @@ typedef struct _ccb {
     UNICODE_STRING filename;
     ULONG ea_index;
     BOOL case_sensitive;
+    BOOL user_set_creation_time;
+    BOOL user_set_access_time;
+    BOOL user_set_write_time;
+    BOOL user_set_change_time;
 } ccb;
 
 // typedef struct _log_to_phys {

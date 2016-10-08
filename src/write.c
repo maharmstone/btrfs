@@ -4084,7 +4084,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         
         origii->transid = Vcb->superblock.generation;
         origii->sequence++;
-        origii->st_ctime = now;
+        
+        if (!ccb->user_set_change_time)
+            origii->st_ctime = now;
         
         if (!fcb->ads) {
             if (changed_length) {
@@ -4093,8 +4095,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 filter |= FILE_NOTIFY_CHANGE_SIZE;
             }
             
-            origii->st_mtime = now;
-            filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+            if (!ccb->user_set_write_time) {
+                origii->st_mtime = now;
+                filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+            }
         }
         
         mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);

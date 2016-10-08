@@ -56,7 +56,46 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     // FIXME - what about subvol roots?
     
     // FIXME - link FILE_ATTRIBUTE_READONLY to st_mode
-    // FIXME - handle times == -1
+    
+    if (fbi->CreationTime.QuadPart == -1)
+        ccb->user_set_creation_time = TRUE;
+    else if (fbi->CreationTime.QuadPart != 0) {
+        win_time_to_unix(fbi->CreationTime, &fcb->inode_item.otime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_CREATION;
+        
+        ccb->user_set_creation_time = TRUE;
+    }
+    
+    if (fbi->LastAccessTime.QuadPart == -1)
+        ccb->user_set_access_time = TRUE;
+    else if (fbi->LastAccessTime.QuadPart != 0) {
+        win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.st_atime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
+        
+        ccb->user_set_access_time = TRUE;
+    }
+    
+    if (fbi->LastWriteTime.QuadPart == -1)
+        ccb->user_set_write_time = TRUE;
+    else if (fbi->LastWriteTime.QuadPart != 0) {
+        win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.st_mtime);
+        inode_item_changed = TRUE;
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+        
+        ccb->user_set_write_time = TRUE;
+    }
+    
+    if (fbi->ChangeTime.QuadPart == -1)
+        ccb->user_set_change_time = TRUE;
+    else if (fbi->ChangeTime.QuadPart != 0) {
+        win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.st_ctime);
+        inode_item_changed = TRUE;
+        // no filter for this
+        
+        ccb->user_set_change_time = TRUE;
+    }
     
     // FileAttributes == 0 means don't set - undocumented, but seen in fastfat
     if (fbi->FileAttributes != 0) {
@@ -83,45 +122,15 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
         
-        fcb->inode_item.st_ctime = now;
+        if (!ccb->user_set_change_time)
+            fcb->inode_item.st_ctime = now;
+        
         fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
         
         inode_item_changed = TRUE;
         
         filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
-    }
-    
-    if (fbi->CreationTime.QuadPart == -1) {
-        FIXME("FIXME - support CreationTime == -1\n"); // FIXME - set ccb flag
-    } else if (fbi->CreationTime.QuadPart != 0) {
-        win_time_to_unix(fbi->CreationTime, &fcb->inode_item.otime);
-        inode_item_changed = TRUE;
-        filter |= FILE_NOTIFY_CHANGE_CREATION;
-    }
-    
-    if (fbi->LastAccessTime.QuadPart == -1) {
-        FIXME("FIXME - support LastAccessTime == -1\n"); // FIXME - set ccb flag
-    } else if (fbi->LastAccessTime.QuadPart != 0) {
-        win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.st_atime);
-        inode_item_changed = TRUE;
-        filter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
-    }
-    
-    if (fbi->LastWriteTime.QuadPart == -1) {
-        FIXME("FIXME - support LastWriteTime == -1\n"); // FIXME - set ccb flag
-    } else if (fbi->LastWriteTime.QuadPart != 0) {
-        win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.st_mtime);
-        inode_item_changed = TRUE;
-        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
-    }
-    
-    if (fbi->ChangeTime.QuadPart == -1) {
-        FIXME("FIXME - support ChangeTime == -1\n"); // FIXME - set ccb flag
-    } else if (fbi->ChangeTime.QuadPart != 0) {
-        win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.st_ctime);
-        inode_item_changed = TRUE;
-        // no filter for this
     }
 
     if (inode_item_changed) {
@@ -1547,7 +1556,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
-        fcb->inode_item.st_ctime = now;
+        
+        if (!ccb->user_set_change_time)
+            fcb->inode_item.st_ctime = now;
         
         mark_fcb_dirty(fcb);
         
@@ -1704,7 +1715,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
     
     mark_fcb_dirty(fcb);
     
@@ -1929,9 +1942,10 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     CcSetFileSizes(FileObject, &ccfs);
     TRACE("setting FileSize for %S to %llx\n", file_desc(FileObject), ccfs.FileSize);
     
-    KeQuerySystemTime(&time);
-    
-    win_time_to_unix(time, &fcb->inode_item.st_mtime);
+    if (!ccb->user_set_write_time) {
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+    }
     
     mark_fcb_dirty(fcb);
     send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED);
@@ -2239,7 +2253,9 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
     fcb->inode_item.st_nlink++;
-    fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
     
     mark_fcb_dirty(fcb);
     
@@ -4450,7 +4466,9 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_ctime = now;
+    
+    if (!ccb->user_set_change_time)
+        fcb->inode_item.st_ctime = now;
     
     mark_fcb_dirty(fcb);
     
