@@ -3105,6 +3105,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     ULONG fn_offset = 0;
     file_ref *related, *fileref;
     POOL_TYPE pool_type = Stack->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
+    ACCESS_MASK granted_access;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
@@ -3291,7 +3292,20 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
-        if (fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && Stack->Parameters.Create.SecurityContext->DesiredAccess &
+        SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+        
+        if (!SeAccessCheck(fileref->fcb->sd, &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                           FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                           IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                           &granted_access, &Status)) {
+            SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            goto exit;
+        }
+        
+        SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+        
+        if (fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && granted_access &
             (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC)) {
             Status = STATUS_ACCESS_DENIED;
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3315,7 +3329,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
             sf = sf->parent;
         }
-        
+
         if (fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
             ACCESS_MASK allowed = DELETE | READ_CONTROL | WRITE_OWNER | WRITE_DAC |
                                     SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
@@ -3326,7 +3340,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
                 allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
             
-            if (Stack->Parameters.Create.SecurityContext->DesiredAccess & ~allowed) {
+            if (granted_access & ~allowed) {
                 Status = STATUS_ACCESS_DENIED;
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(fileref);
@@ -3399,8 +3413,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         if (fileref->fcb->open_count > 0) {
-            Status = IoCheckShareAccess(Stack->Parameters.Create.SecurityContext->DesiredAccess,
-                                        Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
+            Status = IoCheckShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
             
             if (!NT_SUCCESS(Status)) {
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
@@ -3411,11 +3424,10 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 goto exit;
             }
         } else {
-            IoSetShareAccess(Stack->Parameters.Create.SecurityContext->DesiredAccess,
-                             Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
+            IoSetShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
         }
 
-        if (Stack->Parameters.Create.SecurityContext->DesiredAccess & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
+        if (granted_access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fileref->fcb->nonpaged->segment_object, MmFlushForWrite)) {
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
                 
@@ -3588,7 +3600,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         RtlInitUnicodeString(&ccb->query_string, NULL);
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
-        ccb->access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
+        ccb->access = granted_access;
         ccb->case_sensitive = Stack->Flags & SL_CASE_SENSITIVE;
         
         ccb->fileref = fileref;
