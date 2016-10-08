@@ -2971,6 +2971,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT64 off = start + bytes_read - ext->offset;
                     UINT32 to_read, read;
                     UINT8* buf;
+                    BOOL buf_free;
                     UINT32 *csum, bumpoff = 0;
                     UINT64 addr, lockaddr, locklen;
                     chunk* c;
@@ -2992,12 +2993,18 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         to_read = sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
                     }
                     
-                    buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
-                    
-                    if (!buf) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto exit;
+                    if (ed->compression == BTRFS_COMPRESSION_NONE && bumpoff == 0) {
+                        buf = data + bytes_read;
+                        buf_free = FALSE;
+                    } else {
+                        buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                        buf_free = TRUE;
+                        
+                        if (!buf) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto exit;
+                        }
                     }
                     
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
@@ -3005,7 +3012,10 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("load_csum returned %08x\n", Status);
-                            ExFreePool(buf);
+                            
+                            if (buf_free)
+                                ExFreePool(buf);
+                            
                             goto exit;
                         }
                     } else
@@ -3015,7 +3025,10 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     
                     if (!c) {
                         ERR("get_chunk_from_address(%llx) failed\n", addr);
-                        ExFreePool(buf);
+                        
+                        if (buf_free)
+                            ExFreePool(buf);
+                        
                         goto exit;
                     }
                     
@@ -3032,7 +3045,9 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
                             chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                         
-                        ExFreePool(buf);
+                        if (buf_free)
+                            ExFreePool(buf);
+                        
                         goto exit;
                     }
                     
@@ -3040,7 +3055,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                        RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
+                        if (buf_free)
+                            RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
                     } else {
                         UINT8* decomp = NULL;
                         
@@ -3068,7 +3084,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         ExFreePool(decomp);
                     }
                     
-                    ExFreePool(buf);
+                    if (buf_free)
+                        ExFreePool(buf);
                     
                     if (csum)
                         ExFreePool(csum);
