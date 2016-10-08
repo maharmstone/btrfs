@@ -76,37 +76,17 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     
     if (NT_SUCCESS(Irp->IoStatus.Status)) {
         if (context->type == BLOCK_FLAG_DUPLICATE) {
-            if (context->tree) {
-                tree_header* th = (tree_header*)stripe->buf;
-                UINT32 crc32;
-                
-                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                
-                if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
-                    stripe->status = ReadDataStatus_CRCError;
-                    goto end;
-                }
-            } else if (context->csum) {
-                for (i = 0; i < Irp->IoStatus.Information / context->sector_size; i++) {
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, stripe->buf + (i * context->sector_size), context->sector_size);
-                    
-                    if (crc32 != context->csum[i]) {
-                        stripe->status = ReadDataStatus_CRCError;
-                        goto end;
+            stripe->status = ReadDataStatus_Success;
+
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel) {
+                for (i = 0; i < context->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Pending) {
+                        context->stripes[i].status = ReadDataStatus_Cancelling;
+                        IoCancelIrp(context->stripes[i].Irp);
                     }
                 }
             }
-            
-            stripe->status = ReadDataStatus_Success;
-                
-            for (i = 0; i < context->num_stripes; i++) {
-                if (context->stripes[i].status == ReadDataStatus_Pending) {
-                    context->stripes[i].status = ReadDataStatus_Cancelling;
-                    IoCancelIrp(context->stripes[i].Irp);
-                }
-            }
         } else if (context->type == BLOCK_FLAG_RAID0) {
-            // no point checking the checksum here, as there's nothing we can do
             stripe->status = ReadDataStatus_Success;
         } else if (context->type == BLOCK_FLAG_RAID10) {
             if (context->tree) {
@@ -1387,6 +1367,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripestart[i] = addr - offset;
             stripeend[i] = stripestart[i] + length;
         }
+        
+        context->stripes_cancel = ci->num_stripes - 1;
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe;
@@ -1569,8 +1551,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
 
     KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-    
-    // FIXME - if checksum error, write good data over bad
     
     // check if any of the devices return a "user-induced" error
     
@@ -1864,16 +1844,145 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
         BOOL checksum_error = FALSE;
+        UINT16 cancelled = 0;
         
         for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_CRCError) {
-                checksum_error = TRUE;
-                break;
+            if (context->stripes[i].status == ReadDataStatus_Success) {
+                if (context->tree) {
+                    tree_header* th = (tree_header*)context->stripes[i].buf;
+                    UINT32 crc32;
+                    
+                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                    
+                    if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                        context->stripes[i].status = ReadDataStatus_CRCError;
+                        checksum_error = TRUE;
+                    }
+                } else if (context->csum) {
+                    UINT32 j;
+        
+                    for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
+                        
+                        if (crc32 != context->csum[j]) {
+                            context->stripes[i].status = ReadDataStatus_CRCError;
+                            checksum_error = TRUE;
+                            break;
+                        }
+                    }
+                }
+            } else if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                cancelled++;
             }
         }
         
         if (checksum_error) {
             // FIXME - update dev stats
+            
+            if (cancelled > 0) {
+                context->stripes_left = 0;
+                
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                        PIO_STACK_LOCATION IrpSp;
+                        
+                        // re-run Irp that we cancelled
+                        
+                        if (context->stripes[i].Irp) {
+                            if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                                MmUnlockPages(context->stripes[i].Irp->MdlAddress);
+                                IoFreeMdl(context->stripes[i].Irp->MdlAddress);
+                            }
+                            IoFreeIrp(context->stripes[i].Irp);
+                        }
+                        
+                        if (!Irp) {
+                            context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
+                            
+                            if (!context->stripes[i].Irp) {
+                                ERR("IoAllocateIrp failed\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                        } else {
+                            context->stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
+                            
+                            if (!context->stripes[i].Irp) {
+                                ERR("IoMakeAssociatedIrp failed\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                        }
+                        
+                        IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+                        IrpSp->MajorFunction = IRP_MJ_READ;
+                        
+                        if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
+                            FIXME("FIXME - buffered IO\n");
+                        } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                            context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
+                            if (!context->stripes[i].Irp->MdlAddress) {
+                                ERR("IoAllocateMdl failed\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                            
+                            MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                        } else {
+                            context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                        }
+
+                        IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
+                        IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
+                        
+                        context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+                        
+                        IoSetCompletionRoutine(context->stripes[i].Irp, read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+                        
+                        context->stripes_left++;
+                        context->stripes[i].status = ReadDataStatus_Pending;
+                    }
+                }
+                
+                context->stripes_cancel = 0;
+                KeClearEvent(&context->Event);
+                
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Pending) {
+                        IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
+                    }
+                }
+                
+                KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+                
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_Success) {
+                        if (context->tree) {
+                            tree_header* th = (tree_header*)context->stripes[i].buf;
+                            UINT32 crc32;
+                            
+                            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                            
+                            if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                                context->stripes[i].status = ReadDataStatus_CRCError;
+                                checksum_error = TRUE;
+                            }
+                        } else if (context->csum) {
+                            UINT32 j;
+                            
+                            for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
+                                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
+                                
+                                if (crc32 != context->csum[j]) {
+                                    context->stripes[i].status = ReadDataStatus_CRCError;
+                                    checksum_error = TRUE;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].status == ReadDataStatus_Success) {
