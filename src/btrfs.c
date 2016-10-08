@@ -4490,6 +4490,16 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
     BOOL locked;
     range_lock* rl;
     
+    rl = ExAllocateFromNPagedLookasideList(&Vcb->range_lock_lookaside);
+    if (!rl) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    rl->start = start;
+    rl->length = length;
+    rl->thread = PsGetCurrentThread();
+    
     while (TRUE) {
         KIRQL irql;
         
@@ -4499,9 +4509,9 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
         
         le = c->range_locks.Flink;
         while (le != &c->range_locks) {
-            rl = CONTAINING_RECORD(le, range_lock, list_entry);
+            range_lock* rl2 = CONTAINING_RECORD(le, range_lock, list_entry);
             
-            if (rl->start < start + length && rl->start + rl->length > start && rl->thread != PsGetCurrentThread()) {
+            if (rl2->start < start + length && rl2->start + rl2->length > start && rl2->thread != PsGetCurrentThread()) {
                 locked = TRUE;
                 break;
             }
@@ -4510,16 +4520,6 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
         }
         
         if (!locked) {
-            rl = ExAllocateFromNPagedLookasideList(&Vcb->range_lock_lookaside);
-            if (!rl) {
-                ERR("out of memory\n");
-                KeReleaseSpinLock(&c->range_locks_spinlock, irql);
-                return;
-            }
-            
-            rl->start = start;
-            rl->length = length;
-            rl->thread = PsGetCurrentThread();
             InsertTailList(&c->range_locks, &rl->list_entry);
             
             KeReleaseSpinLock(&c->range_locks_spinlock, irql);
