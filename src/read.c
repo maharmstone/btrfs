@@ -3371,7 +3371,9 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             tree_lock = TRUE;
         }
+    }
     
+    if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
         if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
             Status = STATUS_PENDING;
             IoMarkIrpPending(Irp);
