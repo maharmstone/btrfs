@@ -2190,16 +2190,18 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         fileref = ccb ? ccb->fileref : NULL;
         
         TRACE("cleanup called for FileObject %p\n", FileObject);
-        TRACE("fcb %p (%S), refcount = %u, open_count = %u\n", fcb, file_desc(FileObject), fcb->refcount, fcb->open_count);
+        TRACE("fileref %p (%S), refcount = %u, open_count = %u\n", fileref, file_desc(FileObject), fileref->refcount, fileref->open_count);
         
         IoRemoveShareAccess(FileObject, &fcb->share_access);
         
         FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);    
         
-        oc = InterlockedDecrement(&fcb->open_count);
+        if (fileref) {
+            oc = InterlockedDecrement(&fileref->open_count);
 #ifdef DEBUG_FCB_REFCOUNTS
-        ERR("fcb %p: open_count now %i\n", fcb, oc);
+            ERR("fileref %p: open_count now %i\n", fileref, oc);
 #endif
+        }
         
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = TRUE;
@@ -2213,7 +2215,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
         }
         
-        if (oc == 0) {
+        if (fileref && oc == 0) {
             if (!Vcb->removing) {
                 LIST_ENTRY rollback;
         

@@ -217,7 +217,7 @@ BOOL has_open_children(file_ref* fileref) {
     while (le != &fileref->children) {
         file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
         
-        if (c->fcb->open_count > 0)
+        if (c->open_count > 0)
             return TRUE;
         
         if (has_open_children(c))
@@ -1430,7 +1430,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             if (!IrpSp->Parameters.SetFile.ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-            } else if ((oldfileref->fcb->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
+            } else if ((oldfileref->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -2102,7 +2102,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
             if (!fli->ReplaceIfExists) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-            } else if (oldfileref->fcb->open_count >= 1 && !oldfileref->deleted) {
+            } else if (oldfileref->open_count >= 1 && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;

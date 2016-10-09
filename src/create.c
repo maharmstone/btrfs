@@ -1734,7 +1734,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
-            if (Vcb->root_fileref->fcb->open_count == 0) { // don't allow root to be opened on unmounted FS
+            if (Vcb->root_fileref->open_count == 0) { // don't allow root to be opened on unmounted FS
                 ULONG cc;
                 IO_STATUS_BLOCK iosb;
                 
@@ -2793,10 +2793,10 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
     
 #ifdef DEBUG_FCB_REFCOUNTS
-    oc = InterlockedIncrement(&fileref->fcb->open_count);
-    ERR("fcb %p: open_count now %i\n", fileref->fcb, oc);
+    oc = InterlockedIncrement(&fileref->open_count);
+    ERR("fileref %p: open_count now %i\n", fileref, oc);
 #else
-    InterlockedIncrement(&fileref->fcb->open_count);
+    InterlockedIncrement(&fileref->open_count);
 #endif
     
     FileObject->FsContext2 = ccb;
@@ -3412,7 +3412,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
         
-        if (fileref->fcb->open_count > 0) {
+        if (fileref->open_count > 0) {
             Status = IoCheckShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
             
             if (!NT_SUCCESS(Status)) {
@@ -3664,10 +3664,10 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
 #ifdef DEBUG_FCB_REFCOUNTS
-        oc = InterlockedIncrement(&fileref->fcb->open_count);
-        ERR("fcb %p: open_count now %i\n", fileref->fcb, oc);
+        oc = InterlockedIncrement(&fileref->open_count);
+        ERR("fileref %p: open_count now %i\n", fileref, oc);
 #else
-        InterlockedIncrement(&fileref->fcb->open_count);
+        InterlockedIncrement(&fileref->open_count);
 #endif
     } else {
         Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
@@ -3840,12 +3840,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
-        oc = InterlockedIncrement(&Vcb->volume_fcb->open_count);
         WARN("fcb %p: refcount now %i (volume)\n", Vcb->volume_fcb, rc);
-        WARN("fcb %p: open_count now %i (volume)\n", Vcb->volume_fcb, oc);
 #else
         InterlockedIncrement(&Vcb->volume_fcb->refcount);
-        InterlockedIncrement(&Vcb->volume_fcb->open_count);
 #endif
         IrpSp->FileObject->FsContext = Vcb->volume_fcb;
         

@@ -146,7 +146,6 @@ typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
     LONG refcount;
-    LONG open_count;
     struct _device_extension* Vcb;
     struct _root* subvol;
     UINT64 inode;
@@ -210,6 +209,7 @@ typedef struct _file_ref {
     file_ref_nonpaged* nonpaged;
     LIST_ENTRY children;
     LONG refcount;
+    LONG open_count;
     struct _file_ref* parent;
     WCHAR* debug_desc;
     
