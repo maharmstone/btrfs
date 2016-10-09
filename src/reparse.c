@@ -419,7 +419,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
     
-    if (!(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_ATTRIBUTES)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
