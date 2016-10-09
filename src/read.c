@@ -2049,10 +2049,14 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 
 #ifdef _DEBUG
                 if (context->tree) {
-                    tree_header* th = (tree_header*)context->stripes[i].buf;
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                    
-                    WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                    for (i = 0; i < ci->num_stripes; i++) {
+                        if (context->stripes[i].status == ReadDataStatus_CRCError) {
+                            tree_header* th = (tree_header*)context->stripes[i].buf;
+                            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                            
+                            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                        }
+                    }
                 }
 #endif
                 Status = STATUS_CRC_ERROR;
