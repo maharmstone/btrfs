@@ -1914,17 +1914,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
     
-    for (i = 0; i < Vcb->threads.num_threads; i++) {
-        Vcb->threads.threads[i].quit = TRUE;
-        KeSetEvent(&Vcb->threads.threads[i].event, 0, FALSE);
-        
-        KeWaitForSingleObject(&Vcb->threads.threads[i].finished, Executive, KernelMode, FALSE, NULL);
-        
-        ZwClose(Vcb->threads.threads[i].handle);
-    }
-    
-    ExFreePool(Vcb->threads.threads);
-    
     time.QuadPart = 0;
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
@@ -3482,78 +3471,6 @@ end:
     return NULL;
 }
 
-static NTSTATUS create_worker_threads(PDEVICE_OBJECT DeviceObject) {
-    device_extension* Vcb = DeviceObject->DeviceExtension;
-    ULONG i;
-    NTSTATUS Status;
-    
-    Vcb->threads.num_threads = max(3, KeQueryActiveProcessorCount(NULL));
-    
-    Vcb->threads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_thread) * Vcb->threads.num_threads, ALLOC_TAG);
-    if (!Vcb->threads.threads) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlZeroMemory(Vcb->threads.threads, sizeof(drv_thread) * Vcb->threads.num_threads);
-    
-    for (i = 0; i < Vcb->threads.num_threads; i++) {
-        Vcb->threads.threads[i].DeviceObject = DeviceObject;
-        KeInitializeEvent(&Vcb->threads.threads[i].event, SynchronizationEvent, FALSE);
-        KeInitializeEvent(&Vcb->threads.threads[i].finished, NotificationEvent, FALSE);
-        InitializeListHead(&Vcb->threads.threads[i].jobs);
-        KeInitializeSpinLock(&Vcb->threads.threads[i].spin_lock);
-        
-        Status = PsCreateSystemThread(&Vcb->threads.threads[i].handle, 0, NULL, NULL, NULL, worker_thread, &Vcb->threads.threads[i]);
-        if (!NT_SUCCESS(Status)) {
-            ULONG j;
-            
-            ERR("PsCreateSystemThread returned %08x\n", Status);
-            
-            for (j = 0; j < i; j++) {
-                Vcb->threads.threads[i].quit = TRUE;
-                KeSetEvent(&Vcb->threads.threads[i].event, 0, FALSE);
-            }
-            
-            return Status;
-        }
-    }
-    
-    Vcb->threads.pending_jobs = 0;
-    
-    return STATUS_SUCCESS;
-}
-
-BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
-    ULONG threadnum;
-    thread_job* tj;
-    
-    threadnum = InterlockedIncrement(&Vcb->threads.next_thread) % Vcb->threads.num_threads;
-    
-//     if (Vcb->threads.pending_jobs >= Vcb->threads.num_threads)
-//         return FALSE;
-    
-    if (Vcb->threads.threads[threadnum].quit)
-        return FALSE;
-    
-    tj = ExAllocatePoolWithTag(NonPagedPool, sizeof(thread_job), ALLOC_TAG);
-    if (!tj) {
-        Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
-        Irp->IoStatus.Information = 0;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return FALSE;
-    }
-    
-    tj->Irp = Irp;
-    
-    InterlockedIncrement(&Vcb->threads.pending_jobs);
-    
-    ExInterlockedInsertTailList(&Vcb->threads.threads[threadnum].jobs, &tj->list_entry, &Vcb->threads.threads[threadnum].spin_lock);
-    KeSetEvent(&Vcb->threads.threads[threadnum].event, 0, FALSE);
-    
-    return TRUE;
-}
-
 static BOOL raid_generations_okay(device_extension* Vcb) {
     UINT64 i;
     
@@ -4002,12 +3919,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
-        goto exit;
-    }
-    
-    Status = create_worker_threads(NewDeviceObject);
-    if (!NT_SUCCESS(Status)) {
-        ERR("create_worker_threads returned %08x\n", Status);
         goto exit;
     }
     

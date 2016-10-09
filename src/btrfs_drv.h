@@ -451,27 +451,6 @@ typedef struct {
 } sys_chunk;
 
 typedef struct {
-    PIRP Irp;
-    LIST_ENTRY list_entry;
-} thread_job;
-
-typedef struct {
-    PDEVICE_OBJECT DeviceObject;
-    HANDLE handle;
-    KEVENT event, finished;
-    BOOL quit;
-    LIST_ENTRY jobs;
-    KSPIN_LOCK spin_lock;
-} drv_thread;
-
-typedef struct {
-    ULONG num_threads;
-    LONG next_thread;
-    drv_thread* threads;
-    LONG pending_jobs;
-} drv_threads;
-
-typedef struct {
     BOOL ignore;
     BOOL compress;
     BOOL compress_force;
@@ -558,7 +537,6 @@ typedef struct _device_extension {
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;
     KEVENT flush_thread_finished;
-    drv_threads threads;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
@@ -967,7 +945,6 @@ UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 s
 BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 
 // in worker-thread.c
-void STDCALL worker_thread(void* context);
 void do_read_job(PIRP Irp);
 void do_write_job(device_extension* Vcb, PIRP Irp);
 

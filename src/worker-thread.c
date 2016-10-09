@@ -17,14 +17,32 @@
 
 #include "btrfs_drv.h"
 
+typedef struct {
+    device_extension* Vcb;
+    PIRP Irp;
+    WORK_QUEUE_ITEM item;
+} job_info;
+
 void do_read_job(PIRP Irp) {
     NTSTATUS Status;
     ULONG bytes_read;
     BOOL top_level = is_top_level(Irp);
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb = FileObject->FsContext;
+    BOOL fcb_lock = FALSE;
     
     Irp->IoStatus.Information = 0;
     
+    if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
+        ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+        fcb_lock = TRUE;
+    }
+    
     Status = do_read(Irp, TRUE, &bytes_read);
+    
+    if (fcb_lock)
+        ExReleaseResourceLite(fcb->Header.Resource);
 
     Irp->IoStatus.Status = Status;
     
@@ -64,64 +82,31 @@ void do_write_job(device_extension* Vcb, PIRP Irp) {
     TRACE("returning %08x\n", Status);
 }
 
-static void do_job(drv_thread* thread, LIST_ENTRY* le) {
-    thread_job* tj = CONTAINING_RECORD(le, thread_job, list_entry);
-    PIO_STACK_LOCATION IrpSp = tj->Irp ? IoGetCurrentIrpStackLocation(tj->Irp) : NULL;
+static void do_job(void* context) {
+    job_info* ji = context;
+    PIO_STACK_LOCATION IrpSp = ji->Irp ? IoGetCurrentIrpStackLocation(ji->Irp) : NULL;
     
     if (IrpSp->MajorFunction == IRP_MJ_READ) {
-        do_read_job(tj->Irp);
+        do_read_job(ji->Irp);
     } else if (IrpSp->MajorFunction == IRP_MJ_WRITE) {
-        do_write_job(thread->DeviceObject->DeviceExtension, tj->Irp);
-    } else {
-        ERR("unsupported major function %x\n", IrpSp->MajorFunction);
-        tj->Irp->IoStatus.Status = STATUS_INTERNAL_ERROR;
-        tj->Irp->IoStatus.Information = 0;
-        IoCompleteRequest(tj->Irp, IO_NO_INCREMENT);
+        do_write_job(ji->Vcb, ji->Irp);
     }
     
-    ExFreePool(tj);
+    ExFreePool(ji);
 }
 
-void STDCALL worker_thread(void* context) {
-    drv_thread* thread = context;
-    KIRQL irql;
+BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
+    job_info* ji;
     
-    ObReferenceObject(thread->DeviceObject);
-    
-    while (TRUE) {
-        KeWaitForSingleObject(&thread->event, Executive, KernelMode, FALSE, NULL);
-        
-        FsRtlEnterFileSystem();
-        
-        while (TRUE) {
-            LIST_ENTRY* le;
-            device_extension* Vcb = thread->DeviceObject->DeviceExtension;
-            
-            KeAcquireSpinLock(&thread->spin_lock, &irql);
-            
-            if (IsListEmpty(&thread->jobs)) {
-                KeReleaseSpinLock(&thread->spin_lock, irql);
-                break;
-            }
-            
-            le = thread->jobs.Flink;
-            RemoveEntryList(le);
-            
-            KeReleaseSpinLock(&thread->spin_lock, irql);
-            
-            InterlockedDecrement(&Vcb->threads.pending_jobs);
-            do_job(thread, le);
-        }
-        
-        FsRtlExitFileSystem();
-        
-        if (thread->quit)
-            break;
+    ji = ExAllocatePoolWithTag(NonPagedPool, sizeof(job_info), ALLOC_TAG);
+    if (!ji) {
+        ERR("out of memory\n");
+        return FALSE;
     }
     
-    ObDereferenceObject(thread->DeviceObject);
+    ji->Irp = Irp;
+    ExInitializeWorkItem(&ji->item, do_job, ji);
+    ExQueueWorkItem(&ji->item, DelayedWorkQueue);
     
-    KeSetEvent(&thread->finished, 0, FALSE);
-    
-    PsTerminateSystemThread(STATUS_SUCCESS);
+    return TRUE;
 }
