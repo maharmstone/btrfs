@@ -1417,6 +1417,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         related = relatedccb->fileref;
         increase_fileref_refcount(related);
+    } else if (fnus.Length >= sizeof(WCHAR) && fnus.Buffer[0] != '\\') {
+        related = fileref->parent;
+        increase_fileref_refcount(related);
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
