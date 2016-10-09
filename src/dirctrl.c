@@ -1138,7 +1138,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
         return STATUS_INVALID_PARAMETER;
     }
     
-    if (!(ccb->access & FILE_LIST_DIRECTORY)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_LIST_DIRECTORY)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
