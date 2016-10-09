@@ -714,7 +714,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
     
-    if (!(ccb->access & FILE_LIST_DIRECTORY)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_LIST_DIRECTORY)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
