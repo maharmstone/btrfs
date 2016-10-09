@@ -1479,7 +1479,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_INVALID_PARAMETER;
     }
     
-    if (!(ccb->access & FILE_WRITE_DATA)) {
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_DATA)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
