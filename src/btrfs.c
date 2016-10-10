@@ -1076,10 +1076,103 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
 //     int3;
 // }
 
+#if 0
+void STDCALL tree_test(void* context) {
+    device_extension* Vcb = context;
+    NTSTATUS Status;
+    UINT64 id;
+    LARGE_INTEGER due_time, time;
+    KTIMER timer;
+    root* r;
+    LIST_ENTRY rollback;
+    ULONG seed;
+    
+    InitializeListHead(&rollback);
+    
+    KeInitializeTimer(&timer);
+    
+    id = InterlockedIncrement64(&Vcb->root_root->lastinode);
+    Status = create_root(Vcb, id, &r, FALSE, 0, NULL, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("create_root returned %08x\n");
+        return;
+    }
+    
+    clear_rollback(Vcb, &rollback);
+    
+    due_time.QuadPart = (UINT64)1 * -10000000;
+    
+    KeQueryPerformanceCounter(&time);
+    seed = time.LowPart;
+    
+    while (TRUE) {
+        UINT32 i;
+        
+        FsRtlEnterFileSystem();
+        
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        
+        for (i = 0; i < 100; i++) {
+            void* data;
+            ULONG datalen;
+            UINT64 objid, offset;
+            
+            objid = RtlRandomEx(&seed);
+            objid <<= 32;
+            objid |= RtlRandomEx(&seed);
+            
+            offset = RtlRandomEx(&seed);
+            offset <<= 32;
+            offset |= RtlRandomEx(&seed);
+            
+            datalen = 30;
+            data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+            
+            if (!insert_tree_item(Vcb, r, objid, 0xfd, offset, data, datalen, NULL, NULL, &rollback)) {
+                ERR("insert_tree_item failed\n");
+            }
+        }
+        
+        for (i = 0; i < 25; i++) {
+            KEY searchkey;
+            traverse_ptr tp;
+            
+            searchkey.obj_id = RtlRandomEx(&seed);
+            searchkey.obj_id <<= 32;
+            searchkey.obj_id |= RtlRandomEx(&seed);
+            
+            searchkey.obj_type = 0xfd;
+            
+            searchkey.offset = RtlRandomEx(&seed);
+            searchkey.offset <<= 32;
+            searchkey.offset |= RtlRandomEx(&seed);
+            
+            Status = find_item(Vcb, r, &tp, &searchkey, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+            } else {
+                delete_tree_item(Vcb, &tp, &rollback);
+            }
+        }
+        
+        clear_rollback(Vcb, &rollback);
+        
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        
+        FsRtlExitFileSystem();
+        
+        KeSetTimer(&timer, due_time, NULL);
+        
+        KeWaitForSingleObject(&timer, Executive, KernelMode, FALSE, NULL);
+    }
+}
+#endif
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
     USHORT vollen, i;
+//     HANDLE h;
     
     TRACE("label = %.*S\n", ffli->VolumeLabelLength / sizeof(WCHAR), ffli->VolumeLabel);
     
@@ -1128,6 +1221,8 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_space_list(Vcb);
     
     Vcb->need_write = TRUE;
+    
+//     PsCreateSystemThread(&h, 0, NULL, NULL, NULL, tree_test, Vcb);
     
 release:  
     ExReleaseResourceLite(&Vcb->tree_lock);
