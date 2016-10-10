@@ -827,6 +827,11 @@ static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream,
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)utf8, utf8len);
     TRACE("crc32 = %08x\n", crc32);
     
+    if ((crc32 == EA_DOSATTRIB_HASH && utf8len == strlen(EA_DOSATTRIB) && RtlCompareMemory(utf8, EA_DOSATTRIB, utf8len) == utf8len) || 
+        (crc32 == EA_EA_HASH && utf8len == strlen(EA_EA) && RtlCompareMemory(utf8, EA_EA, utf8len) == utf8len)) {
+        return FALSE;
+    }
+    
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
