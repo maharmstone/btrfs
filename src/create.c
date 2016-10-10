@@ -2410,6 +2410,8 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
     static char xapref[] = "user.";
+    static WCHAR DOSATTRIB[] = L"DOSATTRIB";
+    static WCHAR EA[] = L"EA";
     ULONG xapreflen = strlen(xapref), overhead;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -2476,6 +2478,11 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     if (options & FILE_DIRECTORY_FILE) {
         WARN("tried to create directory as stream\n");
         return STATUS_INVALID_PARAMETER;
+    }
+    
+    if ((stream->Length == wcslen(DOSATTRIB) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) || 
+        (stream->Length == wcslen(EA) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length)) {
+        return STATUS_OBJECT_NAME_INVALID;
     }
         
     fcb = create_fcb(pool_type);
