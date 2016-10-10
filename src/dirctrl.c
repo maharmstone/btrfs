@@ -87,6 +87,43 @@ end:
     return tag;
 }
 
+static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP Irp) {
+    UINT8* eadata;
+    UINT16 len;
+    
+    if (get_xattr(Vcb, subvol, inode, EA_EA, EA_EA_HASH, &eadata, &len, Irp)) {
+        ULONG offset;
+        NTSTATUS Status;
+        
+        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, len, &offset);
+        
+        if (!NT_SUCCESS(Status)) {
+            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+            ExFreePool(eadata);
+            return 0;
+        } else {
+            FILE_FULL_EA_INFORMATION* eainfo;
+            ULONG ealen;
+            
+            ealen = 4;
+            eainfo = (FILE_FULL_EA_INFORMATION*)eadata;
+            do {
+                ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+                
+                if (eainfo->NextEntryOffset == 0)
+                    break;
+                
+                eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+            } while (TRUE);
+            
+            ExFreePool(eadata);
+            
+            return ealen;
+        }
+    } else
+        return 0;
+}
+
 static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     UINT32 needed;
@@ -94,7 +131,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
     INODE_ITEM ii;
     NTSTATUS Status;
     ULONG stringlen;
-    ULONG atts;
+    ULONG atts, ealen;
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -141,6 +178,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                         if (fcb2->inode == inode && !fcb2->ads) {
                             ii = fcb2->inode_item;
                             atts = fcb2->atts;
+                            ealen = fcb2->ealen;
                             found = TRUE;
                             break;
                         }
@@ -184,6 +222,13 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
 
                         atts = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE, Irp);
                     }
+                    
+                    if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation || 
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation || 
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation || 
+                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
+                        ealen = get_ea_len(fcb->Vcb, r, inode, Irp);
+                    }
                 }
                 
                 break;
@@ -194,6 +239,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                 r = fcb->subvol;
                 inode = fcb->inode;
                 atts = fcb->atts;
+                ealen = fcb->ealen;
                 break;
                 
             case DirEntryType_Parent:
@@ -202,6 +248,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                     r = fileref->parent->fcb->subvol;
                     inode = fileref->parent->fcb->inode;
                     atts = fileref->parent->fcb->atts;
+                    ealen = fileref->parent->fcb->ealen;
                 } else {
                     ERR("no fileref\n");
                     return STATUS_INTERNAL_ERROR;
@@ -249,7 +296,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = stringlen;
-            fbdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
+            fbdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             fbdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             
@@ -324,7 +371,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = stringlen;
-            ffdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
+            ffdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             
             Status = RtlUTF8ToUnicodeN(ffdi->FileName, stringlen, &stringlen, de->name, de->namelen);
 
@@ -364,7 +411,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = stringlen;
-            fibdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
+            fibdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             fibdi->FileId.QuadPart = make_file_id(r, inode);
@@ -407,7 +454,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fifdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = stringlen;
-            fifdi->EaSize = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp);
+            fifdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             fifdi->FileId.QuadPart = make_file_id(r, inode);
             
             Status = RtlUTF8ToUnicodeN(fifdi->FileName, stringlen, &stringlen, de->name, de->namelen);
