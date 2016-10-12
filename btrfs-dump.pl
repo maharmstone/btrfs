@@ -509,6 +509,10 @@ sub dump_item {
 					$s=substr($s,28);
 					printf("extent_data_ref root=%x objid=%x offset=%x count=%x ",@b);
 					$refcount-=$b[3]-1;
+				} elsif ($irt == 0xb6) {
+					@b=unpack("Q",$s);
+					$s=substr($s,8);
+					printf("shared_block_ref offset=%x",$b[0]);
 				} elsif ($irt == 0xb8) {
 					@b=unpack("Qv",$s);
 					$s=substr($s,12);
