@@ -28,7 +28,8 @@ static __inline ULONG get_extent_data_len(UINT8 type) {
         case TYPE_EXTENT_REF_V0:
             return sizeof(EXTENT_REF_V0);
             
-        // FIXME - TYPE_SHARED_BLOCK_REF
+        case TYPE_SHARED_BLOCK_REF:
+            return sizeof(SHARED_BLOCK_REF);
             
         case TYPE_SHARED_DATA_REF:
             return sizeof(SHARED_DATA_REF);
@@ -55,7 +56,8 @@ static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
             return erv0->count;
         }
         
-        // FIXME - TYPE_SHARED_BLOCK_REF
+        case TYPE_SHARED_BLOCK_REF:
+            return 1;
         
         case TYPE_SHARED_DATA_REF:
         {
