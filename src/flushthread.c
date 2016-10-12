@@ -1945,6 +1945,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->has_address = FALSE;
     nt->Vcb = Vcb;
     nt->parent = t->parent;
+    
+#ifdef DEBUG_PARANOID
+    if (nt->parent && nt->parent->header.level <= nt->header.level) int3;
+#endif
+    
     nt->root = t->root;
 //     nt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     nt->new_address = 0;
@@ -2020,8 +2025,12 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
         while (le != &nt->itemlist) {
             tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
             
-            if (td2->treeholder.tree)
+            if (td2->treeholder.tree) {
                 td2->treeholder.tree->parent = nt;
+#ifdef DEBUG_PARANOID
+                if (td2->treeholder.tree->parent && td2->treeholder.tree->parent->header.level <= td2->treeholder.tree->header.level) int3;
+#endif
+            }
             
             le = le->Flink;
         }
@@ -2124,6 +2133,11 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     
     t->parent = pt;
     nt->parent = pt;
+    
+#ifdef DEBUG_PARANOID
+    if (t->parent && t->parent->header.level <= t->header.level) int3;
+    if (nt->parent && nt->parent->header.level <= nt->header.level) int3;
+#endif
     
 end:
     t->root->root_item.bytes_used += Vcb->superblock.node_size;
@@ -2244,8 +2258,12 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
             while (le != &next_tree->itemlist) {
                 tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
                 
-                if (td2->treeholder.tree)
+                if (td2->treeholder.tree) {
                     td2->treeholder.tree->parent = t;
+#ifdef DEBUG_PARANOID
+                    if (td2->treeholder.tree->parent && td2->treeholder.tree->parent->header.level <= td2->treeholder.tree->header.level) int3;
+#endif
+                }
                 
                 le = le->Flink;
             }
@@ -2330,8 +2348,12 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
                 
-                if (next_tree->header.level > 0 && td->treeholder.tree)
+                if (next_tree->header.level > 0 && td->treeholder.tree) {
                     td->treeholder.tree->parent = t;
+#ifdef DEBUG_PARANOID
+                    if (td->treeholder.tree->parent && td->treeholder.tree->parent->header.level <= td->treeholder.tree->header.level) int3;
+#endif
+                }
                 
                 if (!td->ignore) {
                     next_tree->size -= size;

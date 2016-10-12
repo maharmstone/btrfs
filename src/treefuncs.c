@@ -335,6 +335,11 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
         }
         
         th->tree->parent = t;
+        
+#ifdef DEBUG_PARANOID
+        if (t && t->header.level <= th->tree->header.level) int3;
+#endif
+        
         th->tree->paritem = td;
         
         ret = TRUE;
