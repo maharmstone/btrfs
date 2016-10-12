@@ -438,7 +438,6 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
-    chunk* c;
     NTSTATUS Status;
     
     searchkey.obj_id = address;
@@ -462,19 +461,6 @@ static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tre
     }
     
     delete_tree_item(Vcb, &tp, rollback);
-
-    c = get_chunk_from_address(Vcb, address);
-    
-    if (c) {
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        decrease_chunk_usage(c, Vcb->superblock.node_size);
-        
-        space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
-        
-        ExReleaseResourceLite(&c->lock);
-    } else
-        ERR("could not find chunk for address %llx\n", address);
     
     return TRUE;
 }
@@ -605,6 +591,67 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     add_parents_to_cache(Vcb, tp2.tree);
 }
 
+static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp, insert_tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    EXTENT_ITEM_SKINNY_METADATA* eism;
+    UINT8* type;
+    
+    TRACE("(%p, %p, %p)\n", Vcb, td, t);
+    
+    // FIXME - handle A8s
+    
+    searchkey.obj_id = td->treeholder.address;
+    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        TRACE("could not find METADATA_ITEM for %llx\n", searchkey.obj_id);
+        return;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(UINT8)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                   tp.item->size, sizeof(EXTENT_ITEM) + sizeof(UINT8));
+        return;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    type = (UINT8*)&ei[1];
+    
+    if (*type != TYPE_SHARED_BLOCK_REF)
+        return;
+    
+    eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
+    if (!eism) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlCopyMemory(&eism->ei, ei, sizeof(EXTENT_ITEM));
+    eism->type = TYPE_TREE_BLOCK_REF;
+    eism->tbr.offset = t->header.tree_id;
+    
+    delete_tree_item(Vcb, &tp, rollback);
+
+    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(eism);
+        return;
+    }
+    
+    add_parents_to_cache(Vcb, insert_tp.tree);
+    add_parents_to_cache(Vcb, tp.tree);
+}
+
 static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
@@ -619,7 +666,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
         if (reduce_tree_extent_skinny(Vcb, address, t, Irp, rollback)) {
-            return STATUS_SUCCESS;
+            goto end;
         }
     }
     
@@ -681,10 +728,11 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         }
     }
      
-    if (t && !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+end:
+    if (t && (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF))) {
         LIST_ENTRY* le;
         
-        // when writing old internal trees, convert related extents
+        // when writing old or shared internal trees, convert related extents
         
         le = t->itemlist.Flink;
         while (le != &t->itemlist) {
@@ -694,7 +742,10 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             
             if (!td->ignore && !td->inserted) {
                 if (t->header.level > 0) {
-                    convert_old_tree_extent(Vcb, td, t, Irp, rollback);
+                    if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF))
+                        convert_old_tree_extent(Vcb, td, t, Irp, rollback);
+                    else
+                        convert_shared_tree_extent(Vcb, td, t, Irp, rollback);
                 } else if (td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA)) {
                     EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
                     
@@ -718,9 +769,9 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     if (c) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        decrease_chunk_usage(c, tp.item->key.offset);
+        decrease_chunk_usage(c, Vcb->superblock.node_size);
         
-        space_list_add(Vcb, c, TRUE, address, tp.item->key.offset, rollback);
+        space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
         
         ExReleaseResourceLite(&c->lock);
     } else
