@@ -657,7 +657,7 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
     
     td = prev_item(t->parent, t->paritem);
     
-    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t, td, &loaded, Irp, func, file, line);
+    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, Irp, func, file, line);
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree returned %08x\n", Status);
         return FALSE;
