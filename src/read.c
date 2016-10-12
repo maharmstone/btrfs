@@ -1868,6 +1868,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         }
         
         if (checksum_error) {
+            // FIXME - update dev stats
+            
             WARN("checksum error\n");
             
             context->stripes_left = 0;
@@ -2005,7 +2007,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                                 
                                 if (crc32b == csum[i]) {
                                     RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), context->stripes[other_stripe].buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                                    // FIXME - also copy to original stripe for writing good data over bad
+                                    RtlCopyMemory(stripes[stripe]->buf + (i * Vcb->superblock.sector_size), context->stripes[other_stripe].buf + (i * Vcb->superblock.sector_size),
+                                                  Vcb->superblock.sector_size);
+                                    stripes[stripe]->rewrite = TRUE;
                                 } else {
                                     WARN("could not recover from checksum error\n");
                                     ExFreePool(stripes);
@@ -2032,7 +2036,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                             goto exit;
                         }
                         
-                        // FIXME - write good data over bad
+                        RtlCopyMemory(stripes[stripe]->buf, buf, readlen);
+                        stripes[stripe]->rewrite = TRUE;
                     }
                 } else if (length - pos < ci->stripe_length) {
                     if (context->csum && stripes[stripe]->status == ReadDataStatus_CRCError) {
@@ -2047,7 +2052,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                                 if (crc32b == csum[i]) {
                                     RtlCopyMemory(buf + pos + (i * Vcb->superblock.sector_size),
                                                     &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)], Vcb->superblock.sector_size);
-                                    // FIXME - also copy to original stripe for writing good data over bad
+                                    RtlCopyMemory(&stripes[stripe]->buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
+                                                  &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
+                                                  Vcb->superblock.sector_size);
+                                    stripes[stripe]->rewrite = TRUE;
                                 } else {
                                     WARN("could not recover from checksum error\n");
                                     ExFreePool(stripes);
@@ -2073,7 +2081,10 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                                 if (crc32b == csum[i]) {
                                     RtlCopyMemory(buf + pos + (i * Vcb->superblock.sector_size),
                                                     &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)], Vcb->superblock.sector_size);
-                                    // FIXME - also copy to original stripe for writing good data over bad
+                                    RtlCopyMemory(&stripes[stripe]->buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
+                                                  &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
+                                                  Vcb->superblock.sector_size);
+                                    stripes[stripe]->rewrite = TRUE;
                                 } else {
                                     WARN("could not recover from checksum error\n");
                                     ExFreePool(stripes);
@@ -2092,7 +2103,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 stripe = (stripe + 1) % (ci->num_stripes / ci->sub_stripes);
             }
             
-            // FIXME - write good data over bad
+            // write good data over bad
+            
+            if (!Vcb->readonly) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
+                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
+                }
+            }
         }
         
         ExFreePool(stripes);
