@@ -1628,112 +1628,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT32 pos, *stripeoff;
         UINT8 stripe;
         read_data_stripe** stripes;
-        
-//         if (checksum_error) {
-//             // FIXME - update dev stats
-//             
-//             for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
-//                 if (context->stripes[i].status == ReadDataStatus_CRCError || context->stripes[i+1].status == ReadDataStatus_CRCError) {
-//                     if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError) {
-//                         UINT16 start, left;
-//                         UINT32 j, k, l;
-//                         
-//                         if (context->tree) {
-//                             ERR("unrecoverable checksum error\n");
-//                             Status = STATUS_CRC_ERROR;
-//                             goto exit;
-//                         }
-//                         
-//                         // checksum errors on both stripes - we need to check sector by sector
-//                         
-//                         if (context->startoffstripe == context->stripes[i].stripenum) {
-//                             start = 0;
-//                             left = context->sectors_per_stripe - context->firstoff;
-//                         } else {
-//                             UINT16 ns;
-//                             
-//                             if (context->startoffstripe > context->stripes[i].stripenum)
-//                                 ns = context->stripes[i].stripenum + (context->num_stripes / 2) - context->startoffstripe;
-//                             else
-//                                 ns = context->stripes[i].stripenum - context->startoffstripe;
-//                             
-//                             if (context->firstoff == 0)
-//                                 start = context->sectors_per_stripe * ns;
-//                             else
-//                                 start = (context->sectors_per_stripe - context->firstoff) + (context->sectors_per_stripe * (ns - 1));
-//                             
-//                             left = context->sectors_per_stripe;
-//                         }
-//                         
-//                         j = start;
-//                         for (k = 0; k < (stripeend[i] - stripestart[i]) / context->sector_size; k++) {
-//                             BOOL success = FALSE;
-//                             
-//                             for (l = 0; l < ci->sub_stripes; l++) {
-//                                 UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i+l].buf + (k * context->sector_size), context->sector_size);
-//                                 
-//                                 if (crc32 == context->csum[j]) {
-//                                     if (l > 0) 
-//                                         RtlCopyMemory(context->stripes[i].buf + (k * context->sector_size), context->stripes[i+l].buf + (k * context->sector_size),
-//                                                       context->sector_size);
-//                                     
-//                                     success = TRUE;
-//                                     break;
-//                                 }
-//                             }
-//                             
-//                             if (!success) {
-//                                 ERR("unrecoverable checksum error\n");
-//                                 Status = STATUS_CRC_ERROR;
-//                                 goto exit;
-//                             }
-//                             
-//                             j++;
-//                             left--;
-//                             
-//                             if (left == 0) {
-//                                 j += context->sectors_per_stripe;
-//                                 left = context->sectors_per_stripe;
-//                             }
-//                         }
-//                     } else if (context->stripes[i].status != ReadDataStatus_Success && context->stripes[i+1].status == ReadDataStatus_Success) {
-//                         ERR("unrecoverable checksum error\n");
-//                         Status = STATUS_CRC_ERROR;
-//                         goto exit;
-//                     }
-//                     
-//                     if (!Vcb->readonly) {
-//                         UINT16 rightstripe, l;
-//                         // write good data over bad
-//                         
-//                         if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError)
-//                             rightstripe = 0;
-//                         else {
-//                             for (l = 0; l < ci->sub_stripes; l++) {
-//                                 if (context->stripes[i+l].status == ReadDataStatus_Success) {
-//                                     rightstripe = l;
-//                                     break;
-//                                 }
-//                             }
-//                         }
-//                         
-//                         for (l = 0; l < ci->sub_stripes; l++) {
-//                             if (context->stripes[i+l].status == ReadDataStatus_CRCError && devices[i+l] && !devices[i+l]->readonly) {
-//                                 Status = write_data_phys(devices[i+l]->devobj, cis[i+l].offset + stripestart[i+l],
-//                                                          context->stripes[i+rightstripe].buf, stripeend[i+l] - stripestart[i+l]);
-//                                 
-//                                 if (!NT_SUCCESS(Status))
-//                                     WARN("write_data_phys returned %08x\n", Status);
-//                             }
-//                         }
-//                     }
-//                     
-//                     if (context->stripes[i].status == ReadDataStatus_CRCError && context->stripes[i+1].status == ReadDataStatus_CRCError)
-//                         context->stripes[i].status = ReadDataStatus_Success;
-//                 }
-//             }
-//         }
-        
+
         stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripes) {
             ERR("out of memory\n");
@@ -2121,17 +2016,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         ExFreePool(stripeoff);
         
         // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
-        
-//         if (is_tree) {
-//             tree_header* th = (tree_header*)buf;
-//             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-//             
-//             if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
-//                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-//                 Status = STATUS_CRC_ERROR;
-//                 goto exit;
-//             }
-//         }
         
         Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
