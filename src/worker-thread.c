@@ -105,6 +105,43 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
     }
     
     ji->Irp = Irp;
+    
+    if (!Irp->MdlAddress) {
+        PMDL Mdl;
+        LOCK_OPERATION op;
+        ULONG len;
+        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+        
+        if (IrpSp->MajorFunction == IRP_MJ_READ) {
+            op = IoWriteAccess;
+            len = IrpSp->Parameters.Read.Length;
+        } else if (IrpSp->MajorFunction == IRP_MJ_WRITE) {
+            op = IoReadAccess;
+            len = IrpSp->Parameters.Write.Length;
+        } else {
+            ERR("unexpected major function %u\n", IrpSp->MajorFunction);
+            return FALSE;
+        }
+        
+        Mdl = IoAllocateMdl(Irp->UserBuffer, len, FALSE, FALSE, Irp);
+
+        if (!Mdl) {
+            ERR("out of memory\n");
+            return FALSE;
+        }
+        
+        try {
+            MmProbeAndLockPages(Mdl, Irp->RequestorMode, op);
+        } except(EXCEPTION_EXECUTE_HANDLER) {
+            ERR("MmProbeAndLockPages raised status %08x\n", GetExceptionCode());
+
+            IoFreeMdl(Mdl);
+            Irp->MdlAddress = NULL;
+
+            return FALSE;
+        }
+    }
+    
     ExInitializeWorkItem(&ji->item, do_job, ji);
     ExQueueWorkItem(&ji->item, DelayedWorkQueue);
     
