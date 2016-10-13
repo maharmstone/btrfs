@@ -104,6 +104,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
         return FALSE;
     }
     
+    ji->Vcb = Vcb;
     ji->Irp = Irp;
     
     if (!Irp->MdlAddress) {
