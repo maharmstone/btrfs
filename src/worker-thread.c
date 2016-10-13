@@ -70,6 +70,9 @@ void do_write_job(device_extension* Vcb, PIRP Irp) {
         Status = GetExceptionCode();
     }
     
+    if (!NT_SUCCESS(Status))
+        ERR("write_file returned %08x\n", Status);
+    
     Irp->IoStatus.Status = Status;
 
     TRACE("wrote %u bytes\n", Irp->IoStatus.Information);
