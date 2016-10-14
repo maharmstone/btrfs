@@ -128,6 +128,12 @@ static NTSTATUS get_partition_info_ex(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS is_writable(device_extension* Vcb, PIRP Irp) {
+    TRACE("IOCTL_DISK_IS_WRITABLE\n");
+    
+    return Vcb->readonly ? STATUS_MEDIA_WRITE_PROTECTED : STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -152,6 +158,10 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             
         case IOCTL_DISK_GET_PARTITION_INFO_EX:
             Status = get_partition_info_ex(Vcb, Irp);
+            goto end;
+            
+        case IOCTL_DISK_IS_WRITABLE:
+            Status = is_writable(Vcb, Irp);
             goto end;
             
         default:
