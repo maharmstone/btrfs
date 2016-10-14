@@ -2021,6 +2021,32 @@ static NTSTATUS is_volume_dirty(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    USHORT* compression;
+    
+    TRACE("FSCTL_GET_COMPRESSION\n");
+
+    if (Irp->AssociatedIrp.SystemBuffer) {
+        compression = Irp->AssociatedIrp.SystemBuffer;
+    } else if (Irp->MdlAddress != NULL) {
+        compression = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, LowPagePriority);
+
+        if (!compression)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        return STATUS_INVALID_USER_BUFFER;
+
+    if (IrpSp->Parameters.FileSystemControl.OutputBufferLength < sizeof(USHORT))
+        return STATUS_INVALID_PARAMETER;
+
+    *compression = COMPRESSION_FORMAT_NONE;
+
+    Irp->IoStatus.Information = sizeof(USHORT);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2089,8 +2115,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_GET_COMPRESSION:
-            WARN("STUB: FSCTL_GET_COMPRESSION\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = get_compression(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_SET_COMPRESSION:
