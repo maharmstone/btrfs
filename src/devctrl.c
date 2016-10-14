@@ -1,6 +1,8 @@
 #include "btrfs_drv.h"
 #include <winioctl.h>
 #include <mountdev.h>
+#include <initguid.h>
+#include <diskguid.h>
 
 static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -102,6 +104,30 @@ static NTSTATUS mountdev_query_stable_guid(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_partition_info_ex(device_extension* Vcb, PIRP Irp) {
+    NTSTATUS Status;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PARTITION_INFORMATION_EX* piex;
+    
+    TRACE("IOCTL_DISK_GET_PARTITION_INFO_EX\n");
+    
+    Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
+                       Irp->UserBuffer, IrpSp->Parameters.DeviceIoControl.OutputBufferLength, TRUE, &Irp->IoStatus);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    
+    piex = (PARTITION_INFORMATION_EX*)Irp->UserBuffer;
+    
+    if (piex->PartitionStyle == PARTITION_STYLE_MBR) {
+        piex->Mbr.PartitionType = PARTITION_IFS;
+        piex->Mbr.RecognizedPartition = TRUE;
+    } else if (piex->PartitionStyle == PARTITION_STYLE_GPT) {
+        piex->Gpt.PartitionType = PARTITION_BASIC_DATA_GUID;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -122,6 +148,10 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
         case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
             Status = mountdev_query_stable_guid(Vcb, Irp);
+            goto end;
+            
+        case IOCTL_DISK_GET_PARTITION_INFO_EX:
+            Status = get_partition_info_ex(Vcb, Irp);
             goto end;
             
         default:
