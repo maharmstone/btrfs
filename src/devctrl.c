@@ -86,12 +86,26 @@ static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     return Status;
 }
 
+static NTSTATUS mountdev_query_stable_guid(device_extension* Vcb, PIRP Irp) {
+    MOUNTDEV_STABLE_GUID* msg = Irp->UserBuffer;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    
+    TRACE("IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_STABLE_GUID))
+        return STATUS_INVALID_PARAMETER;
+
+    RtlCopyMemory(&msg->StableGuid, &Vcb->superblock.uuid, sizeof(GUID));
+    
+    Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    PFILE_OBJECT FileObject = IrpSp->FileObject;
     device_extension* Vcb = DeviceObject->DeviceExtension;
-    fcb* fcb;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
@@ -105,42 +119,14 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         goto end2;
     }
     
-    TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
-    
-    if (IrpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_MOUNTDEV_QUERY_STABLE_GUID) {
-        MOUNTDEV_STABLE_GUID* msg = Irp->UserBuffer;
-        TRACE("IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
-        
-        if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_STABLE_GUID)) {
-            Status = STATUS_INVALID_PARAMETER;
+    switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
+        case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
+            Status = mountdev_query_stable_guid(Vcb, Irp);
             goto end;
-        }
-
-        RtlCopyMemory(&msg->StableGuid, &Vcb->superblock.uuid, sizeof(GUID));
-        
-        Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
-        
-        Status = STATUS_SUCCESS;
-        goto end;
-    }
-    
-    if (!FileObject) {
-        ERR("FileObject was NULL\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto end;
-    }
-    
-    fcb = FileObject->FsContext;
-    
-    if (!fcb) {
-        ERR("FCB was NULL\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto end;
-    }
-    
-    if (fcb != Vcb->volume_fcb) {
-        Status = STATUS_NOT_IMPLEMENTED;
-        goto end;
+            
+        default:
+            TRACE("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+            break;
     }
     
     IoSkipCurrentIrpStackLocation(Irp);
