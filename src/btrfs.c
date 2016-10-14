@@ -3761,8 +3761,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     
-    if (Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE)
-        Vcb->devices[0].seeding = TRUE;
+    Vcb->devices[0].seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
     init_device(Vcb, &Vcb->devices[0], FALSE);
     Vcb->devices[0].length = gli.Length.QuadPart;
