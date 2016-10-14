@@ -308,6 +308,9 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
     
     c->cache->inode_item.flags |= BTRFS_INODE_NODATACOW;
     
+    if (num_entries == 0 && num_bitmaps == 0)
+        return STATUS_SUCCESS;
+    
     size = sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
     
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
