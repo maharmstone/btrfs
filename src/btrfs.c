@@ -3368,19 +3368,21 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
 // 
 //             return (addr - c->offset) + cis->offset;
 //         }
+
+        // It doesn't make a great deal of sense to load the free space cache of a
+        // readonly seeding chunk, as we'll never write to it. But btrfs check will
+        // complain if we don't write a valid cache, so we have to do it anyway...
             
-        if (!c->readonly) {
-            // FIXME - make sure we free occasionally after doing one of these, or we
-            // might use up a lot of memory with a big disk.
-            
-            Status = load_free_space_cache(Vcb, c, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("load_free_space_cache returned %08x\n", Status);
-                return Status;
-            }
-            
-            protect_superblocks(Vcb, c);
+        // FIXME - make sure we free occasionally after doing one of these, or we
+        // might use up a lot of memory with a big disk.
+        
+        Status = load_free_space_cache(Vcb, c, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_free_space_cache returned %08x\n", Status);
+            return Status;
         }
+        
+        protect_superblocks(Vcb, c);
 
         le = le->Flink;
     }
