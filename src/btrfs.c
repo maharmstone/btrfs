@@ -2994,6 +2994,12 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     
     dev->ssd = FALSE;
     dev->trim = FALSE;
+    dev->readonly = FALSE;
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0,
+                       NULL, 0, TRUE, NULL);
+    if (Status == STATUS_MEDIA_WRITE_PROTECTED)
+        dev->readonly = TRUE;
 
     aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
     apte = ExAllocatePoolWithTag(NonPagedPool, aptelen, ALLOC_TAG);
@@ -3752,7 +3758,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     init_device(Vcb, &Vcb->devices[0], FALSE);
-    Vcb->devices[0].readonly = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
+    
+    if (Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE)
+        Vcb->devices[0].readonly = TRUE;
+    
     Vcb->devices[0].length = gli.Length.QuadPart;
     
     if (Vcb->superblock.num_devices > 1)
