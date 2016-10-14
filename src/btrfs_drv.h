@@ -372,6 +372,7 @@ typedef struct {
     PDEVICE_OBJECT devobj;
     DEV_ITEM devitem;
     BOOL removable;
+    BOOL seeding;
     BOOL readonly;
     BOOL ssd;
     BOOL trim;

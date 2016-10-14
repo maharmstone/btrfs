@@ -2920,7 +2920,8 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 
                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                 Vcb->devices[Vcb->devices_loaded].devitem.device_uuid = *uuid;
-                Vcb->devices[Vcb->devices_loaded].readonly = v->seeding;
+                Vcb->devices[Vcb->devices_loaded].seeding = v->seeding;
+                Vcb->devices[Vcb->devices_loaded].readonly = Vcb->devices[Vcb->devices_loaded].seeding;
                 Vcb->devices[Vcb->devices_loaded].removable = FALSE;
                 Vcb->devices_loaded++;
                 
@@ -2994,12 +2995,14 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     
     dev->ssd = FALSE;
     dev->trim = FALSE;
-    dev->readonly = FALSE;
+    dev->readonly = dev->seeding;
     
-    Status = dev_ioctl(dev->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0,
-                       NULL, 0, TRUE, NULL);
-    if (Status == STATUS_MEDIA_WRITE_PROTECTED)
-        dev->readonly = TRUE;
+    if (!dev->readonly) {
+        Status = dev_ioctl(dev->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0,
+                        NULL, 0, TRUE, NULL);
+        if (Status == STATUS_MEDIA_WRITE_PROTECTED)
+            dev->readonly = TRUE;
+    }
 
     aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
     apte = ExAllocatePoolWithTag(NonPagedPool, aptelen, ALLOC_TAG);
@@ -3112,7 +3115,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 init_device(Vcb, &Vcb->devices[i], FALSE);
 
-                                Vcb->devices[i].readonly = v->seeding;
+                                Vcb->devices[i].seeding = v->seeding;
 
                                 Vcb->devices[i].length = v->length;
                                 Vcb->devices_loaded++;
@@ -3757,11 +3760,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices[0].devobj = DeviceToMount;
     RtlCopyMemory(&Vcb->devices[0].devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
-    init_device(Vcb, &Vcb->devices[0], FALSE);
     
     if (Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE)
-        Vcb->devices[0].readonly = TRUE;
+        Vcb->devices[0].seeding = TRUE;
     
+    init_device(Vcb, &Vcb->devices[0], FALSE);
     Vcb->devices[0].length = gli.Length.QuadPart;
     
     if (Vcb->superblock.num_devices > 1)
@@ -3839,6 +3842,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             Vcb->readonly = TRUE;
             
             for (i = 0; i < Vcb->superblock.num_devices; i++) {
+                if (Vcb->devices[i].readonly && !Vcb->devices[i].seeding)
+                    break;
+                
                 if (!Vcb->devices[i].readonly) {
                     Vcb->readonly = FALSE;
                     break;
@@ -3846,7 +3852,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             }
             
             if (Vcb->readonly)
-                WARN("setting volume to readonly as all devices are readonly\n");
+                WARN("setting volume to readonly\n");
         }
         
         if (!raid_generations_okay(Vcb)) {
