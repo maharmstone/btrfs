@@ -1932,12 +1932,19 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref = NULL;
+    LONG open_files;
     
     TRACE("FileObject = %p\n", FileObject);
+    
+    open_files = InterlockedDecrement(&Vcb->open_files);
     
     fcb = FileObject->FsContext;
     if (!fcb) {
         TRACE("FCB was NULL, returning success\n");
+        
+        if (open_files == 0 && Vcb->removing)
+            uninit(Vcb, FALSE);
+        
         return STATUS_SUCCESS;
     }
     
@@ -1961,6 +1968,11 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     }
     
     CcUninitializeCacheMap(FileObject, NULL, NULL);
+    
+    if (open_files == 0 && Vcb->removing) {
+        uninit(Vcb, FALSE);
+        return STATUS_SUCCESS;
+    }
     
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_SUCCESS;

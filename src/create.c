@@ -2817,6 +2817,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
 #else
     InterlockedIncrement(&fileref->open_count);
 #endif
+    InterlockedIncrement(&Vcb->open_files);
     
     FileObject->FsContext2 = ccb;
     
@@ -3689,6 +3690,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 #else
         InterlockedIncrement(&fileref->open_count);
 #endif
+        InterlockedIncrement(&Vcb->open_files);
     } else {
         Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
@@ -3781,8 +3783,6 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
-    Vcb = DeviceObject->DeviceExtension;
-    
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("verify_vcb returned %08x\n", Status);
@@ -3857,6 +3857,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Status = STATUS_NOT_A_DIRECTORY;
             goto exit;
         }
+        
+        if (Vcb->removing) {
+            Status = STATUS_ACCESS_DENIED;
+            goto exit;
+        }
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
@@ -3870,6 +3875,8 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (!IrpSp->FileObject->Vpb)
             IrpSp->FileObject->Vpb = DeviceObject->Vpb;
+        
+        InterlockedIncrement(&Vcb->open_files);
 
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;

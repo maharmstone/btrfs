@@ -2047,6 +2047,48 @@ static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
+    NTSTATUS Status;
+    KIRQL irql;
+    LIST_ENTRY rollback;
+    
+    TRACE("FSCTL_DISMOUNT_VOLUME\n");
+    
+    if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
+        return STATUS_SUCCESS;
+    
+    // FIXME - fail if boot drive or contains a pagefile
+    
+    InitializeListHead(&rollback);
+    
+    Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
+    if (!NT_SUCCESS(Status)) {
+        WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
+    }
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    flush_fcb_caches(Vcb);
+    
+    if (Vcb->need_write && !Vcb->readonly)
+        do_write(Vcb, Irp, &rollback);
+    
+    free_trees(Vcb);
+    
+    clear_rollback(Vcb, &rollback);
+    
+    Vcb->removing = TRUE;
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    IoAcquireVpbSpinLock(&irql);
+    Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+    Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
+    IoReleaseVpbSpinLock(irql);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2091,8 +2133,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_DISMOUNT_VOLUME:
-            WARN("STUB: FSCTL_DISMOUNT_VOLUME\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = dismount_volume(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_IS_VOLUME_MOUNTED:

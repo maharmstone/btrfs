@@ -497,6 +497,7 @@ typedef struct _device_extension {
     PFILE_OBJECT locked_fileobj;
     fcb* volume_fcb;
     file_ref* root_fileref;
+    LONG open_files;
     ERESOURCE DirResource;
     KSPIN_LOCK FcbListLock;
     ERESOURCE fcb_lock;
