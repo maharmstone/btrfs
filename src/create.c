@@ -1265,6 +1265,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen, Irp)) {
             fcb->reparse_xattr.Buffer = (char*)xattrdata;
             fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
+        } else {
+            fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
+            
+            if (!Vcb->readonly && !(subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+                fcb->atts_changed = TRUE;
+                mark_fcb_dirty(fcb);
+            }
         }
     }
     
