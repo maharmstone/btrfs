@@ -591,17 +591,13 @@ static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* 
     add_parents_to_cache(Vcb, tp2.tree);
 }
 
-static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static BOOL convert_shared_tree_extent_skinny(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, insert_tp;
     NTSTATUS Status;
     EXTENT_ITEM* ei;
     EXTENT_ITEM_SKINNY_METADATA* eism;
     UINT8* type;
-    
-    TRACE("(%p, %p, %p)\n", Vcb, td, t);
-    
-    // FIXME - handle A8s
     
     searchkey.obj_id = td->treeholder.address;
     searchkey.obj_type = TYPE_METADATA_ITEM;
@@ -610,30 +606,30 @@ static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tre
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return;
+        return FALSE;
     }
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         TRACE("could not find METADATA_ITEM for %llx\n", searchkey.obj_id);
-        return;
+        return FALSE;
     }
     
     if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(UINT8)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                                                                    tp.item->size, sizeof(EXTENT_ITEM) + sizeof(UINT8));
-        return;
+        return FALSE;
     }
     
     ei = (EXTENT_ITEM*)tp.item->data;
     type = (UINT8*)&ei[1];
     
     if (*type != TYPE_SHARED_BLOCK_REF)
-        return;
+        return TRUE;
     
     eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
     if (!eism) {
         ERR("out of memory\n");
-        return;
+        return TRUE;
     }
     
     RtlCopyMemory(&eism->ei, ei, sizeof(EXTENT_ITEM));
@@ -645,6 +641,72 @@ static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tre
     if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(eism);
+        return TRUE;
+    }
+    
+    add_parents_to_cache(Vcb, insert_tp.tree);
+    add_parents_to_cache(Vcb, tp.tree);
+    
+    return TRUE;
+}
+
+static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp, insert_tp;
+    NTSTATUS Status;
+    EXTENT_ITEM_TREE* eit;
+    EXTENT_ITEM_TREE2* eit2;
+    UINT8* type;
+    
+    TRACE("(%p, %p, %p)\n", Vcb, td, t);
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        if (convert_shared_tree_extent_skinny(Vcb, td, t, Irp, rollback))
+            return;
+    }
+        
+    searchkey.obj_id = td->treeholder.address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        TRACE("could not find EXTENT_ITEM for %llx\n", searchkey.obj_id);
+        return;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM_TREE) + sizeof(UINT8)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                   tp.item->size, sizeof(EXTENT_ITEM_TREE) + sizeof(UINT8));
+        return;
+    }
+    
+    eit = (EXTENT_ITEM_TREE*)tp.item->data;
+    type = (UINT8*)&eit[1];
+    
+    if (*type != TYPE_SHARED_BLOCK_REF)
+        return;
+    
+    eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
+    if (!eit2) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlCopyMemory(&eit2->eit, eit, sizeof(EXTENT_ITEM_TREE));
+    eit2->type = TYPE_TREE_BLOCK_REF;
+    eit2->tbr.offset = t->header.tree_id;
+    
+    delete_tree_item(Vcb, &tp, rollback);
+
+    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(eit2);
         return;
     }
     
