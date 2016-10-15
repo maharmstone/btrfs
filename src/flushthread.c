@@ -1652,8 +1652,7 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
         // FIXME - create checksum_root if it doesn't exist at all
         
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) { // tree is completely empty
-            // FIXME - do proper check here that tree is empty
+        if (Status == STATUS_NOT_FOUND) { // tree is completely empty
             if (!cs->deleted) {
                 checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * cs->length, ALLOC_TAG);
                 if (!checksums) {
@@ -1669,6 +1668,9 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
                     goto exit;
                 }
             }
+        } else if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            goto exit;
         } else {
             UINT32 tplen;
             
