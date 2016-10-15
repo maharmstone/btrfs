@@ -449,6 +449,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\devctrl.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\dirctrl.c"
 				>
 			</File>

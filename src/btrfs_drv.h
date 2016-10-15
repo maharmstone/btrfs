@@ -965,6 +965,9 @@ UINT8 gpow2(UINT8 e);
 UINT8 gmul(UINT8 a, UINT8 b);
 UINT8 gdiv(UINT8 a, UINT8 b);
 
+// in devctrl.c
+NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {
