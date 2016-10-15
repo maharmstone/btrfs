@@ -3782,6 +3782,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->devices_loaded = 1;
     
+    if (DeviceToMount->Flags & DO_SYSTEM_BOOT_PARTITION)
+        Vcb->disallow_dismount = TRUE;
+    
     TRACE("DeviceToMount = %p\n", DeviceToMount);
     TRACE("Stack->Parameters.MountVolume.Vpb = %p\n", Stack->Parameters.MountVolume.Vpb);
 

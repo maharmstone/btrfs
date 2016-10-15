@@ -2164,8 +2164,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     fcb->Vcb = Vcb;
 
-    if (IrpSp->Flags & SL_OPEN_PAGING_FILE)
+    if (IrpSp->Flags & SL_OPEN_PAGING_FILE) {
         fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
+        Vcb->disallow_dismount = TRUE;
+    }
 
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
@@ -3682,6 +3684,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
             
             fileref->fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
+            Vcb->disallow_dismount = TRUE;
         }
         
 #ifdef DEBUG_FCB_REFCOUNTS

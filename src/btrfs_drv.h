@@ -493,6 +493,7 @@ typedef struct _device_extension {
     BOOL readonly;
     BOOL removing;
     BOOL locked;
+    BOOL disallow_dismount;
     BOOL trim;
     PFILE_OBJECT locked_fileobj;
     fcb* volume_fcb;
