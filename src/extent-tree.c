@@ -1083,6 +1083,108 @@ static NTSTATUS populate_extent_refs_from_tree(device_extension* Vcb, UINT64 tre
     return STATUS_SUCCESS;
 }
 
+NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = size;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(tp.item->key, searchkey)) {
+        WARN("extent item not found for address %llx, size %llx\n", address, size);
+        return STATUS_SUCCESS;
+    }
+    
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+        TRACE("extent was old - returning STATUS_SUCCESS\n");
+        return STATUS_SUCCESS;
+    } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp.item->size >= sizeof(EXTENT_ITEM)) {
+        EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+        UINT32 len = tp.item->size - sizeof(EXTENT_ITEM);
+        UINT8* ptr = (UINT8*)&ei[1];
+        
+        while (len > 0) {
+            UINT8 secttype = *ptr;
+            ULONG sectlen = get_extent_data_len(secttype);
+            
+            len--;
+            
+            if (sectlen > len) {
+                ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                break;
+            }
+
+            if (sectlen == 0) {
+                ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+                break;
+            }
+            
+            if (secttype == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+                BOOL found = FALSE;
+                LIST_ENTRY* le;
+                
+                le = Vcb->shared_extents.Flink;
+                while (le != &Vcb->shared_extents) {
+                    shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
+                    
+                    if (sd->address == sectsdr->offset) {
+                        LIST_ENTRY* le2 = sd->entries.Flink;
+                        while (le2 != &sd->entries) {
+                            shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
+                            
+                            if (sde->address == address && sde->size == size) {
+                                Status = increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &sde->edr, NULL, 0, Irp, rollback);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("increase_extent_refcount returned %08x\n", Status);
+                                    return Status;
+                                }
+                                
+                                found = TRUE;
+                            }
+
+                            le2 = le2->Flink;
+                        }
+                        break;
+                    }
+                    
+                    le = le->Flink;
+                }
+                
+                if (!found)
+                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);
+                else {
+                    Status = decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF, sectsdr, NULL, 0, sectsdr->offset, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("decrease_extent_refcount returned %08x\n", Status);
+                        return Status;
+                    }
+                }
+            }
+            
+            len -= sectlen;
+            ptr += sizeof(UINT8) + sectlen;
+        }
+    }
+    
+    // FIXME - do non-inline items
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
