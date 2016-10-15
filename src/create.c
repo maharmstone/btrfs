@@ -1258,7 +1258,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     
     fcb_get_sd(fcb, parent, Irp);
     
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
         UINT8* xattrdata;
         UINT16 xattrlen;
         
