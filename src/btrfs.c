@@ -4229,8 +4229,11 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             Status = verify_volume(DeviceObject);
             
             if (!NT_SUCCESS(Status) && Vcb->Vpb->Flags & VPB_MOUNTED) {
-                uninit(Vcb, FALSE);
-//                 Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+                if (Vcb->open_files > 0) {
+                    Vcb->removing = TRUE;
+//                     Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+                } else
+                    uninit(Vcb, FALSE);
             }
             
             break;
