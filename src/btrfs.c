@@ -2225,9 +2225,6 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
     fileref->fcb->subvol->root_item.ctime = now;
     
-    if (FileObject && FileObject->Flags & FO_CACHE_SUPPORTED && fileref->fcb->nonpaged->segment_object.DataSectionObject)
-        CcPurgeCacheSection(&fileref->fcb->nonpaged->segment_object, NULL, 0, FALSE);
-    
     newlength.QuadPart = 0;
     
     if (FileObject && !CcUninitializeCacheMap(FileObject, &newlength, NULL))
