@@ -29,6 +29,7 @@
 
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
+extern LIST_ENTRY volumes;
 
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
@@ -2047,6 +2048,27 @@ static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static void update_volumes(device_extension* Vcb) {
+    LIST_ENTRY* le = volumes.Flink;
+        
+    while (le != &volumes) {
+        volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        
+        if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            UINT64 i;
+            
+            for (i = 0; i < Vcb->superblock.num_devices; i++) {
+                if (RtlCompareMemory(&Vcb->devices[i].devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    v->gen1 = v->gen2 = Vcb->superblock.generation - 1;
+                    break;
+                }
+            }
+        }
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     KIRQL irql;
@@ -2078,6 +2100,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     clear_rollback(Vcb, &rollback);
     
     Vcb->removing = TRUE;
+    update_volumes(Vcb);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
