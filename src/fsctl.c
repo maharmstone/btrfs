@@ -654,6 +654,32 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
     
+    // clear unique flag on extents of open files in subvol
+    if (!IsListEmpty(&subvol_fcb->subvol->fcbs)) {
+        LIST_ENTRY* le = subvol_fcb->subvol->fcbs.Flink;
+        
+        while (le != &subvol_fcb->subvol->fcbs) {
+            struct _fcb* openfcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
+            LIST_ENTRY* le2;
+            
+            ExAcquireResourceExclusiveLite(openfcb->Header.Resource, TRUE);
+            
+            le2 = openfcb->extents.Flink;
+            
+            while (le2 != &openfcb->extents) {
+                extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+                
+                ext->unique = FALSE;
+                
+                le2 = le2->Flink;
+            }
+            
+            ExReleaseResourceLite(openfcb->Header.Resource);
+            
+            le = le->Flink;
+        }
+    }
+    
     Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, Irp);
     
     if (NT_SUCCESS(Status)) {
