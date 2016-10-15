@@ -193,7 +193,7 @@ size:
     return STATUS_SUCCESS;
 }
 
-static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offset, void* data) {
+static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offset, void* data, UINT64* total_space) {
     RTL_BITMAP bmph;
     UINT32 i, *dwords = data;
     ULONG runlength, index;
@@ -216,6 +216,7 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offse
         
         add_space_entry(&c->space, &c->space_size, addr, length);
         index += runlength;
+        *total_space += length;
        
         runlength = RtlFindNextForwardRunClear(&bmph, index, &index);
     }
@@ -245,6 +246,115 @@ static void order_space_entry(space* s, LIST_ENTRY* list_size) {
     InsertTailList(list_size, &s->list_entry_size);
 }
 
+typedef struct {
+    UINT64 stripe;
+    LIST_ENTRY list_entry;
+} superblock_stripe;
+
+static void add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
+    UINT64 i;
+    
+    for (i = 0; i < len; i++) {
+        LIST_ENTRY* le;
+        superblock_stripe* ss;
+        
+        le = stripes->Flink;
+        while (le != stripes) {
+            ss = CONTAINING_RECORD(le, superblock_stripe, list_entry);
+            
+            if (ss->stripe == off + i)
+                continue;
+            
+            le = le->Flink;
+        }
+        
+        ss = ExAllocatePoolWithTag(PagedPool, sizeof(superblock_stripe), ALLOC_TAG);
+        ss->stripe = off + i;
+        InsertTailList(stripes, &ss->list_entry);
+    }
+}
+
+static UINT64 get_superblock_size(chunk* c) {
+    CHUNK_ITEM* ci = c->chunk_item;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    UINT64 off_start, off_end, space;
+    UINT16 i = 0, j;
+    LIST_ENTRY stripes;
+    
+    InitializeListHead(&stripes);
+    
+    while (superblock_addrs[i] != 0) {
+        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                ULONG sub_stripes = max(ci->sub_stripes, 1);
+                
+                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % ci->stripe_length;
+                    off_start *= ci->num_stripes / sub_stripes;
+                    off_start += (j / sub_stripes) * ci->stripe_length;
+
+                    off_end = off_start + ci->stripe_length;
+                    
+                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, 1);
+                }
+            }
+        } else if (ci->type & BLOCK_FLAG_RAID5) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
+                
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 1));
+                    off_start *= ci->num_stripes - 1;
+
+                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
+
+                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                }
+            }
+        } else if (ci->type & BLOCK_FLAG_RAID6) {
+            for (j = 0; j < ci->num_stripes; j++) {
+                UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
+                
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    off_start = superblock_addrs[i] - cis[j].offset;
+                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 2));
+                    off_start *= ci->num_stripes - 2;
+
+                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 2));
+
+                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                }
+            }
+        } else { // SINGLE, DUPLICATE, RAID1
+            for (j = 0; j < ci->num_stripes; j++) {
+                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                    off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
+                    
+                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                }
+            }
+        }
+        
+        i++;
+    }
+    
+    space = 0;
+    
+    while (!IsListEmpty(&stripes)) {
+        LIST_ENTRY* le = RemoveHeadList(&stripes);
+        superblock_stripe* ss = CONTAINING_RECORD(le, superblock_stripe, list_entry);
+        
+        space++;
+        
+        ExFreePool(ss);
+    }
+    
+    return space * ci->stripe_length;
+}
+
 static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
@@ -254,7 +364,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
     NTSTATUS Status;
     UINT32 *checksums, crc32;
     FREE_SPACE_ENTRY* fse;
-    UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum, off;
+    UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
     LIST_ENTRY *le, rollback;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
@@ -388,6 +498,8 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
                 ExFreePool(data);
                 return Status;
             }
+            
+            total_space += fse->size;
         } else if (fse->type != FREE_SPACE_BITMAP) {
             ERR("unknown free-space type %x\n", fse->type);
         }
@@ -407,12 +519,20 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
             
             if (fse->type == FREE_SPACE_BITMAP) {
                 // FIXME - make sure we don't overflow the buffer here
-                load_free_space_bitmap(Vcb, c, fse->offset, &data[bmpnum * Vcb->superblock.sector_size]);
+                load_free_space_bitmap(Vcb, c, fse->offset, &data[bmpnum * Vcb->superblock.sector_size], &total_space);
                 bmpnum++;
             }
             
             off += sizeof(FREE_SPACE_ENTRY);
         }
+    }
+    
+    // do sanity check
+
+    superblock_size = get_superblock_size(c);
+    if (c->chunk_item->size - c->used != total_space + superblock_size) {
+        WARN("invalidating cache for chunk %llx: space was %llx, expected %llx\n", total_space + superblock_size, c->chunk_item->size - c->used);
+        goto clearcache;
     }
     
     le = c->space.Flink;
