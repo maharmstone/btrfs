@@ -836,19 +836,6 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
     return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, 0, Irp, rollback);
 }
 
-NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 treeaddr, UINT64 parent, PIRP Irp, LIST_ENTRY* rollback) {
-    SHARED_DATA_REF sdr;
-
-    sdr.offset = treeaddr;
-    sdr.count = 1;
-    
-    return decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, parent, Irp, rollback);
-}
-
-NTSTATUS decrease_extent_refcount_old(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 treeaddr, PIRP Irp, LIST_ENTRY* rollback) {
-    return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_REF_V0, NULL, NULL, 0, treeaddr, Irp, rollback);
-}
-
 typedef struct {
     UINT8 type;
     void* data;

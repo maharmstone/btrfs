@@ -5097,64 +5097,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     return STATUS_SUCCESS;
 }
 
-// static void convert_shared_data_refs(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-//     LIST_ENTRY* le;
-//     NTSTATUS Status;
-//     
-//     le = Vcb->trees.Flink;
-//     while (le != &Vcb->trees) {
-//         tree* t = CONTAINING_RECORD(le, tree, list_entry);
-//         
-//         if (t->write && t->header.level == 0 &&
-//             (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF))) {
-//             LIST_ENTRY* le2;
-//             BOOL old = !(t->header.flags & HEADER_FLAG_MIXED_BACKREF);
-//             
-//             le2 = Vcb->shared_extents.Flink;
-//             while (le2 != &Vcb->shared_extents) {
-//                 shared_data* sd = CONTAINING_RECORD(le2, shared_data, list_entry);
-//                 
-//                 if (sd->address == t->header.address) {
-//                     LIST_ENTRY* le3 = sd->entries.Flink;
-//                     while (le3 != &sd->entries) {
-//                         shared_data_entry* sde = CONTAINING_RECORD(le3, shared_data_entry, list_entry);
-//                         
-//                         TRACE("tree %llx; root %llx, objid %llx, offset %llx, count %x\n",
-//                               t->header.address, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count);
-//                         
-//                         Status = increase_extent_refcount_data(Vcb, sde->address, sde->size, sde->edr.root, sde->edr.objid, sde->edr.offset, sde->edr.count, Irp, rollback);
-//                         
-//                         if (!NT_SUCCESS(Status))
-//                             WARN("increase_extent_refcount_data returned %08x\n", Status);
-//                         
-//                         if (old) {
-//                             Status = decrease_extent_refcount_old(Vcb, sde->address, sde->size, sd->address, Irp, rollback);
-//                             
-//                             if (!NT_SUCCESS(Status))
-//                                 WARN("decrease_extent_refcount_old returned %08x\n", Status);
-//                         } else {
-//                             Status = decrease_extent_refcount_shared_data(Vcb, sde->address, sde->size, sd->address, sd->parent, Irp, rollback);
-//                             
-//                             if (!NT_SUCCESS(Status))
-//                                 WARN("decrease_extent_refcount_shared_data returned %08x\n", Status);
-//                         }
-//                         
-//                         le3 = le3->Flink;
-//                     }
-//                     break;
-//                 }
-//                 
-//                 le2 = le2->Flink;
-//             }
-//             
-//             t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
-//             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
-//         }
-//         
-//         le = le->Flink;
-//     }
-// }
-
 NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
@@ -5256,8 +5198,6 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     ERR("flushed %llu fcbs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
 #endif
 
-//     convert_shared_data_refs(Vcb, Irp, rollback);
-    
     ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
     if (!IsListEmpty(&Vcb->sector_checksums)) {
         update_checksum_tree(Vcb, Irp, rollback);
