@@ -524,6 +524,10 @@ sub dump_item {
 				# FIXME - SHARED_BLOCK_REF
 			}
 		}
+	} elsif ($type == 0xb0) {
+		@b=unpack("Q",$s);
+		$s=substr($s,8);
+		printf("tree_block_ref root=%x ",@b);
 	} elsif ($type == 0xb2) {
 		@b=unpack("QQQv",$s);
 		$s=substr($s,28);
