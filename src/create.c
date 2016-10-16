@@ -3485,6 +3485,24 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             // FIXME - do we need to alter parent directory's times?
             
             send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
+        } else {
+            if (options & FILE_NO_EA_KNOWLEDGE && fileref->fcb->ea_xattr.Length > 0) {
+                FILE_FULL_EA_INFORMATION* ffei = (FILE_FULL_EA_INFORMATION*)fileref->fcb->ea_xattr.Buffer;
+                
+                do {
+                    if (ffei->Flags & FILE_NEED_EA) {
+                        WARN("returning STATUS_ACCESS_DENIED as no EA knowledge\n");
+                        free_fileref(fileref);
+                        Status = STATUS_ACCESS_DENIED;
+                        goto exit;
+                    }
+                    
+                    if (ffei->NextEntryOffset == 0)
+                        break;
+                    
+                    ffei = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ffei) + ffei->NextEntryOffset);
+                } while (TRUE);
+            }
         }
     
         FileObject->FsContext = fileref->fcb;
