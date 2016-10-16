@@ -2318,13 +2318,18 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     
                     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
                     
+                    ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
+                    
                     Status = delete_fileref(fileref, FileObject, Irp, &rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_fileref returned %08x\n", Status);
                         do_rollback(Vcb, &rollback);
+                        ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                         goto exit;
                     }
+                    
+                    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                     
                     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                     clear_rollback(Vcb, &rollback);
