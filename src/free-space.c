@@ -531,7 +531,7 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
 
     superblock_size = get_superblock_size(c);
     if (c->chunk_item->size - c->used != total_space + superblock_size) {
-        WARN("invalidating cache for chunk %llx: space was %llx, expected %llx\n", total_space + superblock_size, c->chunk_item->size - c->used);
+        WARN("invalidating cache for chunk %llx: space was %llx, expected %llx\n", c->offset, total_space + superblock_size, c->chunk_item->size - c->used);
         goto clearcache;
     }
     
