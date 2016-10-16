@@ -1284,10 +1284,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         
                         // replace
                         
-                        if (td->size + bi->datalen - oldxasize > maxlen) {
-                            ERR("DIR_ITEM would be over maximum size (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
-                            break;
-                        }
+                        if (td->size + bi->datalen - oldxasize > maxlen)
+                            ERR("DIR_ITEM would be over maximum size, truncating (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
                         
                         newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
                         if (!newdata) {
@@ -1308,7 +1306,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         
                         RtlCopyMemory(xa, bi->data, bi->datalen);
                         
-                        bi->datalen = td->size + bi->datalen - oldxasize;
+                        bi->datalen = min(td->size + bi->datalen - oldxasize, maxlen);
                         
                         ExFreePool(bi->data);
                         bi->data = newdata;
@@ -1319,10 +1317,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
                         // not found, add to end of data
                         
-                        if (td->size + bi->datalen > maxlen) {
-                            ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                            break;
-                        }
+                        if (td->size + bi->datalen > maxlen)
+                            ERR("DIR_ITEM would be over maximum size, truncating (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
                         
                         newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                         if (!newdata) {
@@ -1335,7 +1331,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
                         RtlCopyMemory(xa, bi->data, bi->datalen);
                         
-                        bi->datalen += td->size;
+                        bi->datalen = min(bi->datalen + td->size, maxlen);
                         
                         ExFreePool(bi->data);
                         bi->data = newdata;
