@@ -1167,7 +1167,7 @@ NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT6
         }
     }
     
-    // FIXME - do non-inline items
+    // FIXME - should we also be looking for non-inline SHARED_DATA_REF items here? Will this ever happen?
     
     return STATUS_SUCCESS;
 }
