@@ -1483,7 +1483,9 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
     
     RtlCopyMemory(&Vcb->superblock.dev_item, &device->devitem, sizeof(DEV_ITEM));
     
-    // FIXME - only write one superblock if on SSD (?)
+    // All the documentation says that the Linux driver only writes one superblock
+    // if it thinks a disk is an SSD, but this doesn't seem to be the case!
+    
     while (superblock_addrs[i] > 0 && device->length >= superblock_addrs[i] + sizeof(superblock)) {
         TRACE("writing superblock %u\n", i);
         
