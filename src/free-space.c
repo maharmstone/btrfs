@@ -786,7 +786,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
     
-    TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache->inode_item.st_size, new_cache_size);
+    TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache ? c->cache->inode_item.st_size : 0, new_cache_size);
     
     if (!c->cache) {
         FREE_SPACE_ITEM* fsi;
