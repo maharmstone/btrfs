@@ -162,6 +162,8 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
     
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     TRACE("changing delete_on_close to %s for %S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
@@ -204,6 +206,8 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
+    
+    ExReleaseResourceLite(&Vcb->fcb_lock);
 
     return Status;
 }
