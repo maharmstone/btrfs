@@ -2160,7 +2160,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                     }
                 } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        if (ed2->address != 0) {
+                        if (ed2->size != 0) {
                             chunk* c;
                             
                             fcb->inode_item.st_blocks -= len;
@@ -2185,7 +2185,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2* ned2;
                         extent* newext;
                         
-                        if (ed2->address != 0)
+                        if (ed2->size != 0)
                             fcb->inode_item.st_blocks -= end_data - ext->offset;
                         
                         ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
@@ -2229,7 +2229,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2* ned2;
                         extent* newext;
                         
-                        if (ed2->address != 0)
+                        if (ed2->size != 0)
                             fcb->inode_item.st_blocks -= ext->offset + len - start_data;
                         
                         ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
@@ -2273,7 +2273,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2 *neda2, *nedb2;
                         extent *newext1, *newext2;
                         
-                        if (ed2->address != 0) {
+                        if (ed2->size != 0) {
                             chunk* c;
                             
                             fcb->inode_item.st_blocks -= end_data - start_data;
