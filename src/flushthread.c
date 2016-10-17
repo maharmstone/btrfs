@@ -816,7 +816,7 @@ end:
                     if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                         
-                        if (ed2->address != 0) {
+                        if (ed2->size != 0) {
                             if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
                                 TRACE("trying to convert old data extent %llx,%llx\n", ed2->address, ed2->size);
                                 convert_old_data_extent(Vcb, ed2->address, ed2->size, Irp, rollback);
