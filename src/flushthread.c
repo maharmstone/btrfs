@@ -435,36 +435,6 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     return STATUS_DISK_FULL;
 }
 
-static BOOL reduce_tree_extent_skinny(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_METADATA_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        TRACE("could not find %llx,%x,%llx in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return FALSE;
-    }
-    
-    if (tp.item->size < sizeof(EXTENT_ITEM_SKINNY_METADATA)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_SKINNY_METADATA));
-        return FALSE;
-    }
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    
-    return TRUE;
-}
-
 // TESTING
 // static void check_tree_num_items(tree* t) {
 //     LIST_ENTRY* le2;
@@ -715,82 +685,92 @@ static void convert_shared_tree_extent(device_extension* Vcb, tree_data* td, tre
 }
 
 static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    EXTENT_ITEM* ei;
-    EXTENT_ITEM_V0* eiv0;
-    chunk* c;
+//     KEY searchkey;
+//     traverse_ptr tp;
+//     EXTENT_ITEM* ei;
+//     EXTENT_ITEM_V0* eiv0;
     NTSTATUS Status;
-    
-    // FIXME - deal with refcounts > 1
+    UINT64 rc;
     
     TRACE("(%p, %llx, %p)\n", Vcb, address, t);
     
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        if (reduce_tree_extent_skinny(Vcb, address, t, Irp, rollback)) {
-            goto end;
-        }
-    }
+//     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+//         if (reduce_tree_extent_skinny(Vcb, address, t, Irp, rollback)) {
+//             goto end;
+//         }
+//     }
+//     
+//     searchkey.obj_id = address;
+//     searchkey.obj_type = TYPE_EXTENT_ITEM;
+//     searchkey.offset = Vcb->superblock.node_size;
+//     
+//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (keycmp(tp.item->key, searchkey)) {
+//         ERR("could not find %llx,%x,%llx in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+//         int3;
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+//         eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+//         
+//         if (eiv0->refcount > 1) {
+//             FIXME("FIXME - cannot deal with refcounts larger than 1 at present (eiv0->refcount == %llx)\n", eiv0->refcount);
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//     } else {
+//         if (tp.item->size < sizeof(EXTENT_ITEM)) {
+//             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//         
+//         ei = (EXTENT_ITEM*)tp.item->data;
+//         
+//         if (ei->refcount > 1) {
+//             FIXME("FIXME - cannot deal with refcounts larger than 1 at present (ei->refcount == %llx)\n", ei->refcount);
+//             return STATUS_INTERNAL_ERROR;
+//         }
+//     }
+//     
+//     delete_tree_item(Vcb, &tp, rollback);
+//     
+//     // if EXTENT_ITEM_V0, delete corresponding B4 item
+//     if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+//         traverse_ptr tp2;
+//         
+//         searchkey.obj_id = address;
+//         searchkey.obj_type = TYPE_EXTENT_REF_V0;
+//         searchkey.offset = 0xffffffffffffffff;
+//         
+//         Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("error - find_item returned %08x\n", Status);
+//             return Status;
+//         }
+//         
+//         if (tp2.item->key.obj_id == searchkey.obj_id && tp2.item->key.obj_type == searchkey.obj_type) {
+//             delete_tree_item(Vcb, &tp2, rollback);
+//         }
+//     }
     
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = Vcb->superblock.node_size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(tp.item->key, searchkey)) {
-        ERR("could not find %llx,%x,%llx in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        int3;
+    rc = get_extent_refcount(Vcb, address, Vcb->superblock.node_size, Irp);
+    if (rc == 0) {
+        ERR("error - refcount for extent %llx was 0\n", address);
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-        eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
-        
-        if (eiv0->refcount > 1) {
-            FIXME("FIXME - cannot deal with refcounts larger than 1 at present (eiv0->refcount == %llx)\n", eiv0->refcount);
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else {
-        if (tp.item->size < sizeof(EXTENT_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        ei = (EXTENT_ITEM*)tp.item->data;
-        
-        if (ei->refcount > 1) {
-            FIXME("FIXME - cannot deal with refcounts larger than 1 at present (ei->refcount == %llx)\n", ei->refcount);
-            return STATUS_INTERNAL_ERROR;
-        }
-    }
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    
-    // if EXTENT_ITEM_V0, delete corresponding B4 item
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-        traverse_ptr tp2;
-        
-        searchkey.obj_id = address;
-        searchkey.obj_type = TYPE_EXTENT_REF_V0;
-        searchkey.offset = 0xffffffffffffffff;
-        
-        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return Status;
-        }
-        
-        if (tp2.item->key.obj_id == searchkey.obj_id && tp2.item->key.obj_type == searchkey.obj_type) {
-            delete_tree_item(Vcb, &tp2, rollback);
-        }
+    Status = decrease_extent_refcount_tree(Vcb, address, Vcb->superblock.node_size, t->header.tree_id, t->header.level, Irp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("decrease_extent_refcount_tree returned %08x\n", Status);
+        return Status;
     }
      
-end:
+// end:
     if (t && (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF))) {
         LIST_ENTRY* le;
         
@@ -831,18 +811,20 @@ end:
         }
     }
 
-    c = get_chunk_from_address(Vcb, address);
-    
-    if (c) {
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+    if (rc == 1) {
+        chunk* c = get_chunk_from_address(Vcb, address);
         
-        decrease_chunk_usage(c, Vcb->superblock.node_size);
-        
-        space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
-        
-        ExReleaseResourceLite(&c->lock);
-    } else
-        ERR("could not find chunk for address %llx\n", address);
+        if (c) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+            
+            decrease_chunk_usage(c, Vcb->superblock.node_size);
+            
+            space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
+            
+            ExReleaseResourceLite(&c->lock);
+        } else
+            ERR("could not find chunk for address %llx\n", address);
+    }
     
     return STATUS_SUCCESS;
 }

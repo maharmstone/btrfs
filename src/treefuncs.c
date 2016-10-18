@@ -53,6 +53,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     }
     
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
+    t->header.tree_id = r->id;
 //     t->address = addr;
 //     t->level = th->level;
     t->has_address = TRUE;
