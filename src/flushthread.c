@@ -829,9 +829,61 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    UINT64 rc = get_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, Irp);
+    
+    if (rc == 0) {
+        ERR("refcount for extent %llx was 0\n", t->header.address);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    Status = reduce_tree_extent(Vcb, t->header.address, t, Irp, rollback);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("reduce_tree_extent returned %08x\n", Status);
+        return Status;
+    }
+    
+    t->has_address = FALSE;
+    
+    if (rc > 1) {
+        if (t->header.level > 0) {
+            LIST_ENTRY* le;
+            
+            le = t->itemlist.Flink;
+            while (le != &t->itemlist) {
+                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td->inserted) {
+                    SHARED_BLOCK_REF sbr;
+                    
+                    sbr.offset = t->header.address;
+                    
+                    Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("increase_extent_refcount returned %08x\n", Status);
+                        return Status;
+                    }
+                }
+                
+                le = le->Flink;
+            }
+        } else {
+            // FIXME - add shared data refs
+        }
+    }
+    
+    t->updated_extents = TRUE;
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
+    BOOL changed = FALSE;
+    UINT8 max_level = 0, level;
     
     TRACE("(%p)\n", Vcb);
     
@@ -850,15 +902,6 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
             
             TRACE("allocated extent %llx\n", t->new_address);
             
-            if (t->has_address) {
-                Status = reduce_tree_extent(Vcb, t->header.address, t, Irp, rollback);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("reduce_tree_extent returned %08x\n", Status);
-                    return Status;
-                }
-            }
-
             c = get_chunk_from_address(Vcb, t->new_address);
             
             if (c) {
@@ -867,9 +910,34 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
                 ERR("could not find chunk for address %llx\n", t->new_address);
                 return STATUS_INTERNAL_ERROR;
             }
+            
+            changed = TRUE;
+            
+            if (t->header.level > max_level)
+                max_level = t->header.level;
         }
         
         le = le->Flink;
+    }
+    
+    if (!changed)
+        return STATUS_SUCCESS;
+            
+    for (level = max_level; level--; ) {
+        le = Vcb->trees.Flink;
+        while (le != &Vcb->trees) {
+            tree* t = CONTAINING_RECORD(le, tree, list_entry);
+            
+            if (t->write && !t->updated_extents && t->has_address && t->header.level == level) {
+                Status = update_tree_extents(Vcb, t, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("update_tree_extents returned %08x\n", Status);
+                    return Status;
+                }
+            }
+            
+            le = le->Flink;
+        }
     }
     
     return STATUS_SUCCESS;
@@ -2058,6 +2126,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 //     nt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     nt->new_address = 0;
     nt->has_new_address = FALSE;
+    nt->updated_extents = FALSE;
     nt->flags = t->flags;
     InitializeListHead(&nt->itemlist);
     
@@ -2189,6 +2258,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->root = t->root;
     pt->new_address = 0;
     pt->has_new_address = FALSE;
+    pt->updated_extents = FALSE;
 //     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
     pt->flags = t->flags;

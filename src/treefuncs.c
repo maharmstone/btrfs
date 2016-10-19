@@ -65,6 +65,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->size = 0;
     t->new_address = 0;
     t->has_new_address = FALSE;
+    t->updated_extents = FALSE;
     t->write = FALSE;
     
     if (c)

@@ -87,13 +87,16 @@ static __inline UINT64 get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
 static UINT64 get_extent_hash(UINT8 type, void* data) {
     if (type == TYPE_EXTENT_DATA_REF) {
         return get_extent_data_ref_hash((EXTENT_DATA_REF*)data);
+    } else if (type == TYPE_SHARED_BLOCK_REF) {
+        SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
+        return sbr->offset;
     } else {
         ERR("unhandled extent type %x\n", type);
         return 0;
     }
 }
 
-static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -103,8 +106,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     UINT64 inline_rc, offset;
     UINT8* data2;
     EXTENT_ITEM* newei;
-    
-    // FIXME - handle A9s
+    BOOL skinny;
     
     if (datalen == 0) {
         ERR("unrecognized extent type %x\n", type);
@@ -112,7 +114,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     }
     
     searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
     
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
@@ -123,10 +125,10 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     
     // If entry doesn't exist yet, create new inline extent item
     
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+    if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM)) {
         ULONG eisize;
         EXTENT_ITEM* ei;
-        BOOL is_tree = type == TYPE_TREE_BLOCK_REF;
+        BOOL is_tree = type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF;
         UINT8* ptr;
         
         eisize = sizeof(EXTENT_ITEM);
@@ -145,7 +147,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         ei->flags = is_tree ? EXTENT_ITEM_TREE_BLOCK : EXTENT_ITEM_DATA;
         ptr = (UINT8*)&ei[1];
         
-        if (is_tree) {
+        if (is_tree && !(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
             EXTENT_ITEM2* ei2 = (EXTENT_ITEM2*)ptr;
             ei2->firstitem = *firstitem;
             ei2->level = level;
@@ -155,20 +157,27 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         *ptr = type;
         RtlCopyMemory(ptr + 1, data, datalen);
         
-        if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, size, ei, eisize, NULL, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return STATUS_INTERNAL_ERROR;
+        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, ei, eisize, NULL, Irp, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+        } else {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, size, ei, eisize, NULL, Irp, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
         }
-        
-        // FIXME - add to space list?
 
         return STATUS_SUCCESS;
-    } else if (tp.item->key.offset != size) {
+    } else if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset != size) {
         ERR("extent %llx exists, but with size %llx rather than %llx expected\n", tp.item->key.obj_id, tp.item->key.offset, size);
         return STATUS_INTERNAL_ERROR;
     }
-        
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+
+    skinny = tp.item->key.obj_type == TYPE_METADATA_ITEM;
+
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0) && !skinny) {
         EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
         
         TRACE("converting old-style extent at (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -209,7 +218,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
     len = tp.item->size - sizeof(EXTENT_ITEM);
     ptr = (UINT8*)&ei[1];
     
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return STATUS_INTERNAL_ERROR;
@@ -275,8 +284,14 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
                     return STATUS_SUCCESS;
                 }
             } else if (type == TYPE_TREE_BLOCK_REF) {
-                ERR("trying to increase refcount of tree extent\n");
+                ERR("trying to increase refcount of non-shared tree extent\n");
                 return STATUS_INTERNAL_ERROR;
+            } else if (type == TYPE_SHARED_BLOCK_REF) {
+                SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
+                SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
+                
+                if (sectsbr->offset == sbr->offset)
+                    return STATUS_SUCCESS;
             } else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
@@ -298,7 +313,7 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
         len = tp.item->size - sizeof(EXTENT_ITEM);
         ptr = (UINT8*)&ei[1];
         
-        if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
             len -= sizeof(EXTENT_ITEM2);
             ptr += sizeof(EXTENT_ITEM2);
         }
@@ -374,9 +389,11 @@ static NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, 
                 
                 edr->count += get_extent_data_refcount(type, data);
             } else if (type == TYPE_TREE_BLOCK_REF) {
-                ERR("trying to increase refcount of tree extent\n");
+                ERR("trying to increase refcount of non-shared tree extent\n");
                 return STATUS_INTERNAL_ERROR;
-            } else {
+            } else if (type == TYPE_SHARED_BLOCK_REF)
+                return STATUS_SUCCESS;
+            else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
             }

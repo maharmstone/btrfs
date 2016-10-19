@@ -931,6 +931,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     
         t->new_address = 0;
         t->has_new_address = FALSE;
+        t->updated_extents = FALSE;
         t->flags = tp.tree->flags;
         
         InsertTailList(&Vcb->trees, &t->list_entry);

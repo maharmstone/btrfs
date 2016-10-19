@@ -309,6 +309,7 @@ typedef struct _tree {
     LIST_ENTRY list_entry;
     UINT64 new_address;
     BOOL has_new_address;
+    BOOL updated_extents;
     UINT64 flags;
     BOOL write;
 } tree;
@@ -947,6 +948,7 @@ NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 s
 UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, PIRP Irp);
 UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
+NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback);
 
 // in worker-thread.c
 void do_read_job(PIRP Irp);
