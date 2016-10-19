@@ -335,7 +335,8 @@ end:
             ExFreePool(ie);
         }
     } else
-        mark_fcb_dirty(fcb);
+        mark_fcb_dirty(fcb); // It's not necessarily dirty, but this is an easy way of making sure
+                             // the list remains in memory until the next flush.
     
     return Status;
 }
