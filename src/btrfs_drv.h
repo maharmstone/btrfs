@@ -165,6 +165,7 @@ typedef struct _fcb {
     ULONG ealen;
     LIST_ENTRY hardlinks;
     struct _file_ref* fileref;
+    BOOL inode_item_changed;
     
     BOOL index_loaded;
     LIST_ENTRY index_list;

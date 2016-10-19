@@ -136,6 +136,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
     if (inode_item_changed) {
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
+        fcb->inode_item_changed = TRUE;
         
         mark_fcb_dirty(fcb);
     }
@@ -300,6 +301,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     }
     
     RtlCopyMemory(&fcb->inode_item, &oldfcb->inode_item, sizeof(INODE_ITEM));
+    fcb->inode_item_changed = TRUE;
     
     if (oldfcb->sd && RtlLengthSecurityDescriptor(oldfcb->sd) > 0) {
         fcb->sd = ExAllocatePoolWithTag(PagedPool, RtlLengthSecurityDescriptor(oldfcb->sd), ALLOC_TAG);
@@ -1024,6 +1026,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->fcb->extents_changed = !IsListEmpty(&me->fileref->fcb->extents);
                     me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
                     me->fileref->fcb->ea_changed = !!me->fileref->fcb->ea_xattr.Buffer;
+                    me->fileref->fcb->inode_item_changed = TRUE;
                     
                     le2 = me->fileref->fcb->extents.Flink;
                     while (le2 != &me->fileref->fcb->extents) {
@@ -1081,6 +1084,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     ExFreePool(hl);
                 }
                 
+                me->fileref->fcb->inode_item_changed = TRUE;
                 mark_fcb_dirty(me->fileref->fcb);
                 
                 if ((!me->dummyfcb->ads && me->dummyfcb->inode_item.st_nlink > 1) || (me->dummyfcb->ads && me->parent->dummyfcb->inode_item.st_nlink > 1)) {
@@ -1102,6 +1106,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             } else {
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, TRUE);
                 me->fileref->fcb->inode_item.st_nlink++;
+                me->fileref->fcb->inode_item_changed = TRUE;
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
             }
         }
@@ -1224,6 +1229,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             me->fileref->parent->fcb->inode_item.sequence++;
             me->fileref->parent->fcb->inode_item.st_ctime = now;
             me->fileref->parent->fcb->inode_item.st_mtime = now;
+            me->fileref->parent->fcb->inode_item_changed = TRUE;
             mark_fcb_dirty(me->fileref->parent->fcb);
         }
 
@@ -1567,6 +1573,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         if (!ccb->user_set_change_time)
             fcb->inode_item.st_ctime = now;
         
+        fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
         
         // update parent's INODE_ITEM
@@ -1579,6 +1586,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         related->fcb->inode_item.st_ctime = now;
         related->fcb->inode_item.st_mtime = now;
         
+        related->fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(related->fcb);
         send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
         
@@ -1726,6 +1734,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (!ccb->user_set_change_time)
         fcb->inode_item.st_ctime = now;
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     // update new parent's INODE_ITEM
@@ -1738,6 +1747,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     related->fcb->inode_item.st_ctime = now;
     related->fcb->inode_item.st_mtime = now;
     
+    related->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(related->fcb);
     
     // update old parent's INODE_ITEM
@@ -1754,6 +1764,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     free_fileref(fr2);
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
+    fr2->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fr2->parent->fcb);
     
     send_notification_fileref(fr2, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
@@ -1863,6 +1874,7 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     fileref->parent->fcb->inode_item.sequence++;
     fileref->parent->fcb->inode_item.st_ctime = now;
     
+    fileref->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fileref->parent->fcb);
 
     fileref->parent->fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
@@ -1954,6 +1966,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         win_time_to_unix(time, &fcb->inode_item.st_mtime);
     }
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED);
 
@@ -2264,6 +2277,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     if (!ccb->user_set_change_time)
         fcb->inode_item.st_ctime = now;
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     // update parent's INODE_ITEM
@@ -2275,6 +2289,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     parfcb->inode_item.sequence++;
     parfcb->inode_item.st_ctime = now;
     
+    parfcb->inode_item_changed = TRUE;
     mark_fcb_dirty(parfcb);
     
     send_notification_fileref(fr2, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
@@ -4477,6 +4492,7 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (!ccb->user_set_change_time)
         fcb->inode_item.st_ctime = now;
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     send_notification_fileref(ccb->fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED);

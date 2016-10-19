@@ -1996,6 +1996,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= len;
+                        fcb->inode_item_changed = TRUE;
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
                         EXTENT_DATA* ned;
                         UINT64 size;
@@ -2037,6 +2038,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - ext->offset;
+                        fcb->inode_item_changed = TRUE;
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
                         EXTENT_DATA* ned;
                         UINT64 size;
@@ -2078,6 +2080,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= ext->offset + len - start_data;
+                        fcb->inode_item_changed = TRUE;
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
                         EXTENT_DATA *ned1, *ned2;
                         UINT64 size;
@@ -2157,6 +2160,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         remove_fcb_extent(fcb, ext, rollback);
                         
                         fcb->inode_item.st_blocks -= end_data - start_data;
+                        fcb->inode_item_changed = TRUE;
                     }
                 } else if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
@@ -2164,6 +2168,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                             chunk* c;
                             
                             fcb->inode_item.st_blocks -= len;
+                            fcb->inode_item_changed = TRUE;
                             
                             c = get_chunk_from_address(Vcb, ed2->address);
                             
@@ -2185,8 +2190,10 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2* ned2;
                         extent* newext;
                         
-                        if (ed2->size != 0)
+                        if (ed2->size != 0) {
                             fcb->inode_item.st_blocks -= end_data - ext->offset;
+                            fcb->inode_item_changed = TRUE;
+                        }
                         
                         ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
                         if (!ned) {
@@ -2229,8 +2236,10 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         EXTENT_DATA2* ned2;
                         extent* newext;
                         
-                        if (ed2->size != 0)
+                        if (ed2->size != 0) {
                             fcb->inode_item.st_blocks -= ext->offset + len - start_data;
+                            fcb->inode_item_changed = TRUE;
+                        }
                         
                         ned = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
                         if (!ned) {
@@ -2277,6 +2286,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                             chunk* c;
                             
                             fcb->inode_item.st_blocks -= end_data - start_data;
+                            fcb->inode_item_changed = TRUE;
                             
                             c = get_chunk_from_address(Vcb, ed2->address);
                             
@@ -2601,6 +2611,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     fcb->inode_item.st_blocks += decoded_size;
     
     fcb->extents_changed = TRUE;
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     ExAcquireResourceExclusiveLite(&c->changed_extents_lock, TRUE);
@@ -2901,6 +2912,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
     }
     
     fcb->inode_item.st_size = end;
+    fcb->inode_item_changed = TRUE;
     TRACE("setting st_size to %llx\n", end);
 
     fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
@@ -2981,6 +2993,8 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 RtlCopyMemory(data, ed->data, origlength);
                 
                 fcb->inode_item.st_blocks -= origlength;
+                fcb->inode_item_changed = TRUE;
+                mark_fcb_dirty(fcb);
                 
                 remove_fcb_extent(fcb, ext, rollback);
                 
@@ -3064,10 +3078,12 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     }
                     
                     fcb->extents_changed = TRUE;
-                    mark_fcb_dirty(fcb);
                 }
                 
                 fcb->inode_item.st_size = end;
+                fcb->inode_item_changed = TRUE;
+                mark_fcb_dirty(fcb);
+                
                 TRACE("setting st_size to %llx\n", end);
                 
                 TRACE("newalloc = %llx\n", newalloc);
@@ -3089,6 +3105,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 }
                 
                 fcb->extents_changed = TRUE;
+                fcb->inode_item_changed = TRUE;
                 mark_fcb_dirty(fcb);
                 
                 fcb->inode_item.st_size = end;
@@ -3126,6 +3143,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 }
                 
                 fcb->extents_changed = TRUE;
+                fcb->inode_item_changed = TRUE;
                 mark_fcb_dirty(fcb);
                 
                 fcb->inode_item.st_size = end;
@@ -3679,6 +3697,7 @@ NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* da
         // bother with the rest of it.
         if (s2 == 0 && e2 == COMPRESSED_EXTENT_SIZE && !compressed && !fcb->Vcb->options.compress_force) {
             fcb->inode_item.flags |= BTRFS_INODE_NOCOMPRESS;
+            fcb->inode_item_changed = TRUE;
             mark_fcb_dirty(fcb);
             
             // write subsequent data non-compressed
@@ -4099,7 +4118,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 origii->st_mtime = now;
                 filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
             }
-        }
+            
+            fcb->inode_item_changed = TRUE;
+        } else
+            fileref->parent->fcb->inode_item_changed = TRUE;
         
         mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     }

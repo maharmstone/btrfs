@@ -490,6 +490,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     if (!ccb->user_set_write_time)
         fcb->inode_item.st_mtime = now;
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     fcb->subvol->root_item.ctime = now;
@@ -937,6 +938,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     }
     
     rootfcb->sd_dirty = TRUE;
+    rootfcb->inode_item_changed = TRUE;
 
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     InsertTailList(&r->fcbs, &rootfcb->list_entry);
@@ -1052,6 +1054,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!ccb->user_set_write_time)
         fcb->inode_item.st_mtime = now;
     
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     Status = STATUS_SUCCESS;    
@@ -1261,8 +1264,10 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (bsii->gid_changed)
         fcb->inode_item.st_gid = bsii->st_gid;
     
-    if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed)
+    if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed) {
+        fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
+    }
     
     Status = STATUS_SUCCESS;
     
@@ -1627,6 +1632,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         fcb->inode_item.st_mtime = now;
     
     fcb->extents_changed = TRUE;
+    fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
     
     send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);

@@ -881,6 +881,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     }
     
     fcb->sd_dirty = TRUE;
+    fcb->inode_item_changed = TRUE;
     
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;

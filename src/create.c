@@ -2125,6 +2125,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     parfileref->fcb->inode_item.st_mtime = now;
     ExReleaseResourceLite(parfileref->fcb->Header.Resource);
     
+    parfileref->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(parfileref->fcb);
     
     inode = InterlockedIncrement64(&parfileref->fcb->subvol->lastinode);
@@ -2204,6 +2205,8 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
             fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
     }
+    
+    fcb->inode_item_changed = TRUE;
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     fcb->Header.AllocationSize.QuadPart = 0;
@@ -2575,6 +2578,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
     parfileref->fcb->inode_item.sequence++;
     parfileref->fcb->inode_item.st_ctime = now;
+    parfileref->fcb->inode_item_changed = TRUE;
     
     mark_fcb_dirty(parfileref->fcb);
     
@@ -3480,6 +3484,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             fileref->fcb->inode_item.sequence++;
             fileref->fcb->inode_item.st_ctime = now;
             fileref->fcb->inode_item.st_mtime = now;
+            fileref->fcb->inode_item_changed = TRUE;
 
             // FIXME - truncate streams
             // FIXME - do we need to alter parent directory's times?

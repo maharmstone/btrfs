@@ -3970,12 +3970,14 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
             else
                 fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
+            
+            fcb->inode_item_changed = TRUE;
         }
         
         fcb->extents_changed = FALSE;
     }
     
-    if (!fcb->created || cache) {
+    if ((!fcb->created && fcb->inode_item_changed) || cache) {
         searchkey.obj_id = fcb->inode;
         searchkey.obj_type = TYPE_INODE_ITEM;
         searchkey.offset = 0xffffffffffffffff;
@@ -4080,7 +4082,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         goto end;
     }
     
-    if (!cache) {
+    if (!cache && fcb->inode_item_changed) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
@@ -4094,6 +4096,8 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             ERR("insert_tree_item_batch failed\n");
             goto end;
         }
+        
+        fcb->inode_item_changed = FALSE;
     }
     
     if (fcb->sd_dirty) {

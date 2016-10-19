@@ -2152,6 +2152,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                 fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
                 fileref->fcb->inode_item.sequence++;
                 fileref->fcb->inode_item.st_ctime = now;
+                fileref->fcb->inode_item_changed = TRUE;
             } else {
                 fileref->fcb->deleted = TRUE;
             
@@ -2231,6 +2232,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     fileref->parent->fcb->inode_item.st_mtime = now;
     ExReleaseResourceLite(fileref->parent->fcb->Header.Resource);
 
+    fileref->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fileref->parent->fcb);
     
     send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);

@@ -232,7 +232,9 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
     fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
     fileref->fcb->subvol->root_item.ctime = now;
     
+    fileref->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fileref->fcb);
+    
     mark_fileref_dirty(fileref);
     
     return Status;
@@ -368,6 +370,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
         
+        fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
     }
     
@@ -483,6 +486,8 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fileref->fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
         mark_fileref_dirty(fileref);
+        
+        fileref->fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fileref->fcb);
 
         fileref->fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
@@ -514,6 +519,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (!ccb->user_set_write_time)
             fcb->inode_item.st_mtime = now;
 
+        fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
@@ -546,6 +552,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (!ccb->user_set_write_time)
             fcb->inode_item.st_mtime = now;
 
+        fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
