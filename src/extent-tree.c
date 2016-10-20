@@ -1149,107 +1149,107 @@ static NTSTATUS populate_extent_refs_from_tree(device_extension* Vcb, UINT64 tre
     return STATUS_SUCCESS;
 }
 
-NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(tp.item->key, searchkey)) {
-        WARN("extent item not found for address %llx, size %llx\n", address, size);
-        return STATUS_SUCCESS;
-    }
-    
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-        TRACE("extent was old - returning STATUS_SUCCESS\n");
-        return STATUS_SUCCESS;
-    } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (tp.item->size >= sizeof(EXTENT_ITEM)) {
-        EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
-        UINT32 len = tp.item->size - sizeof(EXTENT_ITEM);
-        UINT8* ptr = (UINT8*)&ei[1];
-        
-        while (len > 0) {
-            UINT8 secttype = *ptr;
-            ULONG sectlen = get_extent_data_len(secttype);
-            
-            len--;
-            
-            if (sectlen > len) {
-                ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
-                break;
-            }
-
-            if (sectlen == 0) {
-                ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
-                break;
-            }
-            
-            if (secttype == TYPE_SHARED_DATA_REF) {
-                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
-                BOOL found = FALSE;
-                LIST_ENTRY* le;
-                
-                le = Vcb->shared_extents.Flink;
-                while (le != &Vcb->shared_extents) {
-                    shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
-                    
-                    if (sd->address == sectsdr->offset) {
-                        LIST_ENTRY* le2 = sd->entries.Flink;
-                        while (le2 != &sd->entries) {
-                            shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
-                            
-                            if (sde->address == address && sde->size == size) {
-                                Status = increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &sde->edr, NULL, 0, Irp, rollback);
-                                if (!NT_SUCCESS(Status)) {
-                                    ERR("increase_extent_refcount returned %08x\n", Status);
-                                    return Status;
-                                }
-                                
-                                found = TRUE;
-                            }
-
-                            le2 = le2->Flink;
-                        }
-                        break;
-                    }
-                    
-                    le = le->Flink;
-                }
-                
-                if (!found)
-                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);
-                else {
-                    Status = decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF, sectsdr, NULL, 0, sectsdr->offset, Irp, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("decrease_extent_refcount returned %08x\n", Status);
-                        return Status;
-                    }
-                }
-            }
-            
-            len -= sectlen;
-            ptr += sizeof(UINT8) + sectlen;
-        }
-    }
-    
-    // FIXME - should we also be looking for non-inline SHARED_DATA_REF items here? Will this ever happen?
-    
-    return STATUS_SUCCESS;
-}
+// NTSTATUS convert_shared_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
+//     KEY searchkey;
+//     traverse_ptr tp;
+//     NTSTATUS Status;
+//     
+//     searchkey.obj_id = address;
+//     searchkey.obj_type = TYPE_EXTENT_ITEM;
+//     searchkey.offset = size;
+//     
+//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return Status;
+//     }
+//     
+//     if (keycmp(tp.item->key, searchkey)) {
+//         WARN("extent item not found for address %llx, size %llx\n", address, size);
+//         return STATUS_SUCCESS;
+//     }
+//     
+//     if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+//         TRACE("extent was old - returning STATUS_SUCCESS\n");
+//         return STATUS_SUCCESS;
+//     } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+//         return STATUS_INTERNAL_ERROR;
+//     }
+//     
+//     if (tp.item->size >= sizeof(EXTENT_ITEM)) {
+//         EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+//         UINT32 len = tp.item->size - sizeof(EXTENT_ITEM);
+//         UINT8* ptr = (UINT8*)&ei[1];
+//         
+//         while (len > 0) {
+//             UINT8 secttype = *ptr;
+//             ULONG sectlen = get_extent_data_len(secttype);
+//             
+//             len--;
+//             
+//             if (sectlen > len) {
+//                 ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+//                 break;
+//             }
+// 
+//             if (sectlen == 0) {
+//                 ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+//                 break;
+//             }
+//             
+//             if (secttype == TYPE_SHARED_DATA_REF) {
+//                 SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+//                 BOOL found = FALSE;
+//                 LIST_ENTRY* le;
+//                 
+//                 le = Vcb->shared_extents.Flink;
+//                 while (le != &Vcb->shared_extents) {
+//                     shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
+//                     
+//                     if (sd->address == sectsdr->offset) {
+//                         LIST_ENTRY* le2 = sd->entries.Flink;
+//                         while (le2 != &sd->entries) {
+//                             shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
+//                             
+//                             if (sde->address == address && sde->size == size) {
+//                                 Status = increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &sde->edr, NULL, 0, Irp, rollback);
+//                                 if (!NT_SUCCESS(Status)) {
+//                                     ERR("increase_extent_refcount returned %08x\n", Status);
+//                                     return Status;
+//                                 }
+//                                 
+//                                 found = TRUE;
+//                             }
+// 
+//                             le2 = le2->Flink;
+//                         }
+//                         break;
+//                     }
+//                     
+//                     le = le->Flink;
+//                 }
+//                 
+//                 if (!found)
+//                     WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);
+//                 else {
+//                     Status = decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF, sectsdr, NULL, 0, sectsdr->offset, Irp, rollback);
+//                     if (!NT_SUCCESS(Status)) {
+//                         ERR("decrease_extent_refcount returned %08x\n", Status);
+//                         return Status;
+//                     }
+//                 }
+//             }
+//             
+//             len -= sectlen;
+//             ptr += sizeof(UINT8) + sectlen;
+//         }
+//     }
+//     
+//     // FIXME - should we also be looking for non-inline SHARED_DATA_REF items here? Will this ever happen?
+//     
+//     return STATUS_SUCCESS;
+// }
 
 NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
@@ -1745,4 +1745,85 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
     // Return FALSE in case we mess things up elsewhere.
     
     return FALSE;
+}
+
+UINT64 get_extent_flags(device_extension* Vcb, UINT64 address, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.obj_id == address &&
+        tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+        ei = (EXTENT_ITEM*)tp.item->data;
+    
+        return ei->flags;
+    }
+    
+    if (tp.item->key.obj_id != address || tp.item->key.obj_type != TYPE_EXTENT_ITEM) {
+        ERR("couldn't find %llx in extent tree\n", address);
+        return 0;
+    }
+    
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+        return 0;
+    else if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        return 0;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    
+    return ei->flags;
+}
+
+void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return;
+    }
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.obj_id == address &&
+        tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+        ei = (EXTENT_ITEM*)tp.item->data;
+        ei->flags = flags;
+        return;
+    }
+    
+    if (tp.item->key.obj_id != address || tp.item->key.obj_type != TYPE_EXTENT_ITEM) {
+        ERR("couldn't find %llx in extent tree\n", address);
+        return;
+    }
+    
+    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+        return;
+    else if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+        return;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    ei->flags = flags;
 }
