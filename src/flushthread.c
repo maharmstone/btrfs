@@ -864,11 +864,20 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
                 
                 if (!td->inserted) {
-                    SHARED_BLOCK_REF sbr;
+                    if (t->header.tree_id == t->root->id) {
+                        SHARED_BLOCK_REF sbr;
+                        
+                        sbr.offset = t->header.address;
+                        
+                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, Irp, rollback);
+                    } else {
+                        TREE_BLOCK_REF tbr;
+                        
+                        tbr.offset = t->root->id;
+                        
+                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, 0, Irp, rollback);
+                    }
                     
-                    sbr.offset = t->header.address;
-                    
-                    Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("increase_extent_refcount returned %08x\n", Status);
                         return Status;

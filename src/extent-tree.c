@@ -93,7 +93,9 @@ static UINT64 get_extent_hash(UINT8 type, void* data) {
     } else if (type == TYPE_SHARED_DATA_REF) {
         SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
         return sdr->offset;
-    // FIXME - TREE_BLOCK_REF
+    } else if (type == TYPE_TREE_BLOCK_REF) {
+        TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
+        return tbr->offset;
     } else {
         ERR("unhandled extent type %x\n", type);
         return 0;
@@ -288,8 +290,13 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     return STATUS_SUCCESS;
                 }
             } else if (type == TYPE_TREE_BLOCK_REF) {
-                ERR("trying to increase refcount of non-shared tree extent\n");
-                return STATUS_INTERNAL_ERROR;
+                TREE_BLOCK_REF* secttbr = (TREE_BLOCK_REF*)(ptr + sizeof(UINT8));
+                TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
+                
+                if (secttbr->offset == tbr->offset) {
+                    ERR("trying to increase refcount of non-shared tree extent\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
             } else if (type == TYPE_SHARED_BLOCK_REF) {
                 SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
                 SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
