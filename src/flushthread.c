@@ -878,7 +878,32 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 le = le->Flink;
             }
         } else {
-            // FIXME - add shared data refs
+            LIST_ENTRY* le;
+            
+            le = t->itemlist.Flink;
+            while (le != &t->itemlist) {
+                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td->inserted && td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                    
+                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                        SHARED_DATA_REF sdr;
+                        
+                        sdr.offset = t->header.address;
+                        sdr.count = 1;
+                        
+                        Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("increase_extent_refcount returned %08x\n", Status);
+                            return Status;
+                        }
+                    }
+                }
+                
+                le = le->Flink;
+            }
         }
     }
     

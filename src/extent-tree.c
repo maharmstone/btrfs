@@ -90,6 +90,10 @@ static UINT64 get_extent_hash(UINT8 type, void* data) {
     } else if (type == TYPE_SHARED_BLOCK_REF) {
         SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
         return sbr->offset;
+    } else if (type == TYPE_SHARED_DATA_REF) {
+        SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
+        return sdr->offset;
+    // FIXME - TREE_BLOCK_REF
     } else {
         ERR("unhandled extent type %x\n", type);
         return 0;
@@ -292,6 +296,37 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 if (sectsbr->offset == sbr->offset)
                     return STATUS_SUCCESS;
+            } else if (type == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+                SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
+                
+                if (sectsdr->offset == sdr->offset) {
+                    UINT32 rc = get_extent_data_refcount(type, data);
+                    SHARED_DATA_REF* sectsdr2;
+                    
+                    newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                    if (!newei) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(newei, tp.item->data, tp.item->size);
+                    
+                    newei->generation = Vcb->superblock.generation;
+                    newei->refcount += rc;
+                    
+                    sectsdr2 = (SHARED_DATA_REF*)((UINT8*)newei + ((UINT8*)sectsdr - tp.item->data));
+                    sectsdr2->count += rc;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback)) {
+                        ERR("insert_tree_item failed\n");
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    return STATUS_SUCCESS;
+                }
             } else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
@@ -393,7 +428,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return STATUS_INTERNAL_ERROR;
             } else if (type == TYPE_SHARED_BLOCK_REF)
                 return STATUS_SUCCESS;
-            else {
+            else if (type == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data2;
+                
+                sdr->count += get_extent_data_refcount(type, data);
+            } else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
             }
