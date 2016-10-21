@@ -161,7 +161,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         *ptr = type;
         RtlCopyMemory(ptr + 1, data, datalen);
         
-        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && is_tree) {
             if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, ei, eisize, NULL, Irp, rollback)) {
                 ERR("insert_tree_item failed\n");
                 return STATUS_INTERNAL_ERROR;
