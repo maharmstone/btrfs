@@ -379,7 +379,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (!origchunk->readonly && insert_tree_extent(Vcb, t->header.level, t->header.tree_id, origchunk, &addr, Irp, rollback)) {
+        if (!origchunk->readonly && insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
             t->new_address = addr;
             t->has_new_address = TRUE;
             return STATUS_SUCCESS;
@@ -396,7 +396,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-                if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
+                if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
                     ExReleaseResourceLite(&c->lock);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                     t->new_address = addr;
@@ -416,7 +416,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t->header.level, t->header.tree_id, c, &addr, Irp, rollback)) {
+            if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
                 ExReleaseResourceLite(&c->lock);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 t->new_address = addr;
