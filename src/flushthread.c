@@ -898,15 +898,32 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                     
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                        SHARED_DATA_REF sdr;
                         
-                        sdr.offset = t->header.address;
-                        sdr.count = 1;
-                        
-                        Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("increase_extent_refcount returned %08x\n", Status);
-                            return Status;
+                        if (ed2->size > 0) {
+                            // FIXME - check and update the changed data refs list
+                            
+                            if (t->header.tree_id == t->root->id) {
+                                SHARED_DATA_REF sdr;
+                                
+                                sdr.offset = t->header.address;
+                                sdr.count = 1;
+                                
+                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
+                            } else {
+                                EXTENT_DATA_REF edr;
+                                
+                                edr.root = t->root->id;
+                                edr.objid = td->key.obj_id;
+                                edr.offset = td->key.offset - ed2->offset;
+                                edr.count = 1;
+                                
+                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp, rollback);
+                            }
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("increase_extent_refcount returned %08x\n", Status);
+                                return Status;
+                            }
                         }
                     }
                 }
