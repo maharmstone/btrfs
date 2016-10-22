@@ -905,13 +905,32 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                         
                         if (ed2->size > 0) {
-                            // FIXME - check and update the changed data refs list
+                            changed_extent* ce = NULL;
+                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                            
+                            if (c) {
+                                LIST_ENTRY* le2;
+                                
+                                le2 = c->changed_extents.Flink;
+                                while (le2 != &c->changed_extents) {
+                                    changed_extent* ce2 = CONTAINING_RECORD(le2, changed_extent, list_entry);
+                                    
+                                    if (ce2->address == ed2->address) {
+                                        ce = ce2;
+                                        break;
+                                    }
+
+                                    le2 = le2->Flink;
+                                }
+                            }
                             
                             if (t->header.tree_id == t->root->id) {
                                 SHARED_DATA_REF sdr;
                                 
                                 sdr.offset = t->header.address;
                                 sdr.count = 1;
+                                
+                                // FIXME - update changed data ref
                                 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
                             } else {
@@ -921,6 +940,64 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 edr.objid = td->key.obj_id;
                                 edr.offset = td->key.offset - ed2->offset;
                                 edr.count = 1;
+                                
+                                if (ce) {
+                                    LIST_ENTRY* le2;
+                                    BOOL found;
+                                    
+                                    found = FALSE;
+                                    le2 = ce->old_refs.Flink;
+                                    while (le2 != &ce->old_refs) {
+                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                        
+                                        if (cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
+                                            cer->edr.count += edr.count;
+                                            found = TRUE;
+                                            break;
+                                        }
+                                        
+                                        le2 = le2->Flink;
+                                    }
+                                    
+                                    if (!found) {
+                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                                        if (!cer) {
+                                            ERR("out of memory\n");
+                                            return STATUS_INSUFFICIENT_RESOURCES;
+                                        }
+                                        
+                                        RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
+                                        InsertTailList(&ce->old_refs, &cer->list_entry);
+                                    }
+                                    
+                                    found = FALSE;
+                                    le2 = ce->refs.Flink;
+                                    while (le2 != &ce->refs) {
+                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                        
+                                        if (cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
+                                            cer->edr.count += edr.count;
+                                            found = TRUE;
+                                            break;
+                                        }
+                                        
+                                        le2 = le2->Flink;
+                                    }
+                                    
+                                    if (!found) {
+                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                                        if (!cer) {
+                                            ERR("out of memory\n");
+                                            return STATUS_INSUFFICIENT_RESOURCES;
+                                        }
+                                        
+                                        RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
+                                        InsertTailList(&ce->refs, &cer->list_entry);
+                                    }
+                                    
+                                    ce->count += edr.count;
+                                    ce->old_count += edr.count;
+                                }
                                 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp, rollback);
                             }
