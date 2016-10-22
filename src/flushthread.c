@@ -1028,6 +1028,47 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 
                 le = le->Flink;
             }
+        } else {
+            LIST_ENTRY* le;
+            
+            le = t->itemlist.Flink;
+            while (le != &t->itemlist) {
+                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td->inserted) {
+                    TREE_BLOCK_REF tbr;
+                    
+                    tbr.offset = t->root->id;
+                    
+                    Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF,
+                                                      &tbr, NULL, 0, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("increase_extent_refcount returned %08x\n", Status);
+                        return Status;
+                    }
+                    
+                    if (unique) {
+                        UINT64 sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.address, Irp);
+
+                        if (sbrrc > 0) {
+                            SHARED_BLOCK_REF sbr;
+                
+                            sbr.offset = t->header.address;
+                            
+                            Status = decrease_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                                                              t->header.address, Irp, rollback);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("decrease_extent_refcount returned %08x\n", Status);
+                                return Status;
+                            }
+                        }
+                    }
+                            
+                    // FIXME - clear shared flag if unique?
+                }
+                
+                le = le->Flink;
+            }
         }
         
         if (unique) {
