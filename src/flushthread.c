@@ -690,7 +690,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
 //     EXTENT_ITEM* ei;
 //     EXTENT_ITEM_V0* eiv0;
     NTSTATUS Status;
-    UINT64 rc;
+    UINT64 rc, root;
     
     TRACE("(%p, %llx, %p)\n", Vcb, address, t);
     
@@ -764,7 +764,12 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         return STATUS_INTERNAL_ERROR;
     }
     
-    Status = decrease_extent_refcount_tree(Vcb, address, Vcb->superblock.node_size, t->header.tree_id, t->header.level, Irp, rollback);
+    if (t->parent)
+        root = t->parent->header.tree_id;
+    else
+        root = t->header.tree_id;
+    
+    Status = decrease_extent_refcount_tree(Vcb, address, Vcb->superblock.node_size, root, t->header.level, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("decrease_extent_refcount_tree returned %08x\n", Status);
         return Status;
@@ -934,6 +939,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     }
     
     t->updated_extents = TRUE;
+    t->header.tree_id = t->root->id;
     
     return STATUS_SUCCESS;
 }
