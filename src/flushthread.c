@@ -930,7 +930,65 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 sdr.offset = t->header.address;
                                 sdr.count = 1;
                                 
-                                // FIXME - update changed data ref
+                                if (ce) {
+                                    LIST_ENTRY* le2;
+                                    BOOL found;
+                                    
+                                    found = FALSE;
+                                    le2 = ce->old_refs.Flink;
+                                    while (le2 != &ce->old_refs) {
+                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                        
+                                        if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                            cer->sdr.count += sdr.count;
+                                            found = TRUE;
+                                            break;
+                                        }
+                                        
+                                        le2 = le2->Flink;
+                                    }
+                                    
+                                    if (!found) {
+                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                                        if (!cer) {
+                                            ERR("out of memory\n");
+                                            return STATUS_INSUFFICIENT_RESOURCES;
+                                        }
+                                        
+                                        cer->type = TYPE_SHARED_DATA_REF;
+                                        RtlCopyMemory(&cer->sdr, &sdr, sizeof(SHARED_DATA_REF));
+                                        InsertTailList(&ce->old_refs, &cer->list_entry);
+                                    }
+                                    
+                                    found = FALSE;
+                                    le2 = ce->refs.Flink;
+                                    while (le2 != &ce->refs) {
+                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                        
+                                        if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                            cer->sdr.count += sdr.count;
+                                            found = TRUE;
+                                            break;
+                                        }
+                                        
+                                        le2 = le2->Flink;
+                                    }
+                                    
+                                    if (!found) {
+                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+                                        if (!cer) {
+                                            ERR("out of memory\n");
+                                            return STATUS_INSUFFICIENT_RESOURCES;
+                                        }
+                                        
+                                        cer->type = TYPE_SHARED_DATA_REF;
+                                        RtlCopyMemory(&cer->sdr, &sdr, sizeof(SHARED_DATA_REF));
+                                        InsertTailList(&ce->refs, &cer->list_entry);
+                                    }
+                                    
+                                    ce->count += sdr.count;
+                                    ce->old_count += sdr.count;
+                                }
                                 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
                             } else {
@@ -950,7 +1008,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     while (le2 != &ce->old_refs) {
                                         changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
                                         
-                                        if (cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
+                                        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
                                             cer->edr.count += edr.count;
                                             found = TRUE;
                                             break;
@@ -966,6 +1024,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                             return STATUS_INSUFFICIENT_RESOURCES;
                                         }
                                         
+                                        cer->type = TYPE_EXTENT_DATA_REF;
                                         RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
                                         InsertTailList(&ce->old_refs, &cer->list_entry);
                                     }
@@ -975,7 +1034,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     while (le2 != &ce->refs) {
                                         changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
                                         
-                                        if (cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
+                                        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
                                             cer->edr.count += edr.count;
                                             found = TRUE;
                                             break;
@@ -991,6 +1050,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                             return STATUS_INSUFFICIENT_RESOURCES;
                                         }
                                         
+                                        cer->type = TYPE_EXTENT_DATA_REF;
                                         RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
                                         InsertTailList(&ce->refs, &cer->list_entry);
                                     }
@@ -1765,78 +1825,95 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
         LIST_ENTRY* le3 = le->Flink;
         UINT64 old_count = 0;
         
-        le2 = ce->old_refs.Flink;
-        while (le2 != &ce->old_refs) {
-            changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-            
-            if (cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
-                old_count = cer2->edr.count;
+        if (cer->type == TYPE_EXTENT_DATA_REF) {
+            le2 = ce->old_refs.Flink;
+            while (le2 != &ce->old_refs) {
+                changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
                 
-                RemoveEntryList(&cer2->list_entry);
-                ExFreePool(cer2);
-                break;
-            }
-            
-            le2 = le2->Flink;
-        }
-        
-        old_size = ce->old_count > 0 ? ce->old_size : ce->size;
-        
-        if (cer->edr.count > old_count) {
-            Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp, rollback);
-                        
-            if (!NT_SUCCESS(Status)) {
-                ERR("increase_extent_refcount_data returned %08x\n", Status);
-                return Status;
-            }
-        } else if (cer->edr.count < old_count) {
-            Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
-                                                   old_count - cer->edr.count, Irp, rollback);
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("decrease_extent_refcount_data returned %08x\n", Status);
-                return Status;
-            }
-        }
-        
-        if (ce->size != ce->old_size && ce->old_count > 0) {
-            KEY searchkey;
-            traverse_ptr tp;
-            void* data;
-            
-            searchkey.obj_id = ce->address;
-            searchkey.obj_type = TYPE_EXTENT_ITEM;
-            searchkey.offset = ce->old_size;
-            
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                return Status;
-            }
-            
-            if (keycmp(searchkey, tp.item->key)) {
-                ERR("could not find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            if (tp.item->size > 0) {
-                data = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-                
-                if (!data) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
+                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
+                    old_count = cer2->edr.count;
+                    
+                    RemoveEntryList(&cer2->list_entry);
+                    ExFreePool(cer2);
+                    break;
                 }
                 
-                RtlCopyMemory(data, tp.item->data, tp.item->size);
-            } else
-                data = NULL;
-            
-            if (!insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp, rollback)) {
-                ERR("insert_tree_item failed\n");
-                return STATUS_INTERNAL_ERROR;
+                le2 = le2->Flink;
             }
             
-            delete_tree_item(Vcb, &tp, rollback);
+            old_size = ce->old_count > 0 ? ce->old_size : ce->size;
+            
+            if (cer->edr.count > old_count) {
+                Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp, rollback);
+                            
+                if (!NT_SUCCESS(Status)) {
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
+                    return Status;
+                }
+            } else if (cer->edr.count < old_count) {
+                Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
+                                                    old_count - cer->edr.count, Irp, rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("decrease_extent_refcount_data returned %08x\n", Status);
+                    return Status;
+                }
+            }
+            
+            if (ce->size != ce->old_size && ce->old_count > 0) {
+                KEY searchkey;
+                traverse_ptr tp;
+                void* data;
+                
+                searchkey.obj_id = ce->address;
+                searchkey.obj_type = TYPE_EXTENT_ITEM;
+                searchkey.offset = ce->old_size;
+                
+                Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("error - find_item returned %08x\n", Status);
+                    return Status;
+                }
+                
+                if (keycmp(searchkey, tp.item->key)) {
+                    ERR("could not find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                if (tp.item->size > 0) {
+                    data = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+                    
+                    if (!data) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(data, tp.item->data, tp.item->size);
+                } else
+                    data = NULL;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                delete_tree_item(Vcb, &tp, rollback);
+            }
+        } else if (cer->type == TYPE_SHARED_DATA_REF) {
+            le2 = ce->old_refs.Flink;
+            while (le2 != &ce->old_refs) {
+                changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                
+                if (cer2->type == TYPE_SHARED_DATA_REF && cer2->sdr.offset == cer->sdr.offset) {
+//                     old_count = cer2->edr.count;
+                    
+                    RemoveEntryList(&cer2->list_entry);
+                    ExFreePool(cer2);
+                    break;
+                }
+                
+                le2 = le2->Flink;
+            }            
         }
        
         RemoveEntryList(&cer->list_entry);

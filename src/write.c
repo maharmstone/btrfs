@@ -1897,7 +1897,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
         
-        if (cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             Status = STATUS_SUCCESS;
@@ -1922,6 +1922,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
             goto end;
         }
         
+        cer->type = TYPE_EXTENT_DATA_REF;
         cer->edr.root = root;
         cer->edr.objid = objid;
         cer->edr.offset = offset;
@@ -1938,6 +1939,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
         goto end;
     }
     
+    cer->type = TYPE_EXTENT_DATA_REF;
     cer->edr.root = root;
     cer->edr.objid = objid;
     cer->edr.offset = offset;
@@ -2522,7 +2524,7 @@ void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, 
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
         
-        if (cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             return;
@@ -2538,6 +2540,7 @@ void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, 
         return;
     }
     
+    cer->type = TYPE_EXTENT_DATA_REF;
     cer->edr.root = root;
     cer->edr.objid = objid;
     cer->edr.offset = offset;

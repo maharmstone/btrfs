@@ -428,7 +428,13 @@ typedef struct {
 } changed_extent;
 
 typedef struct {
-    EXTENT_DATA_REF edr;
+    UINT8 type;
+    
+    union {
+        EXTENT_DATA_REF edr;
+        SHARED_DATA_REF sdr;
+    };
+    
     LIST_ENTRY list_entry;
 } changed_extent_ref;
 
