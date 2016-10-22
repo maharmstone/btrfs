@@ -1873,3 +1873,206 @@ void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PI
     ei = (EXTENT_ITEM*)tp.item->data;
     ei->flags = flags;
 }
+
+static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 size, BOOL no_csum) {
+    LIST_ENTRY* le;
+    changed_extent* ce;
+    
+    le = c->changed_extents.Flink;
+    while (le != &c->changed_extents) {
+        ce = CONTAINING_RECORD(le, changed_extent, list_entry);
+        
+        if (ce->address == address && ce->size == size)
+            return ce;
+        
+        le = le->Flink;
+    }
+    
+    ce = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent), ALLOC_TAG);
+    if (!ce) {
+        ERR("out of memory\n");
+        return NULL;
+    }
+    
+    ce->address = address;
+    ce->size = size;
+    ce->old_size = size;
+    ce->count = 0;
+    ce->old_count = 0;
+    ce->no_csum = no_csum;
+    ce->superseded = FALSE;
+    InitializeListHead(&ce->refs);
+    InitializeListHead(&ce->old_refs);
+    
+    InsertTailList(&c->changed_extents, &ce->list_entry);
+    
+    return ce;
+}
+
+NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
+                                   BOOL no_csum, BOOL superseded, PIRP Irp) {
+    LIST_ENTRY* le;
+    changed_extent* ce;
+    changed_extent_ref* cer;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 old_count;
+    
+    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, TRUE);
+    
+    ce = get_changed_extent_item(c, address, size, no_csum);
+    
+    if (!ce) {
+        ERR("get_changed_extent_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    if (IsListEmpty(&ce->refs) && IsListEmpty(&ce->old_refs)) { // new entry
+        searchkey.obj_id = address;
+        searchkey.obj_type = TYPE_EXTENT_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+            ERR("could not find address %llx in extent tree\n", address);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (tp.item->key.offset != size) {
+            ERR("extent %llx had size %llx, not %llx as expected\n", address, tp.item->key.offset, size);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+            EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+            
+            ce->count = ce->old_count = eiv0->refcount;
+        } else if (tp.item->size >= sizeof(EXTENT_ITEM)) {
+            EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+            
+            ce->count = ce->old_count = ei->refcount;
+        } else {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+    }
+    
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+            ce->count += count;
+            cer->edr.count += count;
+            Status = STATUS_SUCCESS;
+            
+            if (superseded)
+                ce->superseded = TRUE;
+            
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    old_count = find_extent_data_refcount(Vcb, address, size, root, objid, offset, Irp);
+    
+    if (old_count > 0) {
+        cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+        if (!cer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        cer->type = TYPE_EXTENT_DATA_REF;
+        cer->edr.root = root;
+        cer->edr.objid = objid;
+        cer->edr.offset = offset;
+        cer->edr.count = old_count;
+        
+        InsertTailList(&ce->old_refs, &cer->list_entry);
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+    if (!cer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    cer->type = TYPE_EXTENT_DATA_REF;
+    cer->edr.root = root;
+    cer->edr.objid = objid;
+    cer->edr.offset = offset;
+    cer->edr.count = old_count + count;
+    
+    InsertTailList(&ce->refs, &cer->list_entry);
+    
+    ce->count += count;
+    
+    if (superseded)
+        ce->superseded = TRUE;
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&c->changed_extents_lock);
+    
+    return Status;
+}
+
+void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count, BOOL no_csum) {
+    changed_extent* ce;
+    changed_extent_ref* cer;
+    LIST_ENTRY* le;
+    
+    ce = get_changed_extent_item(c, address, size, no_csum);
+    
+    if (!ce) {
+        ERR("get_changed_extent_item failed\n");
+        return;
+    }
+    
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+            ce->count += count;
+            cer->edr.count += count;
+            return;
+        }
+        
+        le = le->Flink;
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    
+    if (!cer) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    cer->type = TYPE_EXTENT_DATA_REF;
+    cer->edr.root = root;
+    cer->edr.objid = objid;
+    cer->edr.offset = offset;
+    cer->edr.count = count;
+    
+    InsertTailList(&ce->refs, &cer->list_entry);
+    
+    ce->count += count;
+}
