@@ -835,13 +835,178 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS add_changed_extent_ref_edr(changed_extent* ce, EXTENT_DATA_REF* edr, BOOL old) {
+    LIST_ENTRY *le2, *list;
+    changed_extent_ref* cer;
+    
+    list = old ? &ce->old_refs : &ce->refs;
+    
+    le2 = list->Flink;
+    while (le2 != list) {
+        cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+        
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr->root && cer->edr.objid == edr->objid && cer->edr.offset == edr->offset) {
+            cer->edr.count += edr->count;
+            goto end;
+        }
+        
+        le2 = le2->Flink;
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    if (!cer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    cer->type = TYPE_EXTENT_DATA_REF;
+    RtlCopyMemory(&cer->edr, edr, sizeof(EXTENT_DATA_REF));
+    InsertTailList(list, &cer->list_entry);
+    
+end:
+    if (old)
+        ce->old_count += edr->count;
+    else
+        ce->count += edr->count;
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_changed_extent_ref_sdr(changed_extent* ce, SHARED_DATA_REF* sdr, BOOL old) {
+    LIST_ENTRY *le2, *list;
+    changed_extent_ref* cer;
+    
+    list = old ? &ce->old_refs : &ce->refs;
+    
+    le2 = list->Flink;
+    while (le2 != list) {
+        cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+        
+        if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr->offset) {
+            cer->sdr.count += sdr->count;
+            goto end;
+        }
+        
+        le2 = le2->Flink;
+    }
+    
+    cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
+    if (!cer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    cer->type = TYPE_SHARED_DATA_REF;
+    RtlCopyMemory(&cer->sdr, sdr, sizeof(SHARED_DATA_REF));
+    InsertTailList(list, &cer->list_entry);
+    
+end:
+    if (old)
+        ce->old_count += sdr->count;
+    else
+        ce->count += sdr->count;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 rc = get_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, Irp);
+    UINT64 flags = get_extent_flags(Vcb, t->header.address, Irp);
     
     if (rc == 0) {
         ERR("refcount for extent %llx was 0\n", t->header.address);
         return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (flags & EXTENT_ITEM_SHARED_BACKREFS) {
+        TREE_BLOCK_REF tbr;
+        
+        // FIXME - find if unique
+        
+        if (t->header.level == 0) {
+            LIST_ENTRY* le;
+            
+            le = t->itemlist.Flink;
+            while (le != &t->itemlist) {
+                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td->inserted && td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                    
+                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                            
+                        if (ed2->size > 0) {
+                            EXTENT_DATA_REF edr;
+                            changed_extent* ce = NULL;
+                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                            
+                            if (c) {
+                                LIST_ENTRY* le2;
+                                
+                                le2 = c->changed_extents.Flink;
+                                while (le2 != &c->changed_extents) {
+                                    changed_extent* ce2 = CONTAINING_RECORD(le2, changed_extent, list_entry);
+                                    
+                                    if (ce2->address == ed2->address) {
+                                        ce = ce2;
+                                        break;
+                                    }
+
+                                    le2 = le2->Flink;
+                                }
+                            }
+                                    
+                            edr.root = t->root->id;
+                            edr.objid = td->key.obj_id;
+                            edr.offset = td->key.offset - ed2->offset;
+                            edr.count = 1;
+                            
+                            if (ce) {
+                                Status = add_changed_extent_ref_edr(ce, &edr, TRUE);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                    return Status;
+                                }
+                                
+                                Status = add_changed_extent_ref_edr(ce, &edr, FALSE);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                    return Status;
+                                }
+                            }
+                            
+                            Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp, rollback);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("increase_extent_refcount returned %08x\n", Status);
+                                return Status;
+                            }
+                            
+                            // FIXME - remove shared ref if unique
+                            // FIXME - clear shared flag if unique?
+                        }
+                    }
+                }
+                
+                le = le->Flink;
+            }
+        }
+        
+        // FIXME - remove shared ref if unique
+        
+        if (t->parent)
+            tbr.offset = t->parent->header.tree_id;
+        else
+            tbr.offset = t->header.tree_id;
+        
+        Status = increase_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, 0, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("increase_extent_refcount returned %08x\n", Status);
+            return Status;
+        }
+        
+        // FIXME - clear shared flag if unique?
     }
     
     Status = reduce_tree_extent(Vcb, t->header.address, t, Irp, rollback);
@@ -854,8 +1019,6 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     t->has_address = FALSE;
     
     if (rc > 1) {
-        UINT64 flags = get_extent_flags(Vcb, t->header.address, Irp);
-        
         if (t->header.tree_id == t->root->id) {
             flags |= EXTENT_ITEM_SHARED_BACKREFS;
             update_extent_flags(Vcb, t->header.address, flags, Irp);
@@ -931,63 +1094,17 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 sdr.count = 1;
                                 
                                 if (ce) {
-                                    LIST_ENTRY* le2;
-                                    BOOL found;
-                                    
-                                    found = FALSE;
-                                    le2 = ce->old_refs.Flink;
-                                    while (le2 != &ce->old_refs) {
-                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-                                        
-                                        if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
-                                            cer->sdr.count += sdr.count;
-                                            found = TRUE;
-                                            break;
-                                        }
-                                        
-                                        le2 = le2->Flink;
+                                    Status = add_changed_extent_ref_sdr(ce, &sdr, TRUE);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                        return Status;
                                     }
                                     
-                                    if (!found) {
-                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
-                                        if (!cer) {
-                                            ERR("out of memory\n");
-                                            return STATUS_INSUFFICIENT_RESOURCES;
-                                        }
-                                        
-                                        cer->type = TYPE_SHARED_DATA_REF;
-                                        RtlCopyMemory(&cer->sdr, &sdr, sizeof(SHARED_DATA_REF));
-                                        InsertTailList(&ce->old_refs, &cer->list_entry);
+                                    Status = add_changed_extent_ref_sdr(ce, &sdr, FALSE);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                        return Status;
                                     }
-                                    
-                                    found = FALSE;
-                                    le2 = ce->refs.Flink;
-                                    while (le2 != &ce->refs) {
-                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-                                        
-                                        if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
-                                            cer->sdr.count += sdr.count;
-                                            found = TRUE;
-                                            break;
-                                        }
-                                        
-                                        le2 = le2->Flink;
-                                    }
-                                    
-                                    if (!found) {
-                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
-                                        if (!cer) {
-                                            ERR("out of memory\n");
-                                            return STATUS_INSUFFICIENT_RESOURCES;
-                                        }
-                                        
-                                        cer->type = TYPE_SHARED_DATA_REF;
-                                        RtlCopyMemory(&cer->sdr, &sdr, sizeof(SHARED_DATA_REF));
-                                        InsertTailList(&ce->refs, &cer->list_entry);
-                                    }
-                                    
-                                    ce->count += sdr.count;
-                                    ce->old_count += sdr.count;
                                 }
                                 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp, rollback);
@@ -1000,63 +1117,17 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 edr.count = 1;
                                 
                                 if (ce) {
-                                    LIST_ENTRY* le2;
-                                    BOOL found;
-                                    
-                                    found = FALSE;
-                                    le2 = ce->old_refs.Flink;
-                                    while (le2 != &ce->old_refs) {
-                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-                                        
-                                        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
-                                            cer->edr.count += edr.count;
-                                            found = TRUE;
-                                            break;
-                                        }
-                                        
-                                        le2 = le2->Flink;
+                                    Status = add_changed_extent_ref_edr(ce, &edr, TRUE);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                        return Status;
                                     }
                                     
-                                    if (!found) {
-                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
-                                        if (!cer) {
-                                            ERR("out of memory\n");
-                                            return STATUS_INSUFFICIENT_RESOURCES;
-                                        }
-                                        
-                                        cer->type = TYPE_EXTENT_DATA_REF;
-                                        RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
-                                        InsertTailList(&ce->old_refs, &cer->list_entry);
+                                    Status = add_changed_extent_ref_edr(ce, &edr, FALSE);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("add_changed_extent_ref_edr returned %08x\n", Status);
+                                        return Status;
                                     }
-                                    
-                                    found = FALSE;
-                                    le2 = ce->refs.Flink;
-                                    while (le2 != &ce->refs) {
-                                        changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-                                        
-                                        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr.root && cer->edr.objid == edr.objid && cer->edr.offset == edr.offset) {
-                                            cer->edr.count += edr.count;
-                                            found = TRUE;
-                                            break;
-                                        }
-                                        
-                                        le2 = le2->Flink;
-                                    }
-                                    
-                                    if (!found) {
-                                        changed_extent_ref* cer = ExAllocatePoolWithTag(PagedPool, sizeof(changed_extent_ref), ALLOC_TAG);
-                                        if (!cer) {
-                                            ERR("out of memory\n");
-                                            return STATUS_INSUFFICIENT_RESOURCES;
-                                        }
-                                        
-                                        cer->type = TYPE_EXTENT_DATA_REF;
-                                        RtlCopyMemory(&cer->edr, &edr, sizeof(EXTENT_DATA_REF));
-                                        InsertTailList(&ce->refs, &cer->list_entry);
-                                    }
-                                    
-                                    ce->count += edr.count;
-                                    ce->old_count += edr.count;
                                 }
                                 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp, rollback);

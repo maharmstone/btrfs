@@ -294,8 +294,8 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
                 
                 if (secttbr->offset == tbr->offset) {
-                    ERR("trying to increase refcount of non-shared tree extent\n");
-                    return STATUS_INTERNAL_ERROR;
+                    TRACE("trying to increase refcount of non-shared tree extent\n");
+                    return STATUS_SUCCESS;
                 }
             } else if (type == TYPE_SHARED_BLOCK_REF) {
                 SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
@@ -431,8 +431,8 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 edr->count += get_extent_data_refcount(type, data);
             } else if (type == TYPE_TREE_BLOCK_REF) {
-                ERR("trying to increase refcount of non-shared tree extent\n");
-                return STATUS_INTERNAL_ERROR;
+                TRACE("trying to increase refcount of non-shared tree extent\n");
+                return STATUS_SUCCESS;
             } else if (type == TYPE_SHARED_BLOCK_REF)
                 return STATUS_SUCCESS;
             else if (type == TYPE_SHARED_DATA_REF) {
@@ -1452,7 +1452,7 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
                 }
                 
                 if (!found)
-                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);        
+                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);
             }
             
             len -= sectlen;
