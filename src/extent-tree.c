@@ -511,8 +511,8 @@ void decrease_chunk_usage(chunk* c, UINT64 delta) {
     TRACE("decreasing size of chunk %llx by %llx\n", c->offset, delta);
 }
 
-static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
-                                         UINT8 level, UINT64 parent, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
+                                  UINT8 level, UINT64 parent, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
@@ -768,6 +768,43 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
                     
                     return STATUS_SUCCESS;
                 }
+            } else if (type == TYPE_SHARED_BLOCK_REF) {
+                SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
+                SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
+                ULONG neweilen;
+                EXTENT_ITEM* newei;
+                
+                if (sectsbr->offset == sbr->offset) {
+                    if (ei->refcount == 1) {
+                        delete_tree_item(Vcb, &tp, rollback);
+                        return STATUS_SUCCESS;
+                    }
+                    
+                    neweilen = tp.item->size - sizeof(UINT8) - sectlen;
+                    
+                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
+                    if (!newei) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(newei, ei, ptr - tp.item->data);
+                    
+                    if (len > sectlen)
+                        RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
+                    
+                    newei->generation = Vcb->superblock.generation;
+                    newei->refcount--;
+                    
+                    delete_tree_item(Vcb, &tp, rollback);
+                    
+                    if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, Irp, rollback)) {
+                        ERR("insert_tree_item failed\n");
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    return STATUS_SUCCESS;
+                }
             } else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
@@ -873,6 +910,43 @@ static NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, 
             // As above, we assume that we want to remove the whole shared data ref
             
             if (ei->refcount == sectsdr->count) {
+                delete_tree_item(Vcb, &tp, rollback);
+                delete_tree_item(Vcb, &tp2, rollback);
+                return STATUS_SUCCESS;
+            }
+            
+            delete_tree_item(Vcb, &tp2, rollback);
+            
+            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!newei) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+            newei->generation = Vcb->superblock.generation;
+            newei->refcount -= rc;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            return STATUS_SUCCESS;
+        } else {
+            ERR("error - collision?\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+    } else if (type == TYPE_SHARED_BLOCK_REF) {
+        SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)tp2.item->data;
+        SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
+        EXTENT_ITEM* newei;
+        
+        if (sectsbr->offset == sbr->offset) {
+            if (ei->refcount == 1) {
                 delete_tree_item(Vcb, &tp, rollback);
                 delete_tree_item(Vcb, &tp2, rollback);
                 return STATUS_SUCCESS;
@@ -2075,4 +2149,200 @@ void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, 
     InsertTailList(&ce->refs, &cer->list_entry);
     
     ce->count += count;
+}
+
+UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 inline_rc;
+    EXTENT_ITEM* ei;
+    UINT32 len;
+    UINT8* ptr;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM)) {
+        TRACE("could not find address %llx in extent tree\n", address);
+        return 0;
+    }
+    
+    if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.node_size) {
+        ERR("extent %llx had size %llx, not %llx as expected\n", address, tp.item->key.offset, Vcb->superblock.node_size);
+        return 0;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return 0;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    inline_rc = 0;
+    
+    len = tp.item->size - sizeof(EXTENT_ITEM);
+    ptr = (UINT8*)&ei[1];
+    
+    if (searchkey.obj_type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
+            ERR("(%llx,%x,%llx): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                       tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            return 0;
+        }
+        
+        len -= sizeof(EXTENT_ITEM2);
+        ptr += sizeof(EXTENT_ITEM2);
+    }
+    
+    while (len > 0) {
+        UINT8 secttype = *ptr;
+        ULONG sectlen = get_extent_data_len(secttype);
+        UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+        
+        len--;
+        
+        if (sectlen > len) {
+            ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            return 0;
+        }
+
+        if (sectlen == 0) {
+            ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+            return 0;
+        }
+        
+        if (secttype == TYPE_SHARED_BLOCK_REF) {
+            SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
+            
+            if (sectsbr->offset == parent)
+                return 1;
+        }
+        
+        len -= sectlen;
+        ptr += sizeof(UINT8) + sectlen;
+        inline_rc += sectcount;
+    }
+    
+    // FIXME - what if old?
+    
+    if (inline_rc == ei->refcount)
+        return 0;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_SHARED_BLOCK_REF;
+    searchkey.offset = parent;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (!keycmp(searchkey, tp.item->key)) {    
+        if (tp.item->size < sizeof(SHARED_BLOCK_REF))
+            ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(SHARED_BLOCK_REF));
+        else
+            return 1;
+    }
+    
+    return 0;
+}
+
+UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 inline_rc;
+    EXTENT_ITEM* ei;
+    UINT32 len;
+    UINT8* ptr;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM)) {
+        TRACE("could not find address %llx in extent tree\n", address);
+        return 0;
+    }
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return 0;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    inline_rc = 0;
+    
+    len = tp.item->size - sizeof(EXTENT_ITEM);
+    ptr = (UINT8*)&ei[1];
+    
+    while (len > 0) {
+        UINT8 secttype = *ptr;
+        ULONG sectlen = get_extent_data_len(secttype);
+        UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+        
+        len--;
+        
+        if (sectlen > len) {
+            ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            return 0;
+        }
+
+        if (sectlen == 0) {
+            ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+            return 0;
+        }
+        
+        if (secttype == TYPE_SHARED_DATA_REF) {
+            SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
+            
+            if (sectsdr->offset == parent)
+                return sectsdr->count;
+        }
+        
+        len -= sectlen;
+        ptr += sizeof(UINT8) + sectlen;
+        inline_rc += sectcount;
+    }
+    
+    // FIXME - what if old?
+    
+    if (inline_rc == ei->refcount)
+        return 0;
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_SHARED_DATA_REF;
+    searchkey.offset = parent;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return 0;
+    }
+    
+    if (!keycmp(searchkey, tp.item->key)) {    
+        if (tp.item->size < sizeof(SHARED_DATA_REF))
+            ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(SHARED_DATA_REF));
+        else {
+            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)tp.item->data;
+            return sdr->count;
+        }
+    }
+    
+    return 0;
 }

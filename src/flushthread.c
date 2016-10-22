@@ -909,6 +909,27 @@ end:
     return STATUS_SUCCESS;
 }
 
+static BOOL shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = t->header.address;
+    searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (tp.item->key.obj_id == t->header.address && (tp.item->key.obj_type == TYPE_METADATA_ITEM || tp.item->key.obj_type == TYPE_EXTENT_ITEM))
+        return FALSE;
+    else
+        return TRUE;
+}
+
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 rc = get_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, Irp);
@@ -921,8 +942,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     
     if (flags & EXTENT_ITEM_SHARED_BACKREFS) {
         TREE_BLOCK_REF tbr;
-        
-        // FIXME - find if unique
+        BOOL unique = rc > 1 ? FALSE : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp) : FALSE);
         
         if (t->header.level == 0) {
             LIST_ENTRY* le;
@@ -983,7 +1003,24 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 return Status;
                             }
                             
-                            // FIXME - remove shared ref if unique
+                            if (unique) {
+                                UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.address, Irp);
+
+                                if (sdrrc > 0) {
+                                    SHARED_DATA_REF sdr;
+                                    
+                                    sdr.offset = t->header.address;
+                                    sdr.count = sdrrc;
+                                    
+                                    Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
+                                                                      t->header.address, Irp, rollback);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("decrease_extent_refcount returned %08x\n", Status);
+                                        return Status;
+                                    }
+                                }
+                            }
+                            
                             // FIXME - clear shared flag if unique?
                         }
                     }
@@ -993,7 +1030,22 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
             }
         }
         
-        // FIXME - remove shared ref if unique
+        if (unique) {
+            UINT64 sbrrc = find_extent_shared_tree_refcount(Vcb, t->header.address, t->parent->header.address, Irp);
+            
+            if (sbrrc == 1) {
+                SHARED_BLOCK_REF sbr;
+                
+                sbr.offset = t->parent->header.address;
+                
+                Status = decrease_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                                                  t->parent->header.address, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("decrease_extent_refcount returned %08x\n", Status);
+                    return Status;
+                }
+            }
+        }
         
         if (t->parent)
             tbr.offset = t->parent->header.tree_id;

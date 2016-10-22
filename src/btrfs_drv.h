@@ -957,6 +957,10 @@ void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PI
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
                                    signed long long count, BOOL no_csum, BOOL superseded, PIRP Irp);
 void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count, BOOL no_csum);
+UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);
+UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);
+NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
+                                  UINT8 level, UINT64 parent, PIRP Irp, LIST_ENTRY* rollback);
 
 // in worker-thread.c
 void do_read_job(PIRP Irp);
