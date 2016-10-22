@@ -1018,6 +1018,11 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                         ERR("decrease_extent_refcount returned %08x\n", Status);
                                         return Status;
                                     }
+                                    
+                                    if (ce) {
+                                        ce->count--;
+                                        ce->old_count--;
+                                    }
                                 }
                             }
                             
