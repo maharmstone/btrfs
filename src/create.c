@@ -1359,7 +1359,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     if (ed2->address == 0 && ed2->size == 0) // sparse
                         goto nextitem;
                     
-                    if (ed2->size != 0)
+                    if (ed2->size != 0 && is_tree_unique(Vcb, tp.tree, Irp))
                         unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
                 }
                 

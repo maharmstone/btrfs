@@ -2470,7 +2470,7 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
     return STATUS_SUCCESS;
 }
 
-static BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
+BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
