@@ -156,19 +156,18 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         }
     } else {
         UINT32 i;
-        UINT64 newaddr;
         internal_node* in = (internal_node*)&th[1];
         
         for (i = 0; i < th->num_items; i++) {
-            Status = snapshot_tree_copy(Vcb, in[i].address, subvol, dupflags, &newaddr, Irp, rollback);
+            TREE_BLOCK_REF tbr;
             
+            tbr.offset = subvol->id;
+            
+            Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, th->level - 1, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("snapshot_tree_copy returned %08x\n", Status);
+                ERR("increase_extent_refcount returned %08x\n", Status);
                 goto end;
             }
-            
-            in[i].generation = Vcb->superblock.generation;
-            in[i].address = newaddr;
         }
     }
     
