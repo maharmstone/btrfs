@@ -189,7 +189,8 @@ static NTSTATUS add_shared_block_extent_ref(LIST_ENTRY* extent_refs, UINT64 pare
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 flags, LIST_ENTRY* extent_refs, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 flags, LIST_ENTRY* extent_refs,
+                                      KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *next_le;
     UINT64 refcount;
     ULONG inline_len;
@@ -256,10 +257,17 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
     if (flags & EXTENT_ITEM_TREE_BLOCK) {
         EXTENT_ITEM2* ei2 = (EXTENT_ITEM2*)&ei[1];
         
-        ei2->firstitem.obj_id = 0; // FIXME
-        ei2->firstitem.obj_type = 0; // FIXME
-        ei2->firstitem.offset = 0; // FIXME
-        ei2->level = 0; // FIXME
+        if (firstitem) {
+            ei2->firstitem.obj_id = firstitem->obj_id;
+            ei2->firstitem.obj_type = firstitem->obj_type;
+            ei2->firstitem.offset = firstitem->offset;
+        } else {
+            ei2->firstitem.obj_id = 0;
+            ei2->firstitem.obj_type = 0;
+            ei2->firstitem.offset = 0;
+        }
+        
+        ei2->level = level;
         
         siptr = (UINT8*)&ei2[1];
     } else
@@ -324,7 +332,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL tree, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL tree, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -351,8 +359,6 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL t
     size = tp.item->key.offset;
     
     delete_tree_item(Vcb, &tp, rollback);
-    
-    // FIXME - for tree erv0->objid is level
     
     while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
         tp = next_tp;
@@ -382,7 +388,7 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL t
     }
 
     Status = construct_extent_item(Vcb, address, size, tree ? (EXTENT_ITEM_TREE_BLOCK | EXTENT_ITEM_SHARED_BACKREFS) : EXTENT_ITEM_DATA,
-                                   &extent_refs, Irp, rollback);
+                                   &extent_refs, firstitem, level, Irp, rollback);
     if (!NT_SUCCESS(Status))
         ERR("construct_extent_item returned %08x\n", Status);
 
@@ -474,7 +480,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     skinny = tp.item->key.obj_type == TYPE_METADATA_ITEM;
 
     if (tp.item->size == sizeof(EXTENT_ITEM_V0) && !skinny) {
-        Status = convert_old_extent(Vcb, address, is_tree, Irp, rollback);
+        Status = convert_old_extent(Vcb, address, is_tree, firstitem, level, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("convert_old_extent returned %08x\n", Status);
@@ -831,7 +837,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         }
         
         if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-            Status = convert_old_extent(Vcb, address, is_tree, Irp, rollback);
+            Status = convert_old_extent(Vcb, address, is_tree, firstitem, level, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("convert_old_extent returned %08x\n", Status);

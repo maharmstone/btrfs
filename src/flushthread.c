@@ -919,7 +919,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                     tbr.offset = t->root->id;
                     
                     Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF,
-                                                      &tbr, NULL, 0, Irp, rollback);
+                                                      &tbr, &td->key, t->header.level - 1, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("increase_extent_refcount returned %08x\n", Status);
                         return Status;
@@ -971,7 +971,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         else
             tbr.offset = t->header.tree_id;
         
-        Status = increase_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, 0, Irp, rollback);
+        Status = increase_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr,
+                                          t->parent ? &t->paritem->key : NULL, t->header.level, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("increase_extent_refcount returned %08x\n", Status);
             return Status;
@@ -1010,13 +1011,13 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         
                         sbr.offset = t->header.address;
                         
-                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, Irp, rollback);
+                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, &td->key, t->header.level - 1, Irp, rollback);
                     } else {
                         TREE_BLOCK_REF tbr;
                         
                         tbr.offset = t->root->id;
                         
-                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, 0, Irp, rollback);
+                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, &td->key, t->header.level - 1, Irp, rollback);
                     }
                     
                     if (!NT_SUCCESS(Status)) {
