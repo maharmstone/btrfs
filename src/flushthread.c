@@ -468,98 +468,98 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 //     }    
 // }
 
-static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp, tp2, insert_tp;
-    EXTENT_REF_V0* erv0;
-    NTSTATUS Status;
-    
-    TRACE("(%p, %p, %p)\n", Vcb, td, t);
-    
-    searchkey.obj_id = td->treeholder.address;
-    searchkey.obj_type = TYPE_EXTENT_REF_V0;
-    searchkey.offset = 0xffffffffffffffff;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return;
-    }
-    
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        TRACE("could not find EXTENT_REF_V0 for %llx\n", searchkey.obj_id);
-        return;
-    }
-    
-    searchkey.obj_id = td->treeholder.address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
-    searchkey.offset = Vcb->superblock.node_size;
-    
-    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return;
-    }
-    
-    if (keycmp(searchkey, tp2.item->key)) {
-        ERR("could not find %llx,%x,%llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return;
-    }
-    
-    if (tp.item->size < sizeof(EXTENT_REF_V0)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
-        return;
-    }
-    
-    erv0 = (EXTENT_REF_V0*)tp.item->data;
-    
-    delete_tree_item(Vcb, &tp, rollback);
-    delete_tree_item(Vcb, &tp2, rollback);
-    
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        EXTENT_ITEM_SKINNY_METADATA* eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
-        
-        if (!eism) {
-            ERR("out of memory\n");
-            return;
-        }
-        
-        eism->ei.refcount = 1;
-        eism->ei.generation = erv0->gen;
-        eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
-        eism->type = TYPE_TREE_BLOCK_REF;
-        eism->tbr.offset = t->header.tree_id;
-        
-        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_METADATA_ITEM, t->header.level -1, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return;
-        }
-    } else {
-        EXTENT_ITEM_TREE2* eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
-        
-        if (!eit2) {
-            ERR("out of memory\n");
-            return;
-        }
-        
-        eit2->eit.extent_item.refcount = 1;
-        eit2->eit.extent_item.generation = erv0->gen;
-        eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
-        eit2->eit.firstitem = td->key;
-        eit2->eit.level = t->header.level - 1;
-        eit2->type = TYPE_TREE_BLOCK_REF;
-        eit2->tbr.offset = t->header.tree_id;
-
-        if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return;
-        }
-    }
-    
-    add_parents_to_cache(Vcb, insert_tp.tree);
-    add_parents_to_cache(Vcb, tp.tree);
-    add_parents_to_cache(Vcb, tp2.tree);
-}
+// static void convert_old_tree_extent(device_extension* Vcb, tree_data* td, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+//     KEY searchkey;
+//     traverse_ptr tp, tp2, insert_tp;
+//     EXTENT_REF_V0* erv0;
+//     NTSTATUS Status;
+//     
+//     TRACE("(%p, %p, %p)\n", Vcb, td, t);
+//     
+//     searchkey.obj_id = td->treeholder.address;
+//     searchkey.obj_type = TYPE_EXTENT_REF_V0;
+//     searchkey.offset = 0xffffffffffffffff;
+//     
+//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return;
+//     }
+//     
+//     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+//         TRACE("could not find EXTENT_REF_V0 for %llx\n", searchkey.obj_id);
+//         return;
+//     }
+//     
+//     searchkey.obj_id = td->treeholder.address;
+//     searchkey.obj_type = TYPE_EXTENT_ITEM;
+//     searchkey.offset = Vcb->superblock.node_size;
+//     
+//     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
+//     if (!NT_SUCCESS(Status)) {
+//         ERR("error - find_item returned %08x\n", Status);
+//         return;
+//     }
+//     
+//     if (keycmp(searchkey, tp2.item->key)) {
+//         ERR("could not find %llx,%x,%llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+//         return;
+//     }
+//     
+//     if (tp.item->size < sizeof(EXTENT_REF_V0)) {
+//         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
+//         return;
+//     }
+//     
+//     erv0 = (EXTENT_REF_V0*)tp.item->data;
+//     
+//     delete_tree_item(Vcb, &tp, rollback);
+//     delete_tree_item(Vcb, &tp2, rollback);
+//     
+//     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+//         EXTENT_ITEM_SKINNY_METADATA* eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
+//         
+//         if (!eism) {
+//             ERR("out of memory\n");
+//             return;
+//         }
+//         
+//         eism->ei.refcount = 1;
+//         eism->ei.generation = erv0->gen;
+//         eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
+//         eism->type = TYPE_TREE_BLOCK_REF;
+//         eism->tbr.offset = t->header.tree_id;
+//         
+//         if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_METADATA_ITEM, t->header.level -1, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback)) {
+//             ERR("insert_tree_item failed\n");
+//             return;
+//         }
+//     } else {
+//         EXTENT_ITEM_TREE2* eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
+//         
+//         if (!eit2) {
+//             ERR("out of memory\n");
+//             return;
+//         }
+//         
+//         eit2->eit.extent_item.refcount = 1;
+//         eit2->eit.extent_item.generation = erv0->gen;
+//         eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
+//         eit2->eit.firstitem = td->key;
+//         eit2->eit.level = t->header.level - 1;
+//         eit2->type = TYPE_TREE_BLOCK_REF;
+//         eit2->tbr.offset = t->header.tree_id;
+// 
+//         if (!insert_tree_item(Vcb, Vcb->extent_root, td->treeholder.address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback)) {
+//             ERR("insert_tree_item failed\n");
+//             return;
+//         }
+//     }
+//     
+//     add_parents_to_cache(Vcb, insert_tp.tree);
+//     add_parents_to_cache(Vcb, tp.tree);
+//     add_parents_to_cache(Vcb, tp2.tree);
+// }
 
 static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
 //     KEY searchkey;
@@ -653,42 +653,42 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     }
      
 // end:
-    if (t && !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-        LIST_ENTRY* le;
-        
-        // when writing old internal trees, convert related extents
-        
-        le = t->itemlist.Flink;
-        while (le != &t->itemlist) {
-            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-            
-//             ERR("%llx,%x,%llx\n", td->key.obj_id, td->key.obj_type, td->key.offset);
-            
-            if (!td->inserted) {
-                if (t->header.level > 0) {
-                    if (!td->ignore) {
-                        if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF))
-                            convert_old_tree_extent(Vcb, td, t, Irp, rollback);
-                    }
-                } else if (td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA)) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
-                    
-                    if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                        
-                        if (ed2->size != 0) {
-                            if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-                                TRACE("trying to convert old data extent %llx,%llx\n", ed2->address, ed2->size);
-                                convert_old_data_extent(Vcb, ed2->address, ed2->size, Irp, rollback);
-                            }
-                        }
-                    }
-                }
-            }
-
-            le = le->Flink;
-        }
-    }
+//     if (t && !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+//         LIST_ENTRY* le;
+//         
+//         // when writing old internal trees, convert related extents
+//         
+//         le = t->itemlist.Flink;
+//         while (le != &t->itemlist) {
+//             tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+//             
+// //             ERR("%llx,%x,%llx\n", td->key.obj_id, td->key.obj_type, td->key.offset);
+//             
+//             if (!td->inserted) {
+//                 if (t->header.level > 0) {
+//                     if (!td->ignore) {
+//                         if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF))
+//                             convert_old_tree_extent(Vcb, td, t, Irp, rollback);
+//                     }
+//                 } else if (td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA)) {
+//                     EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+//                     
+//                     if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+//                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+//                         
+//                         if (ed2->size != 0) {
+//                             if (!(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+//                                 TRACE("trying to convert old data extent %llx,%llx\n", ed2->address, ed2->size);
+//                                 convert_old_data_extent(Vcb, ed2->address, ed2->size, Irp, rollback);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+// 
+//             le = le->Flink;
+//         }
+//     }
 
     if (rc == 1) {
         chunk* c = get_chunk_from_address(Vcb, address);
@@ -813,7 +813,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
+    if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         TREE_BLOCK_REF tbr;
         BOOL unique = rc > 1 ? FALSE : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp) : FALSE);
         
@@ -876,7 +876,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 return Status;
                             }
                             
-                            if (flags & EXTENT_ITEM_SHARED_BACKREFS && unique) {
+                            if ((flags & EXTENT_ITEM_SHARED_BACKREFS && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
                                 UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.address, Irp);
 
                                 if (sdrrc > 0) {
@@ -925,7 +925,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         return Status;
                     }
                     
-                    if (unique) {
+                    if (unique || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
                         UINT64 sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.address, Irp);
 
                         if (sbrrc > 0) {
