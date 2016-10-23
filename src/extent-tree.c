@@ -1273,6 +1273,43 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             ERR("error - collision?\n");
             return STATUS_INTERNAL_ERROR;
         }
+    } else if (type == TYPE_TREE_BLOCK_REF) {
+        TREE_BLOCK_REF* secttbr = (TREE_BLOCK_REF*)tp2.item->data;
+        TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
+        EXTENT_ITEM* newei;
+        
+        if (secttbr->offset == tbr->offset) {
+            if (ei->refcount == 1) {
+                delete_tree_item(Vcb, &tp, rollback);
+                delete_tree_item(Vcb, &tp2, rollback);
+                return STATUS_SUCCESS;
+            }
+            
+            delete_tree_item(Vcb, &tp2, rollback);
+            
+            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!newei) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+            newei->generation = Vcb->superblock.generation;
+            newei->refcount -= rc;
+            
+            delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback)) {
+                ERR("insert_tree_item failed\n");
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            return STATUS_SUCCESS;
+        } else {
+            ERR("error - collision?\n");
+            return STATUS_INTERNAL_ERROR;
+        }
     } else if (type == TYPE_EXTENT_REF_V0) {
         EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp2.item->data;
         EXTENT_ITEM* newei;
