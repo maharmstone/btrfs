@@ -1348,7 +1348,7 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_DATA_REF* edr;
-    BOOL old = FALSE;
+//     BOOL old = FALSE;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
@@ -1397,41 +1397,14 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
                 
                 if (sectedr->root == root && sectedr->objid == objid && sectedr->offset == offset)
                     return sectcount;
-            } else if (secttype == TYPE_SHARED_DATA_REF) {
-                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
-                BOOL found = FALSE;
-                LIST_ENTRY* le;
-                
-                le = Vcb->shared_extents.Flink;
-                while (le != &Vcb->shared_extents) {
-                    shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
-                    
-                    if (sd->address == sectsdr->offset) {
-                        LIST_ENTRY* le2 = sd->entries.Flink;
-                        while (le2 != &sd->entries) {
-                            shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
-                            
-                            if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
-                                return sde->edr.count;
-                            
-                            le2 = le2->Flink;
-                        }
-                        found = TRUE;
-                        break;
-                    }
-                    
-                    le = le->Flink;
-                }
-                
-                if (!found)
-                    WARN("shared data extents not loaded for tree at %llx\n", sectsdr->offset);
             }
             
             len -= sectlen;
             ptr += sizeof(UINT8) + sectlen;
         }
-    } else if (tp.item->size == sizeof(EXTENT_ITEM_V0))
-        old = TRUE;
+    }
+//     else if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+//         old = TRUE;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_DATA_REF;
@@ -1453,130 +1426,70 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
         }
     }
      
-    if (old) {
-        BOOL b;
-        
-        searchkey.obj_id = address;
-        searchkey.obj_type = TYPE_EXTENT_REF_V0;
-        searchkey.offset = 0;
-        
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return 0;
-        }
-        
-        do {
-            traverse_ptr next_tp;
-            
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-            
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                if (tp.item->size >= sizeof(EXTENT_REF_V0)) {
-                    EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp.item->data;
-                    
-                    if (erv0->root == root && erv0->objid == objid) {
-                        LIST_ENTRY* le;
-                        BOOL found = FALSE;
-                    
-                        le = Vcb->shared_extents.Flink;
-                        while (le != &Vcb->shared_extents) {
-                            shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
-                            
-                            if (sd->address == tp.item->key.offset) {
-                                LIST_ENTRY* le2 = sd->entries.Flink;
-                                while (le2 != &sd->entries) {
-                                    shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
-                                    
-                                    if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
-                                        return sde->edr.count;
-                                    
-                                    le2 = le2->Flink;
-                                }
-                                found = TRUE;
-                                break;
-                            }
-                            
-                            le = le->Flink;
-                        }
-                        
-                        if (!found)
-                            WARN("shared data extents not loaded for tree at %llx\n", tp.item->key.offset);
-                    }
-                } else {
-                    ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                        tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
-                }
-            }
-            
-            if (b) {
-                tp = next_tp;
-                
-                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                    break;
-            }
-        } while (b);
-    } else {
-        BOOL b;
-        
-        searchkey.obj_id = address;
-        searchkey.obj_type = TYPE_SHARED_DATA_REF;
-        searchkey.offset = 0;
-        
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            return 0;
-        }
-        
-        do {
-            traverse_ptr next_tp;
-            
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-            
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                if (tp.item->size >= sizeof(SHARED_DATA_REF)) {
-                    SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)tp.item->data;
-                    LIST_ENTRY* le;
-                    BOOL found = FALSE;
-                    
-                    le = Vcb->shared_extents.Flink;
-                    while (le != &Vcb->shared_extents) {
-                        shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
-                        
-                        if (sd->address == sdr->offset) {
-                            LIST_ENTRY* le2 = sd->entries.Flink;
-                            while (le2 != &sd->entries) {
-                                shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
-                                
-                                if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
-                                    return sde->edr.count;
-                                
-                                le2 = le2->Flink;
-                            }
-                            found = TRUE;
-                            break;
-                        }
-                        
-                        le = le->Flink;
-                    }
-
-                    if (!found)
-                        WARN("shared data extents not loaded for tree at %llx\n", sdr->offset);
-                } else {
-                    ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                        tp.item->key.offset, tp.item->size, sizeof(SHARED_DATA_REF));
-                }
-            }
-
-            if (b) {
-                tp = next_tp;
-
-                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                    break;
-            }
-        } while (b);
-    }
+//     if (old) {
+//         BOOL b;
+//         
+//         searchkey.obj_id = address;
+//         searchkey.obj_type = TYPE_EXTENT_REF_V0;
+//         searchkey.offset = 0;
+//         
+//         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+//         if (!NT_SUCCESS(Status)) {
+//             ERR("error - find_item returned %08x\n", Status);
+//             return 0;
+//         }
+//         
+//         do {
+//             traverse_ptr next_tp;
+//             
+//             b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
+//             
+//             if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+//                 if (tp.item->size >= sizeof(EXTENT_REF_V0)) {
+//                     EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp.item->data;
+//                     
+//                     if (erv0->root == root && erv0->objid == objid) {
+//                         LIST_ENTRY* le;
+//                         BOOL found = FALSE;
+//                     
+//                         le = Vcb->shared_extents.Flink;
+//                         while (le != &Vcb->shared_extents) {
+//                             shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
+//                             
+//                             if (sd->address == tp.item->key.offset) {
+//                                 LIST_ENTRY* le2 = sd->entries.Flink;
+//                                 while (le2 != &sd->entries) {
+//                                     shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
+//                                     
+//                                     if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
+//                                         return sde->edr.count;
+//                                     
+//                                     le2 = le2->Flink;
+//                                 }
+//                                 found = TRUE;
+//                                 break;
+//                             }
+//                             
+//                             le = le->Flink;
+//                         }
+//                         
+//                         if (!found)
+//                             WARN("shared data extents not loaded for tree at %llx\n", tp.item->key.offset);
+//                     }
+//                 } else {
+//                     ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
+//                         tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
+//                 }
+//             }
+//             
+//             if (b) {
+//                 tp = next_tp;
+//                 
+//                 if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+//                     break;
+//             }
+//         } while (b);
+//     }
     
     return 0;
 }

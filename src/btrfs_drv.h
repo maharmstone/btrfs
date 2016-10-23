@@ -439,20 +439,6 @@ typedef struct {
 } changed_extent_ref;
 
 typedef struct {
-    UINT64 address;
-    UINT64 size;
-    EXTENT_DATA_REF edr;
-    LIST_ENTRY list_entry;
-} shared_data_entry;
-
-typedef struct {
-    UINT64 address;
-    UINT64 parent;
-    LIST_ENTRY entries;
-    LIST_ENTRY list_entry;
-} shared_data;
-
-typedef struct {
     KEY key;
     void* data;
     USHORT size;
@@ -543,8 +529,6 @@ typedef struct _device_extension {
     ERESOURCE checksum_lock;
     ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;
-    LIST_ENTRY shared_extents;
-    KSPIN_LOCK shared_extents_lock;
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;
     KEVENT flush_thread_finished;
