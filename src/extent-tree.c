@@ -1331,174 +1331,11 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UI
     return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, Irp, rollback);
 }
 
-// static NTSTATUS add_data_extent_ref(LIST_ENTRY* extent_refs, UINT64 tree_id, UINT64 obj_id, UINT64 offset) {
-//     extent_ref* er2;
-//     LIST_ENTRY* le;
-//     
-//     if (!IsListEmpty(extent_refs)) {
-//         le = extent_refs->Flink;
-//         
-//         while (le != extent_refs) {
-//             extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-//             
-//             if (er->type == TYPE_EXTENT_DATA_REF) {
-//                 if (er->edr.root == tree_id && er->edr.objid == obj_id && er->edr.offset == offset) {
-//                     er->edr.count++;
-//                     return STATUS_SUCCESS;
-//                 }
-//             }
-//             
-//             le = le->Flink;
-//         }
-//     }
-//     
-//     er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-//     if (!er2) {
-//         ERR("out of memory\n");
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//     
-//     er2->type = TYPE_EXTENT_DATA_REF;    
-//     er2->edr.root = tree_id;
-//     er2->edr.objid = obj_id;
-//     er2->edr.offset = offset;
-//     er2->edr.count = 1; // FIXME - not necessarily
-//     
-//     InsertTailList(extent_refs, &er2->list_entry);
-//     
-//     return STATUS_SUCCESS;
-// }
-
-// static NTSTATUS populate_extent_refs_from_tree(device_extension* Vcb, UINT64 tree_address, UINT64 extent_address, LIST_ENTRY* extent_refs) {
-//     UINT8* buf;
-//     tree_header* th;
-//     NTSTATUS Status;
-//     
-//     buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
-//     if (!buf) {
-//         ERR("out of memory\n");
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-// 
-//     Status = read_data(Vcb, tree_address, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL, NULL);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("read_data returned %08x\n", Status);
-//         ExFreePool(buf);
-//         return Status;
-//     }
-//     
-//     th = (tree_header*)buf;
-// 
-//     if (th->level == 0) {
-//         UINT32 i;
-//         leaf_node* ln = (leaf_node*)&th[1];
-//         
-//         for (i = 0; i < th->num_items; i++) {
-//             if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(tree_header)) {
-//                 EXTENT_DATA* ed = (EXTENT_DATA*)(((UINT8*)&th[1]) + ln[i].offset);
-//                 
-//                 if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-//                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
-//                     
-//                     if (ed2->address == extent_address) {
-//                         Status = add_data_extent_ref(extent_refs, th->tree_id, ln[i].key.obj_id, ln[i].key.offset);
-//                         if (!NT_SUCCESS(Status)) {
-//                             ERR("add_data_extent_ref returned %08x\n", Status);
-//                             ExFreePool(buf);
-//                             return Status;
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     } else
-//         WARN("shared data ref pointed to tree of level %x\n", th->level);
-//     
-//     ExFreePool(buf);
-//     
-//     return STATUS_SUCCESS;
-// }
-
-// NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback) {
-//     KEY searchkey;
-//     traverse_ptr tp, next_tp;
-//     BOOL b;
-//     LIST_ENTRY extent_refs;
-//     NTSTATUS Status;
-//     
-//     searchkey.obj_id = address;
-//     searchkey.obj_type = TYPE_EXTENT_ITEM;
-//     searchkey.offset = size;
-//     
-//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         return Status;
-//     }
-//     
-//     if (keycmp(tp.item->key, searchkey)) {
-//         WARN("extent item not found for address %llx, size %llx\n", address, size);
-//         return STATUS_SUCCESS;
-//     }
-//     
-//     if (tp.item->size != sizeof(EXTENT_ITEM_V0)) {
-//         TRACE("extent does not appear to be old - returning STATUS_SUCCESS\n");
-//         return STATUS_SUCCESS;
-//     }
-//     
-//     delete_tree_item(Vcb, &tp, rollback);
-//     
-//     searchkey.obj_id = address;
-//     searchkey.obj_type = TYPE_EXTENT_REF_V0;
-//     searchkey.offset = 0;
-//     
-//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//         return Status;
-//     }
-//     
-//     InitializeListHead(&extent_refs);
-//     
-//     do {
-//         b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-//         
-//         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//             Status = populate_extent_refs_from_tree(Vcb, tp.item->key.offset, address, &extent_refs);
-//             if (!NT_SUCCESS(Status)) {
-//                 ERR("populate_extent_refs_from_tree returned %08x\n", Status);
-//                 return Status;
-//             }
-//             
-//             delete_tree_item(Vcb, &tp, rollback);
-//         }
-//         
-//         if (b) {
-//             tp = next_tp;
-//             
-//             if (tp.item->key.obj_id > searchkey.obj_id || tp.item->key.obj_type > searchkey.obj_type)
-//                 break;
-//         }
-//     } while (b);
-//     
-//     Status = construct_extent_item(Vcb, address, size, EXTENT_ITEM_DATA, &extent_refs, Irp, rollback);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("construct_extent_item returned %08x\n", Status);
-//         free_extent_refs(&extent_refs);
-//         return Status;
-//     }
-//     
-//     free_extent_refs(&extent_refs);
-//     
-//     return STATUS_SUCCESS;
-// }
-
 static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     EXTENT_DATA_REF* edr;
-//     BOOL old = FALSE;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
@@ -1553,8 +1390,6 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
             ptr += sizeof(UINT8) + sectlen;
         }
     }
-//     else if (tp.item->size == sizeof(EXTENT_ITEM_V0))
-//         old = TRUE;
     
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_DATA_REF;
@@ -1575,71 +1410,6 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
             return edr->count;
         }
     }
-     
-//     if (old) {
-//         BOOL b;
-//         
-//         searchkey.obj_id = address;
-//         searchkey.obj_type = TYPE_EXTENT_REF_V0;
-//         searchkey.offset = 0;
-//         
-//         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-//         if (!NT_SUCCESS(Status)) {
-//             ERR("error - find_item returned %08x\n", Status);
-//             return 0;
-//         }
-//         
-//         do {
-//             traverse_ptr next_tp;
-//             
-//             b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-//             
-//             if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//                 if (tp.item->size >= sizeof(EXTENT_REF_V0)) {
-//                     EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp.item->data;
-//                     
-//                     if (erv0->root == root && erv0->objid == objid) {
-//                         LIST_ENTRY* le;
-//                         BOOL found = FALSE;
-//                     
-//                         le = Vcb->shared_extents.Flink;
-//                         while (le != &Vcb->shared_extents) {
-//                             shared_data* sd = CONTAINING_RECORD(le, shared_data, list_entry);
-//                             
-//                             if (sd->address == tp.item->key.offset) {
-//                                 LIST_ENTRY* le2 = sd->entries.Flink;
-//                                 while (le2 != &sd->entries) {
-//                                     shared_data_entry* sde = CONTAINING_RECORD(le2, shared_data_entry, list_entry);
-//                                     
-//                                     if (sde->edr.root == root && sde->edr.objid == objid && sde->edr.offset == offset)
-//                                         return sde->edr.count;
-//                                     
-//                                     le2 = le2->Flink;
-//                                 }
-//                                 found = TRUE;
-//                                 break;
-//                             }
-//                             
-//                             le = le->Flink;
-//                         }
-//                         
-//                         if (!found)
-//                             WARN("shared data extents not loaded for tree at %llx\n", tp.item->key.offset);
-//                     }
-//                 } else {
-//                     ERR("(%llx,%x,%llx) was %x bytes, not %x as expected\n", tp.item->key.obj_id, tp.item->key.obj_type,
-//                         tp.item->key.offset, tp.item->size, sizeof(EXTENT_REF_V0));
-//                 }
-//             }
-//             
-//             if (b) {
-//                 tp = next_tp;
-//                 
-//                 if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-//                     break;
-//             }
-//         } while (b);
-//     }
     
     return 0;
 }
