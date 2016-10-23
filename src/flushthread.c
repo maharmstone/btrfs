@@ -4827,35 +4827,6 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_items_to_cache(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
-    NTSTATUS Status;
-    
-    le = Vcb->trees.Flink;
-    while (le != &Vcb->trees) {
-        tree* t = CONTAINING_RECORD(le, tree, list_entry);
-        
-        if (t->write && t->root != Vcb->chunk_root && t->root != Vcb->root_root) {
-            Status = add_root_item_to_cache(Vcb, t->root->id, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_root_item_to_cache returned %08x\n", Status);
-                return Status;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    // make sure we always update the extent tree
-    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_root_item_to_cache returned %08x\n", Status);
-        return Status;
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
@@ -5522,9 +5493,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         Vcb->root_root->treeholder.tree->write = TRUE;
     }
     
-    Status = add_root_items_to_cache(Vcb, Irp, rollback);
+    // make sure we always update the extent tree
+    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("add_root_items_to_cache returned %08x\n", Status);
+        ERR("add_root_item_to_cache returned %08x\n", Status);
         return Status;
     }
     
