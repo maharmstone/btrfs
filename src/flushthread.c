@@ -2470,6 +2470,61 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
     return STATUS_SUCCESS;
 }
 
+static BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    do {
+        EXTENT_ITEM* ei;
+        UINT8* type;
+        
+        if (t->has_address) {
+            searchkey.obj_id = t->header.address;
+            searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("error - find_item returned %08x\n", Status);
+                return FALSE;
+            }
+            
+            if (tp.item->key.obj_id != t->header.address || (tp.item->key.obj_type != TYPE_METADATA_ITEM && tp.item->key.obj_type != TYPE_EXTENT_ITEM))
+                return FALSE;
+            
+            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
+                return FALSE;
+            
+            if (tp.item->size < sizeof(EXTENT_ITEM))
+                return FALSE;
+            
+            ei = (EXTENT_ITEM*)tp.item->data;
+            
+            if (ei->refcount > 1)
+                return FALSE;
+            
+            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+                EXTENT_ITEM2* ei2;
+                
+                if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2))
+                    return FALSE;
+                
+                ei2 = (EXTENT_ITEM2*)&ei[1];
+                type = (UINT8*)&ei2[1];
+            } else
+                type = (UINT8*)&ei[1];
+            
+            if (type >= tp.item->data + tp.item->size || *type != TYPE_TREE_BLOCK_REF)
+                return FALSE;
+        }
+        
+        t = t->parent;
+    } while (t);
+    
+    return TRUE;
+}
+
 static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
@@ -2508,6 +2563,9 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
         ERR("do_load_tree returned %08x\n", Status);
         return Status;
     }
+    
+    if (!is_tree_unique(Vcb, nextparitem->treeholder.tree, Irp))
+        return STATUS_SUCCESS;
     
 //     ExReleaseResourceLite(&t->parent->nonpaged->load_tree_lock);
     
@@ -2880,7 +2938,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         while (le != &Vcb->trees) {
             t = CONTAINING_RECORD(le, tree, list_entry);
             
-            if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size) {
+            if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size && is_tree_unique(Vcb, t, Irp)) {
                 Status = try_tree_amalgamate(Vcb, t, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("try_tree_amalgamate returned %08x\n", Status);
