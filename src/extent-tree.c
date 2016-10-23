@@ -1545,10 +1545,8 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
                 inode = sectedr->objid;
             } else if (root != sectedr->root || inode != sectedr->objid)
                 return FALSE;
-        } else {
-            WARN("unhandled extent type %x\n", secttype);
+        } else
             return FALSE;
-        }
         
         len -= sectlen;
         ptr += sizeof(UINT8) + sectlen;
