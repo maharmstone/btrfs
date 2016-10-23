@@ -1116,7 +1116,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     
     t->has_address = FALSE;
     
-    if (rc > 1) {
+    if (rc > 1 && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
         if (t->header.tree_id == t->root->id) {
             flags |= EXTENT_ITEM_SHARED_BACKREFS;
             update_extent_flags(Vcb, t->header.address, flags, Irp);
