@@ -23,6 +23,7 @@ typedef struct {
     union {
         EXTENT_DATA_REF edr;
         SHARED_DATA_REF sdr;
+        TREE_BLOCK_REF tbr;
         SHARED_BLOCK_REF sbr;
     };
     
@@ -183,6 +184,37 @@ static NTSTATUS add_shared_block_extent_ref(LIST_ENTRY* extent_refs, UINT64 pare
     
     er2->type = TYPE_SHARED_BLOCK_REF;
     er2->sbr.offset = parent;
+    
+    InsertTailList(extent_refs, &er2->list_entry);
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_tree_block_extent_ref(LIST_ENTRY* extent_refs, UINT64 root) {
+    extent_ref* er2;
+    LIST_ENTRY* le;
+    
+    if (!IsListEmpty(extent_refs)) {
+        le = extent_refs->Flink;
+        
+        while (le != extent_refs) {
+            extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
+            
+            if (er->type == TYPE_TREE_BLOCK_REF && er->tbr.offset == root)
+                return STATUS_SUCCESS;
+            
+            le = le->Flink;
+        }
+    }
+    
+    er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
+    if (!er2) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    er2->type = TYPE_TREE_BLOCK_REF;
+    er2->tbr.offset = root;
     
     InsertTailList(extent_refs, &er2->list_entry);
     
@@ -367,10 +399,18 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL t
             EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp.item->data;
             
             if (tree) {
-                Status = add_shared_block_extent_ref(&extent_refs, tp.item->key.offset);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("add_shared_block_extent_ref returned %08x\n", Status);
-                    goto end;
+                if (tp.item->key.offset == tp.item->key.obj_id) { // top of the tree
+                    Status = add_tree_block_extent_ref(&extent_refs, erv0->root);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_tree_block_extent_ref returned %08x\n", Status);
+                        goto end;
+                    }
+                } else {
+                    Status = add_shared_block_extent_ref(&extent_refs, tp.item->key.offset);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_shared_block_extent_ref returned %08x\n", Status);
+                        goto end;
+                    }
                 }
             } else {
                 Status = add_shared_data_extent_ref(&extent_refs, tp.item->key.offset, erv0->count);
