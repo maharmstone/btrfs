@@ -776,10 +776,10 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
     }
      
 // end:
-    if (t && (t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF))) {
+    if (t && !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         LIST_ENTRY* le;
         
-        // when writing old or shared internal trees, convert related extents
+        // when writing old internal trees, convert related extents
         
         le = t->itemlist.Flink;
         while (le != &t->itemlist) {
@@ -940,7 +940,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (flags & EXTENT_ITEM_SHARED_BACKREFS) {
+    if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF) {
         TREE_BLOCK_REF tbr;
         BOOL unique = rc > 1 ? FALSE : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp) : FALSE);
         
@@ -1003,7 +1003,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 return Status;
                             }
                             
-                            if (unique) {
+                            if (flags & EXTENT_ITEM_SHARED_BACKREFS && unique) {
                                 UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.address, Irp);
 
                                 if (sdrrc > 0) {
@@ -1105,6 +1105,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         }
         
         // FIXME - clear shared flag if unique?
+        
+        t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
     }
     
     Status = reduce_tree_extent(Vcb, t->header.address, t, Irp, rollback);
@@ -1586,7 +1588,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             t->header.generation = Vcb->superblock.generation;
             t->header.tree_id = t->root->id;
             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
-            t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
             t->header.fs_uuid = Vcb->superblock.uuid;
             t->has_address = TRUE;
             
