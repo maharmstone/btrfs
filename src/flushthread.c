@@ -2342,7 +2342,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->header.address = 0;
     pt->header.num_items = 2;
     pt->header.level = nt->header.level + 1;
-    pt->header.flags = HEADER_FLAG_MIXED_BACKREF;
+    pt->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
     
     pt->has_address = FALSE;
     pt->Vcb = Vcb;
