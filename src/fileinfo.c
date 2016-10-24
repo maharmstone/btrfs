@@ -492,7 +492,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
         
         if (!fr->deleted) {
             me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-            if (!me) {
+            if (!me2) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
@@ -661,7 +661,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         insert_fileref_child(me->fileref, fr, FALSE);
 
                         me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-                        if (!me) {
+                        if (!me2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             
@@ -886,7 +886,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                             fr->fcb->fileref = fr;
                         
                         me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-                        if (!me) {
+                        if (!me2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             
