@@ -1,4 +1,4 @@
-WinBtrfs v0.6
+WinBtrfs v0.7
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -33,6 +33,7 @@ Features
 
 * Reading and writing of Btrfs filesystems
 * Basic RAID: RAID0, RAID1, and RAID10
+* Advanced RAID: RAID5 and RAID6 (incompat flag `raid56`)
 * Caching
 * Discovery of Btrfs partitions, even if Windows would normally ignore them
 * Getting and setting of Access Control Lists (ACLs), using the xattr
@@ -54,14 +55,15 @@ Features
 * zlib compression
 * LZO compression (incompat flag `compress_lzo`)
 * Misc incompat flags: `mixed_groups`, `no_holes`
+* LXSS ("Ubuntu on Windows") support
 
 Todo
 ----
 
-* RAID5 and RAID6 (incompat flag `raid56`)
 * New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
-* LXSS ("Ubuntu on Windows") support
-* Maintenance tools: mkfs.btrfs, btrfs-balance, etc.
+* Passthrough of permissions etc. for LXSS
+* Maintenance tools: mkfs.btrfs, btrfs-balance, scrubbing, etc.
+* TRIM/DISCARD
 
 Installation
 ------------
@@ -113,19 +115,12 @@ Troubleshooting
 
 * My drive doesn't show up!
 
-Check:
+If you're on 64-bit Windows, check that you're running in Test Mode ("Test Mode" appears
+in the bottom right of the Desktop).
 
-a) If on 64-bit Windows, you're running in Test Mode ("Test Mode" appears in the
-bottom right of the Desktop).
+* My drive is readonly
 
-b) You're not trying to mount a filesystem with unsupported flags. On Linux,
-type:
-
-    ls /sys/fs/btrfs/*/features/
-
-If you see any of the flags listed above as being unsupported, it won't work. As of
-Linux 4.7, the only unsupported flags are that for RAID 5/6, and the readonly flag
-for the new free-space cache.
+Check that you've not got the new free space cache enabled, which isn't yet supported.
 
 * The filenames are weird!
 or
@@ -141,8 +136,38 @@ Unfortunately we have to lie about this - the function MPR!MprGetConnection chec
 the filesystem type against an internal whitelist, and fails if it's not found, which
 prevents UAC from working. Thanks Microsoft!
 
+* `btrfs check` reports errors in the extent tree
+
+There's a bug in btrfs-progs v4.7, which causes it to return false positives when
+using prealloc extents - this'll also manifest itself with filesystems from the
+official driver. If you still get the same errors when using btrfs-check v4.6, please
+e-mail me what it says.
+
+* The root of the drive isn't case-sensitive in LXSS
+
+This is something Microsoft hardcoded into LXSS, presumably to stop people hosing
+their systems by running `mkdir /mnt/c/WiNdOwS`.
+
+* Disk Management doesn't work properly, e.g. unable to change drive letter
+
+Try changing the type of your partition in Linux. For MBR partitions, this should be
+type 7 in `fdisk`. For GPT partitions, this should be type 6 in `fdisk` ("Microsoft
+basic data"), or 0700 in `gdisk`. We have to do some chicanery to get Linux partitions
+to appear in the first place, but unfortunately this confuses diskmgmt.msc too much.
+
 Changelog
 ---------
+
+v0.7 (2016-10-24):
+* Support for RAID5/6 (incompat flag `raid56`)
+* Seeding support
+* LXSS ("Ubuntu on Windows") support
+* Support for Windows Extended Attributes
+* Improved removable device support
+* Better snapshot support
+* Recovery from RAID checksum errors
+* Fixed issue where creating a lot of new files was taking a long time
+* Miscellaneous speed increases and bug fixes
 
 v0.6 (2016-08-21):
 * Compression support (both zlib and lzo)
@@ -271,6 +296,12 @@ exist, this parameter will be silently ignored. The subvolume ID can be found on
 sheet; it's in hex there, as opposed to decimal on the Linux tools. The default is whatever has been set
 via `btrfs subvolume set-default`; or, failing that, subvolume 5. The equivalent parameter on Linux is
 called `subvolid`.
+
+* `Raid5Recalculation` and `Raid6Recalculation` (DWORD): the number of devices we will skip when reading
+from a RAID5 or 6 chunk. Because disk I/O is so much slower than CPU operations, it can be quicker to
+recalculate a stripe from the others than to read it in the first place. Valid values are 0 and 1 for
+RAID5, and 0, 1, and 2 for RAID6. You might want to experiment with which is quicker for you; for SSDs
+this probably should be 0. The default for both options is 1.
 
 Contact
 -------
