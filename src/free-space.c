@@ -257,16 +257,22 @@ static void add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
     for (i = 0; i < len; i++) {
         LIST_ENTRY* le;
         superblock_stripe* ss;
+        BOOL ignore = FALSE;
         
         le = stripes->Flink;
         while (le != stripes) {
             ss = CONTAINING_RECORD(le, superblock_stripe, list_entry);
             
-            if (ss->stripe == off + i)
-                continue;
+            if (ss->stripe == off + i) {
+                ignore = TRUE;
+                break;
+            }
             
             le = le->Flink;
         }
+        
+        if (ignore)
+            continue;
         
         ss = ExAllocatePoolWithTag(PagedPool, sizeof(superblock_stripe), ALLOC_TAG);
         ss->stripe = off + i;
