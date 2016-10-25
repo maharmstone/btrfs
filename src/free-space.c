@@ -251,7 +251,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } superblock_stripe;
 
-static void add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
+static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
     UINT64 i;
     
     for (i = 0; i < len; i++) {
@@ -275,12 +275,20 @@ static void add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
             continue;
         
         ss = ExAllocatePoolWithTag(PagedPool, sizeof(superblock_stripe), ALLOC_TAG);
+        if (!ss) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         ss->stripe = off + i;
         InsertTailList(stripes, &ss->list_entry);
     }
+    
+    return STATUS_SUCCESS;
 }
 
-static UINT64 get_superblock_size(chunk* c) {
+static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
+    NTSTATUS Status;
     CHUNK_ITEM* ci = c->chunk_item;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
     UINT64 off_start, off_end, space;
@@ -302,7 +310,11 @@ static UINT64 get_superblock_size(chunk* c) {
 
                     off_end = off_start + ci->stripe_length;
                     
-                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, 1);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, 1);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_superblock_stripe returned %08x\n", Status);
+                        goto end;
+                    }
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
@@ -316,7 +328,11 @@ static UINT64 get_superblock_size(chunk* c) {
 
                     off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
 
-                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_superblock_stripe returned %08x\n", Status);
+                        goto end;
+                    }
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
@@ -330,7 +346,11 @@ static UINT64 get_superblock_size(chunk* c) {
 
                     off_end = off_start + (ci->stripe_length * (ci->num_stripes - 2));
 
-                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_superblock_stripe returned %08x\n", Status);
+                        goto end;
+                    }
                 }
             }
         } else { // SINGLE, DUPLICATE, RAID1
@@ -339,7 +359,11 @@ static UINT64 get_superblock_size(chunk* c) {
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
                     off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
                     
-                    add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_superblock_stripe returned %08x\n", Status);
+                        goto end;
+                    }
                 }
             }
         }
@@ -349,6 +373,9 @@ static UINT64 get_superblock_size(chunk* c) {
     
     space = 0;
     
+    Status = STATUS_SUCCESS;
+    
+end:
     while (!IsListEmpty(&stripes)) {
         LIST_ENTRY* le = RemoveHeadList(&stripes);
         superblock_stripe* ss = CONTAINING_RECORD(le, superblock_stripe, list_entry);
@@ -358,7 +385,10 @@ static UINT64 get_superblock_size(chunk* c) {
         ExFreePool(ss);
     }
     
-    return space * ci->stripe_length;
+    if (NT_SUCCESS(Status))
+        *size = space * ci->stripe_length;
+    
+    return Status;
 }
 
 static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
@@ -535,7 +565,13 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
     
     // do sanity check
 
-    superblock_size = get_superblock_size(c);
+    Status = get_superblock_size(c, &superblock_size);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_superblock_size returned %08x\n", Status);
+        ExFreePool(data);
+        return Status;
+    }
+    
     if (c->chunk_item->size - c->used != total_space + superblock_size) {
         WARN("invalidating cache for chunk %llx: space was %llx, expected %llx\n", c->offset, total_space + superblock_size, c->chunk_item->size - c->used);
         goto clearcache;
