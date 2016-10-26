@@ -1944,8 +1944,10 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     //             ERR("%llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                 if (tp.item->key.offset >= startaddr) {
                     if (tp.item->size > 0) {
-                        RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, tp.item->size);
-                        RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, tp.item->size / sizeof(UINT32));
+                        ULONG itemlen = min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(UINT32), tp.item->size);
+                        
+                        RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, itemlen);
+                        RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
                     }
                     
                     delete_tree_item(Vcb, &tp, rollback);
