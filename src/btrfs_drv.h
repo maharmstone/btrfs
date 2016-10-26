@@ -469,6 +469,13 @@ typedef struct {
     UINT64 read_total_time;
     UINT64 read_csum_time;
     UINT64 read_disk_time;
+    
+    UINT64 num_opens;
+    UINT64 open_total_time;
+    UINT64 num_overwrites;
+    UINT64 overwrite_total_time;
+    UINT64 num_creates;
+    UINT64 create_total_time;
 } debug_stats;
 #endif
 

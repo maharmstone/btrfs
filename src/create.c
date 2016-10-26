@@ -3072,6 +3072,12 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
+#ifdef DEBUG_STATS
+    LARGE_INTEGER time1, time2;
+    UINT8 open_type = 0;
+    
+    time1 = KeQueryPerformanceCounter(NULL);
+#endif
     
     Irp->IoStatus.Information = 0;
     
@@ -3228,6 +3234,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         file_ref* sf;
         
         if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
+#ifdef DEBUG_STATS
+            open_type = 1;
+#endif
             if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
                 Status = STATUS_ACCESS_DENIED;
                 free_fileref(fileref);
@@ -3603,6 +3612,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 #endif
         InterlockedIncrement(&Vcb->open_files);
     } else {
+#ifdef DEBUG_STATS
+        open_type = 2;
+#endif
         Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
     }
@@ -3621,6 +3633,21 @@ exit2:
         if (Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
             TRACE("returning %08x\n", Status);
     }
+    
+#ifdef DEBUG_STATS
+    time2 = KeQueryPerformanceCounter(NULL);
+    
+    if (open_type == 0) {
+        Vcb->stats.open_total_time += time2.QuadPart - time1.QuadPart;
+        Vcb->stats.num_opens++;
+    } else if (open_type == 1) {
+        Vcb->stats.overwrite_total_time += time2.QuadPart - time1.QuadPart;
+        Vcb->stats.num_overwrites++;
+    } else if (open_type == 2) {
+        Vcb->stats.create_total_time += time2.QuadPart - time1.QuadPart;
+        Vcb->stats.num_creates++;
+    }
+#endif
     
     return Status;
 }

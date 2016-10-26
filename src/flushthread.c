@@ -5641,6 +5641,14 @@ static void print_stats(device_extension* Vcb) {
     ERR("disk time taken: %llu\n", Vcb->stats.read_disk_time);
     ERR("other time taken: %llu\n", Vcb->stats.read_total_time - Vcb->stats.read_csum_time - Vcb->stats.read_disk_time);
     
+    ERR("OPEN STATS:\n");
+    ERR("number of opens: %llu\n", Vcb->stats.num_opens);
+    ERR("total time taken: %llu\n", Vcb->stats.open_total_time);
+    ERR("number of overwrites: %llu\n", Vcb->stats.num_overwrites);
+    ERR("total time taken: %llu\n", Vcb->stats.overwrite_total_time);
+    ERR("number of creates: %llu\n", Vcb->stats.num_creates);
+    ERR("total time taken: %llu\n", Vcb->stats.create_total_time);
+    
     RtlZeroMemory(&Vcb->stats, sizeof(debug_stats));
 }
 #endif
