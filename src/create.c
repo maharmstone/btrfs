@@ -3188,6 +3188,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             
             if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
                 Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            else if (Status == STATUS_REPARSE)
+                fileref = related;
             else if (NT_SUCCESS(Status)) {
                 fnoff *= sizeof(WCHAR);
                 fnoff += related->filepart.Length + sizeof(WCHAR);
