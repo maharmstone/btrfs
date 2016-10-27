@@ -1191,6 +1191,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     BOOL b;
     UINT8* eadata;
     UINT16 ealen;
+    LIST_ENTRY* lastle = NULL;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1198,17 +1199,22 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         while (le != &subvol->fcbs) {
             fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
             
-            if (fcb->inode == inode && !fcb->ads) {
+            if (fcb->inode == inode) {
+                if (!fcb->ads) {
 #ifdef DEBUG_FCB_REFCOUNTS
-                LONG rc = InterlockedIncrement(&fcb->refcount);
-                
-                WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
+                    LONG rc = InterlockedIncrement(&fcb->refcount);
+
+                    WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
 #else
-                InterlockedIncrement(&fcb->refcount);
+                    InterlockedIncrement(&fcb->refcount);
 #endif
 
-                *pfcb = fcb;
-                return STATUS_SUCCESS;
+                    *pfcb = fcb;
+                    return STATUS_SUCCESS;
+                }
+            } else if (fcb->inode > inode) {
+                lastle = le->Blink;
+                break;
             }
             
             le = le->Flink;
@@ -1315,7 +1321,11 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
-    InsertTailList(&subvol->fcbs, &fcb->list_entry);
+    if (lastle)
+        InsertHeadList(lastle, &fcb->list_entry);
+    else
+        InsertTailList(&subvol->fcbs, &fcb->list_entry);
+    
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
@@ -1588,6 +1598,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
+    LIST_ENTRY* lastle = NULL;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1595,18 +1606,23 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
         while (le != &subvol->fcbs) {
             fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
             
-            if (fcb->inode == inode && fcb->ads && fcb->adsxattr.Length == xattr->Length &&
-                RtlCompareMemory(fcb->adsxattr.Buffer, xattr->Buffer, fcb->adsxattr.Length) == fcb->adsxattr.Length) {
+            if (fcb->inode == inode) {
+                if (fcb->ads && fcb->adsxattr.Length == xattr->Length &&
+                    RtlCompareMemory(fcb->adsxattr.Buffer, xattr->Buffer, fcb->adsxattr.Length) == fcb->adsxattr.Length) {
 #ifdef DEBUG_FCB_REFCOUNTS
-                LONG rc = InterlockedIncrement(&fcb->refcount);
-                
-                WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
+                    LONG rc = InterlockedIncrement(&fcb->refcount);
+
+                    WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
 #else
-                InterlockedIncrement(&fcb->refcount);
+                    InterlockedIncrement(&fcb->refcount);
 #endif
 
-                *pfcb = fcb;
-                return STATUS_SUCCESS;
+                    *pfcb = fcb;
+                    return STATUS_SUCCESS;
+                }
+            } else if (fcb->inode > inode) {
+                lastle = le->Blink;
+                break;
             }
                             
             le = le->Flink;
@@ -1673,7 +1689,11 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
     
     TRACE("stream found: size = %x, hash = %08x\n", xattrlen, fcb->adshash);
     
-    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    if (lastle)
+        InsertHeadList(lastle, &fcb->list_entry);
+    else
+        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     *pfcb = fcb;
@@ -2583,7 +2603,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     mark_fcb_dirty(fcb);
     mark_fileref_dirty(fileref);
     
-    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    InsertHeadList(&parfileref->fcb->list_entry, &fcb->list_entry); // insert in list after parent fcb
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     KeQuerySystemTime(&time);

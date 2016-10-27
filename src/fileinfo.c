@@ -986,6 +986,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE) {
             if (!me->dummyfcb) {
                 ULONG defda;
+                BOOL inserted = FALSE;
+                LIST_ENTRY* le;
                 
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, TRUE);
                 
@@ -1068,7 +1070,21 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 InsertHeadList(&me->fileref->fcb->list_entry, &me->dummyfcb->list_entry);
                 RemoveEntryList(&me->fileref->fcb->list_entry);
                 
-                InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
+                le = destdir->fcb->subvol->fcbs.Flink;
+                while (le != &destdir->fcb->subvol->fcbs) {
+                    fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
+                    
+                    if (fcb->inode > me->fileref->fcb->inode) {
+                        InsertHeadList(le->Blink, &me->fileref->fcb->list_entry);
+                        inserted = TRUE;
+                        break;
+                    }
+                    
+                    le = le->Flink;
+                }
+                
+                if (!inserted)
+                    InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
                 
                 InsertTailList(&me->fileref->fcb->Vcb->all_fcbs, &me->dummyfcb->list_entry_all);
                 

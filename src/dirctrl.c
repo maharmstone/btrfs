@@ -181,7 +181,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                             ealen = fcb2->ealen;
                             found = TRUE;
                             break;
-                        }
+                        } else if (fcb2->inode > inode)
+                            break;
                         
                         le = le->Flink;
                     }
