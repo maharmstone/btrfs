@@ -370,7 +370,13 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
     
     ExConvertExclusiveToSharedLite(&fr->fcb->nonpaged->index_lock);
     
-    le = fr->fcb->index_list.Flink;
+    // If hash is large, we save a bit of time by looking through index_list backwards
+    
+    if (hash & 0x80000000)
+        le = fr->fcb->index_list.Blink;
+    else
+        le = fr->fcb->index_list.Flink;
+    
     while (le != &fr->fcb->index_list) {
         index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
         
@@ -452,13 +458,16 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
             
             Status = STATUS_SUCCESS;
             goto end;
-        } else if (ie->hash > hash) {
+        } else if ((!(hash & 0x80000000) && ie->hash > hash) || ((hash & 0x80000000) && ie->hash < hash)) {
             Status = STATUS_OBJECT_NAME_NOT_FOUND;
             goto end;
         }
         
 nextitem:
-        le = le->Flink;
+        if (hash & 0x80000000)
+            le = le->Blink;
+        else
+            le = le->Flink;
     }
     
     Status = STATUS_OBJECT_NAME_NOT_FOUND;
