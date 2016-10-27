@@ -1703,7 +1703,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset,
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
@@ -1712,7 +1712,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     BOOL has_stream;
     NTSTATUS Status;
     
-    TRACE("(%p, %p, %p, %u, %p)\n", Vcb, pfr, related, parent, unparsed);
+    TRACE("(%p, %p, %p, %u, %p)\n", Vcb, pfr, related, parent, parsed);
 
 #ifdef DEBUG    
     if (!ExIsResourceAcquiredExclusiveLite(&Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
@@ -1803,6 +1803,10 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     if (num_parts == 0) {
         Status = STATUS_SUCCESS;
         *pfr = dir;
+        
+        if (fn_offset)
+            *fn_offset = 0;
+            
         goto end2;
     }
     
@@ -1997,8 +2001,8 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         if (sf2->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
             Status = STATUS_REPARSE;
             
-            if (unparsed)
-                *unparsed = fnus->Length - ((parts[i+1].Buffer - fnus->Buffer - 1) * sizeof(WCHAR));
+            if (parsed)
+                *parsed = (parts[i+1].Buffer - fnus->Buffer - 1) * sizeof(WCHAR);
             
             break;
         }
@@ -2597,10 +2601,11 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related,
+                                    PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
 //     fcb *fcb, *parfcb = NULL;
-    file_ref *fileref, *parfileref = NULL, *related;
+    file_ref *fileref, *parfileref = NULL;
     ULONG i, j, fn_offset;
 //     ULONG utf8len;
     ccb* ccb;
@@ -2622,17 +2627,13 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     dsus.Length = dsus.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
     fpus.Buffer = NULL;
     
-    if (FileObject->RelatedFileObject && FileObject->RelatedFileObject->FsContext2) {
-        struct _ccb* relatedccb = FileObject->RelatedFileObject->FsContext2;
+    if (!loaded_related) {
+        Status = open_fileref(Vcb, &parfileref, fnus, related, TRUE, NULL, NULL, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
         
-        related = relatedccb->fileref;
+        if (!NT_SUCCESS(Status))
+            goto end;
     } else
-        related = NULL;
-    
-    Status = open_fileref(Vcb, &parfileref, &FileObject->FileName, related, TRUE, NULL, NULL, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
-    
-    if (!NT_SUCCESS(Status))
-        goto end;
+        parfileref = related;
     
     if (parfileref->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
         Status = STATUS_OBJECT_PATH_NOT_FOUND;
@@ -2807,7 +2808,7 @@ end:
         ExFreePool(fpus.Buffer);
     
 end2:
-    if (parfileref)
+    if (parfileref && !loaded_related)
         free_fileref(parfileref);
     
     return Status;
@@ -3064,11 +3065,13 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     ccb* ccb;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
-    USHORT unparsed;
+    USHORT parsed;
     ULONG fn_offset = 0;
     file_ref *related, *fileref;
     POOL_TYPE pool_type = Stack->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ACCESS_MASK granted_access;
+    BOOL loaded_related = FALSE;
+    UNICODE_STRING fn;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
@@ -3132,7 +3135,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
     }
     
-    TRACE("(%.*S)\n", FileObject->FileName.Length / sizeof(WCHAR), FileObject->FileName.Buffer);
+    fn = FileObject->FileName;
+    
+    TRACE("(%.*S)\n", fn.Length / sizeof(WCHAR), fn.Buffer);
     TRACE("FileObject = %p\n", FileObject);
     
     if (Vcb->readonly && (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_CREATE || RequestedDisposition == FILE_OVERWRITE)) {
@@ -3149,10 +3154,10 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
     if (options & FILE_OPEN_BY_FILE_ID) {
-        if (FileObject->FileName.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
+        if (fn.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
             UINT64 inode;
             
-            RtlCopyMemory(&inode, FileObject->FileName.Buffer, sizeof(UINT64));
+            RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
             
             if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
                 inode = Vcb->root_fileref->fcb->inode;
@@ -3170,13 +3175,42 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             goto exit;
         }
     } else {
-        if (related && FileObject->FileName.Length != 0 && FileObject->FileName.Buffer[0] == '\\') {
+        if (related && fn.Length != 0 && fn.Buffer[0] == '\\') {
             Status = STATUS_OBJECT_NAME_INVALID;
             goto exit;
         }
         
-        Status = open_fileref(Vcb, &fileref, &FileObject->FileName, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &unparsed, &fn_offset,
-                              pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+        if (!related && RequestedDisposition != FILE_OPEN && !(Stack->Flags & SL_OPEN_TARGET_DIRECTORY)) {
+            ULONG fnoff;
+            
+            Status = open_fileref(Vcb, &related, &fn, NULL, TRUE, &parsed, &fnoff,
+                                  pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+            
+            if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            else if (NT_SUCCESS(Status)) {
+                fnoff *= sizeof(WCHAR);
+                fnoff += related->filepart.Length + sizeof(WCHAR);
+                
+                if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+                    Status = STATUS_REPARSE;
+                    fileref = related;
+                    parsed = fnoff - sizeof(WCHAR);
+                } else {
+                    fn.Buffer = &fn.Buffer[fnoff / sizeof(WCHAR)];
+                    fn.Length -= fnoff;
+
+                    Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                        pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+                    
+                    loaded_related = TRUE;
+                }
+                
+            }
+        } else {
+            Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                  pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+        }
     }
     
     if (Status == STATUS_REPARSE) {
@@ -3196,7 +3230,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         Status = STATUS_REPARSE;
         RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
         
-        data->Reserved = unparsed;
+        data->Reserved = FileObject->FileName.Length - parsed;
         
         Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
         
@@ -3329,7 +3363,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_REPARSE;
             Irp->IoStatus.Information = data->ReparseTag;
             
-            if (FileObject->FileName.Buffer[(FileObject->FileName.Length / sizeof(WCHAR)) - 1] == '\\')
+            if (fn.Buffer[(fn.Length / sizeof(WCHAR)) - 1] == '\\')
                 data->Reserved = sizeof(WCHAR);
             
             Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
@@ -3548,8 +3582,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         FileObject->FsContext2 = ccb;
         
         if (fn_offset > 0) {
-            FileObject->FileName.Length -= fn_offset * sizeof(WCHAR);
-            RtlMoveMemory(&FileObject->FileName.Buffer[0], &FileObject->FileName.Buffer[fn_offset], FileObject->FileName.Length);
+            fn.Length -= fn_offset * sizeof(WCHAR);
+            RtlMoveMemory(&fn.Buffer[0], &fn.Buffer[fn_offset], fn.Length);
         }
         
         FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
@@ -3615,7 +3649,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 #ifdef DEBUG_STATS
         open_type = 2;
 #endif
-        Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, &FileObject->FileName, RequestedDisposition, options, rollback);
+        Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
     }
     
@@ -3626,6 +3660,9 @@ exit:
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
 exit2:
+    if (loaded_related)
+        free_fileref(related);
+    
     if (NT_SUCCESS(Status)) {
         if (!FileObject->Vpb)
             FileObject->Vpb = DeviceObject->Vpb;

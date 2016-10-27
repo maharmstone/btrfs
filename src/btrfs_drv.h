@@ -889,7 +889,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
                                   root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8, BOOL case_sensitive, PIRP Irp);
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* unparsed, ULONG* fn_offset,
+NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI_STRING* xattr, UINT32 streamhash, fcb* parent, fcb** pfcb, PIRP Irp);
