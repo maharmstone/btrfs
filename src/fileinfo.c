@@ -4284,6 +4284,8 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
+    Status = STATUS_SUCCESS;
+    
     if (fcb->ea_xattr.Length == 0)
         goto end2;
     
@@ -4424,8 +4426,6 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
         } while (TRUE);
     }
-    
-    Status = STATUS_SUCCESS;
     
 end2:
     ExReleaseResourceLite(fcb->Header.Resource);
