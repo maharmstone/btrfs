@@ -168,6 +168,7 @@ typedef struct _fcb {
     BOOL inode_item_changed;
     
     BOOL index_loaded;
+    LIST_ENTRY** index_ptrs;
     LIST_ENTRY index_list;
     
     BOOL dirty;

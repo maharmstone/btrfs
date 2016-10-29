@@ -1836,6 +1836,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(ie);
     }
     
+    if (fcb->index_ptrs)
+        ExFreePool(fcb->index_ptrs);
+    
     while (!IsListEmpty(&fcb->hardlinks)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->hardlinks);
         hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);

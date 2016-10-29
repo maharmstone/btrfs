@@ -3936,6 +3936,11 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         ExFreePool(ie);
     }
     
+    if (fcb->index_ptrs) {
+        ExFreePool(fcb->index_ptrs);
+        fcb->index_ptrs = NULL;
+    }
+    
     fcb->index_loaded = FALSE;
     
     if (fcb->ads) {

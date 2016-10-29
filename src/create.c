@@ -208,6 +208,17 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
         goto end;
     }
     
+    if (!fcb->index_ptrs) {
+        fcb->index_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->index_ptrs) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlZeroMemory(fcb->index_ptrs, sizeof(LIST_ENTRY*) * 256);
+    }
+    
     do {
         DIR_ITEM* di;
         
@@ -295,7 +306,11 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             ie->hash = calc_crc32c(0xfffffffe, (UINT8*)ie->filepart_uc.Buffer, (ULONG)ie->filepart_uc.Length);
             inserted = FALSE;
             
-            le = fcb->index_list.Flink;
+            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
+                le = fcb->index_list.Flink; // FIXME - start at previous valid entry
+            else
+                le = fcb->index_ptrs[(ie->hash & 0xff000000) >> 24];
+            
             while (le != &fcb->index_list) {
                 index_entry* ie2 = CONTAINING_RECORD(le, index_entry, list_entry);
                 
@@ -307,9 +322,12 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
                 
                 le = le->Flink;
             }
-            
+        
             if (!inserted)
                 InsertTailList(&fcb->index_list, &ie->list_entry);
+            
+            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
+                fcb->index_ptrs[(ie->hash & 0xff000000) >> 24] = &ie->list_entry;
         }
         
 nextitem:
@@ -333,6 +351,11 @@ end:
             if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
             if (ie->filepart_uc.Buffer) ExFreePool(ie->filepart_uc.Buffer);
             ExFreePool(ie);
+        }
+        
+        if (fcb->index_ptrs) {
+            ExFreePool(fcb->index_ptrs);
+            fcb->index_ptrs = NULL;
         }
     } else
         mark_fcb_dirty(fcb); // It's not necessarily dirty, but this is an easy way of making sure
@@ -370,104 +393,101 @@ static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING fil
     
     ExConvertExclusiveToSharedLite(&fr->fcb->nonpaged->index_lock);
     
-    // If hash is large, we save a bit of time by looking through index_list backwards
-    
-    if (hash & 0x80000000)
-        le = fr->fcb->index_list.Blink;
-    else
-        le = fr->fcb->index_list.Flink;
-    
-    while (le != &fr->fcb->index_list) {
-        index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
+    if (fr->fcb->index_ptrs && fr->fcb->index_ptrs[(hash & 0xff000000) >> 24]) {
+        le = fr->fcb->index_ptrs[(hash & 0xff000000) >> 24];
         
-        if (ie->hash == hash && ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-            LIST_ENTRY* le;
-            BOOL ignore_entry = FALSE;
+        while (le != &fr->fcb->index_list) {
+            index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
             
-            ExAcquireResourceSharedLite(&fr->nonpaged->children_lock, TRUE);
+            if (ie->hash == hash && ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+                LIST_ENTRY* le;
+                BOOL ignore_entry = FALSE;
+                
+                ExAcquireResourceSharedLite(&fr->nonpaged->children_lock, TRUE);
 
-            le = fr->children.Flink;
-            while (le != &fr->children) {
-                file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
-                
-                if (fr2->index == ie->index) {
-                    if (fr2->deleted || fr2->filepart_uc.Length != us.Length ||
-                        RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) != us.Length) {
-                        ignore_entry = TRUE;
-                        break;
-                    }
-                    break;
-                } else if (fr2->index > ie->index)
-                    break;
-                
-                le = le->Flink;
-            }
-            
-            ExReleaseResourceLite(&fr->nonpaged->children_lock);
-            
-            if (ignore_entry)
-                goto nextitem;
-            
-            if (ie->key.obj_type == TYPE_ROOT_ITEM) {
-                if (subvol) {
-                    *subvol = NULL;
+                le = fr->children.Flink;
+                while (le != &fr->children) {
+                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
                     
-                    le = fr->fcb->Vcb->roots.Flink;
-                    while (le != &fr->fcb->Vcb->roots) {
-                        root* r2 = CONTAINING_RECORD(le, root, list_entry);
-                        
-                        if (r2->id == ie->key.obj_id) {
-                            *subvol = r2;
+                    if (fr2->index == ie->index) {
+                        if (fr2->deleted || fr2->filepart_uc.Length != us.Length ||
+                            RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) != us.Length) {
+                            ignore_entry = TRUE;
                             break;
                         }
+                        break;
+                    } else if (fr2->index > ie->index)
+                        break;
+                    
+                    le = le->Flink;
+                }
+                
+                ExReleaseResourceLite(&fr->nonpaged->children_lock);
+                
+                if (ignore_entry)
+                    goto nextitem;
+                
+                if (ie->key.obj_type == TYPE_ROOT_ITEM) {
+                    if (subvol) {
+                        *subvol = NULL;
                         
-                        le = le->Flink;
+                        le = fr->fcb->Vcb->roots.Flink;
+                        while (le != &fr->fcb->Vcb->roots) {
+                            root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                            
+                            if (r2->id == ie->key.obj_id) {
+                                *subvol = r2;
+                                break;
+                            }
+                            
+                            le = le->Flink;
+                        }
                     }
+                    
+                    if (inode)
+                        *inode = SUBVOL_ROOT_INODE;
+                    
+                    if (type)
+                        *type = BTRFS_TYPE_DIRECTORY;
+                } else {
+                    if (subvol)
+                        *subvol = fr->fcb->subvol;
+                    
+                    if (inode)
+                        *inode = ie->key.obj_id;
+                    
+                    if (type)
+                        *type = ie->type;
                 }
                 
-                if (inode)
-                    *inode = SUBVOL_ROOT_INODE;
-                
-                if (type)
-                    *type = BTRFS_TYPE_DIRECTORY;
-            } else {
-                if (subvol)
-                    *subvol = fr->fcb->subvol;
-                
-                if (inode)
-                    *inode = ie->key.obj_id;
-                
-                if (type)
-                    *type = ie->type;
-            }
-            
-            if (utf8) {
-                utf8->MaximumLength = utf8->Length = ie->utf8.Length;
-                utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
-                if (!utf8->Buffer) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                if (utf8) {
+                    utf8->MaximumLength = utf8->Length = ie->utf8.Length;
+                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
+                    if (!utf8->Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    RtlCopyMemory(utf8->Buffer, ie->utf8.Buffer, ie->utf8.Length);
                 }
                 
-                RtlCopyMemory(utf8->Buffer, ie->utf8.Buffer, ie->utf8.Length);
+                if (pindex)
+                    *pindex = ie->index;
+                
+                Status = STATUS_SUCCESS;
+                goto end;
+            } else if ((!(hash & 0x80000000) && ie->hash > hash) || ((hash & 0x80000000) && ie->hash < hash)) {
+                Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                goto end;
             }
             
-            if (pindex)
-                *pindex = ie->index;
-            
-            Status = STATUS_SUCCESS;
-            goto end;
-        } else if ((!(hash & 0x80000000) && ie->hash > hash) || ((hash & 0x80000000) && ie->hash < hash)) {
-            Status = STATUS_OBJECT_NAME_NOT_FOUND;
-            goto end;
-        }
-        
 nextitem:
-        if (hash & 0x80000000)
-            le = le->Blink;
-        else
-            le = le->Flink;
+            if (hash & 0x80000000)
+                le = le->Blink;
+            else
+                le = le->Flink;
+        }
     }
     
     Status = STATUS_OBJECT_NAME_NOT_FOUND;
