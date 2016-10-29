@@ -1185,13 +1185,14 @@ end:
 
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
-    traverse_ptr tp;
+    traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb* fcb;
     BOOL b;
     UINT8* eadata;
     UINT16 ealen;
     LIST_ENTRY* lastle = NULL;
+    EXTENT_DATA* ed = NULL;
     
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -1270,6 +1271,83 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             fcb->type = BTRFS_TYPE_FILE;
     }
     
+    while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
+        tp = next_tp;
+        
+        if (tp.item->key.obj_id > inode)
+            break;
+        
+        if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            extent* ext;
+            BOOL unique = FALSE;
+            
+            ed = (EXTENT_DATA*)tp.item->data;
+            
+            if (tp.item->size < sizeof(EXTENT_DATA)) {
+                ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    tp.item->size, sizeof(EXTENT_DATA));
+                
+                free_fcb(fcb);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                
+                if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                
+                    free_fcb(fcb);
+                    return STATUS_INTERNAL_ERROR;
+                }
+                
+                if (ed2->address == 0 && ed2->size == 0) // sparse
+                    continue;
+                
+                if (ed2->size != 0 && is_tree_unique(Vcb, tp.tree, Irp))
+                    unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
+            }
+            
+            ext = ExAllocatePoolWithTag(pooltype, sizeof(extent), ALLOC_TAG);
+            if (!ext) {
+                ERR("out of memory\n");
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            ext->data = ExAllocatePoolWithTag(pooltype, tp.item->size, ALLOC_TAG);
+            if (!ext->data) {
+                ERR("out of memory\n");
+                ExFreePool(ext);
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            ext->offset = tp.item->key.offset;
+            RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
+            ext->datalen = tp.item->size;
+            ext->unique = unique;
+            ext->ignore = FALSE;
+            
+            InsertTailList(&fcb->extents, &ext->list_entry);
+        }
+    }
+    
+    if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
+        fcb->Header.AllocationSize.QuadPart = 0;
+        fcb->Header.FileSize.QuadPart = 0;
+        fcb->Header.ValidDataLength.QuadPart = 0;
+    } else {
+        if (ed && ed->type == EXTENT_TYPE_INLINE)
+            fcb->Header.AllocationSize.QuadPart = fcb->inode_item.st_size;
+        else
+            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        
+        fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
+        fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
+    }
+    
     fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE, Irp);
     
     fcb_get_sd(fcb, parent, Irp);
@@ -1329,102 +1407,6 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-    
-    if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
-        fcb->Header.AllocationSize.QuadPart = 0;
-        fcb->Header.FileSize.QuadPart = 0;
-        fcb->Header.ValidDataLength.QuadPart = 0;
-    } else {
-        EXTENT_DATA* ed = NULL;
-        traverse_ptr next_tp;
-        
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_EXTENT_DATA;
-        searchkey.offset = 0;
-        
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            free_fcb(fcb);
-            return Status;
-        }
-        
-        do {
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                extent* ext;
-                BOOL unique = FALSE;
-                
-                ed = (EXTENT_DATA*)tp.item->data;
-                
-                if (tp.item->size < sizeof(EXTENT_DATA)) {
-                    ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                        tp.item->size, sizeof(EXTENT_DATA));
-                    
-                    free_fcb(fcb);
-                    return STATUS_INTERNAL_ERROR;
-                }
-                
-                if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
-                    
-                    if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                        ERR("(%llx,%x,%llx) was %llx bytes, expected at least %llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                            tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    
-                        free_fcb(fcb);
-                        return STATUS_INTERNAL_ERROR;
-                    }
-                    
-                    if (ed2->address == 0 && ed2->size == 0) // sparse
-                        goto nextitem;
-                    
-                    if (ed2->size != 0 && is_tree_unique(Vcb, tp.tree, Irp))
-                        unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
-                }
-                
-                ext = ExAllocatePoolWithTag(pooltype, sizeof(extent), ALLOC_TAG);
-                if (!ext) {
-                    ERR("out of memory\n");
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                ext->data = ExAllocatePoolWithTag(pooltype, tp.item->size, ALLOC_TAG);
-                if (!ext->data) {
-                    ERR("out of memory\n");
-                    ExFreePool(ext);
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                ext->offset = tp.item->key.offset;
-                RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
-                ext->datalen = tp.item->size;
-                ext->unique = unique;
-                ext->ignore = FALSE;
-                
-                InsertTailList(&fcb->extents, &ext->list_entry);
-            }
-            
-nextitem:
-            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-         
-            if (b) {
-                tp = next_tp;
-                
-                if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                    break;
-            }
-        } while (b);
-        
-        if (ed && ed->type == EXTENT_TYPE_INLINE)
-            fcb->Header.AllocationSize.QuadPart = fcb->inode_item.st_size;
-        else
-            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
-        
-        fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
-        fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
-    }
     
     // FIXME - only do if st_nlink > 1?
     
