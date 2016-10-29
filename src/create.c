@@ -1269,15 +1269,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             fcb->type = BTRFS_TYPE_FILE;
     }
     
-    // FIXME - only do hardlink things if st_nlink > 1?
-    
     while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
         tp = next_tp;
         
         if (tp.item->key.obj_id > inode)
             break;
         
-        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+        if (fcb->inode_item.st_nlink > 1 && tp.item->key.obj_type == TYPE_INODE_REF) {
             ULONG len;
             INODE_REF* ir;
             
@@ -1342,7 +1340,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 len -= sizeof(INODE_REF) - 1 + ir->n;
                 ir = (INODE_REF*)&ir->name[ir->n];
             }
-        } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+        } else if (fcb->inode_item.st_nlink > 1 && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
             ULONG len;
             INODE_EXTREF* ier;
             
@@ -2102,7 +2100,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ULONG defda;
     file_ref* fileref;
-    hardlink* hl;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2292,42 +2289,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         
         fcb->ea_changed = TRUE;
     }
-    
-    hl = ExAllocatePoolWithTag(pool_type, sizeof(hardlink), ALLOC_TAG);
-    if (!hl) {
-        ERR("out of memory\n");
-        free_fcb(fcb);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    hl->parent = parfileref->fcb->inode;
-    hl->index = dirpos;
-    
-    hl->utf8.Length = hl->utf8.MaximumLength = utf8len;
-    hl->utf8.Buffer = ExAllocatePoolWithTag(pool_type, utf8len, ALLOC_TAG);
-    
-    if (!hl->utf8.Buffer) {
-        ERR("out of memory\n");
-        ExFreePool(hl);
-        free_fcb(fcb);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    RtlCopyMemory(hl->utf8.Buffer, utf8, utf8len);
-    
-    hl->name.Length = hl->name.MaximumLength = fpus->Length;
-    hl->name.Buffer = ExAllocatePoolWithTag(pool_type, fpus->Length, ALLOC_TAG);
-    
-    if (!hl->name.Buffer) {
-        ERR("out of memory\n");
-        ExFreePool(hl->utf8.Buffer);
-        ExFreePool(hl);
-        free_fcb(fcb);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(hl->name.Buffer, fpus->Buffer, fpus->Length);
-    
-    InsertTailList(&fcb->hardlinks, &hl->list_entry);
     
     fileref = create_fileref();
     if (!fileref) {
