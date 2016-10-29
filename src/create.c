@@ -1189,8 +1189,6 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     NTSTATUS Status;
     fcb* fcb;
     BOOL b;
-    UINT8* eadata;
-    UINT16 ealen;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     
@@ -1277,7 +1275,53 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         if (tp.item->key.obj_id > inode)
             break;
         
-        if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+        if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+            if (tp.item->size < sizeof(DIR_ITEM)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+                continue;
+            }
+            
+            if (tp.item->key.offset == EA_REPARSE_HASH) {
+                UINT8* xattrdata;
+                UINT16 xattrlen;
+                
+                if (extract_xattr(tp.item->data, tp.item->size, EA_REPARSE, &xattrdata, &xattrlen)) {
+                    fcb->reparse_xattr.Buffer = (char*)xattrdata;
+                    fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
+                }
+            } else if (tp.item->key.offset == EA_EA_HASH) {
+                UINT8* eadata;
+                UINT16 ealen;
+                
+                if (extract_xattr(tp.item->data, tp.item->size, EA_EA, &eadata, &ealen)) {
+                    ULONG offset;
+                    
+                    Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, ealen, &offset);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                        ExFreePool(eadata);
+                    } else {
+                        FILE_FULL_EA_INFORMATION* eainfo;
+                        fcb->ea_xattr.Buffer = (char*)eadata;
+                        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
+                        
+                        fcb->ealen = 4;
+                        
+                        // calculate ealen
+                        eainfo = (FILE_FULL_EA_INFORMATION*)eadata;
+                        do {
+                            fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+                            
+                            if (eainfo->NextEntryOffset == 0)
+                                break;
+                            
+                            eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                        } while (TRUE);
+                    }
+                }
+            }
+        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
             extent* ext;
             BOOL unique = FALSE;
             
@@ -1352,50 +1396,12 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     
     fcb_get_sd(fcb, parent, Irp);
     
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-        UINT8* xattrdata;
-        UINT16 xattrlen;
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
+        fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
-        if (get_xattr(Vcb, subvol, inode, EA_REPARSE, EA_REPARSE_HASH, &xattrdata, &xattrlen, Irp)) {
-            fcb->reparse_xattr.Buffer = (char*)xattrdata;
-            fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
-        } else {
-            fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
-            
-            if (!Vcb->readonly && !(subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
-                fcb->atts_changed = TRUE;
-                mark_fcb_dirty(fcb);
-            }
-        }
-    }
-    
-    fcb->ealen = 0;
-    
-    if (get_xattr(Vcb, subvol, inode, EA_EA, EA_EA_HASH, &eadata, &ealen, Irp)) {
-        ULONG offset;
-        
-        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, ealen, &offset);
-        
-        if (!NT_SUCCESS(Status)) {
-            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
-            ExFreePool(eadata);
-        } else {
-            FILE_FULL_EA_INFORMATION* eainfo;
-            fcb->ea_xattr.Buffer = (char*)eadata;
-            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
-            
-            fcb->ealen = 4;
-            
-            // calculate ealen
-            eainfo = (FILE_FULL_EA_INFORMATION*)eadata;
-            do {
-                fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
-                
-                if (eainfo->NextEntryOffset == 0)
-                    break;
-                
-                eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
-            } while (TRUE);
+        if (!Vcb->readonly && !(subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+            fcb->atts_changed = TRUE;
+            mark_fcb_dirty(fcb);
         }
     }
     

@@ -334,46 +334,18 @@ static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
     return TRUE;
 }
 
-BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
-    DIR_ITEM* xa;
-    ULONG size, xasize;
-    NTSTATUS Status;
-    
-    TRACE("(%p, %llx, %llx, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
-    searchkey.offset = crc32;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
-    }
-    
-    if (keycmp(tp.item->key, searchkey)) {
-        TRACE("could not find item (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return FALSE;
-    }
-    
-    if (tp.item->size < sizeof(DIR_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-        return FALSE;
-    }
-    
-    xa = (DIR_ITEM*)tp.item->data;
-    size = tp.item->size;
+BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen) {
+    DIR_ITEM* xa = (DIR_ITEM*)item;
+    USHORT xasize;
     
     while (TRUE) {
         if (size < sizeof(DIR_ITEM) || size < (sizeof(DIR_ITEM) - 1 + xa->m + xa->n)) {
-            WARN("(%llx,%x,%llx) is truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            WARN("DIR_ITEM is truncated\n");
             return FALSE;
         }
         
         if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
-            TRACE("found xattr %s in (%llx,%x,%llx)\n", name, searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            TRACE("found xattr %s\n", name);
             
             *datalen = xa->m;
             
@@ -400,9 +372,39 @@ BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* 
             break;
     }
     
-    TRACE("xattr %s not found in (%llx,%x,%llx)\n", name, searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+    TRACE("xattr %s not found\n", name);
     
     return FALSE;
+}
+
+BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    TRACE("(%p, %llx, %llx, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
+    
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.offset = crc32;
+    
+    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    if (keycmp(tp.item->key, searchkey)) {
+        TRACE("could not find item (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return FALSE;
+    }
+    
+    if (tp.item->size < sizeof(DIR_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        return FALSE;
+    }
+    
+    return extract_xattr(tp.item->data, tp.item->size, name, data, datalen);
 }
 
 static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
