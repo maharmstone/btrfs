@@ -2382,6 +2382,32 @@ exit2:
     return Status;
 }
 
+BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts) {
+    if (len > 2 && val[0] == '0' && val[1] == 'x') {
+        int i;
+        ULONG dosnum = 0;
+
+        for (i = 2; i < len; i++) {
+            dosnum *= 0x10;
+            
+            if (val[i] >= '0' && val[i] <= '9')
+                dosnum |= val[i] - '0';
+            else if (val[i] >= 'a' && val[i] <= 'f')
+                dosnum |= val[i] + 10 - 'a';
+            else if (val[i] >= 'A' && val[i] <= 'F')
+                dosnum |= val[i] + 10 - 'a';
+        }
+        
+        TRACE("DOSATTRIB: %08x\n", dosnum);
+        
+        *atts = dosnum;
+        
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp) {
     ULONG att;
     char* eaval;
@@ -2390,33 +2416,17 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     // ii can be NULL
     
     if (!ignore_xa && get_xattr(Vcb, r, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8**)&eaval, &ealen, Irp)) {
-        if (ealen > 2) {
-            if (eaval[0] == '0' && eaval[1] == 'x') {
-                int i;
-                ULONG dosnum = 0;
-
-                for (i = 2; i < ealen; i++) {
-                    dosnum *= 0x10;
-                    
-                    if (eaval[i] >= '0' && eaval[i] <= '9')
-                        dosnum |= eaval[i] - '0';
-                    else if (eaval[i] >= 'a' && eaval[i] <= 'f')
-                        dosnum |= eaval[i] + 10 - 'a';
-                    else if (eaval[i] >= 'A' && eaval[i] <= 'F')
-                        dosnum |= eaval[i] + 10 - 'a';
-                }
-                
-                TRACE("DOSATTRIB: %08x\n", dosnum);
-
-                ExFreePool(eaval);
-                
-                if (type == BTRFS_TYPE_DIRECTORY)
-                    dosnum |= FILE_ATTRIBUTE_DIRECTORY;
-                else if (type == BTRFS_TYPE_SYMLINK)
-                    dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
-                
-                return dosnum;
-            }
+        ULONG dosnum = 0;
+        
+        if (get_file_attributes_from_xattr(eaval, ealen, &dosnum)) {
+            ExFreePool(eaval);
+            
+            if (type == BTRFS_TYPE_DIRECTORY)
+                dosnum |= FILE_ATTRIBUTE_DIRECTORY;
+            else if (type == BTRFS_TYPE_SYMLINK)
+                dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
+            
+            return dosnum;
         }
         
         ExFreePool(eaval);

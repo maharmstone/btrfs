@@ -675,6 +675,7 @@ static UINT64 __inline make_file_id(root* r, UINT64 inode) {
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment );
+BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);

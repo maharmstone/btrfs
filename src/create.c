@@ -1188,7 +1188,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb* fcb;
-    BOOL b;
+    BOOL b, atts_set = FALSE;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     
@@ -1320,6 +1320,22 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         } while (TRUE);
                     }
                 }
+            } else if (tp.item->key.offset == EA_DOSATTRIB_HASH) {
+                UINT8* xattrdata;
+                UINT16 xattrlen;
+                
+                if (extract_xattr(tp.item->data, tp.item->size, EA_DOSATTRIB, &xattrdata, &xattrlen)) {
+                    if (get_file_attributes_from_xattr((char*)xattrdata, xattrlen, &fcb->atts)) {
+                        atts_set = TRUE;
+                        
+                        if (fcb->type == BTRFS_TYPE_DIRECTORY)
+                            fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
+                        else if (fcb->type == BTRFS_TYPE_SYMLINK)
+                            fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
+                    }
+                    
+                    ExFreePool(xattrdata);
+                }
             }
         } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
             extent* ext;
@@ -1392,7 +1408,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
     }
     
-    fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', FALSE, Irp);
+    if (!atts_set)
+        fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', TRUE, Irp);
     
     fcb_get_sd(fcb, parent, Irp);
     
