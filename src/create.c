@@ -306,9 +306,23 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             ie->hash = calc_crc32c(0xfffffffe, (UINT8*)ie->filepart_uc.Buffer, (ULONG)ie->filepart_uc.Length);
             inserted = FALSE;
             
-            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
-                le = fcb->index_list.Flink; // FIXME - start at previous valid entry
-            else
+            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24]) {
+                UINT8 c = (ie->hash & 0xff000000) >> 24;
+                
+                le = fcb->index_list.Flink;
+                
+                if (c > 0) {
+                    c--;
+                    do {
+                        if (fcb->index_ptrs[c]) {
+                            le = fcb->index_ptrs[c];
+                            break;
+                        }
+                            
+                        c--;
+                    } while (c > 0);
+                }
+            } else
                 le = fcb->index_ptrs[(ie->hash & 0xff000000) >> 24];
             
             while (le != &fcb->index_list) {
