@@ -1222,7 +1222,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb* fcb;
-    BOOL atts_set = FALSE, sd_set = FALSE;
+    BOOL atts_set = FALSE, sd_set = FALSE, no_data;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     
@@ -1303,10 +1303,15 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             fcb->type = BTRFS_TYPE_FILE;
     }
     
+    no_data = fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK);
+    
     while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
         tp = next_tp;
         
         if (tp.item->key.obj_id > inode)
+            break;
+        
+        if ((no_data && tp.item->key.obj_type > TYPE_XATTR_ITEM) || tp.item->key.obj_type > TYPE_EXTENT_DATA)
             break;
         
         if (fcb->inode_item.st_nlink > 1 && tp.item->key.obj_type == TYPE_INODE_REF) {
@@ -1567,7 +1572,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
-    if (fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)) {
+    if (no_data) {
         fcb->Header.AllocationSize.QuadPart = 0;
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
