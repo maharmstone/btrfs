@@ -865,7 +865,8 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, PIRP Irp);
+BOOL get_sd_from_xattr(fcb* fcb, ULONG buflen);
+void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
 // UINT32 STDCALL get_uid();
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 UINT32 sid_to_uid(PSID sid);

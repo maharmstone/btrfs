@@ -1188,7 +1188,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb* fcb;
-    BOOL b, atts_set = FALSE;
+    BOOL b, atts_set = FALSE, sd_set = FALSE;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     
@@ -1336,6 +1336,15 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     
                     ExFreePool(xattrdata);
                 }
+            } else if (tp.item->key.offset == EA_NTACL_HASH) {
+                UINT16 buflen;
+                
+                if (extract_xattr(tp.item->data, tp.item->size, EA_NTACL, (UINT8**)&fcb->sd, &buflen)) {
+                    if (get_sd_from_xattr(fcb, buflen)) {
+                        sd_set = TRUE;
+                    } else
+                        ExFreePool(fcb->sd);
+                }
             }
         } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
             extent* ext;
@@ -1411,7 +1420,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     if (!atts_set)
         fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', TRUE, Irp);
     
-    fcb_get_sd(fcb, parent, Irp);
+    if (!sd_set)
+        fcb_get_sd(fcb, parent, FALSE, Irp);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;

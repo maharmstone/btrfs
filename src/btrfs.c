@@ -3991,7 +3991,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (tp.item->size > 0)
         RtlCopyMemory(&root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
     
-    fcb_get_sd(root_fcb, NULL, Irp);
+    fcb_get_sd(root_fcb, NULL, TRUE, Irp);
     
     root_fcb->atts = get_file_attributes(Vcb, &root_fcb->inode_item, root_fcb->subvol, root_fcb->inode, root_fcb->type, FALSE, FALSE, Irp);
     
