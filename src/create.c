@@ -1188,7 +1188,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb* fcb;
-    BOOL b, atts_set = FALSE, sd_set = FALSE;
+    BOOL atts_set = FALSE, sd_set = FALSE;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     
@@ -1269,13 +1269,145 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             fcb->type = BTRFS_TYPE_FILE;
     }
     
+    // FIXME - only do hardlink things if st_nlink > 1?
+    
     while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
         tp = next_tp;
         
         if (tp.item->key.obj_id > inode)
             break;
         
-        if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+            ULONG len;
+            INODE_REF* ir;
+            
+            len = tp.item->size;
+            ir = (INODE_REF*)tp.item->data;
+            
+            while (len >= sizeof(INODE_REF) - 1) {
+                hardlink* hl;
+                ULONG stringlen;
+                
+                hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
+                if (!hl) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                hl->parent = tp.item->key.offset;
+                hl->index = ir->index;
+                
+                hl->utf8.Length = hl->utf8.MaximumLength = ir->n;
+                
+                if (hl->utf8.Length > 0) {
+                    hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
+                    RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
+                }
+                
+                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    ExFreePool(hl);
+                    free_fcb(fcb);
+                    return Status;
+                }
+                
+                hl->name.Length = hl->name.MaximumLength = stringlen;
+                
+                if (stringlen == 0)
+                    hl->name.Buffer = NULL;
+                else {
+                    hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
+                    
+                    if (!hl->name.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ExFreePool(hl->name.Buffer);
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                }
+                
+                InsertTailList(&fcb->hardlinks, &hl->list_entry);
+                
+                len -= sizeof(INODE_REF) - 1 + ir->n;
+                ir = (INODE_REF*)&ir->name[ir->n];
+            }
+        } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+            ULONG len;
+            INODE_EXTREF* ier;
+            
+            len = tp.item->size;
+            ier = (INODE_EXTREF*)tp.item->data;
+            
+            while (len >= sizeof(INODE_EXTREF) - 1) {
+                hardlink* hl;
+                ULONG stringlen;
+                
+                hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
+                if (!hl) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                hl->parent = ier->dir;
+                hl->index = ier->index;
+                
+                hl->utf8.Length = hl->utf8.MaximumLength = ier->n;
+                
+                if (hl->utf8.Length > 0) {
+                    hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
+                    RtlCopyMemory(hl->utf8.Buffer, ier->name, ier->n);
+                }
+                
+                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    ExFreePool(hl);
+                    free_fcb(fcb);
+                    return Status;
+                }
+                
+                hl->name.Length = hl->name.MaximumLength = stringlen;
+                
+                if (stringlen == 0)
+                    hl->name.Buffer = NULL;
+                else {
+                    hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
+                    
+                    if (!hl->name.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ExFreePool(hl->name.Buffer);
+                        ExFreePool(hl);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                }
+                
+                InsertTailList(&fcb->hardlinks, &hl->list_entry);
+                
+                len -= sizeof(INODE_EXTREF) - 1 + ier->n;
+                ier = (INODE_EXTREF*)&ier->name[ier->n];
+            }
+        } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
             if (tp.item->size < sizeof(DIR_ITEM)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
                 continue;
@@ -1440,166 +1572,6 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-    
-    // FIXME - only do if st_nlink > 1?
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_REF;
-    searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        free_fcb(fcb);
-        return Status;
-    }
-    
-    do {
-        traverse_ptr next_tp;
-        
-        if (tp.item->key.obj_id == searchkey.obj_id) {
-            if (tp.item->key.obj_type == TYPE_INODE_REF) {
-                ULONG len;
-                INODE_REF* ir;
-                
-                len = tp.item->size;
-                ir = (INODE_REF*)tp.item->data;
-                
-                while (len >= sizeof(INODE_REF) - 1) {
-                    hardlink* hl;
-                    ULONG stringlen;
-                    
-                    hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
-                    if (!hl) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    hl->parent = tp.item->key.offset;
-                    hl->index = ir->index;
-                    
-                    hl->utf8.Length = hl->utf8.MaximumLength = ir->n;
-                    
-                    if (hl->utf8.Length > 0) {
-                        hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
-                        RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
-                    }
-                    
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        ExFreePool(hl);
-                        free_fcb(fcb);
-                        return Status;
-                    }
-                    
-                    hl->name.Length = hl->name.MaximumLength = stringlen;
-                    
-                    if (stringlen == 0)
-                        hl->name.Buffer = NULL;
-                    else {
-                        hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
-                        
-                        if (!hl->name.Buffer) {
-                            ERR("out of memory\n");
-                            ExFreePool(hl);
-                            free_fcb(fcb);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            ExFreePool(hl->name.Buffer);
-                            ExFreePool(hl);
-                            free_fcb(fcb);
-                            return Status;
-                        }
-                    }
-                    
-                    InsertTailList(&fcb->hardlinks, &hl->list_entry);
-                    
-                    len -= sizeof(INODE_REF) - 1 + ir->n;
-                    ir = (INODE_REF*)&ir->name[ir->n];
-                }
-            } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                ULONG len;
-                INODE_EXTREF* ier;
-                
-                len = tp.item->size;
-                ier = (INODE_EXTREF*)tp.item->data;
-                
-                while (len >= sizeof(INODE_EXTREF) - 1) {
-                    hardlink* hl;
-                    ULONG stringlen;
-                    
-                    hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
-                    if (!hl) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    hl->parent = ier->dir;
-                    hl->index = ier->index;
-                    
-                    hl->utf8.Length = hl->utf8.MaximumLength = ier->n;
-                    
-                    if (hl->utf8.Length > 0) {
-                        hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
-                        RtlCopyMemory(hl->utf8.Buffer, ier->name, ier->n);
-                    }
-                    
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        ExFreePool(hl);
-                        free_fcb(fcb);
-                        return Status;
-                    }
-                    
-                    hl->name.Length = hl->name.MaximumLength = stringlen;
-                    
-                    if (stringlen == 0)
-                        hl->name.Buffer = NULL;
-                    else {
-                        hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
-                        
-                        if (!hl->name.Buffer) {
-                            ERR("out of memory\n");
-                            ExFreePool(hl);
-                            free_fcb(fcb);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            ExFreePool(hl->name.Buffer);
-                            ExFreePool(hl);
-                            free_fcb(fcb);
-                            return Status;
-                        }
-                    }
-                    
-                    InsertTailList(&fcb->hardlinks, &hl->list_entry);
-                    
-                    len -= sizeof(INODE_EXTREF) - 1 + ier->n;
-                    ier = (INODE_EXTREF*)&ier->name[ier->n];
-                }
-            }
-        }
-        
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
-        
-        if (b) {
-            tp = next_tp;
-            
-            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > TYPE_INODE_EXTREF))
-                break;
-        }
-    } while (b);
 
     *pfcb = fcb;
     return STATUS_SUCCESS;
