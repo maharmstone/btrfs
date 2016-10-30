@@ -189,8 +189,17 @@ static void ShowError(HWND hwnd, ULONG err) {
     LocalFree(buf);
 }
 
+typedef struct {
+    UINT64 dev_id;
+    ULONG namelen;
+    WCHAR* name;
+} dev;
+
 void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
     UINT8 i, j;
+    UINT64 num_devs, k;
+    btrfs_device* bd;
+    dev* devs = NULL;
     btrfs_usage* bue;
     
     static const UINT64 types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
@@ -199,6 +208,36 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
     static const ULONG dupstrings[] = { IDS_SINGLE, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID10, IDS_RAID5, IDS_RAID6 };
 
     s[0] = 0;
+    
+    num_devs = 0;
+    bd = devices;
+    
+    while (TRUE) {
+        num_devs++;
+        
+        if (bd->next_entry > 0)
+            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+        else
+            break;
+    }
+    
+    devs = (dev*)malloc(sizeof(dev) * num_devs);
+    
+    bd = devices;
+    k = 0;
+    
+    while (TRUE) {
+        devs[k].dev_id = bd->dev_id;
+        devs[k].namelen = bd->namelen;
+        devs[k].name = bd->name;
+        
+        k++;
+        
+        if (bd->next_entry > 0)
+            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+        else
+            break;
+    }
     
     // FIXME - show header
     // FIXME - show unalloc at end
@@ -215,27 +254,73 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
 
                     if (!LoadStringW(module, typestrings[i], typestring, sizeof(typestring) / sizeof(WCHAR))) {
                         ShowError(hwndDlg, GetLastError());
-                        return;
+                        goto end;
                     }
                     
                     if (!LoadStringW(module, dupstrings[j], dupstring, sizeof(dupstring) / sizeof(WCHAR))) {
                         ShowError(hwndDlg, GetLastError());
-                        return;
+                        goto end;
                     }
                     
                     format_size(bue->size, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
                     format_size(bue->used, usedstring, sizeof(usedstring) / sizeof(WCHAR), FALSE);
                     
                     if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), typestring, dupstring, sizestring, usedstring) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        return;
+                        goto end;
 
                     if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        return;
+                        goto end;
                     
                     if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        return;
+                        goto end;
                     
-                    // FIXME - show devices
+                    for (k = 0; k < bue->num_devices; k++) {
+                        UINT64 l;
+                        BOOL found = FALSE;
+                        
+                        format_size(bue->devices[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
+                        
+                        for (l = 0; l < num_devs; l++) {
+                            if (devs[l].dev_id == bue->devices[k].dev_id) {
+                                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), L"%.*s\t%s", devs[l].namelen / sizeof(WCHAR), devs[l].name, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                    goto end;
+
+                                if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                    goto end;
+                                
+                                if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                    goto end;
+                                
+                                found = TRUE;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            if (!LoadStringW(module, IDS_UNKNOWN_DEVICE, typestring, sizeof(typestring) / sizeof(WCHAR))) {
+                                ShowError(hwndDlg, GetLastError());
+                                goto end;
+                            }
+                            
+                            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), typestring, bue->devices[k].dev_id) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                goto end;
+                            
+                            if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                goto end;
+                            
+                            if (StringCchCatW(s, size, L"\t") == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                goto end;
+                            
+                            if (StringCchCatW(s, size, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                goto end;
+                            
+                            if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                goto end;
+                        }
+                    }
+
+                    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
                     
                     break;
                 }
@@ -247,6 +332,10 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
             }
         }
     }
+    
+end:
+    if (devs)
+        free(devs);
 }
 
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {

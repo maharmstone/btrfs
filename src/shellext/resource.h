@@ -47,6 +47,7 @@
 #define IDS_USAGE_METADATA              140
 #define IDS_USAGE_SYSTEM                141
 #define IDS_USAGE_UNALLOC               142
+#define IDS_UNKNOWN_DEVICE              143
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

@@ -261,6 +261,7 @@ BEGIN
     IDS_USAGE_METADATA      "Metadata, %s: size: %s, used: %s"
     IDS_USAGE_SYSTEM        "System, %s: size: %s, used: %s"
     IDS_USAGE_UNALLOC       "Unallocated:"
+    IDS_UNKNOWN_DEVICE      "(unknown device %llu)"
 END
 
 #endif    // English (U.K.) resources
