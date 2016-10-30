@@ -24,10 +24,12 @@
 static const GUID CLSID_ShellBtrfsIconHandler = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf0 } };
 static const GUID CLSID_ShellBtrfsContextMenu = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf1 } };
 static const GUID CLSID_ShellBtrfsPropSheet = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf2 } };
+static const GUID CLSID_ShellBtrfsVolPropSheet = { 0x2690b74f, 0xf353, 0x422d, { 0xbb, 0x12, 0x40, 0x15, 0x81, 0xee, 0xf8, 0xf3 } };
 
 #define COM_DESCRIPTION_ICON_HANDLER L"WinBtrfs shell extension (icon handler)"
 #define COM_DESCRIPTION_CONTEXT_MENU L"WinBtrfs shell extension (context menu)"
 #define COM_DESCRIPTION_PROP_SHEET L"WinBtrfs shell extension (property sheet)"
+#define COM_DESCRIPTION_VOL_PROP_SHEET L"WinBtrfs shell extension (volume property sheet)"
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
 HMODULE module;
@@ -66,6 +68,15 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
             return E_OUTOFMEMORY;
         else {
             fact->type = FactoryPropSheet;
+            
+            return fact->QueryInterface(riid, ppv);
+        }
+    } else if (rclsid == CLSID_ShellBtrfsVolPropSheet) {
+        Factory* fact = new Factory;
+        if (!fact)
+            return E_OUTOFMEMORY;
+        else {
+            fact->type = FactoryVolPropSheet;
             
             return fact->QueryInterface(riid, ppv);
         }
@@ -298,6 +309,9 @@ STDAPI DllRegisterServer(void) {
     if (!register_clsid(CLSID_ShellBtrfsPropSheet, COM_DESCRIPTION_PROP_SHEET))
         return E_FAIL;
     
+    if (!register_clsid(CLSID_ShellBtrfsVolPropSheet, COM_DESCRIPTION_VOL_PROP_SHEET))
+        return E_FAIL;
+    
     if (!reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME)) {
         MessageBoxW(0, L"Failed to register icon overlay.", NULL, MB_ICONERROR);
         return E_FAIL;
@@ -323,15 +337,24 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
     }
     
+    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsVolPropSheet, L"Drive", ICON_OVERLAY_NAME)) {
+        MessageBoxW(0, L"Failed to register volume property sheet handler.", NULL, MB_ICONERROR);
+        return E_FAIL;
+    }
+    
     return S_OK;
 }
 
 STDAPI DllUnregisterServer(void) {
     unreg_prop_sheet_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
+    unreg_prop_sheet_handler(L"Drive", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
     unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
     unreg_icon_overlay(ICON_OVERLAY_NAME);
+    
+    if (!unregister_clsid(CLSID_ShellBtrfsVolPropSheet))
+        return E_FAIL;
     
     if (!unregister_clsid(CLSID_ShellBtrfsPropSheet))
         return E_FAIL;

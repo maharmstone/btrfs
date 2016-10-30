@@ -415,6 +415,10 @@
 				RelativePath=".\src\shellext\resource.h"
 				>
 			</File>
+			<File
+				RelativePath=".\src\shellext\volpropsheet.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Source Files"
@@ -437,6 +441,10 @@
 			</File>
 			<File
 				RelativePath=".\src\shellext\propsheet.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\src\shellext\volpropsheet.cpp"
 				>
 			</File>
 		</Filter>

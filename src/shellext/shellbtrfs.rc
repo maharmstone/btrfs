@@ -154,6 +154,14 @@ BEGIN
     LTEXT           "(blank)",IDC_SIZE_LZO,63,46,142,8
 END
 
+IDD_VOL_PROP_SHEET DIALOGEX 0, 0, 235, 245
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
+CAPTION "s"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    EDITTEXT        IDC_USAGE_BOX,7,7,221,231,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -177,6 +185,14 @@ BEGIN
         RIGHTMARGIN, 205
         TOPMARGIN, 7
         BOTTOMMARGIN, 78
+    END
+
+    IDD_VOL_PROP_SHEET, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 238
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -231,7 +247,20 @@ END
 STRINGTABLE 
 BEGIN
     IDS_INODE_BLOCK_SIMPLE  "Block device"
+    IDS_VOL_PROP_SHEET_TITLE "Btrfs usage"
     IDS_SIZE_LARGE          "%s (%s)"
+    IDS_SINGLE              "single"
+    IDS_DUP                 "DUP"
+    IDS_RAID0               "RAID0"
+    IDS_RAID1               "RAID1"
+    IDS_RAID10              "RAID10"
+    IDS_RAID5               "RAID5"
+    IDS_RAID6               "RAID6"
+    IDS_USAGE_DATA          "Data, %s: size: %s, used: %s"
+    IDS_USAGE_MIXED         "Data / metadata, %s: size: %s, used: %s"
+    IDS_USAGE_METADATA      "Metadata, %s: size: %s, used: %s"
+    IDS_USAGE_SYSTEM        "System, %s: size: %s, used: %s"
+    IDS_USAGE_UNALLOC       "Unallocated:"
 END
 
 #endif    // English (U.K.) resources

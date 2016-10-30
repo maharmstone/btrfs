@@ -15,25 +15,35 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#include <shlobj.h>
+#include "../btrfsioctl.h"
+
 extern LONG objs_loaded;
 
-typedef enum {
-    FactoryUnknown,
-    FactoryIconHandler,
-    FactoryContextMenu,
-    FactoryPropSheet,
-    FactoryVolPropSheet
-} factory_type;
-
-class Factory : public IClassFactory {
+class BtrfsVolPropSheet : public IShellExtInit, IShellPropSheetExt {
 public:
-    Factory() {
+    BtrfsVolPropSheet() {
         refcount = 0;
-        type = FactoryUnknown;
+        ignore = TRUE;
+        stgm_set = FALSE;
+        devices = NULL;
+        usage = NULL;
+        
         InterlockedIncrement(&objs_loaded);
     }
 
-    virtual ~Factory() {
+    virtual ~BtrfsVolPropSheet() {
+        if (stgm_set) {
+            GlobalUnlock(stgm.hGlobal);
+            ReleaseStgMedium(&stgm);
+        }
+        
+        if (devices)
+            free(devices);
+        
+        if (usage)
+            free(usage);
+        
         InterlockedDecrement(&objs_loaded);
     }
 
@@ -53,14 +63,23 @@ public:
         
         return rc;
     }
-
-    // IClassFactory
     
-    virtual HRESULT __stdcall CreateInstance(IUnknown* pUnknownOuter, const IID& iid, void** ppv);
-    virtual HRESULT __stdcall LockServer(BOOL bLock);
+    // IShellExtInit
     
-    factory_type type;
-
+    virtual HRESULT __stdcall Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID);
+    
+    // IShellPropSheetExt
+    
+    virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
+    virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
+    
+    void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size);
+    
 private:
     LONG refcount;
+    BOOL ignore;
+    STGMEDIUM stgm;
+    BOOL stgm_set;
+    btrfs_device* devices;
+    btrfs_usage* usage;
 };

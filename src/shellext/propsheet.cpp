@@ -51,7 +51,7 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 extern HMODULE module;
 
 extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
-static void format_size(UINT64 size, WCHAR* s, ULONG len);
+void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
 static void ShowError(HWND hwnd, ULONG err);
 
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
@@ -486,7 +486,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     WCHAR size_on_disk[1024], s[1024], old_text[1024];
     
-    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR));
+    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR), TRUE);
     
     if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), size_format, size_on_disk) == STRSAFE_E_INSUFFICIENT_BUFFER) {
         ShowError(hwndDlg, ERROR_INSUFFICIENT_BUFFER);
@@ -537,7 +537,7 @@ void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
     ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
     
     for (i = 0; i < 4; i++) {
-        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR));
+        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR), TRUE);
         
         GetDlgItemTextW(hDlg, items[i], old_text, sizeof(old_text) / sizeof(WCHAR));
         
@@ -884,7 +884,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
     return FALSE;
 }
 
-static void format_size(UINT64 size, WCHAR* s, ULONG len) {
+void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
     WCHAR nb[255], nb2[255], t[255], bytes[255];
     WCHAR kb[255];
     ULONG sr;
@@ -938,14 +938,16 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
         return;
     }
     
-    if (!LoadStringW(module, IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
-        ShowError(NULL, GetLastError());
-        return;
-    }
-    
-    if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-        return;
+    if (show_bytes) {
+        if (!LoadStringW(module, IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(NULL, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            return;
+        }
     }
     
     if (size >= 1152921504606846976) {
@@ -973,19 +975,26 @@ static void format_size(UINT64 size, WCHAR* s, ULONG len) {
         return;
     }
     
-    if (StringCchPrintfW(kb, sizeof(kb) / sizeof(WCHAR), t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-        return;
-    }
-    
-    if (!LoadStringW(module, IDS_SIZE_LARGE, t, sizeof(t) / sizeof(WCHAR))) {
-        ShowError(NULL, GetLastError());
-        return;
-    }
-    
-    if (StringCchPrintfW(s, len, t, kb, bytes) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-        ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-        return;
+    if (show_bytes) {
+        if (StringCchPrintfW(kb, sizeof(kb) / sizeof(WCHAR), t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            return;
+        }
+        
+        if (!LoadStringW(module, IDS_SIZE_LARGE, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(NULL, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(s, len, t, kb, bytes) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            return;
+        }
+    } else {
+        if (StringCchPrintfW(s, len, t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            return;
+        }
     }
 }
 
