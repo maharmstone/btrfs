@@ -1310,6 +1310,140 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length) {
+    btrfs_usage* usage = (btrfs_usage*)data;
+    btrfs_usage* lastbue = NULL;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    
+    if (length < sizeof(btrfs_usage))
+        return STATUS_BUFFER_OVERFLOW;
+    
+    length -= offsetof(btrfs_usage, devices);
+    
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+    
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        BOOL addnew = FALSE;
+        
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        if (!lastbue) // first entry
+            addnew = TRUE;
+        else {
+            btrfs_usage* bue = usage;
+            
+            addnew = TRUE;
+            
+            while (TRUE) {
+                if (bue->type == c->chunk_item->type) {
+                    addnew = FALSE;
+                    break;
+                }
+                
+                if (bue->next_entry == 0)
+                    break;
+                else
+                    bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+            }
+        }
+        
+        if (addnew) {
+            btrfs_usage* bue;
+            LIST_ENTRY* le2;
+            UINT64 factor;
+            
+            if (!lastbue) {
+                bue = usage;
+            } else {
+                if (length < offsetof(btrfs_usage, devices)) {
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    goto end;
+                }
+                
+                length -= offsetof(btrfs_usage, devices);
+                
+                lastbue->next_entry = offsetof(btrfs_usage, devices) + (lastbue->num_devices * sizeof(btrfs_usage_device));
+                
+                bue = (btrfs_usage*)((UINT8*)lastbue + lastbue->next_entry);
+            }
+            
+            bue->next_entry = 0;
+            bue->type = c->chunk_item->type;
+            bue->size = 0;
+            bue->used = 0;
+            bue->num_devices = 0;
+            
+            if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+                factor = c->chunk_item->num_stripes;
+            else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+                factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+            else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+                factor = c->chunk_item->num_stripes - 1;
+            else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+                factor = c->chunk_item->num_stripes - 2;
+            else
+                factor = 1;
+            
+            le2 = le;
+            while (le2 != &Vcb->chunks) {
+                chunk* c2 = CONTAINING_RECORD(le2, chunk, list_entry);
+                
+                if (c2->chunk_item->type == c->chunk_item->type) {
+                    UINT16 i;
+                    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                    UINT64 stripesize;
+                    
+                    bue->size += c2->chunk_item->size;
+                    bue->used += c2->used;
+                    
+                    stripesize = c2->chunk_item->size / factor;
+                    
+                    for (i = 0; i < c2->chunk_item->num_stripes; i++) {
+                        UINT64 j;
+                        BOOL found = FALSE;
+                        
+                        for (j = 0; j < bue->num_devices; j++) {
+                            if (bue->devices[j].dev_id == cis[i].dev_id) {
+                                bue->devices[j].alloc += stripesize;
+                                found = TRUE;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            if (length < sizeof(btrfs_usage_device)) {
+                                Status = STATUS_BUFFER_OVERFLOW;
+                                goto end;
+                            }
+                            
+                            length -= sizeof(btrfs_usage_device);
+                            
+                            bue->devices[bue->num_devices].dev_id = cis[i].dev_id;
+                            bue->devices[bue->num_devices].alloc = stripesize;
+                            bue->num_devices++;
+                        }
+                    }
+                }
+                
+                le2 = le2->Flink;
+            }
+            
+            lastbue = bue;
+        }
+
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+      
+    return Status;
+}
+
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     UINT64 i, num_devices;
     NTSTATUS Status;
@@ -2670,6 +2804,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_GET_DEVICES:
             Status = get_devices(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+            
+        case FSCTL_BTRFS_GET_USAGE:
+            Status = get_usage(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         default:

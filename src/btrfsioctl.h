@@ -9,6 +9,7 @@
 #define FSCTL_BTRFS_GET_INODE_INFO CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82c, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_SET_INODE_INFO CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82d, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_GET_DEVICES CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82e, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+#define FSCTL_BTRFS_GET_USAGE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82f, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 
 typedef struct {
     UINT64 subvol;
@@ -54,5 +55,19 @@ typedef struct {
     USHORT namelen;
     WCHAR name[1];
 } btrfs_device;
+
+typedef struct {
+    UINT64 dev_id;
+    UINT64 alloc;
+} btrfs_usage_device;
+
+typedef struct {
+    UINT32 next_entry;
+    UINT64 type;
+    UINT64 size;
+    UINT64 used;
+    UINT64 num_devices;
+    btrfs_usage_device devices[1];
+} btrfs_usage;
 
 #endif
