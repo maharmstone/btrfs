@@ -1276,6 +1276,40 @@ end:
     return Status;
 }
 
+static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
+    UINT64 i;
+    btrfs_device* dev = NULL;
+    NTSTATUS Status;
+    
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        ULONG structlen;
+        
+        if (length < sizeof(btrfs_device) - sizeof(WCHAR))
+            return STATUS_BUFFER_OVERFLOW;
+        
+        if (!dev)
+            dev = data;
+        else {
+            dev->next_entry = sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
+            dev = (btrfs_device*)((UINT8*)dev + dev->next_entry);
+        }
+        
+        structlen = length - offsetof(btrfs_device, namelen);
+        
+        Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
+        if (!NT_SUCCESS(Status))
+            return Status;
+        
+        dev->next_entry = 0;
+        dev->dev_id = Vcb->devices[i].devitem.dev_id;
+        dev->size = Vcb->devices[i].length;
+        
+        length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
+    }
+      
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     UINT64 i, num_devices;
     NTSTATUS Status;
@@ -2632,6 +2666,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_SET_INODE_INFO:
             Status = set_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+            
+        case FSCTL_BTRFS_GET_DEVICES:
+            Status = get_devices(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         default:
