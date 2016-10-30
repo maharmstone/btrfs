@@ -1913,6 +1913,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     LARGE_INTEGER time;
     CC_FILE_SIZES ccfs;
     LIST_ENTRY rollback;
+    BOOL set_size = FALSE;
     
     if (!fileref) {
         ERR("fileref is NULL\n");
@@ -1978,9 +1979,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     ccfs.AllocationSize = fcb->Header.AllocationSize;
     ccfs.FileSize = fcb->Header.FileSize;
     ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-
-    CcSetFileSizes(FileObject, &ccfs);
-    TRACE("setting FileSize for %S to %llx\n", file_desc(FileObject), ccfs.FileSize);
+    set_size = TRUE;
     
     if (!ccb->user_set_write_time) {
         KeQuerySystemTime(&time);
@@ -2000,6 +1999,9 @@ end:
         do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
+    
+    if (set_size)
+        CcSetFileSizes(FileObject, &ccfs);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
