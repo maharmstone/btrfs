@@ -233,6 +233,7 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             UNICODE_STRING us;
             LIST_ENTRY* le;
             BOOL inserted;
+            UINT8 h;
             
             ie = ExAllocatePoolWithTag(PagedPool, sizeof(index_entry), ALLOC_TAG);
             if (!ie) {
@@ -306,8 +307,10 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             ie->hash = calc_crc32c(0xfffffffe, (UINT8*)ie->filepart_uc.Buffer, (ULONG)ie->filepart_uc.Length);
             inserted = FALSE;
             
-            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24]) {
-                UINT8 c = (ie->hash & 0xff000000) >> 24;
+            h = (ie->hash & 0xff000000) >> 24;
+            
+            if (!fcb->index_ptrs[h]) {
+                UINT8 c = h;
                 
                 le = fcb->index_list.Flink;
                 
@@ -323,7 +326,7 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
                     } while (c > 0);
                 }
             } else
-                le = fcb->index_ptrs[(ie->hash & 0xff000000) >> 24];
+                le = fcb->index_ptrs[h];
             
             while (le != &fcb->index_list) {
                 index_entry* ie2 = CONTAINING_RECORD(le, index_entry, list_entry);
@@ -340,10 +343,10 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             if (!inserted)
                 InsertTailList(&fcb->index_list, &ie->list_entry);
             
-            if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
-                fcb->index_ptrs[(ie->hash & 0xff000000) >> 24] = &ie->list_entry;
-            else if (ie->list_entry.Flink == fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
-                fcb->index_ptrs[(ie->hash & 0xff000000) >> 24] = &ie->list_entry;
+            if (!fcb->index_ptrs[h])
+                fcb->index_ptrs[h] = &ie->list_entry;
+            else if (ie->list_entry.Flink == fcb->index_ptrs[h])
+                fcb->index_ptrs[h] = &ie->list_entry;
         }
         
 nextitem:
