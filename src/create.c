@@ -343,9 +343,7 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             if (!inserted)
                 InsertTailList(&fcb->index_list, &ie->list_entry);
             
-            if (!fcb->index_ptrs[h])
-                fcb->index_ptrs[h] = &ie->list_entry;
-            else if (ie->list_entry.Flink == fcb->index_ptrs[h])
+            if (!fcb->index_ptrs[h] || ie->list_entry.Flink == fcb->index_ptrs[h])
                 fcb->index_ptrs[h] = &ie->list_entry;
         }
         
