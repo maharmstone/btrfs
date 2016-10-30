@@ -1815,6 +1815,10 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             
             increase_fileref_refcount(Vcb->root_fileref);
             *pfr = Vcb->root_fileref;
+            
+            if (fn_offset)
+                *fn_offset = 0;
+            
             return STATUS_SUCCESS;
         }
         
