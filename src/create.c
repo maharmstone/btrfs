@@ -342,6 +342,8 @@ static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
             
             if (!fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
                 fcb->index_ptrs[(ie->hash & 0xff000000) >> 24] = &ie->list_entry;
+            else if (ie->list_entry.Flink == fcb->index_ptrs[(ie->hash & 0xff000000) >> 24])
+                fcb->index_ptrs[(ie->hash & 0xff000000) >> 24] = &ie->list_entry;
         }
         
 nextitem:
