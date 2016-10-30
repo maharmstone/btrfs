@@ -264,6 +264,15 @@ BEGIN
     IDS_UNKNOWN_DEVICE      "(unknown device %llu)"
 END
 
+STRINGTABLE 
+BEGIN
+    IDS_USAGE_DEV_SIZE      "Device size:\t\t%s"
+    IDS_USAGE_DEV_ALLOC     "Device allocated:\t\t%s"
+    IDS_USAGE_DEV_UNALLOC   "Device unallocated:\t\t%s"
+    IDS_USAGE_DATA_RATIO    "Data ratio:\t\t%1.2f"
+    IDS_USAGE_METADATA_RATIO "Metadata ratio:\t\t%1.2f"
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

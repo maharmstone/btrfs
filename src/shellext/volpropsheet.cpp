@@ -199,11 +199,11 @@ typedef struct {
 
 void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
     UINT8 i, j;
-    UINT64 num_devs, k;
+    UINT64 num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
     dev* devs = NULL;
     btrfs_usage* bue;
-    WCHAR t[255];
+    WCHAR t[255], u[255], v[255];
     
     static const UINT64 types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
     static const ULONG typestrings[] = { IDS_USAGE_DATA, IDS_USAGE_MIXED, IDS_USAGE_METADATA, IDS_USAGE_SYSTEM };
@@ -229,12 +229,16 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
     bd = devices;
     k = 0;
     
+    dev_size = 0;
+    
     while (TRUE) {
         devs[k].dev_id = bd->dev_id;
         devs[k].namelen = bd->namelen;
         devs[k].name = bd->name;
         devs[k].alloc = 0;
         devs[k].size = bd->size;
+        
+        dev_size += bd->size;
         
         k++;
         
@@ -244,7 +248,126 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
             break;
     }
     
-    // FIXME - show header
+    dev_alloc = 0;
+    data_size = data_alloc = 0;
+    metadata_size = metadata_alloc = 0;
+    
+    bue = usage;
+    while (TRUE) {
+        for (k = 0; k < bue->num_devices; k++) {
+            dev_alloc += bue->devices[k].alloc;
+            
+            if (bue->type & BLOCK_FLAG_DATA) {
+                data_alloc += bue->devices[k].alloc;
+            }
+            
+            if (bue->type & BLOCK_FLAG_METADATA) {
+                metadata_alloc += bue->devices[k].alloc;
+            }
+        }
+        
+        if (bue->type & BLOCK_FLAG_DATA) {
+            data_size += bue->size;
+        }
+        
+        if (bue->type & BLOCK_FLAG_METADATA) {
+            metadata_size += bue->size;
+        }
+        
+        if (bue->next_entry > 0)
+            bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+        else
+            break;
+    }
+    
+    // device size
+    
+    if (!LoadStringW(module, IDS_USAGE_DEV_SIZE, u, sizeof(u) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        goto end;
+    }
+    
+    format_size(dev_size, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+
+    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    // device allocated
+    
+    if (!LoadStringW(module, IDS_USAGE_DEV_ALLOC, u, sizeof(u) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        goto end;
+    }
+    
+    format_size(dev_alloc, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+
+    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    // device unallocated
+    
+    if (!LoadStringW(module, IDS_USAGE_DEV_UNALLOC, u, sizeof(u) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        goto end;
+    }
+    
+    format_size(dev_size - dev_alloc, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+
+    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    // data ratio
+    
+    if (!LoadStringW(module, IDS_USAGE_DATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        goto end;
+    }
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)data_alloc / (float)data_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+
+    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    // metadata ratio
+    
+    if (!LoadStringW(module, IDS_USAGE_METADATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        goto end;
+    }
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)metadata_alloc / (float)metadata_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+
+    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
+    
+    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+        goto end;
     
     for (i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
         for (j = 0; j < sizeof(duptypes) / sizeof(duptypes[0]); j++) {

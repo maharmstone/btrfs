@@ -48,6 +48,11 @@
 #define IDS_USAGE_SYSTEM                141
 #define IDS_USAGE_UNALLOC               142
 #define IDS_UNKNOWN_DEVICE              143
+#define IDS_USAGE_DEV_SIZE              144
+#define IDS_USAGE_DEV_ALLOC             145
+#define IDS_USAGE_DEV_UNALLOC           146
+#define IDS_USAGE_DATA_RATIO            147
+#define IDS_USAGE_METADATA_RATIO        148
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
