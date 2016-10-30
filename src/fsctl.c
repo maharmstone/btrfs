@@ -662,8 +662,6 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
             struct _fcb* openfcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
             LIST_ENTRY* le2;
             
-            ExAcquireResourceExclusiveLite(openfcb->Header.Resource, TRUE);
-            
             le2 = openfcb->extents.Flink;
             
             while (le2 != &openfcb->extents) {
@@ -673,8 +671,6 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
                 
                 le2 = le2->Flink;
             }
-            
-            ExReleaseResourceLite(openfcb->Header.Resource);
             
             le = le->Flink;
         }
