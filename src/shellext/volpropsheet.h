@@ -74,6 +74,7 @@ public:
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
     
     void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size);
+    void Refresh(HWND hwndDlg);
     
 private:
     LONG refcount;
@@ -82,4 +83,5 @@ private:
     BOOL stgm_set;
     btrfs_device* devices;
     btrfs_usage* usage;
+    WCHAR fn[MAX_PATH];
 };

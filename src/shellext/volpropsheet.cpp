@@ -72,7 +72,6 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     HANDLE h;
     ULONG num_files;
     FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    WCHAR fn[MAX_PATH];
     HDROP hdrop;
     
     if (pidlFolder)
@@ -493,6 +492,83 @@ end:
         free(devs);
 }
 
+void BtrfsVolPropSheet::Refresh(HWND hwndDlg) {
+    HANDLE h;
+    WCHAR s[4096];
+    
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        ULONG devsize, usagesize, i;
+        
+        i = 0;
+        devsize = 1024;
+        
+        devices = (btrfs_device*)malloc(devsize);
+
+        while (TRUE) {
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+            if (Status == STATUS_BUFFER_OVERFLOW) {
+                if (i < 8) {
+                    devsize += 1024;
+                    
+                    free(devices);
+                    devices = (btrfs_device*)malloc(devsize);
+                    
+                    i++;
+                } else
+                    return;
+            } else
+                break;
+        }
+        
+        if (Status != STATUS_SUCCESS) {
+            CloseHandle(h);
+            return;
+        }
+        
+        i = 0;
+        usagesize = 1024;
+        
+        usage = (btrfs_usage*)malloc(usagesize);
+
+        while (TRUE) {
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+            if (Status == STATUS_BUFFER_OVERFLOW) {
+                if (i < 8) {
+                    usagesize += 1024;
+                    
+                    free(usage);
+                    usage = (btrfs_usage*)malloc(usagesize);
+                    
+                    i++;
+                } else
+                    return;
+            } else
+                break;
+        }
+        
+        if (Status != STATUS_SUCCESS) {
+            CloseHandle(h);
+            return;
+        }
+        
+        ignore = FALSE;
+
+        CloseHandle(h);
+    } else {
+        CloseHandle(h);
+        return;
+    }
+    
+    FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
+    
+    SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -519,6 +595,26 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, FALSE);
                 break;
             }
+            break;
+        }
+        
+        case WM_COMMAND:
+        {
+            BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            
+            if (bps) {
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED: {
+                        switch (LOWORD(wParam)) {
+                            case IDC_USAGE_REFRESH:
+                                bps->Refresh(hwndDlg);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            break;
         }
     }
     
