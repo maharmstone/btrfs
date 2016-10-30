@@ -2573,7 +2573,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
     
     next_tree = nextparitem->treeholder.tree;
     
-    if (!next_tree->updated_extents) {
+    if (!next_tree->updated_extents && next_tree->has_address) {
         Status = update_tree_extents(Vcb, next_tree, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("update_tree_extents returned %08x\n", Status);
