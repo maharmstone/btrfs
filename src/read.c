@@ -3128,7 +3128,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT32 to_read, read;
                     UINT8* buf;
                     BOOL buf_free;
-                    UINT32 *csum, bumpoff = 0;
+                    UINT32 bumpoff = 0;
                     UINT64 addr, lockaddr, locklen;
                     chunk* c;
                     
@@ -3164,20 +3164,6 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         }
                     }
                     
-                    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                        Status = load_csum(fcb->Vcb, addr, to_read / fcb->Vcb->superblock.sector_size, &csum, Irp);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("load_csum returned %08x\n", Status);
-                            
-                            if (buf_free)
-                                ExFreePool(buf);
-                            
-                            goto exit;
-                        }
-                    } else
-                        csum = NULL;
-                    
                     c = get_chunk_from_address(fcb->Vcb, addr);
                     
                     if (!c) {
@@ -3194,8 +3180,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     }
                     
-                    
-                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp);
+                    Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE, buf, c, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
@@ -3243,9 +3228,6 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     
                     if (buf_free)
                         ExFreePool(buf);
-                    
-                    if (csum)
-                        ExFreePool(csum);
                     
                     bytes_read += read;
                     length -= read;
