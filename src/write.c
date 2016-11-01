@@ -1875,7 +1875,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
-                        newext->csum = NULL; // FIXME
+                        newext->csum = NULL;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
                         remove_fcb_extent(fcb, ext, rollback);
@@ -1918,7 +1918,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
-                        newext->csum = NULL; // FIXME
+                        newext->csum = NULL;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
                         remove_fcb_extent(fcb, ext, rollback);
@@ -1961,7 +1961,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
-                        newext1->csum = NULL; // FIXME
+                        newext1->csum = NULL;
                         
                         size = ext->offset + len - end_data;
                         
@@ -1998,7 +1998,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
-                        newext2->csum = NULL; // FIXME
+                        newext2->csum = NULL;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
@@ -2074,7 +2074,35 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
-                        newext->csum = NULL; // FIXME
+                        
+                        if (ext->csum) {
+                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, ned2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(ned);
+                                    ExFreePool(newext);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext->csum, &ext->csum[(end_data - ext->offset) / Vcb->superblock.sector_size],
+                                              ned2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            } else {
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(ned);
+                                    ExFreePool(newext);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext->csum, ext->csum, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            }
+                        } else
+                            newext->csum = NULL;
+                        
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
                         remove_fcb_extent(fcb, ext, rollback);
@@ -2121,7 +2149,34 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
-                        newext->csum = NULL; // FIXME
+                        
+                        if (ext->csum) {
+                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, ned2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(ned);
+                                    ExFreePool(newext);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext->csum, ext->csum, ned2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            } else {
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(ned);
+                                    ExFreePool(newext);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext->csum, ext->csum, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            }
+                        } else
+                            newext->csum = NULL;
+                        
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
                         remove_fcb_extent(fcb, ext, rollback);
@@ -2175,7 +2230,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         }
                         
                         newext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
-                        if (!newext1) {
+                        if (!newext2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             ExFreePool(neda);
@@ -2215,14 +2270,72 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
-                        newext1->csum = NULL; // FIXME
                         
                         newext2->offset = end_data;
                         newext2->data = nedb;
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
-                        newext2->csum = NULL; // FIXME
+                        
+                        if (ext->csum) {
+                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, neda2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext1->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(neda);
+                                    ExFreePool(newext1);
+                                    ExFreePool(nedb);
+                                    ExFreePool(newext2);
+                                    goto end;
+                                }
+                                
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, nedb2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext2->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(newext1->csum);
+                                    ExFreePool(neda);
+                                    ExFreePool(newext1);
+                                    ExFreePool(nedb);
+                                    ExFreePool(newext2);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext1->csum, ext->csum, neda2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                RtlCopyMemory(newext2->csum, &ext->csum[(end_data - ext->offset) / Vcb->superblock.sector_size],
+                                              nedb2->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            } else {
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext1->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(neda);
+                                    ExFreePool(newext1);
+                                    ExFreePool(nedb);
+                                    ExFreePool(newext2);
+                                    goto end;
+                                }
+                                
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                                if (!newext1->csum) {
+                                    ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                                    ExFreePool(newext1->csum);
+                                    ExFreePool(neda);
+                                    ExFreePool(newext1);
+                                    ExFreePool(nedb);
+                                    ExFreePool(newext2);
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(newext1->csum, ext->csum, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                RtlCopyMemory(newext2->csum, ext->csum, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                            }
+                        } else {
+                            newext1->csum = NULL;
+                            newext2->csum = NULL;
+                        }
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
