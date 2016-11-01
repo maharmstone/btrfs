@@ -2765,6 +2765,10 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         
         fn->Length = fn->MaximumLength = sizeof(WCHAR);
         fn->Buffer[0] = '\\';
+
+        if (name_offset)
+            *name_offset = 0;
+
         return STATUS_SUCCESS;
     }
     
