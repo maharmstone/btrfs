@@ -3440,7 +3440,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL top_level;
     fcb* fcb;
     ccb* ccb;
-    BOOL tree_lock = FALSE, fcb_lock = FALSE, pagefile;
+    BOOL fcb_lock = FALSE;
     
     FsRtlEnterFileSystem();
     
@@ -3493,20 +3493,6 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    pagefile = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE && Irp->Flags & IRP_PAGING_IO;
-    
-    if (Irp->Flags & IRP_NOCACHE) {
-        if (!pagefile) {
-            if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, IoIsOperationSynchronous(Irp))) {
-                Status = STATUS_PENDING;
-                IoMarkIrpPending(Irp);
-                goto exit;
-            }
-            
-            tree_lock = TRUE;
-        }
-    }
-    
     if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
         if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
             Status = STATUS_PENDING;
@@ -3522,9 +3508,6 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 exit:
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
-    
-    if (tree_lock)
-        ExReleaseResourceLite(&Vcb->tree_lock);
 
     Irp->IoStatus.Status = Status;
     
