@@ -359,7 +359,32 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             
             ext2->unique = FALSE;
             ext2->ignore = FALSE;
-            ext2->csum = NULL; // FIXME
+            
+            if (ext->csum) {
+                ULONG len;
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                
+                if (ext->data->compression == BTRFS_COMPRESSION_NONE)
+                    len = ed2->num_bytes;
+                else
+                    len = ed2->size;
+                
+                len = len * sizeof(UINT32) / Vcb->superblock.sector_size;
+                
+                ext2->csum = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+                if (!ext2->csum) {
+                    ERR("out of memory\n");
+                    
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fcb(fcb);
+                    ExReleaseResourceLite(&Vcb->fcb_lock);
+                    
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(ext2->csum, ext->csum, len);
+            } else
+                ext2->csum = NULL;
 
             InsertTailList(&fcb->extents, &ext2->list_entry);
         }
