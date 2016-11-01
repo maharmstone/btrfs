@@ -3502,6 +3502,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                         return Status;
                     }
                     
+                    // This shouldn't ever get called - nocow files should always also be nosum.
                     if (changed_sector_list) {
                         unsigned int i;
                         changed_sector* sc;
