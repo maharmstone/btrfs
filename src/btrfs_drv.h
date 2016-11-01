@@ -117,6 +117,7 @@ typedef struct {
     ULONG datalen;
     BOOL unique;
     BOOL ignore;
+    UINT32* csum;
     
     LIST_ENTRY list_entry;
 } extent;
@@ -918,6 +919,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp);
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
+NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum, PIRP Irp);
 
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);

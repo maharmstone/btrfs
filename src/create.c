@@ -1571,6 +1571,23 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             ext->unique = unique;
             ext->ignore = FALSE;
             
+            if (ed->type == EXTENT_TYPE_REGULAR && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                
+                if (ed->compression == BTRFS_COMPRESSION_NONE)
+                    Status = load_csum(Vcb, ed2->address + ed2->offset, ed2->num_bytes / Vcb->superblock.sector_size, &ext->csum, Irp);
+                else
+                    Status = load_csum(Vcb, ed2->address, ed2->size / Vcb->superblock.sector_size, &ext->csum, Irp);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("load_csum returned %08x\n", Status);
+                    ExFreePool(ext);
+                    free_fcb(fcb);
+                    return Status;
+                }
+            } else
+                ext->csum = NULL;
+            
             InsertTailList(&fcb->extents, &ext->list_entry);
         }
     }

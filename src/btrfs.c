@@ -1823,6 +1823,9 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         LIST_ENTRY* le = RemoveHeadList(&fcb->extents);
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
+        if (ext->csum)
+            ExFreePool(ext->csum);
+        
         ExFreePool(ext->data);
         ExFreePool(ext);
     }

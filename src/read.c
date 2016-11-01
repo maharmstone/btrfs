@@ -2942,7 +2942,7 @@ static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum, PIRP Irp) {
+NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum, PIRP Irp) {
     UINT32* csum = NULL;
     NTSTATUS Status;
     UINT64 end;

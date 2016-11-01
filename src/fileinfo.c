@@ -359,6 +359,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             
             ext2->unique = FALSE;
             ext2->ignore = FALSE;
+            ext2->csum = NULL; // FIXME
 
             InsertTailList(&fcb->extents, &ext2->list_entry);
         }
