@@ -2358,40 +2358,13 @@ end:
     return Status;
 }
 
-static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, LIST_ENTRY* changed_sector_list, PIRP Irp) {
+static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
-    changed_sector* sc;
-    int i;
     
     Status = write_data_complete(Vcb, address, data, length, Irp, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         return Status;
-    }
-    
-    if (changed_sector_list) {
-        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-        if (!sc) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        sc->ol.key = address;
-        sc->length = length / Vcb->superblock.sector_size;
-        sc->deleted = FALSE;
-        
-        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-        if (!sc->checksums) {
-            ERR("out of memory\n");
-            ExFreePool(sc);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        for (i = 0; i < sc->length; i++) {
-            sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        }
-
-        insert_into_ordered_list(changed_sector_list, &sc->ol);
     }
     
     return STATUS_SUCCESS;
@@ -2412,7 +2385,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
     add_rollback(fcb->Vcb, rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
-static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, LIST_ENTRY* rollback) {
+static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
     
@@ -2427,7 +2400,7 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     ext->datalen = edsize;
     ext->unique = unique;
     ext->ignore = FALSE;
-    ext->csum = NULL; // FIXME
+    ext->csum = csum;
     
     le = fcb->extents.Flink;
     while (le != &fcb->extents) {
@@ -2470,6 +2443,32 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
+static NTSTATUS add_checksum_entry(UINT64 address, UINT64 sectors, UINT32* csum, LIST_ENTRY* changed_sector_list) {
+    changed_sector* sc;
+    
+    sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+    if (!sc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    sc->ol.key = address;
+    sc->length = sectors;
+    sc->deleted = FALSE;
+    
+    sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
+    if (!sc->checksums) {
+        ERR("out of memory\n");
+        ExFreePool(sc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(sc->checksums, csum, sizeof(UINT32) * sc->length);
+    insert_into_ordered_list(changed_sector_list, &sc->ol);
+    
+    return STATUS_SUCCESS;
+}
+
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
                          LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size) {
     UINT64 address;
@@ -2477,6 +2476,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+    UINT32* csum = NULL;
 // #ifdef DEBUG_PARANOID
 //     traverse_ptr tp;
 //     KEY searchkey;
@@ -2521,7 +2521,22 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->offset = 0;
     ed2->num_bytes = decoded_size;
     
-    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, rollback)) {
+    if (!prealloc && data && changed_sector_list) {
+        ULONG sl = length / Vcb->superblock.sector_size;
+        UINT32 i;
+        
+        csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+        if (!csum) {
+            ERR("out of memory\n");
+            return FALSE;
+        }
+        
+        for (i = 0; i < sl; i++) {
+            csum[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+        }
+    }
+    
+    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, csum, rollback)) {
         ERR("add_extent_to_fcb failed\n");
         ExFreePool(ed);
         return FALSE;
@@ -2545,9 +2560,15 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ExReleaseResourceLite(&c->lock);
       
     if (data) {
-        Status = do_write_data(Vcb, address, data, length, changed_sector_list, Irp);
+        Status = do_write_data(Vcb, address, data, length, Irp);
         if (!NT_SUCCESS(Status))
             ERR("do_write_data returned %08x\n", Status);
+
+        if (csum) {
+            Status = add_checksum_entry(address, length / Vcb->superblock.sector_size, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status))
+                ERR("add_checksum_entry returned %08x\n", Status);
+        }
     }
 
     return TRUE;
@@ -2966,7 +2987,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     
                     remove_fcb_extent(fcb, ext, rollback);
                     
-                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, rollback)) {
+                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback)) {
                         ERR("add_extent_to_fcb failed\n");
                         ExFreePool(ed);
                         return STATUS_INTERNAL_ERROR;
@@ -3058,7 +3079,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 
                 RtlZeroMemory(ed->data, end);
                 
-                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, rollback)) {
+                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, rollback)) {
                     ERR("add_extent_to_fcb failed\n");
                     ExFreePool(ed);
                     return STATUS_INTERNAL_ERROR;
@@ -3087,6 +3108,22 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
     NTSTATUS Status;
     chunk* c;
+    UINT32* csum;
+    ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
+    UINT32 i;
+    
+    if (changed_sector_list) {
+        csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+        if (!csum) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        for (i = 0; i < sl; i++) {
+            csum[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * fcb->Vcb->superblock.sector_size), fcb->Vcb->superblock.sector_size);
+        }
+    } else
+        csum = NULL;
     
     if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
         EXTENT_DATA* ned;
@@ -3109,10 +3146,18 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         
         ned->type = EXTENT_TYPE_REGULAR;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, changed_sector_list, Irp);
+        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
             return Status;
+        }
+        
+        if (csum) {
+            Status = add_checksum_entry(ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                return Status;
+            }
         }
         
         *written = ed2->num_bytes;
@@ -3122,7 +3167,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->datalen = ext->datalen;
         newext->unique = ext->unique;
         newext->ignore = FALSE;
-        newext->csum = NULL; // FIXME
+        newext->csum = csum;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
         add_insert_extent_rollback(rollback, fcb, newext);
@@ -3173,10 +3218,18 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += end_data - ext->offset;
         ned2->num_bytes -= end_data - ext->offset;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, changed_sector_list, Irp);
+        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
             return Status;
+        }
+        
+        if (csum) {
+            Status = add_checksum_entry(ed2->address + ed2->offset, (end_data - ext->offset) / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                return Status;
+            }
         }
         
         *written = end_data - ext->offset;
@@ -3186,7 +3239,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
-        newext1->csum = NULL; // FIXME
+        newext1->csum = csum;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext1);
@@ -3196,7 +3249,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
-        newext2->csum = NULL; // FIXME
+        newext2->csum = NULL;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3263,10 +3316,18 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += start_data - ext->offset;
         ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, changed_sector_list, Irp);
+        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
             return Status;
+        }
+        
+        if (csum) {
+            Status = add_checksum_entry(ed2->address + ned2->offset, ned2->num_bytes / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                return Status;
+            }
         }
         
         *written = ned2->num_bytes;
@@ -3276,7 +3337,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
-        newext1->csum = NULL; // FIXME
+        newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext1);
@@ -3286,7 +3347,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
-        newext2->csum = NULL; // FIXME
+        newext2->csum = csum;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3379,10 +3440,18 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->num_bytes -= end_data - ext->offset;
         
         ned2 = (EXTENT_DATA2*)nedb->data;
-        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, changed_sector_list, Irp);
+        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write_data returned %08x\n", Status);
             return Status;
+        }
+        
+        if (csum) {
+            Status = add_checksum_entry(ed2->address + ned2->offset, (end_data - start_data) / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                return Status;
+            }
         }
         
         *written = end_data - start_data;
@@ -3392,7 +3461,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
-        newext1->csum = NULL; // FIXME
+        newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext1);
@@ -3402,7 +3471,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
-        newext2->csum = NULL; // FIXME
+        newext2->csum = csum;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3412,7 +3481,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->datalen = ext->datalen;
         newext3->unique = ext->unique;
         newext3->ignore = FALSE;
-        newext3->csum = NULL; // FIXME
+        newext3->csum = NULL;
         InsertHeadList(&newext2->list_entry, &newext3->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext3);
@@ -3969,7 +4038,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, rollback)) {
+            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, NULL, rollback)) {
                 ERR("add_extent_to_fcb failed\n");
                 ExFreePool(data);
                 Status = STATUS_INTERNAL_ERROR;
