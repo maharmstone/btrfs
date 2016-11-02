@@ -2358,18 +2358,6 @@ end:
     return Status;
 }
 
-static NTSTATUS do_write_data(device_extension* Vcb, UINT64 address, void* data, UINT64 length, PIRP Irp) {
-    NTSTATUS Status;
-    
-    Status = write_data_complete(Vcb, address, data, length, Irp, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("write_data returned %08x\n", Status);
-        return Status;
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     rollback_extent* re;
     
@@ -2560,9 +2548,9 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ExReleaseResourceLite(&c->lock);
       
     if (data) {
-        Status = do_write_data(Vcb, address, data, length, Irp);
+        Status = write_data_complete(Vcb, address, data, length, Irp, NULL);
         if (!NT_SUCCESS(Status))
-            ERR("do_write_data returned %08x\n", Status);
+            ERR("write_data_complete returned %08x\n", Status);
 
         if (csum) {
             Status = add_checksum_entry(address, length / Vcb->superblock.sector_size, csum, changed_sector_list);
@@ -3146,9 +3134,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         
         ned->type = EXTENT_TYPE_REGULAR;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, Irp);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, Irp, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_write_data returned %08x\n", Status);
+            ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
         
@@ -3218,9 +3206,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += end_data - ext->offset;
         ned2->num_bytes -= end_data - ext->offset;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, Irp);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset, Irp, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_write_data returned %08x\n", Status);
+            ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
         
@@ -3316,9 +3304,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += start_data - ext->offset;
         ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
         
-        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_write_data returned %08x\n", Status);
+            ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
         
@@ -3440,9 +3428,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->num_bytes -= end_data - ext->offset;
         
         ned2 = (EXTENT_DATA2*)nedb->data;
-        Status = do_write_data(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_write_data returned %08x\n", Status);
+            ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
         
