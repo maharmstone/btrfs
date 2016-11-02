@@ -3044,33 +3044,39 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
 static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, UINT8 level, tree* parent, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
-    if (level > 0) {
-        if (!th->tree) {
-            Status = load_tree(Vcb, th->address, r, &th->tree, NULL, NULL);
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("load_tree(%llx) returned %08x\n", th->address, Status);
-                return Status;
-            }
-        }
+    if (!th->tree) {
+        Status = load_tree(Vcb, th->address, r, &th->tree, NULL, NULL);
         
-        if (th->tree->header.level > 0) {
-            LIST_ENTRY* le = th->tree->itemlist.Flink;
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_tree(%llx) returned %08x\n", th->address, Status);
+            return Status;
+        }
+    }
+    
+    if (level > 0) {
+        LIST_ENTRY* le = th->tree->itemlist.Flink;
+        
+        while (le != &th->tree->itemlist) {
+            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
             
-            while (le != &th->tree->itemlist) {
-                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+            if (!td->ignore) {
+                Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, th->tree, Irp, rollback);
                 
-                if (!td->ignore) {
-                    Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, th->tree, Irp, rollback);
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("remove_root_extents returned %08x\n", Status);
-                        return Status;
-                    }
+                if (!NT_SUCCESS(Status)) {
+                    ERR("remove_root_extents returned %08x\n", Status);
+                    return Status;
                 }
-                
-                le = le->Flink;
             }
+            
+            le = le->Flink;
+        }
+    }
+    
+    if (th->tree && !th->tree->updated_extents && th->tree->has_address) {
+        Status = update_tree_extents(Vcb, th->tree, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_tree_extents returned %08x\n", Status);
+            return Status;
         }
     }
     
