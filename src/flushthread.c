@@ -2855,6 +2855,14 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                 empty = FALSE;
                 
                 if (t->header.num_items == 0) {
+                    if (!t->updated_extents && t->has_address) {
+                        Status = update_tree_extents(Vcb, t, Irp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("update_tree_extents returned %08x\n", Status);
+                            return Status;
+                        }
+                    }
+
                     if (t->parent) {
                         LIST_ENTRY* le2;
                         KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
