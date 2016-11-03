@@ -2155,12 +2155,13 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
             
             mark_fcb_dirty(fileref->fcb);
             
+            fileref->fcb->inode_item_changed = TRUE;
+            
             if (fileref->fcb->inode_item.st_nlink > 1) {
                 fileref->fcb->inode_item.st_nlink--;
                 fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
                 fileref->fcb->inode_item.sequence++;
                 fileref->fcb->inode_item.st_ctime = now;
-                fileref->fcb->inode_item_changed = TRUE;
             } else {
                 fileref->fcb->deleted = TRUE;
             
