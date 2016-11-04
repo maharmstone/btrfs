@@ -995,14 +995,20 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 EXTENT_ITEM* newei;
                 
                 if (sectsdr->offset == sdr->offset) {
-                    // We ignore sdr->count, and assume that we want to remove the whole bit
-                    
                     if (ei->refcount == sectsdr->count) {
                         delete_tree_item(Vcb, &tp, rollback);
                         return STATUS_SUCCESS;
                     }
                     
-                    neweilen = tp.item->size - sizeof(UINT8) - sectlen;
+                    if (sectsdr->count < sdr->count) {
+                        ERR("error - SHARED_DATA_REF has refcount %x, trying to reduce by %x\n", sectsdr->count, sdr->count);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    if (sectsdr->count > sdr->count)    // reduce section refcount
+                        neweilen = tp.item->size;
+                    else                                // remove section entirely
+                        neweilen = tp.item->size - sizeof(UINT8) - sectlen;
                     
                     newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
                     if (!newei) {
@@ -1010,11 +1016,19 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    RtlCopyMemory(newei, ei, ptr - tp.item->data);
-                    
-                    if (len > sectlen)
-                        RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
-                    
+                    if (sectsdr->count > sdr->count) {
+                        SHARED_DATA_REF* newsdr = (SHARED_DATA_REF*)((UINT8*)newei + ((UINT8*)sectsdr - tp.item->data));
+                        
+                        RtlCopyMemory(newei, ei, neweilen);
+                        
+                        newsdr->count -= rc;
+                    } else {
+                        RtlCopyMemory(newei, ei, ptr - tp.item->data);
+                        
+                        if (len > sectlen)
+                            RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
+                    }
+
                     newei->generation = Vcb->superblock.generation;
                     newei->refcount -= rc;
                     
@@ -1203,15 +1217,36 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         EXTENT_ITEM* newei;
         
         if (sectsdr->offset == sdr->offset) {
-            // As above, we assume that we want to remove the whole shared data ref
-            
-            if (ei->refcount == sectsdr->count) {
+            if (ei->refcount == sdr->count) {
                 delete_tree_item(Vcb, &tp, rollback);
                 delete_tree_item(Vcb, &tp2, rollback);
                 return STATUS_SUCCESS;
             }
             
+            if (sectsdr->count < sdr->count) {
+                ERR("error - extent section has refcount %x, trying to reduce by %x\n", sectsdr->count, sdr->count);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
             delete_tree_item(Vcb, &tp2, rollback);
+            
+            if (sectsdr->count > sdr->count) {
+                SHARED_DATA_REF* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+                
+                if (!newsdr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(newsdr, sectsdr, tp2.item->size);
+                
+                newsdr->count -= sdr->count;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, newsdr, tp2.item->size, NULL, Irp, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            }
             
             newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!newei) {
