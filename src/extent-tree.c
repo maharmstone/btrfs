@@ -733,9 +733,9 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             return Status;
         }
         
-        if (!keycmp(tp.item->key, searchkey)) {
-            if (tp.item->size < datalen) {
-                ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp.item->size, datalen);
+        if (!keycmp(tp2.item->key, searchkey)) {
+            if (tp2.item->size < datalen) {
+                ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
                 return STATUS_INTERNAL_ERROR;
             }
             
