@@ -729,7 +729,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     SHARED_DATA_REF sdr;
                                     
                                     sdr.offset = t->header.address;
-                                    sdr.count = sdrrc;
+                                    sdr.count = 1;
                                     
                                     Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
                                                                       t->header.address, Irp, rollback);
@@ -739,8 +739,40 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     }
                                     
                                     if (ce) {
-                                        ce->count--;
-                                        ce->old_count--;
+                                        LIST_ENTRY* le2;
+                                        
+                                        le2 = ce->refs.Flink;
+                                        while (le2 != &ce->refs) {
+                                            changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                            
+                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                                ce->count--;
+                                                cer->sdr.count--;
+                                                break;
+                                            }
+                                            
+                                            le2 = le2->Flink;
+                                        }
+                                        
+                                        le2 = ce->old_refs.Flink;
+                                        while (le2 != &ce->old_refs) {
+                                            changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                            
+                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                                ce->old_count--;
+                                                
+                                                if (cer->sdr.count > 1)
+                                                    cer->sdr.count--;
+                                                else {
+                                                    RemoveEntryList(&cer->list_entry);
+                                                    ExFreePool(cer);
+                                                }
+                                                
+                                                break;
+                                            }
+                                            
+                                            le2 = le2->Flink;
+                                        }
                                     }
                                 }
                             }
