@@ -47,7 +47,7 @@ typedef struct {
 } tree_write;
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback);
-
+static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
                                    void* data, UINT16 datalen, enum batch_operation operation, PIRP Irp, LIST_ENTRY* rollback);
 
@@ -620,10 +620,18 @@ end:
     return STATUS_SUCCESS;
 }
 
-static BOOL shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp) {
+static BOOL shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
+    
+    if (!t->updated_extents && t->has_address) {
+        Status = update_tree_extents(Vcb, t, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_tree_extents returned %08x\n", Status);
+            return FALSE;
+        }
+    }
     
     searchkey.obj_id = t->header.address;
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
@@ -653,7 +661,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     
     if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         TREE_BLOCK_REF tbr;
-        BOOL unique = rc > 1 ? FALSE : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp) : FALSE);
+        BOOL unique = rc > 1 ? FALSE : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : FALSE);
         
         if (t->header.level == 0) {
             LIST_ENTRY* le;
