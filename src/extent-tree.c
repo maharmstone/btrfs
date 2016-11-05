@@ -976,7 +976,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                             RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
                     }
                     
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount -= rc;
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1029,7 +1028,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                             RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
                     }
 
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount -= rc;
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1066,7 +1064,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     if (len > sectlen)
                         RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
                     
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount--;
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1103,7 +1100,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     if (len > sectlen)
                         RtlCopyMemory((UINT8*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(UINT8), len - sectlen);
                     
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount--;
                     
                     delete_tree_item(Vcb, &tp, rollback);
@@ -1196,7 +1192,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
-            newei->generation = Vcb->superblock.generation;
             newei->refcount -= rc;
             
             delete_tree_item(Vcb, &tp, rollback);
@@ -1256,7 +1251,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
-            newei->generation = Vcb->superblock.generation;
             newei->refcount -= rc;
             
             delete_tree_item(Vcb, &tp, rollback);
@@ -1293,7 +1287,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
-            newei->generation = Vcb->superblock.generation;
             newei->refcount -= rc;
             
             delete_tree_item(Vcb, &tp, rollback);
@@ -1330,7 +1323,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
-            newei->generation = Vcb->superblock.generation;
             newei->refcount -= rc;
             
             delete_tree_item(Vcb, &tp, rollback);
@@ -1365,7 +1357,6 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         
         RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
-        newei->generation = Vcb->superblock.generation;
         newei->refcount -= rc;
         
         delete_tree_item(Vcb, &tp, rollback);
