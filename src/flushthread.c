@@ -3987,8 +3987,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     BOOL extents_changed;
 #endif
     
-//     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
-    
     while (!IsListEmpty(&fcb->index_list)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->index_list);
         index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
@@ -4390,9 +4388,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     
 end:
     fcb->dirty = FALSE;
-    
-//     ExReleaseResourceLite(fcb->Header.Resource);
-    return;
 }
 
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
@@ -5474,7 +5469,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (dirt->fcb->deleted && dirt->fcb->ads) {
             RemoveEntryList(le);
             
+            ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
             flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
+            ExReleaseResourceLite(dirt->fcb->Header.Resource);
+            
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
 
@@ -5496,7 +5494,9 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (dirt->fcb->subvol != Vcb->root_root || dirt->fcb->deleted) {
             RemoveEntryList(le);
             
+            ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
             flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
+            ExReleaseResourceLite(dirt->fcb->Header.Resource);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
 
