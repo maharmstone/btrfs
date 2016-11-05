@@ -4016,6 +4016,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         goto end;
     }
     
+    if (fcb->deleted) {
+        if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0xffffffffffffffff, NULL, 0, Batch_DeleteInode, Irp, rollback))
+            ERR("insert_tree_item_batch failed\n");
+        
+        goto end;
+    }
+    
 #ifdef DEBUG_PARANOID
     extents_changed = fcb->extents_changed;
 #endif

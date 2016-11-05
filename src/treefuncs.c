@@ -1441,149 +1441,216 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         
         find_tree_end(tp.tree, &tree_end, &no_end);
         
-        td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
-        if (!td) {
-            ERR("out of memory\n");
-            return;
-        }
-        
-        td->key = bi->key;
-        td->size = bi->datalen;
-        td->data = bi->data;
-        td->ignore = FALSE;
-        td->inserted = TRUE;
-        
-        cmp = keycmp(bi->key, tp.item->key);
-        
-        if (cmp == -1) { // very first key in root
-            tree_data* paritem;
+        if (bi->operation == Batch_DeleteInode) {
+            if (tp.item->key.obj_id == bi->key.obj_id) {
+                BOOL ended = FALSE;
+                
+                td = tp.item;
+                
+                if (!tp.item->ignore) {
+                    tp.item->ignore = TRUE;
+                    tp.tree->header.num_items--;
+                    tp.tree->size -= tp.item->size + sizeof(leaf_node);
+                    tp.tree->write = TRUE;
+                }
+                
+                le2 = tp.item->list_entry.Flink;
+                while (le2 != &tp.tree->itemlist) {
+                    td = CONTAINING_RECORD(le2, tree_data, list_entry);
+                    
+                    if (td->key.obj_id == bi->key.obj_id) {
+                        if (!td->ignore) {
+                            td->ignore = TRUE;
+                            tp.tree->header.num_items--;
+                            tp.tree->size -= td->size + sizeof(leaf_node);
+                            tp.tree->write = TRUE;
+                        }
+                    } else {
+                        ended = TRUE;
+                        break;
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+                
+                while (!ended) {
+                    traverse_ptr next_tp;
+                    
+                    tp.item = td;
+                    
+                    if (!find_next_item(Vcb, &tp, &next_tp, FALSE, Irp))
+                        break;
+                    
+                    tp = next_tp;
+                    
+                    le2 = &tp.item->list_entry;
+                    while (le2 != &tp.tree->itemlist) {
+                        td = CONTAINING_RECORD(le2, tree_data, list_entry);
+                        
+                        if (td->key.obj_id == bi->key.obj_id) {
+                            if (!td->ignore) {
+                                td->ignore = TRUE;
+                                tp.tree->header.num_items--;
+                                tp.tree->size -= td->size + sizeof(leaf_node);
+                                tp.tree->write = TRUE;
+                            }
+                        } else {
+                            ended = TRUE;
+                            break;
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
+                }
+            }
+        } else {
+            td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+            if (!td) {
+                ERR("out of memory\n");
+                return;
+            }
             
-            InsertHeadList(&tp.tree->itemlist, &td->list_entry);
+            td->key = bi->key;
+            td->size = bi->datalen;
+            td->data = bi->data;
+            td->ignore = FALSE;
+            td->inserted = TRUE;
+            
+            cmp = keycmp(bi->key, tp.item->key);
+            
+            if (cmp == -1) { // very first key in root
+                tree_data* paritem;
+                
+                InsertHeadList(&tp.tree->itemlist, &td->list_entry);
 
-            paritem = tp.tree->paritem;
-            while (paritem) {
-                if (!keycmp(paritem->key, tp.item->key)) {
-                    paritem->key = bi->key;
+                paritem = tp.tree->paritem;
+                while (paritem) {
+                    if (!keycmp(paritem->key, tp.item->key)) {
+                        paritem->key = bi->key;
+                    } else
+                        break;
+                    
+                    paritem = paritem->treeholder.tree->paritem;
+                }
+            } else if (cmp == 0) { // item already exists
+                ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items, rollback);
+            } else {
+                InsertHeadList(&tp.item->list_entry, &td->list_entry);
+            }
+            
+            if (!ignore) {
+                tp.tree->header.num_items++;
+                tp.tree->size += bi->datalen + sizeof(leaf_node);
+                tp.tree->write = TRUE;
+                
+                if (rollback) {
+                    // FIXME - free this correctly
+                    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                    if (!tp2) {
+                        ERR("out of memory\n");
+                        return;
+                    }
+                    
+                    tp2->tree = tp.tree;
+                    tp2->item = td;
+
+                    add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                }
+                
+                listhead = &td->list_entry;
+            } else
+                listhead = &tp.item->list_entry;
+            
+            le2 = le->Flink;
+            while (le2 != &br->items) {
+                batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
+                
+                if (bi2->operation == Batch_DeleteInode)
+                    break;
+                
+                if (no_end || keycmp(bi2->key, tree_end) == -1) {
+                    LIST_ENTRY* le3;
+                    BOOL inserted = FALSE;
+                    
+                    ignore = FALSE;
+                    
+                    td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                    if (!td) {
+                        ERR("out of memory\n");
+                        return;
+                    }
+                    
+                    td->key = bi2->key;
+                    td->size = bi2->datalen;
+                    td->data = bi2->data;
+                    td->ignore = FALSE;
+                    td->inserted = TRUE;
+                    
+                    le3 = listhead;
+                    while (le3 != &tp.tree->itemlist) {
+                        tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
+                        
+                        if (!td2->ignore) {
+                            cmp = keycmp(bi2->key, td2->key);
+
+                            if (cmp == 0) {
+                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items, rollback);
+                                inserted = TRUE;
+                                break;
+                            } else if (cmp == -1) {
+                                InsertHeadList(le3->Blink, &td->list_entry);
+                                inserted = TRUE;
+                                break;
+                            }
+                        }
+                        
+                        le3 = le3->Flink;
+                    }
+                    
+                    if (!inserted)
+                        InsertTailList(&tp.tree->itemlist, &td->list_entry);
+                    
+                    if (!ignore) {
+                        tp.tree->header.num_items++;
+                        tp.tree->size += bi2->datalen + sizeof(leaf_node);
+                        
+                        if (rollback) {
+                            // FIXME - free this correctly
+                            tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
+                            if (!tp2) {
+                                ERR("out of memory\n");
+                                return;
+                            }
+                            
+                            tp2->tree = tp.tree;
+                            tp2->item = td;
+                            
+                            add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                        }
+                        
+                        listhead = &td->list_entry;
+                    }
+                    
+                    le = le2;
                 } else
                     break;
                 
-                paritem = paritem->treeholder.tree->paritem;
-            }
-        } else if (cmp == 0) { // item already exists
-            ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items, rollback);
-        } else {
-            InsertHeadList(&tp.item->list_entry, &td->list_entry);
-        }
-        
-        if (!ignore) {
-            tp.tree->header.num_items++;
-            tp.tree->size += bi->datalen + sizeof(leaf_node);
-            tp.tree->write = TRUE;
-            
-            if (rollback) {
-                // FIXME - free this correctly
-                tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-                if (!tp2) {
-                    ERR("out of memory\n");
-                    return;
-                }
-                
-                tp2->tree = tp.tree;
-                tp2->item = td;
-
-                add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                le2 = le2->Flink;
             }
             
-            listhead = &td->list_entry;
-        } else
-            listhead = &tp.item->list_entry;
-        
-        le2 = le->Flink;
-        while (le2 != &br->items) {
-            batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
-            
-            if (no_end || keycmp(bi2->key, tree_end) == -1) {
-                LIST_ENTRY* le3;
-                BOOL inserted = FALSE;
-                
-                ignore = FALSE;
-                
-                td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
-                if (!td) {
-                    ERR("out of memory\n");
-                    return;
-                }
-                
-                td->key = bi2->key;
-                td->size = bi2->datalen;
-                td->data = bi2->data;
-                td->ignore = FALSE;
-                td->inserted = TRUE;
-                
-                le3 = listhead;
-                while (le3 != &tp.tree->itemlist) {
-                    tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
+            t = tp.tree;
+            while (t) {
+                if (t->paritem && t->paritem->ignore) {
+                    t->paritem->ignore = FALSE;
+                    t->parent->header.num_items++;
+                    t->parent->size += sizeof(internal_node);
                     
-                    if (!td2->ignore) {
-                        cmp = keycmp(bi2->key, td2->key);
+                    // FIXME - do we need to add a rollback entry here?
+                }
 
-                        if (cmp == 0) {
-                            ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items, rollback);
-                            inserted = TRUE;
-                            break;
-                        } else if (cmp == -1) {
-                            InsertHeadList(le3->Blink, &td->list_entry);
-                            inserted = TRUE;
-                            break;
-                        }
-                    }
-                    
-                    le3 = le3->Flink;
-                }
-                
-                if (!inserted)
-                    InsertTailList(&tp.tree->itemlist, &td->list_entry);
-                
-                if (!ignore) {
-                    tp.tree->header.num_items++;
-                    tp.tree->size += bi2->datalen + sizeof(leaf_node);
-                    
-                    if (rollback) {
-                        // FIXME - free this correctly
-                        tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-                        if (!tp2) {
-                            ERR("out of memory\n");
-                            return;
-                        }
-                        
-                        tp2->tree = tp.tree;
-                        tp2->item = td;
-                        
-                        add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
-                    }
-                    
-                    listhead = &td->list_entry;
-                }
-                
-                le = le2;
-            } else
-                break;
-            
-            le2 = le2->Flink;
-        }
-        
-        t = tp.tree;
-        while (t) {
-            if (t->paritem && t->paritem->ignore) {
-                t->paritem->ignore = FALSE;
-                t->parent->header.num_items++;
-                t->parent->size += sizeof(internal_node);
-                
-                // FIXME - do we need to add a rollback entry here?
+                t->header.generation = Vcb->superblock.generation;
+                t = t->parent;
             }
-
-            t->header.generation = Vcb->superblock.generation;
-            t = t->parent;
         }
         
         le = le->Flink;
