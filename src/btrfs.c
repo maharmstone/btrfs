@@ -2011,7 +2011,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     RemoveEntryList(&Vcb->list_entry);
     
     Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status) && Status != STATUS_TOO_LATE)
         WARN("registry_mark_volume_unmounted returned %08x\n", Status);
     
     if (flush) {
