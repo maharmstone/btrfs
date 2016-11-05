@@ -590,7 +590,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     
                     RtlCopyMemory(newei, tp.item->data, tp.item->size);
                     
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount += rc;
                     
                     sectedr2 = (EXTENT_DATA_REF*)((UINT8*)newei + ((UINT8*)sectedr - tp.item->data));
@@ -635,7 +634,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     
                     RtlCopyMemory(newei, tp.item->data, tp.item->size);
                     
-                    newei->generation = Vcb->superblock.generation;
                     newei->refcount += rc;
                     
                     sectsdr2 = (SHARED_DATA_REF*)((UINT8*)newei + ((UINT8*)sectsdr - tp.item->data));
@@ -697,7 +695,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         newei = ExAllocatePoolWithTag(PagedPool, tp.item->size + sizeof(UINT8) + datalen, ALLOC_TAG);
         RtlCopyMemory(newei, tp.item->data, ptr - tp.item->data);
         
-        newei->generation = Vcb->superblock.generation;
         newei->refcount += get_extent_data_refcount(type, data);
         
         if (len > 0)
@@ -770,7 +767,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
             
-            newei->generation = Vcb->superblock.generation;
             newei->refcount += get_extent_data_refcount(type, data);
             
             delete_tree_item(Vcb, &tp, rollback);
@@ -797,7 +793,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
     RtlCopyMemory(newei, tp.item->data, tp.item->size);
     
-    newei->generation = Vcb->superblock.generation;
     newei->refcount += get_extent_data_refcount(type, data);
     
     delete_tree_item(Vcb, &tp, rollback);
