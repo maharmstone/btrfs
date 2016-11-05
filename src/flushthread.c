@@ -2644,20 +2644,19 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
             }
         }
         
+        le = next_tree->itemlist.Flink;
+        while (le != &next_tree->itemlist) {
+            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+            
+            td->inserted = TRUE;
+            
+            le = le->Flink;
+        }
+        
         t->itemlist.Blink->Flink = next_tree->itemlist.Flink;
         t->itemlist.Blink->Flink->Blink = t->itemlist.Blink;
         t->itemlist.Blink = next_tree->itemlist.Blink;
         t->itemlist.Blink->Flink = &t->itemlist;
-        
-//         // TESTING
-//         le = t->itemlist.Flink;
-//         while (le != &t->itemlist) {
-//             tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-//             if (!td->ignore) {
-//                 ERR("key: %llx,%x,%llx\n", td->key.obj_id, td->key.obj_type, td->key.offset);
-//             }
-//             le = le->Flink;
-//         }
         
         next_tree->itemlist.Flink = next_tree->itemlist.Blink = &next_tree->itemlist;
         
@@ -2723,6 +2722,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
             if (t->size + size < Vcb->superblock.node_size - sizeof(tree_header)) {
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
+                td->inserted = TRUE;
                 
                 if (next_tree->header.level > 0 && td->treeholder.tree) {
                     td->treeholder.tree->parent = t;
