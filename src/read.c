@@ -3440,7 +3440,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL top_level;
     fcb* fcb;
     ccb* ccb;
-    BOOL fcb_lock = FALSE;
+    BOOL fcb_lock = FALSE, wait;
     
     FsRtlEnterFileSystem();
     
@@ -3493,8 +3493,15 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
+    wait = IoIsOperationSynchronous(Irp);
+    
+    // Don't offload jobs when doing paging IO - otherwise this can lead to
+    // deadlocks in CcCopyRead.
+    if (Irp->Flags & IRP_PAGING_IO)
+        wait = TRUE;
+    
     if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
-        if (!ExAcquireResourceSharedLite(fcb->Header.Resource, IoIsOperationSynchronous(Irp))) {
+        if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
             Status = STATUS_PENDING;
             IoMarkIrpPending(Irp);
             goto exit;
