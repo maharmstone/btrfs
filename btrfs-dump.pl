@@ -385,6 +385,9 @@ sub dump_item {
 	
 	print $pref;
 	if ($type == 0x1 || $type == 0x84) { # INODE_ITEM or ROOT_ITEM
+		if (length($s) < 0xa0) {
+			$s.= chr(0) x (0xa0 - length($s));
+		}
 		@b=unpack("QQQQQVVVVQQQx32QVQVQVQV",$s);
 		$s=substr($s,0xa0);
 		
