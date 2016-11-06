@@ -3510,7 +3510,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb_lock = TRUE;
     }
     
-    Status = do_read(Irp, IoIsOperationSynchronous(Irp), &bytes_read);
+    Status = do_read(Irp, wait, &bytes_read);
     
 exit:
     if (fcb_lock)
