@@ -474,7 +474,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         UINT8* ptr;
         
         eisize = sizeof(EXTENT_ITEM);
-        if (is_tree) eisize += sizeof(EXTENT_ITEM2);
+        if (is_tree && !(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) eisize += sizeof(EXTENT_ITEM2);
         eisize += sizeof(UINT8);
         eisize += datalen;
         
