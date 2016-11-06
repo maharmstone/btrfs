@@ -1726,6 +1726,23 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     NTSTATUS Status;
     UINT64 old_size;
     
+    if (ce->count == 0 && ce->old_count == 0) {
+        while (!IsListEmpty(&ce->refs)) {
+            changed_extent_ref* cer = CONTAINING_RECORD(RemoveHeadList(&ce->refs), changed_extent_ref, list_entry);
+            ExFreePool(cer);
+        }
+        
+        while (!IsListEmpty(&ce->old_refs)) {
+            changed_extent_ref* cer = CONTAINING_RECORD(RemoveHeadList(&ce->old_refs), changed_extent_ref, list_entry);
+            ExFreePool(cer);
+        }
+        
+        RemoveEntryList(&ce->list_entry);
+        ExFreePool(ce);
+        
+        return STATUS_SUCCESS;
+    }
+    
     le = ce->refs.Flink;
     while (le != &ce->refs) {
         changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
