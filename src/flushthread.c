@@ -4127,77 +4127,75 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             } while (b);
         }
         
-        if (!fcb->deleted) {
-            // add new EXTENT_DATAs
+        // add new EXTENT_DATAs
+        
+        last_end = 0;
+        
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            EXTENT_DATA* ed;
             
-            last_end = 0;
-            
-            le = fcb->extents.Flink;
-            while (le != &fcb->extents) {
-                extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-                EXTENT_DATA* ed;
-                
-                if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
-                    Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_sparse_extent returned %08x\n", Status);
-                        goto end;
-                    }
-                }
-                    
-                ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
-                if (!ed) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                RtlCopyMemory(ed, ext->data, ext->datalen);
-                
-                if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset,
-                                    ed, ext->datalen, Batch_Insert, Irp, rollback)) {
-                    ERR("insert_tree_item_batch failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
-                }
-                
-                if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
-                    prealloc = TRUE;
-                
-                if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_INLINE)
-                    extents_inline = TRUE;
-                
-                if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
-                    if (ed->type == EXTENT_TYPE_INLINE)
-                        last_end = ext->offset + ed->decoded_size;
-                    else {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                        
-                        last_end = ext->offset + ed2->num_bytes;
-                    }
-                }
-                
-                le = le->Flink;
-            }
-            
-            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
-                sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
-                Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp, rollback);
+            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
+                Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
                 }
             }
+                
+            ed = ExAllocatePoolWithTag(PagedPool, ext->datalen, ALLOC_TAG);
+            if (!ed) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
             
-            // update prealloc flag in INODE_ITEM
+            RtlCopyMemory(ed, ext->data, ext->datalen);
             
-            if (!prealloc)
-                fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
-            else
-                fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
+            if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset,
+                                ed, ext->datalen, Batch_Insert, Irp, rollback)) {
+                ERR("insert_tree_item_batch failed\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
             
-            fcb->inode_item_changed = TRUE;
+            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
+                prealloc = TRUE;
+            
+            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_INLINE)
+                extents_inline = TRUE;
+            
+            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
+                if (ed->type == EXTENT_TYPE_INLINE)
+                    last_end = ext->offset + ed->decoded_size;
+                else {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                    
+                    last_end = ext->offset + ed2->num_bytes;
+                }
+            }
+            
+            le = le->Flink;
         }
+        
+        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
+            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
+            Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_sparse_extent returned %08x\n", Status);
+                goto end;
+            }
+        }
+        
+        // update prealloc flag in INODE_ITEM
+        
+        if (!prealloc)
+            fcb->inode_item.flags &= ~BTRFS_INODE_PREALLOC;
+        else
+            fcb->inode_item.flags |= BTRFS_INODE_PREALLOC;
+        
+        fcb->inode_item_changed = TRUE;
         
         fcb->extents_changed = FALSE;
     }
@@ -4276,37 +4274,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     
     fcb->created = FALSE;
         
-    if (fcb->deleted) {
-        traverse_ptr tp2;
-        
-        // delete XATTR_ITEMs
-        
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_XATTR_ITEM;
-        searchkey.offset = 0;
-        
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-    
-        while (find_next_item(fcb->Vcb, &tp, &tp2, FALSE, Irp)) {
-            tp = tp2;
-            
-            if (tp.item->key.obj_id == fcb->inode) {
-                // FIXME - do metadata thing here too?
-                if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-                    delete_tree_item(fcb->Vcb, &tp, rollback);
-                    TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                }
-            } else
-                break;
-        }
-        
-        goto end;
-    }
-    
     if (!cache && fcb->inode_item_changed) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
