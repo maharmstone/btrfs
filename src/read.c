@@ -3413,14 +3413,10 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
             }
         }
         
-        ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
             Status = read_file(fcb, data, start, length, bytes_read, Irp);
-        
-        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         
         *bytes_read += addon;
         TRACE("read %u bytes\n", *bytes_read);
