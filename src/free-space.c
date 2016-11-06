@@ -404,7 +404,6 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
     LIST_ENTRY *le, rollback;
     
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
-    // FIXME - remove INODE_ITEM etc. if cache invalid for whatever reason
     
     TRACE("(%p, %llx)\n", Vcb, c->offset);
     
@@ -610,6 +609,8 @@ clearcache:
     ExFreePool(data);
     
     InitializeListHead(&rollback);
+    
+    delete_tree_item(Vcb, &tp, &rollback);
     
     Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
