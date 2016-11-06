@@ -2567,17 +2567,18 @@ BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
     return TRUE;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
     tree *next_tree, *par;
     BOOL loaded;
     
+    *done = FALSE;
+    
     TRACE("trying to amalgamate tree in root %llx, level %x (size %u)\n", t->root->id, t->header.level, t->size);
     
     // FIXME - doesn't capture everything, as it doesn't ascend
-    // FIXME - write proper function and put it in treefuncs.c
     le = t->paritem->list_entry.Flink;
     while (le != &t->parent->itemlist) {
         tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
@@ -2592,8 +2593,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
     
     if (!nextparitem)
         return STATUS_SUCCESS;
-    
-    // FIXME - loop, and capture more than one tree if we can
     
     TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
 //     nextparitem = t->paritem;
@@ -2698,6 +2697,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
         next_tree->root->root_item.bytes_used -= Vcb->superblock.node_size;
         
         free_tree(next_tree);
+        
+        *done = TRUE;
     } else {
         // rebalance by moving items from second tree into first
         ULONG avg_size = (t->size + next_tree->size) / 2;
@@ -2769,6 +2770,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, PIRP Irp, LI
                 par->write = TRUE;
                 par = par->parent;
             }
+            
+            *done = TRUE;
         }
     }
     
@@ -2997,11 +3000,15 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
             t = CONTAINING_RECORD(le, tree, list_entry);
             
             if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size && is_tree_unique(Vcb, t, Irp)) {
-                Status = try_tree_amalgamate(Vcb, t, Irp, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("try_tree_amalgamate returned %08x\n", Status);
-                    return Status;
-                }
+                BOOL done;
+                
+                do {
+                    Status = try_tree_amalgamate(Vcb, t, &done, Irp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("try_tree_amalgamate returned %08x\n", Status);
+                        return Status;
+                    }
+                } while (done);
             }
             
             le = le->Flink;
