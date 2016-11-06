@@ -732,6 +732,17 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     BOOL success = FALSE;
     NTSTATUS Status;
     
+#ifdef DEBUG_PARANOID
+    if (obj_type == TYPE_EXTENT_ITEM && size >= sizeof(EXTENT_ITEM)) {
+        EXTENT_ITEM* ei = (EXTENT_ITEM*)data;
+        
+        if (ei->generation == 0 || ei->generation > Vcb->superblock.generation) {
+            ERR("trying to write EXTENT_ITEM with nonsense generation\n");
+            int3;
+        }
+    }
+#endif
+    
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
     
 // #ifdef DEBUG_PARANOID
