@@ -1737,10 +1737,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             ExFreePool(cer);
         }
         
-        RemoveEntryList(&ce->list_entry);
-        ExFreePool(ce);
-        
-        return STATUS_SUCCESS;
+        goto end;
     }
     
     le = ce->refs.Flink;
@@ -1851,6 +1848,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
         WARN("old_refs not empty\n");
 #endif
     
+end:
     if (ce->count == 0 && !ce->superseded) {
         if (!ce->no_csum) {
             LIST_ENTRY changed_sector_list;
