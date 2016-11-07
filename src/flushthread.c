@@ -2881,6 +2881,24 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
     return STATUS_INTERNAL_ERROR;
 }
 
+static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    
+    if (t->parent && !t->parent->updated_extents && t->parent->has_address) {
+        Status = update_tree_extents_recursive(Vcb, t->parent, Irp, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+    
+    Status = update_tree_extents(Vcb, t, Irp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_tree_extents returned %08x\n", Status);
+        return Status;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
 //     LIST_ENTRY *le, *le2;
 //     write_tree* wt;
@@ -2984,6 +3002,15 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                     }
                 } else if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
                     TRACE("splitting overlarge tree (%x > %x)\n", t->size, Vcb->superblock.node_size - sizeof(tree_header));
+                    
+                    if (!t->updated_extents && t->has_address) {
+                        Status = update_tree_extents_recursive(Vcb, t, Irp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("update_tree_extents_recursive returned %08x\n", Status);
+                            return Status;
+                        }
+                    }
+                    
                     Status = split_tree(Vcb, t);
 
                     if (!NT_SUCCESS(Status)) {
