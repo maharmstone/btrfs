@@ -2761,33 +2761,32 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
             le = next_tree->itemlist.Flink;
         }
         
-        if (changed) {
-            le = next_tree->itemlist.Flink;
-            while (le != &next_tree->itemlist) {
-                tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-                
-                if (!td->ignore) {
-                    firstitem = td->key;
-                    break;
-                }
-                
-                le = le->Flink;
+        le = next_tree->itemlist.Flink;
+        while (le != &next_tree->itemlist) {
+            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+            
+            if (!td->ignore) {
+                firstitem = td->key;
+                break;
             }
             
-    //         ERR("firstitem = %llx,%x,%llx\n", firstitem.obj_id, firstitem.obj_type, firstitem.offset);
-            
-            // FIXME - once ascension is working, make this work with parent's parent, etc.
-            if (next_tree->paritem)
-                next_tree->paritem->key = firstitem;
-            
-            par = next_tree;
-            while (par) {
-                par->write = TRUE;
-                par = par->parent;
-            }
-            
-            *done = TRUE;
+            le = le->Flink;
         }
+        
+//         ERR("firstitem = %llx,%x,%llx\n", firstitem.obj_id, firstitem.obj_type, firstitem.offset);
+        
+        // FIXME - once ascension is working, make this work with parent's parent, etc.
+        if (next_tree->paritem)
+            next_tree->paritem->key = firstitem;
+        
+        par = next_tree;
+        while (par) {
+            par->write = TRUE;
+            par = par->parent;
+        }
+            
+        if (changed)
+            *done = TRUE;
     }
     
     return STATUS_SUCCESS;
