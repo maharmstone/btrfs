@@ -3049,7 +3049,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                         ERR("try_tree_amalgamate returned %08x\n", Status);
                         return Status;
                     }
-                } while (done);
+                } while (done && t->size < min_size);
             }
             
             le = le->Flink;
