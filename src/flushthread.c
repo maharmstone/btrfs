@@ -5649,25 +5649,10 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         goto end;
     }
     
-    Vcb->superblock.cache_generation = Vcb->superblock.generation;
-    
-    Status = write_superblocks(Vcb, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("write_superblocks returned %08x\n", Status);
-        goto end;
-    }
-    
-    clean_space_cache(Vcb);
-    
-    Vcb->superblock.generation++;
-    
-    Status = STATUS_SUCCESS;
-    
+#ifdef DEBUG_PARANOID
     le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
-        
-#ifdef DEBUG_PARANOID
         KEY searchkey;
         traverse_ptr tp;
         
@@ -5697,8 +5682,29 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                 int3;
             }
         }
-#endif
         
+        le = le->Flink;
+    }
+#endif
+    
+    Vcb->superblock.cache_generation = Vcb->superblock.generation;
+    
+    Status = write_superblocks(Vcb, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("write_superblocks returned %08x\n", Status);
+        goto end;
+    }
+    
+    clean_space_cache(Vcb);
+    
+    Vcb->superblock.generation++;
+    
+    Status = STATUS_SUCCESS;
+    
+    le = Vcb->trees.Flink;
+    while (le != &Vcb->trees) {
+        tree* t = CONTAINING_RECORD(le, tree, list_entry);
+
         t->write = FALSE;
         
         le = le->Flink;
