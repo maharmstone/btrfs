@@ -4310,7 +4310,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Irp->MdlAddress = NULL;
             Status = STATUS_SUCCESS;
         } else {
-            Status = write_file(Vcb, Irp, IoIsOperationSynchronous(Irp), FALSE);
+            Status = write_file(Vcb, Irp, IoIsOperationSynchronous(Irp) && !(Irp->Flags & IRP_PAGING_IO), FALSE);
         }
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
