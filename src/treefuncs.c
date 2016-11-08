@@ -1181,7 +1181,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
-        bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem) {
+        bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         if (bi->operation == Batch_SetXattr) {
@@ -1458,6 +1458,90 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                     }
                 } while (len > 0);
             }
+        } else if (bi->operation == Batch_DeleteInodeRef) {
+            if (td->size < sizeof(INODE_REF)) {
+                WARN("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
+                return TRUE;
+            } else {
+                INODE_REF *ir, *delir;
+                ULONG len;
+                BOOL changed = FALSE;
+                
+                delir = (INODE_REF*)bi->data;
+                ir = (INODE_REF*)td->data;
+                len = td->size;
+                
+                do {
+                    ULONG itemlen;
+                    
+                    if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                        ERR("INODE_REF was truncated\n");
+                        break;
+                    }
+                    
+                    itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+                    
+                    if (ir->n == delir->n && RtlCompareMemory(ir->name, delir->name, ir->n) == ir->n) {
+                        ULONG newlen = td->size - itemlen;
+                        
+                        changed = TRUE;
+                        
+                        if (newlen == 0)
+                            TRACE("deleting INODE_REF\n");
+                        else {
+                            UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
+                            tree_data* td2;
+                            
+                            if (!newir) {
+                                ERR("out of memory\n");
+                                return TRUE;
+                            }
+                            
+                            TRACE("modifying INODE_REF\n");
+
+                            if ((UINT8*)ir > td->data) {
+                                RtlCopyMemory(newir, td->data, (UINT8*)ir - td->data);
+                                iroff = newir + ((UINT8*)ir - td->data);
+                            } else {
+                                iroff = newir;
+                            }
+                            
+                            if ((UINT8*)&ir->name[ir->n] - td->data < td->size)
+                                RtlCopyMemory(iroff, &ir->name[ir->n], td->size - ((UINT8*)&ir->name[ir->n] - td->data));
+                            
+                            td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                            if (!td2) {
+                                ERR("out of memory\n");
+                                return TRUE;
+                            }
+                            
+                            td2->key = bi->key;
+                            td2->size = newlen;
+                            td2->data = newir;
+                            td2->ignore = FALSE;
+                            td2->inserted = TRUE;
+                            
+                            InsertHeadList(td->list_entry.Blink, &td2->list_entry);
+                            
+                            t->header.num_items++;
+                            t->size += newlen + sizeof(leaf_node);
+                            t->write = TRUE;
+                        }
+                        
+                        break;
+                    }
+                    
+                    if (len > itemlen) {
+                        len -= itemlen;
+                        ir = (INODE_REF*)&ir->name[ir->n];
+                    } else
+                        break;
+                } while (len > 0);
+                
+                if (!changed) {
+                    // FIXME - add Batch_DeleteInodeExtRef if not found
+                }
+            }
         }
         
         // delete old item
@@ -1587,7 +1671,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 }
             }
         } else {
-            if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem)
+            if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef)
                 td = NULL;
             else {
                 td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1671,7 +1755,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     
                     ignore = FALSE;
                     
-                    if (bi2->operation == Batch_Delete || bi2->operation == Batch_DeleteDirItem)
+                    if (bi2->operation == Batch_Delete || bi2->operation == Batch_DeleteDirItem || bi2->operation == Batch_DeleteInodeRef)
                         td = NULL;
                     else {
                         td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1766,7 +1850,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         LIST_ENTRY* le = RemoveHeadList(&br->items);
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
         
-        if (bi->operation == Batch_DeleteDirItem && bi->data)
+        if ((bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef) && bi->data)
             ExFreePool(bi->data);
         
         ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);

@@ -5367,17 +5367,30 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+            INODE_REF* ir;
+            
             // delete INODE_REF (0xc)
             
-            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, name, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_inode_ref returned %08x\n", Status);
-                return Status;
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + name->Length, ALLOC_TAG);
+            if (!ir) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            ir->index = fileref->index;
+            ir->n = name->Length;
+            RtlCopyMemory(ir->name, name->Buffer, name->Length);
+
+            if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF,
+                                        fileref->parent->fcb->inode, ir, sizeof(INODE_REF) - 1 + name->Length, Batch_DeleteInodeRef, Irp, rollback)) {
+                ERR("insert_tree_item_batch failed\n");
+                return STATUS_INTERNAL_ERROR;
             }
         } else { // subvolume
             Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, name, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_root_ref returned %08x\n", Status);
+                return Status;
             }
             
             Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, Irp, rollback);
