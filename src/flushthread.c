@@ -5456,6 +5456,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         KEY searchkey;
         traverse_ptr tp;
         ANSI_STRING* name;
+        DIR_ITEM* di;
         
         if (fileref->oldutf8.Buffer)
             name = &fileref->oldutf8;
@@ -5466,12 +5467,22 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         TRACE("deleting %.*S\n", file_desc_fileref(fileref));
         
+        di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + name->Length, ALLOC_TAG);
+        if (!di) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        di->m = 0;
+        di->n = (UINT16)fileref->utf8.Length;
+        RtlCopyMemory(di->name, name->Buffer, name->Length);
+        
         // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, name, Irp, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_dir_item returned %08x\n", Status);
-            return Status;
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
+                                    crc32, di, sizeof(DIR_ITEM) - 1 + name->Length, Batch_DeleteDirItem, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
