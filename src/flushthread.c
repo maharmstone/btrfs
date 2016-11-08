@@ -4913,53 +4913,6 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_dir_item(device_extension* Vcb, root* subvol, UINT64 inode, UINT32 crc32, DIR_ITEM* di, ULONG disize, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    UINT8* di2;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_DIR_ITEM;
-    searchkey.offset = crc32;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(tp.item->key, searchkey)) {
-        ULONG maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-        
-        if (tp.item->size + disize > maxlen) {
-            WARN("DIR_ITEM was longer than maxlen (%u + %u > %u)\n", tp.item->size, disize, maxlen);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        di2 = ExAllocatePoolWithTag(PagedPool, tp.item->size + disize, ALLOC_TAG);
-        if (!di2) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        if (tp.item->size > 0)
-            RtlCopyMemory(di2, tp.item->data, tp.item->size);
-        
-        RtlCopyMemory(di2 + tp.item->size, di, disize);
-        
-        delete_tree_item(Vcb, &tp, rollback);
-        
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di2, tp.item->size + disize, NULL, Irp, rollback);
-        
-        ExFreePool(di);
-    } else {
-        insert_tree_item(Vcb, subvol, inode, TYPE_DIR_ITEM, crc32, di, disize, NULL, Irp, rollback);
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
@@ -5268,76 +5221,6 @@ static NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 ino
     return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = parinode;
-    searchkey.obj_type = TYPE_DIR_ITEM;
-    searchkey.offset = crc32;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-        } else {
-            DIR_ITEM* di;
-            LONG len;
-            
-            di = (DIR_ITEM*)tp.item->data;
-            len = tp.item->size;
-            
-            do {
-                if (di->n == utf8->Length && RtlCompareMemory(di->name, utf8->Buffer, di->n) == di->n) {
-                    ULONG newlen = tp.item->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
-                    
-                    delete_tree_item(Vcb, &tp, rollback);
-                    
-                    if (newlen == 0) {
-                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    } else {
-                        UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
-                        
-                        if (!newdi) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                        if ((UINT8*)di > tp.item->data) {
-                            RtlCopyMemory(newdi, tp.item->data, (UINT8*)di - tp.item->data);
-                            dioff = newdi + ((UINT8*)di - tp.item->data);
-                        } else {
-                            dioff = newdi;
-                        }
-                        
-                        if ((UINT8*)&di->name[di->n + di->m] - tp.item->data < tp.item->size)
-                            RtlCopyMemory(dioff, &di->name[di->n + di->m], tp.item->size - ((UINT8*)&di->name[di->n + di->m] - tp.item->data));
-                        
-                        insert_tree_item(Vcb, subvol, parinode, TYPE_DIR_ITEM, crc32, newdi, newlen, NULL, Irp, rollback);
-                    }
-                    
-                    break;
-                }
-                
-                len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
-                di = (DIR_ITEM*)&di->name[di->n + di->m];
-            } while (len > 0);
-        }
-    } else {
-        WARN("could not find DIR_ITEM for crc32 %08x\n", crc32);
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
@@ -5532,7 +5415,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         PANSI_STRING oldutf8 = fileref->oldutf8.Buffer ? &fileref->oldutf8 : &fileref->utf8;
         UINT32 crc32, oldcrc32;
         ULONG disize;
-        DIR_ITEM *di, *di2;
+        DIR_ITEM *olddi, *di, *di2;
         KEY searchkey;
         traverse_ptr tp;
         
@@ -5542,15 +5425,25 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             oldcrc32 = crc32;
         else
             oldcrc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->oldutf8.Buffer, fileref->oldutf8.Length);
-
-        // delete DIR_ITEM (0x54)
         
-        Status = delete_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, oldcrc32, oldutf8, Irp, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_dir_item returned %08x\n", Status);
-            return Status;
+        olddi = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + oldutf8->Length, ALLOC_TAG);
+        if (!olddi) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
         
+        olddi->m = 0;
+        olddi->n = (UINT16)oldutf8->Length;
+        RtlCopyMemory(olddi->name, oldutf8->Buffer, oldutf8->Length);
+        
+        // delete DIR_ITEM (0x54)
+        
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
+                                    oldcrc32, olddi, sizeof(DIR_ITEM) - 1 + oldutf8->Length, Batch_DeleteDirItem, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+
         // add DIR_ITEM (0x54)
         
         disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
@@ -5585,10 +5478,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         
         RtlCopyMemory(di2, di, disize);
         
-        Status = add_dir_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, crc32, di, disize, Irp, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("add_dir_item returned %08x\n", Status);
-            return Status;
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM, crc32,
+                                    di, disize, Batch_DirItem, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
