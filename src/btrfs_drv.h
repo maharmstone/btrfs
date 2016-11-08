@@ -684,8 +684,6 @@ BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* da
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
 void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line);
-NTSTATUS delete_dir_item(device_extension* Vcb, root* subvol, UINT64 parinode, UINT32 crc32, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback);
 fcb* create_fcb(POOL_TYPE pool_type);
 file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
