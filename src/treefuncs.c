@@ -1647,8 +1647,16 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 }
                 
                 listhead = &td->list_entry;
-            } else
+            } else {
                 listhead = &tp.item->list_entry;
+                
+                if (!td && tp.item->ignore && tp.item->list_entry.Blink != &tp.tree->itemlist) {
+                    tree_data* prevtd = CONTAINING_RECORD(tp.item->list_entry.Blink, tree_data, list_entry);
+                    
+                    if (!prevtd->ignore && !keycmp(prevtd->key, tp.item->key))
+                        listhead = &prevtd->list_entry;
+                }
+            }
             
             le2 = le->Flink;
             while (le2 != &br->items) {
