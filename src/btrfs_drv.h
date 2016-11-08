@@ -335,6 +335,7 @@ typedef struct _root {
 
 enum batch_operation {
     Batch_Insert,
+    Batch_Delete,
     Batch_SetXattr,
     Batch_DirItem,
     Batch_InodeRef,

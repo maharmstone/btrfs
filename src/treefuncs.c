@@ -1180,8 +1180,8 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 }
 
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
-    if (bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef || bi->operation == Batch_InodeExtRef ||
-        bi->operation == Batch_DeleteDirItem) {
+    if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
+        bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         if (bi->operation == Batch_SetXattr) {
@@ -1587,7 +1587,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 }
             }
         } else {
-            if (bi->operation == Batch_DeleteDirItem)
+            if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem)
                 td = NULL;
             else {
                 td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1671,7 +1671,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     
                     ignore = FALSE;
                     
-                    if (bi2->operation == Batch_DeleteDirItem)
+                    if (bi2->operation == Batch_Delete || bi2->operation == Batch_DeleteDirItem)
                         td = NULL;
                     else {
                         td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);

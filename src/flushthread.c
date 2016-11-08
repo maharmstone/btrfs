@@ -5336,8 +5336,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         fileref->created = FALSE;
     } else if (fileref->deleted) {
         UINT32 crc32;
-        KEY searchkey;
-        traverse_ptr tp;
         ANSI_STRING* name;
         DIR_ITEM* di;
         
@@ -5391,20 +5389,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         
         // delete DIR_INDEX (0x60)
         
-        searchkey.obj_id = fileref->parent->fcb->inode;
-        searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = fileref->index;
-
-        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            Status = STATUS_INTERNAL_ERROR;
-            return Status;
-        }
-        
-        if (!keycmp(searchkey, tp.item->key)) {
-            delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
-            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
+                                    fileref->index, NULL, 0, Batch_Delete, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
         }
         
         if (fileref->oldutf8.Buffer) {
