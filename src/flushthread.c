@@ -3693,7 +3693,7 @@ static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb,
     while (le != &br->items) {
         batch_item* bi2 = CONTAINING_RECORD(le, batch_item, list_entry);
         
-        if (keycmp(bi2->key, bi->key) == -1) {
+        if (keycmp(bi2->key, bi->key) != 1) {
             InsertHeadList(&bi2->list_entry, &bi->list_entry);
             return TRUE;
         }
@@ -5404,8 +5404,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         UINT32 crc32, oldcrc32;
         ULONG disize;
         DIR_ITEM *olddi, *di, *di2;
-        KEY searchkey;
-        traverse_ptr tp;
         
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
         
@@ -5527,29 +5525,18 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         
         // delete DIR_INDEX (0x60)
         
-        searchkey.obj_id = fileref->parent->fcb->inode;
-        searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = fileref->index;
-        
-        Status = find_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            Status = STATUS_INTERNAL_ERROR;
-            return Status;
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
+                                    fileref->index, NULL, 0, Batch_Delete, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
         }
-        
-        if (!keycmp(searchkey, tp.item->key)) {
-            delete_tree_item(fileref->fcb->Vcb, &tp, rollback);
-            TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        } else
-            WARN("could not find (%llx,%x,%llx) in subvol %llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, fileref->fcb->subvol->id);
         
         // add DIR_INDEX (0x60)
         
-        if (!insert_tree_item(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index, di2, disize, NULL, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
-            Status = STATUS_INTERNAL_ERROR;
-            return Status;
+        if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
+                                    fileref->index, di2, disize, Batch_Insert, Irp, rollback)) {
+            ERR("insert_tree_item_batch failed\n");
+            return STATUS_INTERNAL_ERROR;
         }
 
         if (fileref->oldutf8.Buffer) {
