@@ -1758,6 +1758,9 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         LIST_ENTRY* le = RemoveHeadList(&br->items);
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
         
+        if (bi->operation == Batch_DeleteDirItem && bi->data)
+            ExFreePool(bi->data);
+        
         ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
     }
 }
