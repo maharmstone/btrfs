@@ -1588,14 +1588,16 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         break;
                 } while (len > 0);
                 
-                if (!changed && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                    TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
-                    
-                    add_delete_inode_extref(Vcb, bi, listhead);
-                    
-                    return TRUE;
-                } else
-                    WARN("entry not found in INODE_REF\n");
+                if (!changed) {
+                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                        TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
+                        
+                        add_delete_inode_extref(Vcb, bi, listhead);
+                        
+                        return TRUE;
+                    } else
+                        WARN("entry not found in INODE_REF\n");
+                }
             }
         } else if (bi->operation == Batch_DeleteInodeExtRef) {
             if (td->size < sizeof(INODE_EXTREF)) {

@@ -4913,314 +4913,6 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_inode_extref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    INODE_EXTREF* ier;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_EXTREF;
-    searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
-
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        ULONG iersize = tp.item->size + sizeof(INODE_EXTREF) - 1 + utf8->Length;
-        UINT8* ier2;
-        UINT32 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-        
-        if (iersize > maxlen) {
-            ERR("item would be too long (%u > %u)\n", iersize, maxlen);
-            return STATUS_INTERNAL_ERROR;
-        }
-        
-        ier2 = ExAllocatePoolWithTag(PagedPool, iersize, ALLOC_TAG);
-        if (!ier2) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        if (tp.item->size > 0)
-            RtlCopyMemory(ier2, tp.item->data, tp.item->size);
-        
-        ier = (INODE_EXTREF*)&ier2[tp.item->size];
-        ier->dir = parinode;
-        ier->index = index;
-        ier->n = utf8->Length;
-        RtlCopyMemory(ier->name, utf8->Buffer, utf8->Length);
-        
-        delete_tree_item(Vcb, &tp, rollback);
-        
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier2, iersize, NULL, Irp, rollback)) {
-            ERR("error - failed to insert item\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else {
-        ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + utf8->Length, ALLOC_TAG);
-        if (!ier) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        ier->dir = parinode;
-        ier->index = index;
-        ier->n = utf8->Length;
-        RtlCopyMemory(ier->name, utf8->Buffer, utf8->Length);
-    
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ier, sizeof(INODE_EXTREF) - 1 + utf8->Length, NULL, Irp, rollback)) {
-            ERR("error - failed to insert item\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    }
-    
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS add_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, UINT64 index, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    INODE_REF* ir;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_REF;
-    searchkey.offset = parinode;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        ULONG irsize = tp.item->size + sizeof(INODE_REF) - 1 + utf8->Length;
-        UINT8* ir2;
-        UINT32 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
-        
-        if (irsize > maxlen) {
-            if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                TRACE("INODE_REF too long, creating INODE_EXTREF\n");
-                return add_inode_extref(Vcb, subvol, inode, parinode, index, utf8, Irp, rollback);
-            } else {
-                ERR("item would be too long (%u > %u)\n", irsize, maxlen);
-                return STATUS_INTERNAL_ERROR;
-            }
-        }
-        
-        ir2 = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
-        if (!ir2) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        if (tp.item->size > 0)
-            RtlCopyMemory(ir2, tp.item->data, tp.item->size);
-        
-        ir = (INODE_REF*)&ir2[tp.item->size];
-        ir->index = index;
-        ir->n = utf8->Length;
-        RtlCopyMemory(ir->name, utf8->Buffer, utf8->Length);
-        
-        delete_tree_item(Vcb, &tp, rollback);
-        
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir2, irsize, NULL, Irp, rollback)) {
-            ERR("error - failed to insert item\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else {
-        ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + utf8->Length, ALLOC_TAG);
-        if (!ir) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        ir->index = index;
-        ir->n = utf8->Length;
-        RtlCopyMemory(ir->name, utf8->Buffer, utf8->Length);
-    
-        if (!insert_tree_item(Vcb, subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ir, sizeof(INODE_REF) - 1 + ir->n, NULL, Irp, rollback)) {
-            ERR("error - failed to insert item\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    }
-    
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS delete_inode_ref(device_extension* Vcb, root* subvol, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, PIRP Irp, LIST_ENTRY* rollback) {
-    KEY searchkey;
-    traverse_ptr tp;
-    BOOL changed = FALSE;
-    NTSTATUS Status;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_REF;
-    searchkey.offset = parinode;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(INODE_REF)) {
-            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
-        } else {
-            INODE_REF* ir;
-            ULONG len;
-            
-            ir = (INODE_REF*)tp.item->data;
-            len = tp.item->size;
-            
-            do {
-                ULONG itemlen;
-                
-                if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    break;
-                }
-                
-                itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
-                
-                if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
-                    ULONG newlen = tp.item->size - itemlen;
-                    
-                    delete_tree_item(Vcb, &tp, rollback);
-                    changed = TRUE;
-                    
-                    if (newlen == 0) {
-                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    } else {
-                        UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
-                        
-                        if (!newir) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                        if ((UINT8*)ir > tp.item->data) {
-                            RtlCopyMemory(newir, tp.item->data, (UINT8*)ir - tp.item->data);
-                            iroff = newir + ((UINT8*)ir - tp.item->data);
-                        } else {
-                            iroff = newir;
-                        }
-                        
-                        if ((UINT8*)&ir->name[ir->n] - tp.item->data < tp.item->size)
-                            RtlCopyMemory(iroff, &ir->name[ir->n], tp.item->size - ((UINT8*)&ir->name[ir->n] - tp.item->data));
-                        
-                        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newir, newlen, NULL, Irp, rollback);
-                    }
-                    
-                    break;
-                }
-                
-                if (len > itemlen) {
-                    len -= itemlen;
-                    ir = (INODE_REF*)&ir->name[ir->n];
-                } else
-                    break;
-            } while (len > 0);
-            
-            if (!changed) {
-                WARN("found INODE_REF entry, but couldn't find filename\n");
-            }
-        }
-    } else {
-        WARN("could not find INODE_REF entry for inode %llx in %llx\n", searchkey.obj_id, searchkey.offset);
-    }
-    
-    if (changed)
-        return STATUS_SUCCESS;
-    
-    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF))
-        return STATUS_INTERNAL_ERROR;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_EXTREF;
-    searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(INODE_EXTREF)) {
-            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_EXTREF));
-        } else {
-            INODE_EXTREF* ier;
-            ULONG len;
-            
-            ier = (INODE_EXTREF*)tp.item->data;
-            len = tp.item->size;
-            
-            do {
-                ULONG itemlen;
-                
-                if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    break;
-                }
-                
-                itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
-                
-                if (ier->dir == parinode && ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
-                    ULONG newlen = tp.item->size - itemlen;
-                    
-                    delete_tree_item(Vcb, &tp, rollback);
-                    changed = TRUE;
-                    
-                    if (newlen == 0) {
-                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    } else {
-                        UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
-                        
-                        if (!newier) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-                        if ((UINT8*)ier > tp.item->data) {
-                            RtlCopyMemory(newier, tp.item->data, (UINT8*)ier - tp.item->data);
-                            ieroff = newier + ((UINT8*)ier - tp.item->data);
-                        } else {
-                            ieroff = newier;
-                        }
-                        
-                        if ((UINT8*)&ier->name[ier->n] - tp.item->data < tp.item->size)
-                            RtlCopyMemory(ieroff, &ier->name[ier->n], tp.item->size - ((UINT8*)&ier->name[ier->n] - tp.item->data));
-                        
-                        insert_tree_item(Vcb, subvol, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newier, newlen, NULL, Irp, rollback);
-                    }
-                    
-                    break;
-                }
-                
-                if (len > itemlen) {
-                    len -= itemlen;
-                    ier = (INODE_EXTREF*)&ier->name[ier->n];
-                } else
-                    break;
-            } while (len > 0);
-        }
-    } else {
-        WARN("couldn't find INODE_EXTREF entry either (offset = %08x)\n", (UINT32)searchkey.offset);
-    }
-    
-    return changed ? STATUS_SUCCESS : STATUS_INTERNAL_ERROR;
-}
-
 static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
@@ -5484,20 +5176,42 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
         
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+            INODE_REF *ir, *ir2;
+            
             // delete INODE_REF (0xc)
             
-            Status = delete_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, oldutf8, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_inode_ref returned %08x\n", Status);
-                return Status;
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + oldutf8->Length, ALLOC_TAG);
+            if (!ir) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            ir->index = fileref->index;
+            ir->n = oldutf8->Length;
+            RtlCopyMemory(ir->name, oldutf8->Buffer, ir->n);
+        
+            if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
+                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_DeleteInodeRef, Irp, rollback)) {
+                ERR("insert_tree_item_batch failed\n");
+                return STATUS_INTERNAL_ERROR;
             }
             
             // add INODE_REF (0xc)
             
-            Status = add_inode_ref(fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, fileref->parent->fcb->inode, fileref->index, &fileref->utf8, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_inode_ref returned %08x\n", Status);
-                return Status;
+            ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->utf8.Length, ALLOC_TAG);
+            if (!ir2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            ir2->index = fileref->index;
+            ir2->n = fileref->utf8.Length;
+            RtlCopyMemory(ir2->name, fileref->utf8.Buffer, ir2->n);
+        
+            if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
+                                        ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef, Irp, rollback)) {
+                ERR("insert_tree_item_batch failed\n");
+                return STATUS_INTERNAL_ERROR;
             }
         } else { // subvolume
             ULONG rrlen;
