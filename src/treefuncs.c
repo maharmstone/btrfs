@@ -1179,6 +1179,55 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
     }
 }
 
+static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_ENTRY* listhead) {
+    batch_item* bi2;
+    LIST_ENTRY* le;
+    INODE_REF* delir = (INODE_REF*)bi->data;
+    INODE_EXTREF* ier;
+    BOOL inserted = FALSE;
+    
+    TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
+    
+    bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
+    if (!bi2) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + delir->n, ALLOC_TAG);
+    if (!ier) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    ier->dir = bi->key.offset;
+    ier->index = delir->index;
+    ier->n = delir->n;
+    RtlCopyMemory(ier->name, delir->name, delir->n);
+    
+    bi2->key.obj_id = bi->key.obj_id;
+    bi2->key.obj_type = TYPE_INODE_EXTREF;
+    bi2->key.offset = calc_crc32c((UINT32)bi->key.offset, (UINT8*)ier->name, ier->n);
+    bi2->data = ier;
+    bi2->datalen = sizeof(INODE_EXTREF) - 1 + ier->n;
+    bi2->operation = Batch_DeleteInodeExtRef;
+    
+    le = bi->list_entry.Flink;
+    while (le != listhead) {
+        batch_item* bi3 = CONTAINING_RECORD(le, batch_item, list_entry);
+        
+        if (keycmp(bi3->key, bi2->key) != -1) {
+            InsertHeadList(le->Blink, &bi2->list_entry);
+            inserted = TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!inserted)
+        InsertTailList(listhead, &bi2->list_entry);
+}
+
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
@@ -1540,51 +1589,9 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 } while (len > 0);
                 
                 if (!changed && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                    batch_item* bi2;
-                    LIST_ENTRY* le;
-                    INODE_EXTREF* ier;
-                    BOOL inserted = FALSE;
-                    
                     TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
-
-                    bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
-                    if (!bi2) {
-                        ERR("out of memory\n");
-                        return TRUE;
-                    }
                     
-                    ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + delir->n, ALLOC_TAG);
-                    if (!ier) {
-                        ERR("out of memory\n");
-                        return TRUE;
-                    }
-                    
-                    ier->dir = bi->key.offset;
-                    ier->index = delir->index;
-                    ier->n = delir->n;
-                    RtlCopyMemory(ier->name, delir->name, delir->n);
-                    
-                    bi2->key.obj_id = bi->key.obj_id;
-                    bi2->key.obj_type = TYPE_INODE_EXTREF;
-                    bi2->key.offset = calc_crc32c((UINT32)bi->key.offset, (UINT8*)ier->name, ier->n);
-                    bi2->data = ier;
-                    bi2->datalen = sizeof(INODE_EXTREF) - 1 + ier->n;
-                    bi2->operation = Batch_DeleteInodeExtRef;
-                    
-                    le = bi->list_entry.Flink;
-                    while (le != listhead) {
-                        batch_item* bi3 = CONTAINING_RECORD(le, batch_item, list_entry);
-                        
-                        if (keycmp(bi3->key, bi2->key) != -1) {
-                            InsertHeadList(le->Blink, &bi2->list_entry);
-                            inserted = TRUE;
-                        }
-                        
-                        le = le->Flink;
-                    }
-                    
-                    if (!inserted)
-                        InsertTailList(listhead, &bi2->list_entry);
+                    add_delete_inode_extref(Vcb, bi, listhead);
                     
                     return TRUE;
                 } else
@@ -1838,6 +1845,10 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 InsertHeadList(&tp.item->list_entry, &td->list_entry);
             }
             
+            if (bi->operation == Batch_DeleteInodeRef && cmp != 0 && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                add_delete_inode_extref(Vcb, bi, &br->items);
+            }
+            
             if (!ignore && td) {
                 tp.tree->header.num_items++;
                 tp.tree->size += bi->datalen + sizeof(leaf_node);
@@ -1914,6 +1925,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                                 if (td) {
                                     InsertHeadList(le3->Blink, &td->list_entry);
                                     inserted = TRUE;
+                                } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                                    add_delete_inode_extref(Vcb, bi2, &br->items);
                                 }
                                 break;
                             }
@@ -1946,6 +1959,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                             
                             listhead = &td->list_entry;
                         }
+                    } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                        add_delete_inode_extref(Vcb, bi2, &br->items);
                     }
                     
                     le = le2;
