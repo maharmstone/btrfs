@@ -1184,7 +1184,6 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     LIST_ENTRY* le;
     INODE_REF* delir = (INODE_REF*)bi->data;
     INODE_EXTREF* ier;
-    BOOL inserted = FALSE;
     
     TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
     
@@ -1218,14 +1217,13 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
         
         if (keycmp(bi3->key, bi2->key) != -1) {
             InsertHeadList(le->Blink, &bi2->list_entry);
-            inserted = TRUE;
+            return;
         }
         
         le = le->Flink;
     }
     
-    if (!inserted)
-        InsertTailList(listhead, &bi2->list_entry);
+    InsertTailList(listhead, &bi2->list_entry);
 }
 
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
