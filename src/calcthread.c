@@ -17,6 +17,8 @@
 
 #include "btrfs_drv.h"
 
+#define SECTOR_BLOCK 16
+
 NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_job** pcj) {
     calc_job* cj;
     KIRQL irql;
@@ -64,17 +66,28 @@ void free_calc_job(calc_job* cj) {
 
 static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
     LONG pos, done;
+    UINT32* csum;
+    UINT8* data;
+    ULONG blocksize, i;
     
     pos = InterlockedIncrement(&cj->pos) - 1;
     
-    if (pos >= cj->sectors)
+    if (pos * SECTOR_BLOCK >= cj->sectors)
         return FALSE;
 
-    cj->csum[pos] = ~calc_crc32c(0xffffffff, cj->data + (pos * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+    csum = &cj->csum[pos * SECTOR_BLOCK];
+    data = cj->data + (pos * SECTOR_BLOCK * Vcb->superblock.sector_size);
+    
+    blocksize = min(SECTOR_BLOCK, cj->sectors - (pos * SECTOR_BLOCK));
+    for (i = 0; i < blocksize; i++) {
+        *csum = ~calc_crc32c(0xffffffff, data, Vcb->superblock.sector_size);
+        csum++;
+        data += Vcb->superblock.sector_size;
+    }
     
     done = InterlockedIncrement(&cj->done);
     
-    if (done == cj->sectors) {
+    if (done * SECTOR_BLOCK >= cj->sectors) {
         KIRQL irql;
         
         KeAcquireSpinLock(&Vcb->calcthreads.spin_lock, &irql);
