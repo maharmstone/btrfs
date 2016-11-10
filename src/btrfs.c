@@ -1170,6 +1170,61 @@ void STDCALL tree_test(void* context) {
 }
 #endif
 
+// static void test_calc_thread(device_extension* Vcb) {
+//     UINT8* data;
+//     ULONG sectors, max_sectors, i, j;
+//     calc_job* cj;
+//     LARGE_INTEGER* sertimes;
+//     LARGE_INTEGER* partimes;
+//     LARGE_INTEGER time1, time2;
+//     
+//     max_sectors = 256;
+//     
+//     sertimes = ExAllocatePoolWithTag(PagedPool, sizeof(LARGE_INTEGER) * max_sectors, ALLOC_TAG);
+//     partimes = ExAllocatePoolWithTag(PagedPool, sizeof(LARGE_INTEGER) * max_sectors, ALLOC_TAG);
+//     RtlZeroMemory(sertimes, sizeof(LARGE_INTEGER) * max_sectors);
+//     RtlZeroMemory(partimes, sizeof(LARGE_INTEGER) * max_sectors);
+//     
+//     for (sectors = 1; sectors <= max_sectors; sectors++) {
+//         data = ExAllocatePoolWithTag(PagedPool, sectors * Vcb->superblock.sector_size, ALLOC_TAG);
+//         RtlZeroMemory(data, sectors * Vcb->superblock.sector_size);
+//         
+//         for (j = 0; j < 100; j++) {
+//             time1 = KeQueryPerformanceCounter(NULL);
+//             
+//             for (i = 0; i < sectors; i++) {
+//                 UINT32 tmp;
+//                 
+//                 tmp = ~calc_crc32c(0xffffffff, data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+//             }
+//             
+//             time2 = KeQueryPerformanceCounter(NULL);
+//             
+//             sertimes[sectors - 1].QuadPart += time2.QuadPart - time1.QuadPart;
+//             
+//             time1 = KeQueryPerformanceCounter(NULL);
+//             
+//             add_calc_job(Vcb, data, sectors, &cj);
+//             KeWaitForSingleObject(&cj->event, Executive, KernelMode, FALSE, NULL);
+//             
+//             time2 = KeQueryPerformanceCounter(NULL);
+//             
+//             partimes[sectors - 1].QuadPart += time2.QuadPart - time1.QuadPart;
+//             
+//             free_calc_job(cj);
+//         }
+//         
+//         ExFreePool(data);
+//     }
+//     
+//     for (sectors = 1; sectors <= max_sectors; sectors++) {
+//         ERR("%u sectors: serial %llu, parallel %llu\n", sectors, sertimes[sectors - 1].QuadPart, partimes[sectors - 1].QuadPart);
+//     }
+//     
+//     ExFreePool(partimes);
+//     ExFreePool(sertimes);
+// }
+
 static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
@@ -1221,6 +1276,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
 //     test_creating_root(Vcb);
 //     test_alloc_chunk(Vcb);
 //     test_space_list(Vcb);
+//     test_calc_thread(Vcb);
     
     Vcb->need_write = TRUE;
     
