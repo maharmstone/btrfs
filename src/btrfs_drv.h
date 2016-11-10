@@ -458,6 +458,7 @@ typedef struct {
     UINT32 sectors;
     LONG pos, done;
     KEVENT event;
+    LONG refcount;
     LIST_ENTRY list_entry;
 } calc_job;
 

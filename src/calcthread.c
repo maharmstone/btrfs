@@ -38,6 +38,7 @@ NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_j
     cj->sectors = sectors;
     cj->pos = 0;
     cj->done = 0;
+    cj->refcount = 1;
     KeInitializeEvent(&cj->event, NotificationEvent, FALSE);
         
     KeAcquireSpinLock(&Vcb->calcthreads.spin_lock, &irql);
@@ -53,11 +54,15 @@ NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_j
 }
 
 void free_calc_job(calc_job* cj) {
-    ExFreePool(cj->csum);
-    ExFreePool(cj);
+    LONG rc = InterlockedDecrement(&cj->refcount);
+    
+    if (rc == 0) {
+        ExFreePool(cj->csum);
+        ExFreePool(cj);
+    }
 }
 
-static BOOL do_calc(device_extension* Vcb, calc_job* cj, drv_calc_thread* thread) {
+static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
     LONG pos, done;
     
     pos = InterlockedIncrement(&cj->pos) - 1;
@@ -96,6 +101,7 @@ void calc_thread(void* context) {
         while (TRUE) {
             KIRQL irql;
             calc_job* cj;
+            BOOL b;
             
             KeAcquireSpinLock(&Vcb->calcthreads.spin_lock, &irql);
             
@@ -105,10 +111,15 @@ void calc_thread(void* context) {
             }
             
             cj = CONTAINING_RECORD(Vcb->calcthreads.job_list.Flink, calc_job, list_entry);
+            cj->refcount++;
             
             KeReleaseSpinLock(&Vcb->calcthreads.spin_lock, irql);
             
-            if (!do_calc(Vcb, cj, thread))
+            b = do_calc(Vcb, cj);
+            
+            free_calc_job(cj);
+            
+            if (!b)
                 break;
         }
         
