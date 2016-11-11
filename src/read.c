@@ -1295,24 +1295,20 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                         
                         crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                         
-                        if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                        if (th->address != context->address || crc32 != *((UINT32*)th->csum))
                             context->stripes[i].status = ReadDataStatus_CRCError;
-                            checksum_error = TRUE;
-                        }
                     } else if (context->csum) {
-                        UINT32 j;
-                        
+                        NTSTATUS Status;
 #ifdef DEBUG_STATS
                         time1 = KeQueryPerformanceCounter(NULL);
 #endif
-                        for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
-                            UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
-                            
-                            if (crc32 != context->csum[j]) {
-                                context->stripes[i].status = ReadDataStatus_CRCError;
-                                checksum_error = TRUE;
-                                break;
-                            }
+                        Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].Irp->IoStatus.Information / Vcb->superblock.sector_size, context->csum);
+                        
+                        if (Status == STATUS_CRC_ERROR)
+                            context->stripes[i].status = ReadDataStatus_CRCError;
+                        else if (!NT_SUCCESS(Status)) {
+                            ERR("check_csum returned %08x\n", Status);
+                            return Status;
                         }
 #ifdef DEBUG_STATS
                         time2 = KeQueryPerformanceCounter(NULL);
