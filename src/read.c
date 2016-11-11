@@ -1420,6 +1420,82 @@ raid1write:
     return STATUS_INTERNAL_ERROR;
 }
 
+static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
+                                CHUNK_ITEM* ci, UINT64 *stripestart, UINT64 *stripeend, UINT16 startoffstripe, BOOL is_tree) {
+    UINT64 i;
+    UINT32 pos, *stripeoff;
+    UINT8 stripe;
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Error) {
+            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
+            return context->stripes[i].iosb.Status;
+        }
+    }
+    
+    pos = 0;
+    stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
+    
+    stripe = startoffstripe;
+    while (pos < length) {
+        if (pos == 0) {
+            UINT32 readlen = min(stripeend[stripe] - stripestart[stripe], ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
+            
+            RtlCopyMemory(buf, context->stripes[stripe].buf, readlen);
+            stripeoff[stripe] += readlen;
+            pos += readlen;
+        } else if (length - pos < ci->stripe_length) {
+            RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], length - pos);
+            pos = length;
+        } else {
+            RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], ci->stripe_length);
+            stripeoff[stripe] += ci->stripe_length;
+            pos += ci->stripe_length;
+        }
+        
+        stripe = (stripe + 1) % ci->num_stripes;
+    }
+    
+    ExFreePool(stripeoff);
+    
+    // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
+    
+    if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
+        tree_header* th = (tree_header*)buf;
+        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+        
+        if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+            return STATUS_CRC_ERROR;
+        }
+    } else if (context->csum) {
+#ifdef DEBUG_STATS
+        time1 = KeQueryPerformanceCounter(NULL);
+#endif
+        for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            
+            if (crc32 != context->csum[i]) {
+                WARN("checksum error (%08x != %08x)\n", crc32, context->csum[i]);
+                return STATUS_CRC_ERROR;
+            }
+        }
+#ifdef DEBUG_STATS
+        time2 = KeQueryPerformanceCounter(NULL);
+        
+        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
+    }
+    
+    return STATUS_SUCCESS;    
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -1863,81 +1939,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        UINT32 pos, *stripeoff;
-        UINT8 stripe;
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Error) {
-                WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
-                Status = context->stripes[i].iosb.Status;
-                goto exit;
-            }
-        }
-        
-        pos = 0;
-        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
-        if (!stripeoff) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
+        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe, is_tree);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data_raid0 returned %08x\n", Status);
             goto exit;
         }
-        
-        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
-        
-        stripe = startoffstripe;
-        while (pos < length) {
-            if (pos == 0) {
-                UINT32 readlen = min(stripeend[stripe] - stripestart[stripe], ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
-                
-                RtlCopyMemory(buf, context->stripes[stripe].buf, readlen);
-                stripeoff[stripe] += readlen;
-                pos += readlen;
-            } else if (length - pos < ci->stripe_length) {
-                RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], length - pos);
-                pos = length;
-            } else {
-                RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], ci->stripe_length);
-                stripeoff[stripe] += ci->stripe_length;
-                pos += ci->stripe_length;
-            }
-            
-            stripe = (stripe + 1) % ci->num_stripes;
-        }
-        
-        ExFreePool(stripeoff);
-        
-        // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
-        
-        if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
-            tree_header* th = (tree_header*)buf;
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-            
-            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-                Status = STATUS_CRC_ERROR;
-                goto exit;
-            }
-        } else if (csum) {
-#ifdef DEBUG_STATS
-            time1 = KeQueryPerformanceCounter(NULL);
-#endif
-            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                
-                if (crc32 != csum[i]) {
-                    WARN("checksum error (%08x != %08x)\n", crc32, csum[i]);
-                    Status = STATUS_CRC_ERROR;
-                    goto exit;
-                }
-            }
-#ifdef DEBUG_STATS
-            time2 = KeQueryPerformanceCounter(NULL);
-            
-            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-        }
-        
-        Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_RAID10) {
         BOOL checksum_error = FALSE;
         UINT32 pos, *stripeoff;
