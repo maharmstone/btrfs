@@ -1475,16 +1475,19 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             return STATUS_CRC_ERROR;
         }
     } else if (context->csum) {
+        NTSTATUS Status;
+        
 #ifdef DEBUG_STATS
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
-        for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-            
-            if (crc32 != context->csum[i]) {
-                WARN("checksum error (%08x != %08x)\n", crc32, context->csum[i]);
-                return STATUS_CRC_ERROR;
-            }
+        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        
+        if (Status == STATUS_CRC_ERROR) {
+            WARN("checksum error\n");
+            return Status;
+        } else if (!NT_SUCCESS(Status)) {
+            ERR("check_csum returned %08x\n", Status);
+            return Status;
         }
 #ifdef DEBUG_STATS
         time2 = KeQueryPerformanceCounter(NULL);
