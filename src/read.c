@@ -1144,6 +1144,273 @@ static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, U
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
+                              CHUNK_ITEM* ci, device** devices, UINT64 *stripestart, UINT64 *stripeend) {
+    UINT64 i;
+    BOOL checksum_error = FALSE;
+    UINT16 cancelled = 0;
+    NTSTATUS Status;
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Success) {
+            if (context->tree) {
+                tree_header* th = (tree_header*)context->stripes[i].buf;
+                UINT32 crc32;
+                
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                
+                if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                    context->stripes[i].status = ReadDataStatus_CRCError;
+                    checksum_error = TRUE;
+                }
+            } else if (context->csum) {
+#ifdef DEBUG_STATS
+                time1 = KeQueryPerformanceCounter(NULL);
+#endif
+                Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].Irp->IoStatus.Information / context->sector_size, context->csum);
+                
+                if (Status == STATUS_CRC_ERROR) {
+                    context->stripes[i].status = ReadDataStatus_CRCError;
+                    checksum_error = TRUE;
+                    break;
+                } else if (!NT_SUCCESS(Status)) {
+                    ERR("check_csum returned %08x\n", Status);
+                    return Status;
+                }
+#ifdef DEBUG_STATS
+                time2 = KeQueryPerformanceCounter(NULL);
+                
+                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
+            }
+        } else if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+            cancelled++;
+        }
+    }
+    
+    if (checksum_error) {
+        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+        
+        // FIXME - update dev stats
+        
+        if (cancelled > 0) {
+            context->stripes_left = 0;
+            
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                    PIO_STACK_LOCATION IrpSp;
+                    
+                    // re-run Irp that we cancelled
+                    
+                    if (context->stripes[i].Irp) {
+                        if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                            MmUnlockPages(context->stripes[i].Irp->MdlAddress);
+                            IoFreeMdl(context->stripes[i].Irp->MdlAddress);
+                        }
+                        IoFreeIrp(context->stripes[i].Irp);
+                    }
+                    
+                    if (!Irp) {
+                        context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
+                        
+                        if (!context->stripes[i].Irp) {
+                            ERR("IoAllocateIrp failed\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                    } else {
+                        context->stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
+                        
+                        if (!context->stripes[i].Irp) {
+                            ERR("IoMakeAssociatedIrp failed\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                    }
+                    
+                    IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+                    IrpSp->MajorFunction = IRP_MJ_READ;
+                    
+                    if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
+                        FIXME("FIXME - buffered IO\n");
+                    } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                        context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
+                        if (!context->stripes[i].Irp->MdlAddress) {
+                            ERR("IoAllocateMdl failed\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                    } else {
+                        context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                    }
+
+                    IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
+                    IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
+                    
+                    context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+                    
+                    IoSetCompletionRoutine(context->stripes[i].Irp, read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+                    
+                    context->stripes_left++;
+                    context->stripes[i].status = ReadDataStatus_Pending;
+                }
+            }
+            
+            context->stripes_cancel = 0;
+            KeClearEvent(&context->Event);
+            
+#ifdef DEBUG_STATS
+            if (!is_tree)
+                time1 = KeQueryPerformanceCounter(NULL);
+#endif
+
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Pending) {
+                    IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
+                }
+            }
+            
+            KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+            
+#ifdef DEBUG_STATS
+            if (!is_tree) {
+                time2 = KeQueryPerformanceCounter(NULL);
+                
+                Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
+            }
+#endif
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_Success) {
+                    if (context->tree) {
+                        tree_header* th = (tree_header*)context->stripes[i].buf;
+                        UINT32 crc32;
+                        
+                        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                        
+                        if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                            context->stripes[i].status = ReadDataStatus_CRCError;
+                            checksum_error = TRUE;
+                        }
+                    } else if (context->csum) {
+                        UINT32 j;
+                        
+#ifdef DEBUG_STATS
+                        time1 = KeQueryPerformanceCounter(NULL);
+#endif
+                        for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
+                            UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
+                            
+                            if (crc32 != context->csum[j]) {
+                                context->stripes[i].status = ReadDataStatus_CRCError;
+                                checksum_error = TRUE;
+                                break;
+                            }
+                        }
+#ifdef DEBUG_STATS
+                        time2 = KeQueryPerformanceCounter(NULL);
+                        
+                        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
+                    }
+                }
+            }
+        }
+        
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context->stripes[i].status == ReadDataStatus_Success) {
+                RtlCopyMemory(buf, context->stripes[i].buf, length);
+                goto raid1write;
+            }
+        }
+        
+        if (context->tree || ci->num_stripes == 1) { // unable to recover from checksum error
+            ERR("unrecoverable checksum error at %llx\n", addr);
+            
+#ifdef _DEBUG
+            if (context->tree) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    if (context->stripes[i].status == ReadDataStatus_CRCError) {
+                        tree_header* th = (tree_header*)context->stripes[i].buf;
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
+                        
+                        WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                    }
+                }
+            }
+#endif
+            return STATUS_CRC_ERROR;
+        }
+        
+        // checksum errors on both stripes - we need to check sector by sector
+        
+        for (i = 0; i < (stripeend[0] - stripestart[0]) / context->sector_size; i++) {
+            UINT16 j;
+            BOOL success = FALSE;
+            
+#ifdef DEBUG_STATS
+            time1 = KeQueryPerformanceCounter(NULL);
+#endif
+            
+            for (j = 0; j < ci->num_stripes; j++) {
+                if (context->stripes[j].status == ReadDataStatus_CRCError) {
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[j].buf + (i * context->sector_size), context->sector_size);
+                    
+                    if (crc32 == context->csum[i]) {
+                        RtlCopyMemory(buf + (i * context->sector_size), context->stripes[j].buf + (i * context->sector_size), context->sector_size);
+                        success = TRUE;
+                        break;
+                    }
+                }
+            }
+            
+#ifdef DEBUG_STATS
+            time2 = KeQueryPerformanceCounter(NULL);
+
+            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
+            if (!success) {
+                ERR("unrecoverable checksum error at %llx\n", addr + (i * context->sector_size));
+                return STATUS_CRC_ERROR;
+            }
+        }
+        
+raid1write:
+        // write good data over bad
+        
+        if (!Vcb->readonly) {
+            for (i = 0; i < ci->num_stripes; i++) {
+                if (context->stripes[i].status == ReadDataStatus_CRCError && devices[i] && !devices[i]->readonly) {
+                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], buf, length);
+                    
+                    if (!NT_SUCCESS(Status))
+                        WARN("write_data_phys returned %08x\n", Status);
+                }
+            }
+        }
+        
+        return STATUS_SUCCESS;
+    }
+    
+    // check if any of the stripes succeeded
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Success) {
+            RtlCopyMemory(buf, context->stripes[i].buf, length);
+            return STATUS_SUCCESS;
+        }
+    }
+    
+    // failing that, return the first error we encountered
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Error)
+            return context->stripes[i].iosb.Status;
+    }
+    
+    // if we somehow get here, return STATUS_INTERNAL_ERROR
+    
+    return STATUS_INTERNAL_ERROR;
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -2058,274 +2325,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         Status = STATUS_SUCCESS;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        BOOL checksum_error = FALSE;
-        UINT16 cancelled = 0;
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Success) {
-                if (context->tree) {
-                    tree_header* th = (tree_header*)context->stripes[i].buf;
-                    UINT32 crc32;
-                    
-                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                    
-                    if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
-                        context->stripes[i].status = ReadDataStatus_CRCError;
-                        checksum_error = TRUE;
-                    }
-                } else if (context->csum) {
-#ifdef DEBUG_STATS
-                    time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                    Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].Irp->IoStatus.Information / context->sector_size, context->csum);
-                    
-                    if (Status == STATUS_CRC_ERROR) {
-                        context->stripes[i].status = ReadDataStatus_CRCError;
-                        checksum_error = TRUE;
-                        break;
-                    } else if (!NT_SUCCESS(Status)) {
-                        ERR("check_csum returned %08x\n", Status);
-                        goto exit;
-                    }
-#ifdef DEBUG_STATS
-                    time2 = KeQueryPerformanceCounter(NULL);
-                    
-                    Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-                }
-            } else if (context->stripes[i].status == ReadDataStatus_Cancelled) {
-                cancelled++;
-            }
-        }
-        
-        if (checksum_error) {
-            // FIXME - update dev stats
-            
-            if (cancelled > 0) {
-                context->stripes_left = 0;
-                
-                for (i = 0; i < ci->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Cancelled) {
-                        PIO_STACK_LOCATION IrpSp;
-                        
-                        // re-run Irp that we cancelled
-                        
-                        if (context->stripes[i].Irp) {
-                            if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                                MmUnlockPages(context->stripes[i].Irp->MdlAddress);
-                                IoFreeMdl(context->stripes[i].Irp->MdlAddress);
-                            }
-                            IoFreeIrp(context->stripes[i].Irp);
-                        }
-                        
-                        if (!Irp) {
-                            context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
-                            
-                            if (!context->stripes[i].Irp) {
-                                ERR("IoAllocateIrp failed\n");
-                                Status = STATUS_INSUFFICIENT_RESOURCES;
-                                goto exit;
-                            }
-                        } else {
-                            context->stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
-                            
-                            if (!context->stripes[i].Irp) {
-                                ERR("IoMakeAssociatedIrp failed\n");
-                                Status = STATUS_INSUFFICIENT_RESOURCES;
-                                goto exit;
-                            }
-                        }
-                        
-                        IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
-                        IrpSp->MajorFunction = IRP_MJ_READ;
-                        
-                        if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                            FIXME("FIXME - buffered IO\n");
-                        } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                            context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
-                            if (!context->stripes[i].Irp->MdlAddress) {
-                                ERR("IoAllocateMdl failed\n");
-                                Status = STATUS_INSUFFICIENT_RESOURCES;
-                                goto exit;
-                            }
-                            
-                            MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
-                        } else {
-                            context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
-                        }
-
-                        IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
-                        IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
-                        
-                        context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
-                        
-                        IoSetCompletionRoutine(context->stripes[i].Irp, read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
-                        
-                        context->stripes_left++;
-                        context->stripes[i].status = ReadDataStatus_Pending;
-                    }
-                }
-                
-                context->stripes_cancel = 0;
-                KeClearEvent(&context->Event);
-                
-#ifdef DEBUG_STATS
-                if (!is_tree)
-                    time1 = KeQueryPerformanceCounter(NULL);
-#endif
-
-                for (i = 0; i < ci->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Pending) {
-                        IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
-                    }
-                }
-                
-                KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-                
-#ifdef DEBUG_STATS
-                if (!is_tree) {
-                    time2 = KeQueryPerformanceCounter(NULL);
-                    
-                    Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
-                }
-#endif
-                for (i = 0; i < ci->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Success) {
-                        if (context->tree) {
-                            tree_header* th = (tree_header*)context->stripes[i].buf;
-                            UINT32 crc32;
-                            
-                            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                            
-                            if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
-                                context->stripes[i].status = ReadDataStatus_CRCError;
-                                checksum_error = TRUE;
-                            }
-                        } else if (context->csum) {
-                            UINT32 j;
-                            
-#ifdef DEBUG_STATS
-                            time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                            for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
-                                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
-                                
-                                if (crc32 != context->csum[j]) {
-                                    context->stripes[i].status = ReadDataStatus_CRCError;
-                                    checksum_error = TRUE;
-                                    break;
-                                }
-                            }
-#ifdef DEBUG_STATS
-                            time2 = KeQueryPerformanceCounter(NULL);
-                            
-                            Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-                        }
-                    }
-                }
-            }
-            
-            for (i = 0; i < ci->num_stripes; i++) {
-                if (context->stripes[i].status == ReadDataStatus_Success) {
-                    RtlCopyMemory(buf, context->stripes[i].buf, length);
-                    goto raid1write;
-                }
-            }
-            
-            if (context->tree || ci->num_stripes == 1) { // unable to recover from checksum error
-                ERR("unrecoverable checksum error at %llx\n", addr);
-                
-#ifdef _DEBUG
-                if (context->tree) {
-                    for (i = 0; i < ci->num_stripes; i++) {
-                        if (context->stripes[i].status == ReadDataStatus_CRCError) {
-                            tree_header* th = (tree_header*)context->stripes[i].buf;
-                            UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-                            
-                            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-                        }
-                    }
-                }
-#endif
-                Status = STATUS_CRC_ERROR;
-                goto exit;
-            }
-            
-            // checksum errors on both stripes - we need to check sector by sector
-            
-            for (i = 0; i < (stripeend[0] - stripestart[0]) / context->sector_size; i++) {
-                UINT16 j;
-                BOOL success = FALSE;
-                
-#ifdef DEBUG_STATS
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                
-                for (j = 0; j < ci->num_stripes; j++) {
-                    if (context->stripes[j].status == ReadDataStatus_CRCError) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[j].buf + (i * context->sector_size), context->sector_size);
-                        
-                        if (crc32 == context->csum[i]) {
-                            RtlCopyMemory(buf + (i * context->sector_size), context->stripes[j].buf + (i * context->sector_size), context->sector_size);
-                            success = TRUE;
-                            break;
-                        }
-                    }
-                }
-                
-#ifdef DEBUG_STATS
-                time2 = KeQueryPerformanceCounter(NULL);
-
-                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-                if (!success) {
-                    ERR("unrecoverable checksum error at %llx\n", addr + (i * context->sector_size));
-                    Status = STATUS_CRC_ERROR;
-                    goto exit;
-                }
-            }
-            
-raid1write:
-            // write good data over bad
-            
-            if (!Vcb->readonly) {
-                for (i = 0; i < ci->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_CRCError && devices[i] && !devices[i]->readonly) {
-                        Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], buf, length);
-                        
-                        if (!NT_SUCCESS(Status))
-                            WARN("write_data_phys returned %08x\n", Status);
-                    }
-                }
-            }
-            
-            Status = STATUS_SUCCESS;
+        Status = read_data_dup(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data_dup returned %08x\n", Status);
             goto exit;
         }
-        
-        // check if any of the stripes succeeded
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Success) {
-                RtlCopyMemory(buf, context->stripes[i].buf, length);
-                Status = STATUS_SUCCESS;
-                goto exit;
-            }
-        }
-        
-        // failing that, return the first error we encountered
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Error) {
-                Status = context->stripes[i].iosb.Status;
-                goto exit;
-            }
-        }
-        
-        // if we somehow get here, return STATUS_INTERNAL_ERROR
-        
-        Status = STATUS_INTERNAL_ERROR;
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT32 pos, skip;
         int num_errors = 0;
