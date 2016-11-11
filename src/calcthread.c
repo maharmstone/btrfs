@@ -19,7 +19,7 @@
 
 #define SECTOR_BLOCK 16
 
-NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_job** pcj) {
+NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum, calc_job** pcj) {
     calc_job* cj;
     KIRQL irql;
     
@@ -29,15 +29,9 @@ NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_j
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    cj->csum = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sectors, ALLOC_TAG);
-    if (!cj->csum) {
-        ERR("out of memory\n");
-        ExFreePool(cj);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
     cj->data = data;
     cj->sectors = sectors;
+    cj->csum = csum;
     cj->pos = 0;
     cj->done = 0;
     cj->refcount = 1;
@@ -58,10 +52,8 @@ NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_j
 void free_calc_job(calc_job* cj) {
     LONG rc = InterlockedDecrement(&cj->refcount);
     
-    if (rc == 0) {
-        ExFreePool(cj->csum);
+    if (rc == 0)
         ExFreePool(cj);
-    }
 }
 
 static BOOL do_calc(device_extension* Vcb, calc_job* cj) {

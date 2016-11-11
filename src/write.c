@@ -2457,6 +2457,35 @@ static NTSTATUS add_checksum_entry(UINT64 address, UINT64 sectors, UINT32* csum,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
+    NTSTATUS Status;
+    calc_job* cj;
+    
+    // From experimenting, it seems that 40 sectors is roughly the crossover
+    // point where offloading the crc32 calculation becomes worth it.
+    
+    if (sectors < 40) {
+        ULONG j;
+        
+        for (j = 0; j < sectors; j++) {
+            csum[j] = ~calc_crc32c(0xffffffff, data + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+        }
+        
+        return STATUS_SUCCESS;
+    }
+    
+    Status = add_calc_job(Vcb, data, sectors, csum, &cj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_calc_job returned %08x\n", Status);
+        return Status;
+    }
+    
+    KeWaitForSingleObject(&cj->event, Executive, KernelMode, FALSE, NULL);
+    free_calc_job(cj);
+
+    return STATUS_SUCCESS;
+}
+
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
                          LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size) {
     UINT64 address;
@@ -2511,7 +2540,6 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     
     if (!prealloc && data && changed_sector_list) {
         ULONG sl = length / Vcb->superblock.sector_size;
-        UINT32 i;
         
         csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
         if (!csum) {
@@ -2519,8 +2547,10 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
             return FALSE;
         }
         
-        for (i = 0; i < sl; i++) {
-            csum[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+        Status = calc_csum(Vcb, data, sl, csum);
+        if (!NT_SUCCESS(Status)) {
+            ERR("calc_csum returned %08x\n", Status);
+            return FALSE;
         }
     }
     
@@ -3098,7 +3128,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
     chunk* c;
     UINT32* csum;
     ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
-    UINT32 i;
     
     if (changed_sector_list) {
         csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
@@ -3107,8 +3136,11 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < sl; i++) {
-            csum[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * fcb->Vcb->superblock.sector_size), fcb->Vcb->superblock.sector_size);
+        Status = calc_csum(fcb->Vcb, data, sl, csum);
+        if (!NT_SUCCESS(Status)) {
+            ERR("calc_csum returned %08x\n", Status);
+            ExFreePool(csum);
+            return Status;
         }
     } else
         csum = NULL;

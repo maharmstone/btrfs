@@ -1108,6 +1108,7 @@ end:
 static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
     NTSTATUS Status;
     calc_job* cj;
+    UINT32* csum2;
     
     // From experimenting, it seems that 40 sectors is roughly the crossover
     // point where offloading the crc32 calculation becomes worth it.
@@ -1126,7 +1127,13 @@ static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, U
         return STATUS_SUCCESS;
     }
     
-    Status = add_calc_job(Vcb, data, sectors, &cj);
+    csum2 = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sectors, ALLOC_TAG);
+    if (!csum2) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = add_calc_job(Vcb, data, sectors, csum2, &cj);
     if (!NT_SUCCESS(Status)) {
         ERR("add_calc_job returned %08x\n", Status);
         return Status;
@@ -1134,12 +1141,14 @@ static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, U
     
     KeWaitForSingleObject(&cj->event, Executive, KernelMode, FALSE, NULL);
     
-    if (RtlCompareMemory(cj->csum, csum, sectors * sizeof(UINT32)) != sectors * sizeof(UINT32)) {
+    if (RtlCompareMemory(csum2, csum, sectors * sizeof(UINT32)) != sectors * sizeof(UINT32)) {
         free_calc_job(cj);
+        ExFreePool(csum2);
         return STATUS_CRC_ERROR;
     }
     
     free_calc_job(cj);
+    ExFreePool(csum2);
     
     return STATUS_SUCCESS;
 }
