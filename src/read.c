@@ -1105,6 +1105,45 @@ end:
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
+    NTSTATUS Status;
+    calc_job* cj;
+    
+    // From experimenting, it seems that 40 sectors is roughly the crossover
+    // point where offloading the crc32 calculation becomes worth it.
+    
+    if (sectors < 40) {
+        ULONG j;
+        
+        for (j = 0; j < sectors; j++) {
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, data + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            
+            if (crc32 != csum[j]) {
+                return STATUS_CRC_ERROR;
+            }
+        }
+        
+        return STATUS_SUCCESS;
+    }
+    
+    Status = add_calc_job(Vcb, data, sectors, &cj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_calc_job returned %08x\n", Status);
+        return Status;
+    }
+    
+    KeWaitForSingleObject(&cj->event, Executive, KernelMode, FALSE, NULL);
+    
+    if (RtlCompareMemory(cj->csum, csum, sectors * sizeof(UINT32)) != sectors * sizeof(UINT32)) {
+        free_calc_job(cj);
+        return STATUS_CRC_ERROR;
+    }
+    
+    free_calc_job(cj);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
@@ -2035,20 +2074,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                         checksum_error = TRUE;
                     }
                 } else if (context->csum) {
-                    UINT32 j;
-                    
 #ifdef DEBUG_STATS
                     time1 = KeQueryPerformanceCounter(NULL);
 #endif
-        
-                    for (j = 0; j < context->stripes[i].Irp->IoStatus.Information / context->sector_size; j++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[i].buf + (j * context->sector_size), context->sector_size);
-                        
-                        if (crc32 != context->csum[j]) {
-                            context->stripes[i].status = ReadDataStatus_CRCError;
-                            checksum_error = TRUE;
-                            break;
-                        }
+                    Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].Irp->IoStatus.Information / context->sector_size, context->csum);
+                    
+                    if (Status == STATUS_CRC_ERROR) {
+                        context->stripes[i].status = ReadDataStatus_CRCError;
+                        checksum_error = TRUE;
+                        break;
+                    } else if (!NT_SUCCESS(Status)) {
+                        ERR("check_csum returned %08x\n", Status);
+                        goto exit;
                     }
 #ifdef DEBUG_STATS
                     time2 = KeQueryPerformanceCounter(NULL);
