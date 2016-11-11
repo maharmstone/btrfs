@@ -1421,7 +1421,7 @@ raid1write:
 }
 
 static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
-                                CHUNK_ITEM* ci, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe, BOOL is_tree) {
+                                CHUNK_ITEM* ci, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe) {
     UINT64 i;
     UINT32 pos, *stripeoff;
     UINT8 stripe;
@@ -1466,7 +1466,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     
     // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
     
-    if (is_tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
+    if (context->tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         
@@ -2329,7 +2329,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe, is_tree);
+        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
             goto exit;
