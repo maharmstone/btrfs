@@ -440,7 +440,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        if (!c->readonly) {
+        if (!c->readonly && !c->reloc) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
@@ -825,7 +825,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        if (!c->readonly) {
+        if (!c->readonly && !c->reloc) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {

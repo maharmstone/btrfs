@@ -3020,6 +3020,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 c->cache = NULL;
                 c->created = FALSE;
                 c->readonly = FALSE;
+                c->reloc = FALSE;
                 
                 c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);
                 

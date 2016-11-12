@@ -739,7 +739,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        if (!c->readonly) {
+        if (!c->readonly && !c->reloc) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {

@@ -427,6 +427,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->used = c->oldused = 0;
     c->cache = NULL;
     c->readonly = FALSE;
+    c->reloc = FALSE;
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);
     InitializeListHead(&c->deleting);
@@ -2696,7 +2697,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
         while (le != &fcb->Vcb->chunks) {
             c = CONTAINING_RECORD(le, chunk, list_entry);
             
-            if (!c->readonly) {
+            if (!c->readonly && !c->reloc) {
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
@@ -2788,7 +2789,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
         while (le != &Vcb->chunks) {
             c = CONTAINING_RECORD(le, chunk, list_entry);
             
-            if (!c->readonly) {
+            if (!c->readonly && !c->reloc) {
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&

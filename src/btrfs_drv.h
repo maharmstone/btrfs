@@ -416,6 +416,7 @@ typedef struct {
     ERESOURCE changed_extents_lock;
     BOOL created;
     BOOL readonly;
+    BOOL reloc;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
@@ -511,6 +512,10 @@ typedef struct {
 } debug_stats;
 #endif
 
+typedef struct {
+    HANDLE thread;
+} balance_info;
+
 typedef struct _device_extension {
     UINT32 type;
     mount_options options;
@@ -572,6 +577,7 @@ typedef struct _device_extension {
     KTIMER flush_thread_timer;
     KEVENT flush_thread_finished;
     drv_calc_threads calcthreads;
+    balance_info balance;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
