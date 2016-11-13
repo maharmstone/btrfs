@@ -38,14 +38,6 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
 
-typedef struct {
-    UINT64 address;
-    UINT32 length;
-    BOOL overlap;
-    UINT8* data;
-    LIST_ENTRY list_entry;
-} tree_write;
-
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
@@ -1132,16 +1124,170 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     return STATUS_SUCCESS;
 }
 
+NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp) {
+    chunk* c;
+    LIST_ENTRY* le;
+    tree_write* tw;
+    NTSTATUS Status;
+    write_data_context* wtc;
+    
+    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
+    if (!wtc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
+    InitializeListHead(&wtc->stripes);
+    wtc->tree = TRUE;
+    wtc->stripes_left = 0;
+    
+    // merge together runs
+    c = NULL;
+    le = tree_writes->Flink;
+    while (le != tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
+            c = get_chunk_from_address(Vcb, tw->address);
+        else {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            
+            if (tw->address == tw2->address + tw2->length) {
+                UINT8* data = ExAllocatePoolWithTag(NonPagedPool, tw2->length + tw->length, ALLOC_TAG);
+                
+                if (!data) {
+                    ERR("out of memory\n");
+                    ExFreePool(wtc);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(data, tw2->data, tw2->length);
+                RtlCopyMemory(&data[tw2->length], tw->data, tw->length);
+                
+                ExFreePool(tw2->data);
+                tw2->data = data;
+                tw2->length += tw->length;
+                
+                ExFreePool(tw->data);
+                RemoveEntryList(&tw->list_entry);
+                ExFreePool(tw);
+                
+                le = tw2->list_entry.Flink;
+                continue;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    // mark RAID5/6 overlaps so we can do them one by one
+    c = NULL;
+    le = tree_writes->Flink;
+    while (le != tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
+            c = get_chunk_from_address(Vcb, tw->address);
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            UINT64 last_stripe, this_stripe;
+            
+            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
+            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
+            
+            if (last_stripe == this_stripe)
+                tw->overlap = TRUE;
+        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
+            UINT64 last_stripe, this_stripe;
+            
+            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
+            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
+            
+            if (last_stripe == this_stripe)
+                tw->overlap = TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
+    le = tree_writes->Flink;
+    while (le != tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (!tw->overlap) {
+            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
+            
+            Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data returned %08x\n", Status);
+                ExFreePool(wtc);
+                return Status;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (wtc->stripes.Flink != &wtc->stripes) {
+        // launch writes and wait
+        le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
+            
+            if (stripe->status != WriteDataStatus_Ignore)
+                IoCallDriver(stripe->device->devobj, stripe->Irp);
+            
+            le = le->Flink;
+        }
+        
+        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
+        
+        le = wtc->stripes.Flink;
+        while (le != &wtc->stripes) {
+            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
+            
+            if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
+                Status = stripe->iosb.Status;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        free_write_data_stripes(wtc);
+    }
+    
+    le = tree_writes->Flink;
+    while (le != tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (tw->overlap) {
+            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
+            
+            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_complete returned %08x\n", Status);
+                ExFreePool(wtc);
+                return Status;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     UINT8 level;
     UINT8 *data, *body;
     UINT32 crc32;
     NTSTATUS Status;
     LIST_ENTRY* le;
-    write_data_context* wtc;
     LIST_ENTRY tree_writes;
     tree_write* tw;
-    chunk* c;
     
     TRACE("(%p)\n", Vcb);
     
@@ -1248,17 +1394,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     }
     
     TRACE("allocated tree extents\n");
-    
-    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
-    if (!wtc) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
-    InitializeListHead(&wtc->stripes);
-    wtc->tree = TRUE;
-    wtc->stripes_left = 0;
     
     le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
@@ -1427,142 +1562,9 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     
     Status = STATUS_SUCCESS;
     
-    // merge together runs
-    c = NULL;
-    le = tree_writes.Flink;
-    while (le != &tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
-        
-        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
-            c = get_chunk_from_address(Vcb, tw->address);
-        else {
-            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
-            
-            if (tw->address == tw2->address + tw2->length) {
-                data = ExAllocatePoolWithTag(NonPagedPool, tw2->length + tw->length, ALLOC_TAG);
-                
-                if (!data) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                RtlCopyMemory(data, tw2->data, tw2->length);
-                RtlCopyMemory(&data[tw2->length], tw->data, tw->length);
-                
-                ExFreePool(tw2->data);
-                tw2->data = data;
-                tw2->length += tw->length;
-                
-                ExFreePool(tw->data);
-                RemoveEntryList(&tw->list_entry);
-                ExFreePool(tw);
-                
-                le = tw2->list_entry.Flink;
-                continue;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    // mark RAID5/6 overlaps so we can do them one by one
-    c = NULL;
-    le = tree_writes.Flink;
-    while (le != &tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
-        
-        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
-            c = get_chunk_from_address(Vcb, tw->address);
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
-            UINT64 last_stripe, this_stripe;
-            
-            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
-            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
-            
-            if (last_stripe == this_stripe)
-                tw->overlap = TRUE;
-        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
-            UINT64 last_stripe, this_stripe;
-            
-            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
-            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
-            
-            if (last_stripe == this_stripe)
-                tw->overlap = TRUE;
-        }
-        
-        le = le->Flink;
-    }
-    
-    le = tree_writes.Flink;
-    while (le != &tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
-        
-        if (!tw->overlap) {
-            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
-            
-            Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data returned %08x\n", Status);
-                goto end;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (wtc->stripes.Flink != &wtc->stripes) {
-        // launch writes and wait
-        le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
-            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
-            
-            if (stripe->status != WriteDataStatus_Ignore)
-                IoCallDriver(stripe->device->devobj, stripe->Irp);
-            
-            le = le->Flink;
-        }
-        
-        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
-        
-        le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
-            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
-            
-            if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
-                Status = stripe->iosb.Status;
-                break;
-            }
-            
-            le = le->Flink;
-        }
-        
-        free_write_data_stripes(wtc);
-    }
-    
-    le = tree_writes.Flink;
-    while (le != &tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
-        
-        if (tw->overlap) {
-            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
-            
-            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data_complete returned %08x\n", Status);
-                goto end;
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
+    do_tree_writes(Vcb, &tree_writes, Irp);
+
 end:
-    ExFreePool(wtc);
-    
     while (!IsListEmpty(&tree_writes)) {
         le = RemoveHeadList(&tree_writes);
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
