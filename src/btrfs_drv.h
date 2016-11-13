@@ -453,6 +453,30 @@ typedef struct {
 } sys_chunk;
 
 typedef struct {
+    UINT8* data;
+    UINT32* csum;
+    UINT32 sectors;
+    LONG pos, done;
+    KEVENT event;
+    LIST_ENTRY list_entry;
+} calc_job;
+
+typedef struct {
+    PDEVICE_OBJECT DeviceObject;
+    HANDLE handle;
+    KEVENT finished;
+    BOOL quit;
+} drv_calc_thread;
+
+typedef struct {
+    ULONG num_threads;
+    LIST_ENTRY job_list;
+    KSPIN_LOCK spin_lock;
+    drv_calc_thread* threads;
+    KEVENT event;
+} drv_calc_threads;
+
+typedef struct {
     BOOL ignore;
     BOOL compress;
     BOOL compress_force;
@@ -546,6 +570,7 @@ typedef struct _device_extension {
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;
     KEVENT flush_thread_finished;
+    drv_calc_threads calcthreads;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
@@ -985,6 +1010,11 @@ UINT8 gdiv(UINT8 a, UINT8 b);
 
 // in devctrl.c
 NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
+// in calcthread.c
+void calc_thread(void* context);
+NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, calc_job** pcj);
+void free_calc_job(calc_job* cj);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

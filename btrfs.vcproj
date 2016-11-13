@@ -437,6 +437,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\calcthread.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\compress.c"
 				>
 			</File>

@@ -1790,6 +1790,20 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
     
+    for (i = 0; i < Vcb->calcthreads.num_threads; i++) {
+        Vcb->calcthreads.threads[i].quit = TRUE;
+    }
+    
+    KeSetEvent(&Vcb->calcthreads.event, 0, FALSE);
+        
+    for (i = 0; i < Vcb->calcthreads.num_threads; i++) {
+        KeWaitForSingleObject(&Vcb->calcthreads.threads[i].finished, Executive, KernelMode, FALSE, NULL);
+        
+        ZwClose(Vcb->calcthreads.threads[i].handle);
+    }
+    
+    ExFreePool(Vcb->calcthreads.threads);
+    
     time.QuadPart = 0;
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
@@ -3373,6 +3387,49 @@ end:
     return NULL;
 }
 
+static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    ULONG i;
+    
+    Vcb->calcthreads.num_threads = KeQueryActiveProcessorCount(NULL);
+    
+    Vcb->calcthreads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_calc_thread) * Vcb->calcthreads.num_threads, ALLOC_TAG);
+    if (!Vcb->calcthreads.threads) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    InitializeListHead(&Vcb->calcthreads.job_list);
+    KeInitializeSpinLock(&Vcb->calcthreads.spin_lock);
+    KeInitializeEvent(&Vcb->calcthreads.event, NotificationEvent, FALSE);
+    
+    RtlZeroMemory(Vcb->calcthreads.threads, sizeof(drv_calc_thread) * Vcb->calcthreads.num_threads);
+    
+    for (i = 0; i < Vcb->calcthreads.num_threads; i++) {
+        NTSTATUS Status;
+        
+        Vcb->calcthreads.threads[i].DeviceObject = DeviceObject;
+        KeInitializeEvent(&Vcb->calcthreads.threads[i].finished, NotificationEvent, FALSE);
+        
+        Status = PsCreateSystemThread(&Vcb->calcthreads.threads[i].handle, 0, NULL, NULL, NULL, calc_thread, &Vcb->calcthreads.threads[i]);
+        if (!NT_SUCCESS(Status)) {
+            ULONG j;
+            
+            ERR("PsCreateSystemThread returned %08x\n", Status);
+            
+            for (j = 0; j < i; j++) {
+                Vcb->calcthreads.threads[i].quit = TRUE;
+            }
+            
+            KeSetEvent(&Vcb->calcthreads.event, 0, FALSE);
+            
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static BOOL raid_generations_okay(device_extension* Vcb) {
     UINT64 i;
     
@@ -3827,6 +3884,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
+        goto exit;
+    }
+    
+    Status = create_calc_threads(NewDeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("create_calc_threads returned %08x\n", Status);
         goto exit;
     }
     
