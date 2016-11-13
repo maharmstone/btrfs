@@ -201,6 +201,142 @@ static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* ite
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_reloc* mr, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    UINT64 rc = 0;
+    UINT16 inline_len;
+    BOOL all_inline = TRUE;
+    metadata_reloc_ref* first_noninline = NULL;
+    EXTENT_ITEM* ei;
+    UINT8* ptr;
+    
+    inline_len = sizeof(EXTENT_ITEM);
+    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
+        inline_len += sizeof(EXTENT_ITEM2);
+    
+    le = mr->refs.Flink;
+    while (le != &mr->refs) {
+        metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
+        ULONG extlen = 0;
+        
+        rc++;
+        
+        if (ref->type == TYPE_TREE_BLOCK_REF)
+            extlen += sizeof(TREE_BLOCK_REF);
+        else if (ref->type == TYPE_SHARED_BLOCK_REF)
+            extlen += sizeof(TYPE_SHARED_BLOCK_REF);
+
+        if (all_inline) {
+            if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
+                all_inline = FALSE;
+                first_noninline = ref;
+            } else
+                inline_len += extlen + 1;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ei = ExAllocatePoolWithTag(PagedPool, inline_len, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    ei->refcount = rc;
+    ei->generation = mr->ei->generation;
+    ei->flags = mr->ei->flags;
+    ptr = (UINT8*)&ei[1];
+    
+    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+        // FIXME - set EXTENT_ITEM2
+        ptr += sizeof(EXTENT_ITEM2);
+    }
+    
+    le = mr->refs.Flink;
+    while (le != &mr->refs) {
+        metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
+        
+        if (ref == first_noninline)
+            break;
+        
+        *ptr = ref->type;
+        ptr++;
+        
+        if (ref->type == TYPE_TREE_BLOCK_REF) {
+            TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)ptr;
+            
+            tbr->offset = ref->tbr.offset;
+            
+            ptr += sizeof(TREE_BLOCK_REF);
+        } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
+            SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)ptr;
+            
+            sbr->offset = ref->parent->new_address;
+            
+            ptr += sizeof(SHARED_BLOCK_REF);
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_METADATA_ITEM, mr->data->level, ei, inline_len, NULL, NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+    } else {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, ei, inline_len, NULL, NULL, rollback)) {
+            ERR("insert_tree_item failed\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+    
+    if (!all_inline) {
+        le = &first_noninline->list_entry;
+        
+        while (le != &mr->refs) {
+            metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
+            
+            if (ref->type == TYPE_TREE_BLOCK_REF) {
+                TREE_BLOCK_REF* tbr;
+                
+                tbr = ExAllocatePoolWithTag(PagedPool, sizeof(TREE_BLOCK_REF), ALLOC_TAG);
+                if (!tbr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                tbr->offset = ref->tbr.offset;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_TREE_BLOCK_REF, tbr->offset, tbr, sizeof(TREE_BLOCK_REF), NULL, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
+                SHARED_BLOCK_REF* sbr;
+                
+                sbr = ExAllocatePoolWithTag(PagedPool, sizeof(SHARED_BLOCK_REF), ALLOC_TAG);
+                if (!sbr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sbr->offset = ref->parent->new_address;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_SHARED_BLOCK_REF, sbr->offset, sbr, sizeof(SHARED_BLOCK_REF), NULL, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            }
+            
+            le = le->Flink;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     KEY searchkey;
     traverse_ptr tp;
@@ -410,6 +546,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                     ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                     
                     if (find_address_in_chunk(Vcb, newchunk, Vcb->superblock.node_size, &mr->new_address)) {
+                        increase_chunk_usage(newchunk, Vcb->superblock.node_size);
                         space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, &rollback);
                         done = TRUE;
                     }
@@ -429,6 +566,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                             
                             if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
                                 if (find_address_in_chunk(Vcb, c2, Vcb->superblock.node_size, &mr->new_address)) {
+                                    increase_chunk_usage(c2, Vcb->superblock.node_size);
                                     space_list_subtract(Vcb, c2, FALSE, mr->new_address, Vcb->superblock.node_size, &rollback);
                                     ExReleaseResourceLite(&c2->lock);
                                     newchunk = c2;
@@ -461,8 +599,10 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                             ERR("could not find address in new chunk\n");
                             Status = STATUS_DISK_FULL;
                             goto end;
-                        } else
+                        } else {
+                            increase_chunk_usage(newchunk, Vcb->superblock.node_size);
                             space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, &rollback);
+                        }
                         
                         ExReleaseResourceLite(&newchunk->lock);
                     }
@@ -471,7 +611,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                 }
                 
                 // FIXME - if flag set and level 0, alter SHARED_DATA_REFs of children
-                // FIXME - add EXTENT_ITEM
+                // FIXME - update SHARED_BLOCK_REFs of children
                 
                 // update parents
                 le2 = mr->refs.Flink;
@@ -614,6 +754,19 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
             
             le = le->Flink;
         }
+    }
+    
+    le = items.Flink;
+    while (le != &items) {
+        metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
+        
+        Status = add_metadata_reloc_extent_item(Vcb, mr, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_metadata_reloc_extent_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        le = le->Flink;
     }
     
     Status = do_tree_writes(Vcb, &tree_writes, NULL);
