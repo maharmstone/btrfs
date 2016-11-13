@@ -325,7 +325,7 @@ static __inline tree_data* next_item(tree* t, tree_data* td) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp,
+static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp,
                                           const char* func, const char* file, unsigned int line) {
     int cmp;
     tree_data *td, *lasttd;
@@ -414,6 +414,12 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
         if (!td)
             return STATUS_NOT_FOUND;
         
+        if (t->header.level <= level) {
+            tp->tree = t;
+            tp->item = td;
+            return STATUS_SUCCESS;
+        }
+        
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
         
@@ -423,7 +429,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
             return Status;
         }
         
-        Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, Irp, func, file, line);
+        Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, level, Irp, func, file, line);
         
         return Status;
     }
@@ -444,7 +450,7 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
         }
     }
 
-    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, Irp, func, file, line);
+    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, 0, Irp, func, file, line);
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
         ERR("find_item_in_tree returned %08x\n", Status);
     }
@@ -455,6 +461,29 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
 //         int3;
 //     }
 // #endif
+    
+    return Status;
+}
+
+NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level,
+                                     PIRP Irp, const char* func, const char* file, unsigned int line) {
+    NTSTATUS Status;
+    BOOL loaded;
+    
+    TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
+    
+    if (!r->treeholder.tree) {
+        Status = _do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp, func, file, line);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, level, Irp, func, file, line);
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+        ERR("find_item_in_tree returned %08x\n", Status);
+    }
     
     return Status;
 }

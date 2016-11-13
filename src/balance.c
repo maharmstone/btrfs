@@ -481,35 +481,29 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                     goto end;
                 }
                 
-                Status = find_item(Vcb, r, &tp, firstitem, FALSE, NULL); // FIXME - this will go all the way down to level 0, which we don't need
+                Status = find_item_to_level(Vcb, r, &tp, firstitem, FALSE, mr->data->level + 1, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("find_item returned %08x\n", Status);
                     goto end;
                 }
                 
                 t = tp.tree;
-                while (t && t->header.level < mr->data->level) {
+                while (t && t->header.level < mr->data->level + 1) {
                     t = t->parent;
                 }
                 
-                if (t) {
-                    if (!t->parent)
-                        ref->top = TRUE;
-                    else {
-                        metadata_reloc* mr2;
-                        
-                        Status = add_metadata_reloc_parent(Vcb, &items, t->parent->header.address, &mr2, &rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("add_metadata_reloc_parent returned %08x\n", Status);
-                            goto end;
-                        }
-                        
-                        ref->parent = mr2;
+                if (!t)
+                    ref->top = TRUE;
+                else {
+                    metadata_reloc* mr2;
+                    
+                    Status = add_metadata_reloc_parent(Vcb, &items, t->header.address, &mr2, &rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                        goto end;
                     }
-                } else {
-                    ERR("could not find parent for tree at %llx\n", mr->address);
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
+                    
+                    ref->parent = mr2;
                 }
             } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
                 ERR("shared_block_ref root=%llx\n", ref->sbr.offset);

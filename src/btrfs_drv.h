@@ -851,6 +851,8 @@ typedef struct {
 
 // in treefuncs.c
 NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
+NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level,
+                                     PIRP Irp, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
 BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
 void STDCALL free_trees(device_extension* Vcb);
@@ -868,6 +870,7 @@ void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, L
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 
 #define find_item(Vcb, r, tp, searchkey, ignore, Irp) _find_item(Vcb, r, tp, searchkey, ignore, Irp, funcname, __FILE__, __LINE__)
+#define find_item_to_level(Vcb, r, tp, searchkey, ignore, level, Irp) _find_item_to_level(Vcb, r, tp, searchkey, ignore, level, Irp, funcname, __FILE__, __LINE__)
 #define find_next_item(Vcb, tp, next_tp, ignore, Irp) _find_next_item(Vcb, tp, next_tp, ignore, Irp, funcname, __FILE__, __LINE__)
 #define find_prev_item(Vcb, tp, prev_tp, ignore, Irp) _find_prev_item(Vcb, tp, prev_tp, ignore, Irp, funcname, __FILE__, __LINE__)
 #define free_tree(t) _free_tree(t, funcname, __FILE__, __LINE__)
