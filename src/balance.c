@@ -18,10 +18,11 @@ typedef struct {
     };
     
     metadata_reloc* parent;
+    BOOL top;
     LIST_ENTRY list_entry;
 } metadata_reloc_ref;
 
-static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny) {
+static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
     UINT16 len;
@@ -89,6 +90,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
         }
         
         ref->parent = NULL;
+        ref->top = FALSE;
         InsertTailList(&mr->refs, &ref->list_entry);
         
         len -= sectlen;
@@ -112,6 +114,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     ref->type = TYPE_TREE_BLOCK_REF;
                     RtlCopyMemory(&ref->tbr, tp2.item->data, sizeof(TREE_BLOCK_REF));
                     ref->parent = NULL;
+                    ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
                 } else if (tp2.item->key.obj_type == TYPE_SHARED_BLOCK_REF && tp2.item->size >= sizeof(SHARED_BLOCK_REF)) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
@@ -123,6 +126,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     ref->type = TYPE_TREE_BLOCK_REF;
                     RtlCopyMemory(&ref->sbr, tp2.item->data, sizeof(SHARED_BLOCK_REF));
                     ref->parent = NULL;
+                    ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
                 }
             } else
@@ -131,6 +135,62 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     }
     
     InsertTailList(items, &mr->list_entry);
+    
+    if (mr2)
+        *mr2 = mr;
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* items, UINT64 address, metadata_reloc** mr2) {
+    LIST_ENTRY* le;
+    KEY searchkey;
+    traverse_ptr tp;
+    BOOL skinny = FALSE;
+    NTSTATUS Status;
+    
+    le = items->Flink;
+    while (le != items) {
+        metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
+        
+        if (mr->address == address) {
+            *mr2 = mr;
+            return STATUS_SUCCESS;
+        }
+        
+        le = le->Flink;
+    }
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM))
+        skinny = TRUE;
+    else if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
+             tp.item->size >= sizeof(EXTENT_ITEM)) {
+        EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+        
+        if (!(ei->flags & EXTENT_ITEM_TREE_BLOCK)) {
+            ERR("EXTENT_ITEM for %llx found, but tree flag not set\n", address);
+            return STATUS_INTERNAL_ERROR;
+        }
+    } else {
+        ERR("could not find valid EXTENT_ITEM for address %llx\n", address);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    Status = add_metadata_reloc(Vcb, items, &tp, skinny, mr2);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_metadata_reloc returned %08x\n", Status);
+        return Status;
+    }
     
     return STATUS_SUCCESS;
 }
@@ -180,7 +240,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
             }
             
             if (tree) {
-                Status = add_metadata_reloc(Vcb, &items, &tp, skinny);
+                Status = add_metadata_reloc(Vcb, &items, &tp, skinny, NULL);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_metadata_reloc returned %08x\n", Status);
@@ -234,12 +294,67 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
             metadata_reloc_ref* ref = CONTAINING_RECORD(le2, metadata_reloc_ref, list_entry);
             
             if (ref->type == TYPE_TREE_BLOCK_REF) {
+                KEY* firstitem;
+                root* r = NULL;
+                LIST_ENTRY* le3;
+                tree* t;
+                
                 ERR("tree_block_ref root=%llx\n", ref->tbr.offset);
+                
+                firstitem = (KEY*)&mr->data[1];
+                
+                le3 = Vcb->roots.Flink;
+                while (le3 != &Vcb->roots) {
+                    root* r2 = CONTAINING_RECORD(le3, root, list_entry);
+                    
+                    if (r2->id == ref->tbr.offset) {
+                        r = r2;
+                        break;
+                    }
+                    
+                    le3 = le3->Flink;
+                }
+                
+                if (!r) {
+                    ERR("could not find subvol with id %llx\n", ref->tbr.offset);
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
+                
+                Status = find_item(Vcb, r, &tp, firstitem, FALSE, NULL); // FIXME - this will go all the way down to level 0, which we don't need
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    goto end;
+                }
+                
+                t = tp.tree;
+                while (t && t->header.level < mr->data->level) {
+                    t = t->parent;
+                }
+                
+                if (t) {
+                    if (!t->parent)
+                        ref->top = TRUE;
+                    else {
+                        metadata_reloc* mr2;
+                        
+                        Status = add_metadata_reloc_parent(Vcb, &items, t->parent->header.address, &mr2);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                            goto end;
+                        }
+                        
+                        ref->parent = mr2;
+                    }
+                } else {
+                    ERR("could not find parent for tree at %llx\n", mr->address);
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
             } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
                 ERR("shared_block_ref root=%llx\n", ref->sbr.offset);
+                // FIXME - add parent
             }
-            
-            // FIXME - add parent
             
             le2 = le2->Flink;
         }
