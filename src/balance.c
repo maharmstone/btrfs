@@ -667,6 +667,8 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                         }
                         
                         if (r) {
+                            r->treeholder.address = mr->new_address;
+                            
                             if (r == Vcb->root_root)
                                 Vcb->superblock.root_tree_addr = mr->new_address;
                             else if (r == Vcb->chunk_root)
