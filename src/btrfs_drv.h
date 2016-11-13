@@ -1017,6 +1017,9 @@ void calc_thread(void* context);
 NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum, calc_job** pcj);
 void free_calc_job(calc_job* cj);
 
+// in balance.c
+NTSTATUS start_balance(device_extension* Vcb);
+
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {
