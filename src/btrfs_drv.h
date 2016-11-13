@@ -420,6 +420,7 @@ typedef struct {
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
+    LIST_ENTRY list_entry_balance;
 } chunk;
 
 typedef struct {
