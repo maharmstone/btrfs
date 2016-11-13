@@ -5,6 +5,7 @@ typedef struct {
     UINT64 new_address;
     tree_header* data;
     EXTENT_ITEM* ei;
+    tree* t;
     LIST_ENTRY refs;
     LIST_ENTRY list_entry;
 } metadata_reloc;
@@ -373,6 +374,28 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
         le = le->Flink;
     }
     
+    le = items.Flink;
+    while (le != &items) {
+        metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
+        LIST_ENTRY* le2;
+        
+        mr->t = NULL;
+        
+        le2 = Vcb->trees.Flink;
+        while (le2 != &Vcb->trees) {
+            tree* t = CONTAINING_RECORD(le2, tree, list_entry);
+            
+            if (t->header.address == mr->address) {
+                mr->t = t;
+                break;
+            }
+            
+            le2 = le2->Flink;
+        }
+        
+        le = le->Flink;
+    }
+    
     for (level = 0; level <= max_level; level++) {
         le = items.Flink;
         while (le != &items) {
@@ -465,6 +488,20 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                                 break;
                             }
                         }
+                        
+                        if (ref->parent->t) {
+                            LIST_ENTRY* le3;
+                            
+                            le3 = ref->parent->t->itemlist.Flink;
+                            while (le3 != &ref->parent->t->itemlist) {
+                                tree_data* td = CONTAINING_RECORD(le3, tree_data, list_entry);
+                                
+                                if (!td->inserted && td->treeholder.address == mr->address)
+                                    td->treeholder.address = mr->new_address;
+                                
+                                le3 = le3->Flink;
+                            }
+                        }
                     } else if (ref->top && ref->type == TYPE_TREE_BLOCK_REF) {
                         LIST_ENTRY* le3;
                         root* r = NULL;
@@ -534,6 +571,9 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                 }
                 
                 mr->data->address = mr->new_address;
+                
+                if (mr->t)
+                    mr->t->header.address = mr->new_address;
 
                 *((UINT32*)mr->data) = ~calc_crc32c(0xffffffff, (UINT8*)&mr->data->fs_uuid, Vcb->superblock.node_size - sizeof(mr->data->csum));
                 
@@ -575,8 +615,6 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
             le = le->Flink;
         }
     }
-    
-    // FIXME - alter loaded trees
     
     Status = do_tree_writes(Vcb, &tree_writes, NULL);
     if (!NT_SUCCESS(Status)) {
