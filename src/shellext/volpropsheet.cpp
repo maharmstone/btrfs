@@ -492,7 +492,7 @@ end:
         free(devs);
 }
 
-void BtrfsVolPropSheet::Refresh(HWND hwndDlg) {
+void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     HANDLE h;
     WCHAR s[4096];
     
@@ -569,21 +569,71 @@ void BtrfsVolPropSheet::Refresh(HWND hwndDlg) {
     SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
 }
 
+INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            WCHAR s[4096];
+            
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            
+            FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
+            
+            SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+            
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                            
+                        case IDC_USAGE_REFRESH:
+                            RefreshUsage(hwndDlg);
+                        return TRUE;
+                    }
+                break;
+            }
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsVolPropSheet* bvps;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bvps = (BtrfsVolPropSheet*)lParam;
+    } else {
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bvps)
+        return bvps->UsageDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
+   DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_VOL_USAGE), hwndDlg, stub_UsageDlgProc, (LPARAM)this);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
         {
             PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
             BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)psp->lParam;
-            WCHAR s[4096];
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
-            
-            bps->FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
-            
-            SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
 
             return FALSE;
         }
@@ -606,8 +656,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 switch (HIWORD(wParam)) {
                     case BN_CLICKED: {
                         switch (LOWORD(wParam)) {
-                            case IDC_USAGE_REFRESH:
-                                bps->Refresh(hwndDlg);
+                            case IDC_VOL_SHOW_USAGE:
+                                bps->ShowUsage(hwndDlg);
                             break;
                         }
                     }

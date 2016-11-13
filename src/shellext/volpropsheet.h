@@ -74,7 +74,9 @@ public:
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
     
     void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size);
-    void Refresh(HWND hwndDlg);
+    void RefreshUsage(HWND hwndDlg);
+    void ShowUsage(HWND hwndDlg);
+    INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
 private:
     LONG refcount;

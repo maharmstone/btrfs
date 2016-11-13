@@ -10,6 +10,7 @@
 #define IDS_CREATE_SNAPSHOT             105
 #define IDD_VOL_PROP_SHEET              105
 #define IDS_CREATE_SNAPSHOT_HELP_TEXT   106
+#define IDD_VOL_USAGE                   106
 #define IDS_SNAPSHOT_FILENAME           107
 #define IDD_PROP_SHEET                  107
 #define IDS_PROP_SHEET_TITLE            108
@@ -78,14 +79,16 @@
 #define IDC_USAGE_REFRESH               1021
 #define IDC_SIZE_ZLIB2                  1022
 #define IDC_SIZE_LZO                    1022
+#define IDC_BUTTON1                     1022
+#define IDC_VOL_SHOW_USAGE              1022
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        106
+#define _APS_NEXT_RESOURCE_VALUE        107
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1022
+#define _APS_NEXT_CONTROL_VALUE         1023
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
