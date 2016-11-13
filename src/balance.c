@@ -868,7 +868,7 @@ static void balance_thread(void* context) {
                 // FIXME - store failure status, so we can show this on propsheet
                 break;
             }
-        } while (FALSE); // FIXME - loop until changed is FALSE
+        } while (changed);
     }
     
     ZwClose(Vcb->balance.thread);
