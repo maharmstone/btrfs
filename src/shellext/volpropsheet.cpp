@@ -42,6 +42,7 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 extern HMODULE module;
 
 extern void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
+extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 
 #define BLOCK_FLAG_DATA         0x001
 #define BLOCK_FLAG_SYSTEM       0x002
@@ -624,6 +625,32 @@ void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_VOL_USAGE), hwndDlg, stub_UsageDlgProc, (LPARAM)this);
 }
 
+void BtrfsVolPropSheet::Balance(HWND hwndDlg) {
+    HANDLE h;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        
+        // FIXME - take parameters
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, NULL, 0, NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        CloseHandle(h);
+        return;
+    }
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -658,6 +685,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                         switch (LOWORD(wParam)) {
                             case IDC_VOL_SHOW_USAGE:
                                 bps->ShowUsage(hwndDlg);
+                            break;
+                            
+                            case IDC_VOL_BALANCE:
+                                bps->Balance(hwndDlg);
                             break;
                         }
                     }

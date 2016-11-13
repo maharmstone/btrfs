@@ -77,6 +77,7 @@ public:
     void RefreshUsage(HWND hwndDlg);
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void Balance(HWND hwndDlg);
     
 private:
     LONG refcount;
