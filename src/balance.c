@@ -360,7 +360,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     chunk* newchunk = NULL;
     UINT64 flags = BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_METADATA; // FIXME
     
-    ERR("chunk %llx\n", c->offset);
+    TRACE("chunk %llx\n", c->offset);
     
     InitializeListHead(&rollback);
     InitializeListHead(&items);
