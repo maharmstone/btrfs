@@ -23,7 +23,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } metadata_reloc_ref;
 
-static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, LIST_ENTRY* rollback) {
+static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
     UINT16 len;
@@ -42,7 +42,19 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     InitializeListHead(&mr->refs);
     
     delete_tree_item(Vcb, tp, rollback);
-    // FIXME - update space list
+    
+    if (!c)
+        c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
+        
+    if (c) {
+        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        
+        decrease_chunk_usage(c, Vcb->superblock.node_size);
+        
+        space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
+        
+        ExReleaseResourceLite(&c->lock);
+    }
     
     ei = (EXTENT_ITEM*)tp->item->data;
     inline_rc = 0;
@@ -192,7 +204,7 @@ static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* ite
         return STATUS_INTERNAL_ERROR;
     }
     
-    Status = add_metadata_reloc(Vcb, items, &tp, skinny, mr2, rollback);
+    Status = add_metadata_reloc(Vcb, items, &tp, skinny, mr2, NULL, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_metadata_reloc returned %08x\n", Status);
         return Status;
@@ -387,7 +399,7 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
             }
             
             if (tree) {
-                Status = add_metadata_reloc(Vcb, &items, &tp, skinny, NULL, &rollback);
+                Status = add_metadata_reloc(Vcb, &items, &tp, skinny, NULL, c, &rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_metadata_reloc returned %08x\n", Status);
