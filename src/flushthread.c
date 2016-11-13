@@ -1560,9 +1560,13 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         le = le->Flink;
     }
     
-    Status = STATUS_SUCCESS;
+    Status = do_tree_writes(Vcb, &tree_writes, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_tree_writes returned %08x\n", Status);
+        goto end;
+    }
     
-    do_tree_writes(Vcb, &tree_writes, Irp);
+    Status = STATUS_SUCCESS;
 
 end:
     while (!IsListEmpty(&tree_writes)) {
