@@ -135,14 +135,13 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c) {
+static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     BOOL b;
     LIST_ENTRY items, *le;
-    
-    // FIXME - only do 1 MB(?) at a time
+    UINT32 loaded = 0;
     
     ERR("chunk %llx\n", c->offset);
     
@@ -187,6 +186,11 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c) {
                     ERR("add_metadata_reloc returned %08x\n", Status);
                     goto end;
                 }
+                
+                loaded++;
+                
+                if (loaded >= 64) // only do 64 at a time
+                    break;
             }
         }
     
@@ -195,6 +199,12 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c) {
         if (b)
             tp = next_tp;
     } while (b);
+    
+    if (IsListEmpty(&items)) {
+        *changed = FALSE;
+        return STATUS_SUCCESS;
+    } else
+        *changed = TRUE;
     
     le = items.Flink;
     while (le != &items) {
@@ -297,16 +307,19 @@ static void balance_thread(void* context) {
     while (!IsListEmpty(&chunks)) {
         chunk* c;
         NTSTATUS Status;
+        BOOL changed;
         
         le = RemoveHeadList(&chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         
-        Status = balance_chunk(Vcb, c);
-        if (!NT_SUCCESS(Status)) {
-            ERR("balance_chunk returned %08x\n", Status);
-            // FIXME - store failure status, so we can show this on propsheet
-            break;
-        }
+        do {
+            Status = balance_chunk(Vcb, c, &changed);
+            if (!NT_SUCCESS(Status)) {
+                ERR("balance_chunk returned %08x\n", Status);
+                // FIXME - store failure status, so we can show this on propsheet
+                break;
+            }
+        } while (FALSE); // FIXME - loop until changed is FALSE
     }
     
     ZwClose(Vcb->balance.thread);
