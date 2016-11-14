@@ -236,7 +236,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
         if (ref->type == TYPE_TREE_BLOCK_REF)
             extlen += sizeof(TREE_BLOCK_REF);
         else if (ref->type == TYPE_SHARED_BLOCK_REF)
-            extlen += sizeof(TYPE_SHARED_BLOCK_REF);
+            extlen += sizeof(SHARED_BLOCK_REF);
 
         if (all_inline) {
             if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
@@ -464,8 +464,6 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                 LIST_ENTRY* le3;
                 tree* t;
                 
-//                 ERR("tree_block_ref root=%llx\n", ref->tbr.offset);
-                
                 firstitem = (KEY*)&mr->data[1];
                 
                 le3 = Vcb->roots.Flink;
@@ -511,8 +509,15 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                     ref->parent = mr2;
                 }
             } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
-                ERR("shared_block_ref root=%llx\n", ref->sbr.offset);
-                // FIXME - add parent
+                metadata_reloc* mr2;
+                
+                Status = add_metadata_reloc_parent(Vcb, &items, ref->sbr.offset, &mr2, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                    goto end;
+                }
+                
+                ref->parent = mr2;
             }
             
             le2 = le2->Flink;
