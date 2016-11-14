@@ -421,7 +421,8 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     
     if (IsListEmpty(&items)) {
         *changed = FALSE;
-        return STATUS_SUCCESS;
+        Status = STATUS_SUCCESS;
+        goto end;
     } else
         *changed = TRUE;
     
