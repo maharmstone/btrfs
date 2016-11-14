@@ -382,7 +382,48 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                 }
             }
         } else {
-            // FIXME - alter SHARED_DATA_REF of children
+            UINT16 i;
+            leaf_node* ln = (leaf_node*)&mr->data[1];
+            
+            for (i = 0; i < mr->data->num_items; i++) {
+                if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA* ed = (EXTENT_DATA*)((UINT8*)mr->data + sizeof(tree_header) + ln[i].offset);
+                    
+                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                        
+                        if (ed2->size > 0) { // not sparse
+                            UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, mr->address, NULL);
+                            
+                            if (sdrrc > 0) {
+                                NTSTATUS Status;
+                                SHARED_DATA_REF sdr;
+                                
+                                sdr.offset = mr->new_address;
+                                sdr.count = sdrrc;
+                                
+                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
+                                                                  NULL, rollback);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("increase_extent_refcount returned %08x\n", Status);
+                                    return Status;
+                                }
+                                
+                                sdr.offset = mr->address;
+                                
+                                Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
+                                                                  sdr.offset, NULL, rollback);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("decrease_extent_refcount returned %08x\n", Status);
+                                    return Status;
+                                }
+                                
+                                // FIXME - check changed_extent_ref
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
