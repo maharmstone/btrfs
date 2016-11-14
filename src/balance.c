@@ -349,6 +349,42 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
             le = le->Flink;
         }
     }
+    
+    if (ei->flags & EXTENT_ITEM_SHARED_BACKREFS || mr->data->flags & HEADER_FLAG_SHARED_BACKREF || !(mr->data->flags & HEADER_FLAG_MIXED_BACKREF)) {
+        if (mr->data->level > 0) {
+            UINT16 i;
+            internal_node* in = (internal_node*)&mr->data[1];
+                        
+            for (i = 0; i < mr->data->num_items; i++) {
+                UINT64 sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].address, mr->address, NULL);
+
+                if (sbrrc > 0) {
+                    NTSTATUS Status;
+                    SHARED_BLOCK_REF sbr;
+                    
+                    sbr.offset = mr->new_address;
+                    
+                    Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                                                      NULL, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("increase_extent_refcount returned %08x\n", Status);
+                        return Status;
+                    }
+        
+                    sbr.offset = mr->address;
+                    
+                    Status = decrease_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                                                      sbr.offset, NULL, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("decrease_extent_refcount returned %08x\n", Status);
+                        return Status;
+                    }
+                }
+            }
+        } else {
+            // FIXME - alter SHARED_DATA_REF of children
+        }
+    }
 
     return STATUS_SUCCESS;
 }
@@ -625,9 +661,6 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                     
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                 }
-                
-                // FIXME - if flag set and level 0, alter SHARED_DATA_REFs of children
-                // FIXME - update SHARED_BLOCK_REFs of children
                 
                 // update parents
                 le2 = mr->refs.Flink;
