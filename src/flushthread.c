@@ -4431,6 +4431,12 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     if (c->cache) {
         c->cache->deleted = TRUE;
         
+        Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            return Status;
+        }
+        
         flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
         
         free_fcb(c->cache);
