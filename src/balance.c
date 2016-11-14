@@ -139,7 +139,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    ref->type = TYPE_TREE_BLOCK_REF;
+                    ref->type = TYPE_SHARED_BLOCK_REF;
                     RtlCopyMemory(&ref->sbr, tp2.item->data, sizeof(SHARED_BLOCK_REF));
                     ref->parent = NULL;
                     ref->top = FALSE;
