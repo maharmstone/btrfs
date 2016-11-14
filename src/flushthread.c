@@ -2284,6 +2284,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->has_new_address = FALSE;
     nt->updated_extents = FALSE;
     nt->flags = t->flags;
+    nt->list_entry_hash.Flink = NULL;
     InitializeListHead(&nt->itemlist);
     
 //     ExInitializeResourceLite(&nt->nonpaged->load_tree_lock);
@@ -2418,6 +2419,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 //     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
     pt->flags = t->flags;
+    pt->list_entry_hash.Flink = NULL;
     InitializeListHead(&pt->itemlist);
     
 //     ExInitializeResourceLite(&pt->nonpaged->load_tree_lock);

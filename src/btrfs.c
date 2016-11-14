@@ -937,6 +937,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
         t->flags = tp.tree->flags;
         
         InsertTailList(&Vcb->trees, &t->list_entry);
+        t->list_entry_hash.Flink = NULL;
         
         t->write = TRUE;
         Vcb->need_write = TRUE;
@@ -3716,6 +3717,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->chunks);
     InitializeListHead(&Vcb->chunks_changed);
     InitializeListHead(&Vcb->trees);
+    InitializeListHead(&Vcb->trees_hash);
     InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);

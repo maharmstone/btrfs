@@ -26,6 +26,9 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     tree* t;
     tree_data* td;
     chunk* c;
+    UINT8 h;
+    BOOL inserted;
+    LIST_ENTRY* le;
     
     TRACE("(%p, %llx)\n", Vcb, addr);
     
@@ -54,6 +57,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
 //     t->address = addr;
 //     t->level = th->level;
+    t->hash = calc_crc32c(0xffffffff, (UINT8*)&addr, sizeof(UINT64));
     t->has_address = TRUE;
     t->Vcb = Vcb;
     t->parent = NULL;
@@ -158,6 +162,46 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &t->list_entry);
     
+    h = t->hash >> 24;
+    
+    if (!Vcb->trees_ptrs[h]) {
+        UINT8 h2 = h;
+        
+        le = Vcb->trees_hash.Flink;
+        
+        if (h2 > 0) {
+            h2--;
+            do {
+                if (Vcb->trees_ptrs[h2]) {
+                    le = Vcb->trees_ptrs[h2];
+                    break;
+                }
+                    
+                h2--;
+            } while (h2 > 0);
+        }
+    } else
+        le = Vcb->trees_ptrs[h];
+    
+    inserted = FALSE;
+    while (le != &Vcb->trees_hash) {
+        tree* t2 = CONTAINING_RECORD(le, tree, list_entry_hash);
+        
+        if (t2->hash >= t->hash) {
+            InsertHeadList(le->Blink, &t->list_entry_hash);
+            inserted = TRUE;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+
+    if (!inserted)
+        InsertTailList(&Vcb->trees_hash, &t->list_entry_hash);
+
+    if (!Vcb->trees_ptrs[h] || t->list_entry_hash.Flink == Vcb->trees_ptrs[h])
+        Vcb->trees_ptrs[h] = &t->list_entry_hash;
+    
     TRACE("returning %p\n", t);
     
     *pt = t;
@@ -211,6 +255,23 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
         r->treeholder.tree = NULL;
 //             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
 //             FsRtlExitFileSystem();
+    }
+    
+    if (t->list_entry_hash.Flink) {
+        UINT8 h = t->hash >> 24;
+        if (t->Vcb->trees_ptrs[h] == &t->list_entry_hash) {
+            if (t->list_entry_hash.Flink != &t->Vcb->trees_hash) {
+                tree* t2 = CONTAINING_RECORD(t->list_entry_hash.Flink, tree, list_entry_hash);
+                
+                if ((t2->hash >> 24) == h)
+                    t->Vcb->trees_ptrs[h] = &t2->list_entry_hash;
+                else
+                    t->Vcb->trees_ptrs[h] = NULL;
+            } else
+                t->Vcb->trees_ptrs[h] = NULL;
+        }
+        
+        RemoveEntryList(&t->list_entry_hash);
     }
     
     ExFreePool(t);

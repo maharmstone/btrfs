@@ -301,6 +301,7 @@ typedef struct _tree {
 //     UINT64 address;
 //     UINT8 level;
     tree_header header;
+    UINT32 hash;
     BOOL has_address;
     UINT32 size;
     struct _device_extension* Vcb;
@@ -310,6 +311,7 @@ typedef struct _tree {
 //     tree_nonpaged* nonpaged;
     LIST_ENTRY itemlist;
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_hash;
     UINT64 new_address;
     BOOL has_new_address;
     BOOL updated_extents;
@@ -566,6 +568,8 @@ typedef struct _device_extension {
     LIST_ENTRY chunks;
     LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
+    LIST_ENTRY trees_hash;
+    LIST_ENTRY* trees_ptrs[256];
     LIST_ENTRY all_fcbs;
     LIST_ENTRY dirty_fcbs;
     KSPIN_LOCK dirty_fcbs_lock;
