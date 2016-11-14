@@ -261,7 +261,11 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
     ptr = (UINT8*)&ei[1];
     
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
-        // FIXME - set EXTENT_ITEM2
+        EXTENT_ITEM2* ei2 = (EXTENT_ITEM2*)ptr;
+        
+        ei2->firstitem = *(KEY*)&mr->data[1];
+        ei2->level = mr->data->level;
+        
         ptr += sizeof(EXTENT_ITEM2);
     }
     
