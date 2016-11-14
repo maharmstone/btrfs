@@ -607,19 +607,26 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     while (le != &items) {
         metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
         LIST_ENTRY* le2;
+        UINT32 hash;
         
         mr->t = NULL;
         
-        le2 = Vcb->trees.Flink;
-        while (le2 != &Vcb->trees) {
-            tree* t = CONTAINING_RECORD(le2, tree, list_entry);
-            
-            if (t->header.address == mr->address) {
-                mr->t = t;
-                break;
+        hash = calc_crc32c(0xffffffff, (UINT8*)&mr->address, sizeof(UINT64));
+        
+        le2 = Vcb->trees_ptrs[hash >> 24];
+        
+        if (le2) {
+            while (le2 != &Vcb->trees_hash) {
+                tree* t = CONTAINING_RECORD(le2, tree, list_entry_hash);
+                
+                if (t->header.address == mr->address) {
+                    mr->t = t;
+                    break;
+                } else if (t->hash > hash)
+                    break;
+                
+                le2 = le2->Flink;
             }
-            
-            le2 = le2->Flink;
         }
         
         le = le->Flink;
@@ -804,8 +811,72 @@ static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
                 
                 mr->data->address = mr->new_address;
                 
-                if (mr->t)
+                if (mr->t) {
+                    UINT8 h;
+                    BOOL inserted;
+                    
                     mr->t->header.address = mr->new_address;
+                    
+                    h = mr->t->hash >> 24;
+                    
+                    if (Vcb->trees_ptrs[h] == &mr->t->list_entry_hash) {
+                        if (mr->t->list_entry_hash.Flink == &Vcb->trees_hash)
+                            Vcb->trees_ptrs[h] = NULL;
+                        else {
+                            tree* t2 = CONTAINING_RECORD(mr->t->list_entry_hash.Flink, tree, list_entry_hash);
+                            
+                            if (t2->hash >> 24 == h)
+                                Vcb->trees_ptrs[h] = &t2->list_entry_hash;
+                            else
+                                Vcb->trees_ptrs[h] = NULL;
+                        }
+                    }
+                        
+                    RemoveEntryList(&mr->t->list_entry_hash);
+                    
+                    mr->t->hash = calc_crc32c(0xffffffff, (UINT8*)&mr->t->header.address, sizeof(UINT64));
+                    h = mr->t->hash >> 24;
+                    
+                    if (!Vcb->trees_ptrs[h]) {
+                        UINT8 h2 = h;
+                        
+                        le2 = Vcb->trees_hash.Flink;
+                        
+                        if (h2 > 0) {
+                            h2--;
+                            do {
+                                if (Vcb->trees_ptrs[h2]) {
+                                    le2 = Vcb->trees_ptrs[h2];
+                                    break;
+                                }
+                                    
+                                h2--;
+                            } while (h2 > 0);
+                        }
+                    } else
+                        le2 = Vcb->trees_ptrs[h];
+                    
+                    inserted = FALSE;
+                    while (le2 != &Vcb->trees_hash) {
+                        tree* t2 = CONTAINING_RECORD(le2, tree, list_entry_hash);
+                        
+                        if (t2->hash >= mr->t->hash) {
+                            InsertHeadList(le2->Blink, &mr->t->list_entry_hash);
+                            inserted = TRUE;
+                            break;
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
+
+                    if (!inserted)
+                        InsertTailList(&Vcb->trees_hash, &mr->t->list_entry_hash);
+
+                    if (!Vcb->trees_ptrs[h] || mr->t->list_entry_hash.Flink == Vcb->trees_ptrs[h])
+                        Vcb->trees_ptrs[h] = &mr->t->list_entry_hash;
+                    
+                    // FIXME - check if tree loaded more than once
+                }
 
                 *((UINT32*)mr->data) = ~calc_crc32c(0xffffffff, (UINT8*)&mr->data->fs_uuid, Vcb->superblock.node_size - sizeof(mr->data->csum));
                 
