@@ -40,7 +40,7 @@ typedef struct {
         SHARED_DATA_REF sdr;
     };
     
-//     data_reloc* parent;
+    metadata_reloc* parent;
     LIST_ENTRY list_entry;
 } data_reloc_ref;
 
@@ -991,7 +991,7 @@ end:
     return Status;
 }
 
-static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* metadata_items, traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
     data_reloc* dr;
     EXTENT_ITEM* ei;
     UINT16 len;
@@ -1006,7 +1006,6 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
     
     dr->address = tp->item->key.obj_id;
     dr->size = tp->item->key.offset;
-//     mr->data = NULL;
     dr->ei = (EXTENT_ITEM*)tp->item->data;
     InitializeListHead(&dr->refs);
     
@@ -1035,6 +1034,8 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
         UINT8 secttype = *ptr;
         ULONG sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(EXTENT_DATA_REF) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
         data_reloc_ref* ref;
+        NTSTATUS Status;
+        metadata_reloc* mr;
         
         len--;
         
@@ -1055,20 +1056,77 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
         }
         
         if (secttype == TYPE_EXTENT_DATA_REF) {
+            LIST_ENTRY* le;
+            KEY searchkey;
+            traverse_ptr tp3;
+            root* r = NULL;
+            
             ref->type = TYPE_EXTENT_DATA_REF;
             RtlCopyMemory(&ref->edr, ptr + sizeof(UINT8), sizeof(EXTENT_DATA_REF));
             inline_rc += ref->edr.count;
+            
+            le = Vcb->roots.Flink;
+            while (le != &Vcb->roots) {
+                root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                
+                if (r2->id == ref->edr.root) {
+                    r = r2;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+            
+            if (!r) {
+                ERR("could not find subvol %llx\n", ref->edr.count);
+                ExFreePool(ref);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            searchkey.obj_id = ref->edr.objid;
+            searchkey.obj_type = TYPE_EXTENT_DATA;
+            searchkey.offset = ref->edr.offset;
+            
+            Status = find_item(Vcb, r, &tp3, &searchkey, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                ExFreePool(ref);
+                return Status;
+            }
+            
+            if (keycmp(tp3.item->key, searchkey)) {
+                ERR("could not find (%llx,%x,%llx) in root %llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, r->id);
+                ExFreePool(ref);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            Status = add_metadata_reloc_parent(Vcb, metadata_items, tp3.tree->header.address, &mr, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                ExFreePool(ref);
+                return Status;
+            }
+            
+            ref->parent = mr;
         } else if (secttype == TYPE_SHARED_DATA_REF) {
             ref->type = TYPE_SHARED_DATA_REF;
             RtlCopyMemory(&ref->sdr, ptr + sizeof(UINT8), sizeof(SHARED_DATA_REF));
             inline_rc += ref->sdr.count;
+            
+            Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->sdr.offset, &mr, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                ExFreePool(ref);
+                return Status;
+            }
+            
+            ref->parent = mr;
         } else {
             ERR("unexpected tree type %x\n", secttype);
             ExFreePool(ref);
             return STATUS_INTERNAL_ERROR;
         }
         
-//         ref->parent = NULL;
         InsertTailList(&dr->refs, &ref->list_entry);
         
         len -= sectlen;
@@ -1079,11 +1137,20 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
         traverse_ptr tp2 = *tp, next_tp;
         
         while (find_next_item(Vcb, &tp2, &next_tp, FALSE, NULL)) {
+            metadata_reloc* mr;
+            NTSTATUS Status;
+            
             tp2 = next_tp;
             
             if (tp2.item->key.obj_id == tp->item->key.obj_id) {
                 if (tp2.item->key.obj_type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(EXTENT_DATA_REF)) {
-                    data_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
+                    data_reloc_ref* ref;
+                    LIST_ENTRY* le;
+                    KEY searchkey;
+                    traverse_ptr tp3;
+                    root* r = NULL;
+
+                    ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1091,7 +1158,50 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
                     
                     ref->type = TYPE_EXTENT_DATA_REF;
                     RtlCopyMemory(&ref->edr, tp2.item->data, sizeof(EXTENT_DATA_REF));
-//                     ref->parent = NULL;
+                    
+                    le = Vcb->roots.Flink;
+                    while (le != &Vcb->roots) {
+                        root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                        
+                        if (r2->id == ref->edr.root) {
+                            r = r2;
+                            break;
+                        }
+                        
+                        le = le->Flink;
+                    }
+                    
+                    if (!r) {
+                        ERR("could not find subvol %llx\n", ref->edr.count);
+                        ExFreePool(ref);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    searchkey.obj_id = ref->edr.objid;
+                    searchkey.obj_type = TYPE_EXTENT_DATA;
+                    searchkey.offset = ref->edr.offset;
+                    
+                    Status = find_item(Vcb, r, &tp3, &searchkey, FALSE, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("find_item returned %08x\n", Status);
+                        ExFreePool(ref);
+                        return Status;
+                    }
+                    
+                    if (!keycmp(tp3.item->key, searchkey)) {
+                        ERR("could not find (%llx,%x,%llx) in root %llx\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, r->id);
+                        ExFreePool(ref);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                    
+                    Status = add_metadata_reloc_parent(Vcb, metadata_items, tp3.tree->header.address, &mr, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                        ExFreePool(ref);
+                        return Status;
+                    }
+                    
+                    ref->parent = mr;
                     InsertTailList(&dr->refs, &ref->list_entry);
                     
                     delete_tree_item(Vcb, &tp2, rollback);
@@ -1104,7 +1214,15 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, travers
                     
                     ref->type = TYPE_SHARED_DATA_REF;
                     RtlCopyMemory(&ref->sdr, tp2.item->data, sizeof(SHARED_DATA_REF));
-//                     ref->parent = NULL;
+                    
+                    Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->sdr.offset, &mr, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_metadata_reloc_parent returned %08x\n", Status);
+                        ExFreePool(ref);
+                        return Status;
+                    }
+                    
+                    ref->parent = mr;
                     InsertTailList(&dr->refs, &ref->list_entry);
                     
                     delete_tree_item(Vcb, &tp2, rollback);
@@ -1251,7 +1369,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     traverse_ptr tp;
     NTSTATUS Status;
     BOOL b;
-    LIST_ENTRY items, rollback, *le;
+    LIST_ENTRY items, metadata_items, rollback, *le;
     UINT64 loaded = 0;
     chunk* newchunk = NULL;
     
@@ -1259,6 +1377,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     
     InitializeListHead(&rollback);
     InitializeListHead(&items);
+    InitializeListHead(&metadata_items);
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
@@ -1289,7 +1408,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             }
             
             if (!tree) {
-                Status = add_data_reloc(Vcb, &items, &tp, c, &rollback);
+                Status = add_data_reloc(Vcb, &items, &metadata_items, &tp, c, &rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_data_reloc returned %08x\n", Status);
@@ -1393,6 +1512,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         le = le->Flink;
     }
     
+    // FIXME - add metadata parents
+    
     le = items.Flink;
     while (le != &items) {
         data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
@@ -1479,6 +1600,18 @@ end:
         }
         
         ExFreePool(dr);
+    }
+    
+    while (!IsListEmpty(&metadata_items)) {
+        metadata_reloc* mr = CONTAINING_RECORD(RemoveHeadList(&metadata_items), metadata_reloc, list_entry);
+        
+        while (!IsListEmpty(&mr->refs)) {
+            metadata_reloc_ref* ref = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+            
+            ExFreePool(ref);
+        }
+        
+        ExFreePool(mr);
     }
     
     return Status;
