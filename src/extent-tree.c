@@ -84,7 +84,7 @@ static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
     }
 }
 
-static UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset) {
+UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset) {
     UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
 
     high_crc = calc_crc32c(high_crc, (UINT8*)&root, sizeof(UINT64));

@@ -23,6 +23,27 @@ typedef struct {
     LIST_ENTRY list_entry;
 } metadata_reloc_ref;
 
+typedef struct {
+    UINT64 address;
+    UINT64 size;
+    UINT64 new_address;
+    EXTENT_ITEM* ei;
+    LIST_ENTRY refs;
+    LIST_ENTRY list_entry;
+} data_reloc;
+
+typedef struct {
+    UINT8 type;
+    
+    union {
+        EXTENT_DATA_REF edr;
+        SHARED_DATA_REF sdr;
+    };
+    
+//     data_reloc* parent;
+    LIST_ENTRY list_entry;
+} data_reloc_ref;
+
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
@@ -430,7 +451,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS balance_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
+static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -970,6 +991,454 @@ end:
     return Status;
 }
 
+static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
+    data_reloc* dr;
+    EXTENT_ITEM* ei;
+    UINT16 len;
+    UINT64 inline_rc;
+    UINT8* ptr;
+    
+    dr = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc), ALLOC_TAG);
+    if (!dr) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    dr->address = tp->item->key.obj_id;
+    dr->size = tp->item->key.offset;
+//     mr->data = NULL;
+    dr->ei = (EXTENT_ITEM*)tp->item->data;
+    InitializeListHead(&dr->refs);
+    
+    delete_tree_item(Vcb, tp, rollback);
+    
+    if (!c)
+        c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
+        
+    if (c) {
+        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        
+        decrease_chunk_usage(c, tp->item->key.offset);
+        
+        space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, tp->item->key.offset, rollback);
+        
+        ExReleaseResourceLite(&c->lock);
+    }
+    
+    ei = (EXTENT_ITEM*)tp->item->data;
+    inline_rc = 0;
+    
+    len = tp->item->size - sizeof(EXTENT_ITEM);
+    ptr = (UINT8*)tp->item->data + sizeof(EXTENT_ITEM);
+    
+    while (len > 0) {
+        UINT8 secttype = *ptr;
+        ULONG sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(EXTENT_DATA_REF) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
+        data_reloc_ref* ref;
+        
+        len--;
+        
+        if (sectlen > len) {
+            ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (sectlen == 0) {
+            ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
+        if (!ref) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        if (secttype == TYPE_EXTENT_DATA_REF) {
+            ref->type = TYPE_EXTENT_DATA_REF;
+            RtlCopyMemory(&ref->edr, ptr + sizeof(UINT8), sizeof(EXTENT_DATA_REF));
+            inline_rc += ref->edr.count;
+        } else if (secttype == TYPE_SHARED_DATA_REF) {
+            ref->type = TYPE_SHARED_DATA_REF;
+            RtlCopyMemory(&ref->sdr, ptr + sizeof(UINT8), sizeof(SHARED_DATA_REF));
+            inline_rc += ref->sdr.count;
+        } else {
+            ERR("unexpected tree type %x\n", secttype);
+            ExFreePool(ref);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+//         ref->parent = NULL;
+        InsertTailList(&dr->refs, &ref->list_entry);
+        
+        len -= sectlen;
+        ptr += sizeof(UINT8) + sectlen;
+    }
+    
+    if (inline_rc < ei->refcount) { // look for non-inline entries
+        traverse_ptr tp2 = *tp, next_tp;
+        
+        while (find_next_item(Vcb, &tp2, &next_tp, FALSE, NULL)) {
+            tp2 = next_tp;
+            
+            if (tp2.item->key.obj_id == tp->item->key.obj_id) {
+                if (tp2.item->key.obj_type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(EXTENT_DATA_REF)) {
+                    data_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
+                    if (!ref) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    ref->type = TYPE_EXTENT_DATA_REF;
+                    RtlCopyMemory(&ref->edr, tp2.item->data, sizeof(EXTENT_DATA_REF));
+//                     ref->parent = NULL;
+                    InsertTailList(&dr->refs, &ref->list_entry);
+                    
+                    delete_tree_item(Vcb, &tp2, rollback);
+                } else if (tp2.item->key.obj_type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(SHARED_DATA_REF)) {
+                    data_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
+                    if (!ref) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    ref->type = TYPE_SHARED_DATA_REF;
+                    RtlCopyMemory(&ref->sdr, tp2.item->data, sizeof(SHARED_DATA_REF));
+//                     ref->parent = NULL;
+                    InsertTailList(&dr->refs, &ref->list_entry);
+                    
+                    delete_tree_item(Vcb, &tp2, rollback);
+                }
+            } else
+                break;
+        }
+    }
+    
+    InsertTailList(items, &dr->list_entry);
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    UINT64 rc = 0;
+    UINT16 inline_len;
+    BOOL all_inline = TRUE;
+    data_reloc_ref* first_noninline = NULL;
+    EXTENT_ITEM* ei;
+    UINT8* ptr;
+    
+    inline_len = sizeof(EXTENT_ITEM);
+    
+    le = dr->refs.Flink;
+    while (le != &dr->refs) {
+        data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
+        ULONG extlen = 0;
+        
+        rc++;
+        
+        if (ref->type == TYPE_EXTENT_DATA_REF)
+            extlen += sizeof(EXTENT_DATA_REF);
+        else if (ref->type == TYPE_SHARED_DATA_REF)
+            extlen += sizeof(SHARED_DATA_REF);
+
+        if (all_inline) {
+            if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
+                all_inline = FALSE;
+                first_noninline = ref;
+            } else
+                inline_len += extlen + 1;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ei = ExAllocatePoolWithTag(PagedPool, inline_len, ALLOC_TAG);
+    if (!ei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    ei->refcount = rc;
+    ei->generation = dr->ei->generation;
+    ei->flags = dr->ei->flags;
+    ptr = (UINT8*)&ei[1];
+    
+    le = dr->refs.Flink;
+    while (le != &dr->refs) {
+        data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
+        
+        if (ref == first_noninline)
+            break;
+        
+        *ptr = ref->type;
+        ptr++;
+        
+        if (ref->type == TYPE_EXTENT_DATA_REF) {
+            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)ptr;
+            
+            RtlCopyMemory(edr, &ref->edr, sizeof(EXTENT_DATA_REF));
+            
+            ptr += sizeof(EXTENT_DATA_REF);
+        } else if (ref->type == TYPE_SHARED_DATA_REF) {
+            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)ptr;
+            
+//             sdr->offset = ref->parent->new_address;
+            RtlCopyMemory(sdr, &ref->sdr, sizeof(SHARED_DATA_REF));
+            
+            ptr += sizeof(SHARED_DATA_REF);
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_ITEM, dr->size, ei, inline_len, NULL, NULL, rollback)) {
+        ERR("insert_tree_item failed\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (!all_inline) {
+        le = &first_noninline->list_entry;
+        
+        while (le != &dr->refs) {
+            data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
+            
+            if (ref->type == TYPE_EXTENT_DATA_REF) {
+                EXTENT_DATA_REF* edr;
+                UINT64 off;
+                
+                edr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA_REF), ALLOC_TAG);
+                if (!edr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+//                 edr->offset = ref->tbr.offset;
+                RtlCopyMemory(edr, &ref->edr, sizeof(EXTENT_DATA_REF));
+                
+                off = get_extent_data_ref_hash2(ref->edr.root, ref->edr.objid, ref->edr.offset);
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, off, edr, sizeof(EXTENT_DATA_REF), NULL, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            } else if (ref->type == TYPE_SHARED_DATA_REF) {
+                SHARED_DATA_REF* sdr;
+                
+                sdr = ExAllocatePoolWithTag(PagedPool, sizeof(SHARED_DATA_REF), ALLOC_TAG);
+                if (!sdr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+//                 sdr->offset = ref->parent->new_address;
+                
+                if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, sdr->offset, sdr, sizeof(SHARED_DATA_REF), NULL, NULL, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+            }
+            
+            le = le->Flink;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    BOOL b;
+    LIST_ENTRY items, rollback, *le;
+    UINT64 loaded = 0;
+    chunk* newchunk = NULL;
+    
+    TRACE("chunk %llx\n", c->offset);
+    
+    InitializeListHead(&rollback);
+    InitializeListHead(&items);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    searchkey.obj_id = c->offset;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id >= c->offset + c->chunk_item->size)
+            break;
+        
+        if (tp.item->key.obj_id >= c->offset && tp.item->key.obj_type == TYPE_EXTENT_ITEM) {
+            BOOL tree = FALSE;
+            
+            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+                EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                
+                if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                    tree = TRUE;
+            }
+            
+            if (!tree) {
+                Status = add_data_reloc(Vcb, &items, &tp, c, &rollback);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_data_reloc returned %08x\n", Status);
+                    goto end;
+                }
+                
+                loaded += tp.item->key.offset;
+                
+                if (loaded >= 0x1000000) // only do so much at a time, so we don't block too obnoxiously
+                    break;
+            }
+        }
+    
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
+        
+        if (b)
+            tp = next_tp;
+    } while (b);
+    
+    if (IsListEmpty(&items)) {
+        *changed = FALSE;
+        Status = STATUS_SUCCESS;
+        goto end;
+    } else
+        *changed = TRUE;
+
+    le = items.Flink;
+    while (le != &items) {
+        data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
+        BOOL done = FALSE;
+        LIST_ENTRY* le2;
+        
+        if (newchunk) {
+            ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+            
+            if (find_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
+                increase_chunk_usage(newchunk, dr->size);
+                space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
+                done = TRUE;
+            }
+            
+            ExReleaseResourceLite(&newchunk->lock);
+        }
+        
+        if (!done) {
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
+            le2 = Vcb->chunks.Flink;
+            while (le2 != &Vcb->chunks) {
+                chunk* c2 = CONTAINING_RECORD(le2, chunk, list_entry);
+                
+                if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == Vcb->data_flags) {
+                    ExAcquireResourceExclusiveLite(&c2->lock, TRUE);
+                    
+                    if ((c2->chunk_item->size - c2->used) >= dr->size) {
+                        if (find_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
+                            increase_chunk_usage(c2, dr->size);
+                            space_list_subtract(Vcb, c2, FALSE, dr->new_address, dr->size, &rollback);
+                            ExReleaseResourceLite(&c2->lock);
+                            newchunk = c2;
+                            done = TRUE;
+                            break;
+                        }
+                    }
+                    
+                    ExReleaseResourceLite(&c2->lock);
+                }
+
+                le2 = le2->Flink;
+            }
+            
+            // allocate new chunk if necessary
+            if (!done) {
+                newchunk = alloc_chunk(Vcb, Vcb->data_flags);
+                
+                if (!newchunk) {
+                    ERR("could not allocate new chunk\n");
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    Status = STATUS_DISK_FULL;
+                    goto end;
+                }
+                
+                ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+                
+                if (!find_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
+                    ExReleaseResourceLite(&newchunk->lock);
+                    ERR("could not find address in new chunk\n");
+                    Status = STATUS_DISK_FULL;
+                    goto end;
+                } else {
+                    increase_chunk_usage(newchunk, dr->size);
+                    space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
+                }
+                
+                ExReleaseResourceLite(&newchunk->lock);
+            }
+            
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+        }
+
+        le = le->Flink;
+    }
+    
+    le = items.Flink;
+    while (le != &items) {
+        data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
+        
+        Status = add_data_reloc_extent_item(Vcb, dr, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_data_reloc_extent_item returned %08x\n", Status);
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    // FIXME - read and rewrite data
+    // FIXME - update checksums
+    // FIXME - update metadata
+    // FIXME - update changed_extent_ref
+    // FIXME - update open FCBs
+    
+    Status = STATUS_SUCCESS;
+    
+    Vcb->need_write = TRUE;
+    
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(Vcb, &rollback);
+    else
+        do_rollback(Vcb, &rollback);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    while (!IsListEmpty(&items)) {
+        data_reloc* dr = CONTAINING_RECORD(RemoveHeadList(&items), data_reloc, list_entry);
+        
+        while (!IsListEmpty(&dr->refs)) {
+            data_reloc_ref* ref = CONTAINING_RECORD(RemoveHeadList(&dr->refs), data_reloc_ref, list_entry);
+            
+            ExFreePool(ref);
+        }
+        
+        ExFreePool(dr);
+    }
+    
+    return Status;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
@@ -987,7 +1456,7 @@ static void balance_thread(void* context) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        if (c->chunk_item->type & BLOCK_FLAG_METADATA) { // FIXME
+        if (c->chunk_item->type & BLOCK_FLAG_DATA) { // FIXME
             c->reloc = TRUE;
             
             InsertTailList(&chunks, &c->list_entry_balance);
@@ -1013,11 +1482,20 @@ static void balance_thread(void* context) {
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         
         do {
-            Status = balance_chunk(Vcb, c, &changed);
-            if (!NT_SUCCESS(Status)) {
-                ERR("balance_chunk returned %08x\n", Status);
-                // FIXME - store failure status, so we can show this on propsheet
-                break;
+            if (c->chunk_item->type & BLOCK_FLAG_METADATA) {
+                Status = balance_metadata_chunk(Vcb, c, &changed);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("balance_metadata_chunk returned %08x\n", Status);
+                    // FIXME - store failure status, so we can show this on propsheet
+                    break;
+                }
+            } else if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+                Status = balance_data_chunk(Vcb, c, &changed);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("balance_data_chunk returned %08x\n", Status);
+                    // FIXME - store failure status, so we can show this on propsheet
+                    break;
+                }
             }
         } while (changed);
     }
