@@ -1410,7 +1410,52 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     // FIXME - update checksums
     // FIXME - update metadata
     // FIXME - update changed_extent_ref
-    // FIXME - update open FCBs
+    
+    // update open FCBs
+    // FIXME - speed this up
+    
+    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+    
+    le = Vcb->all_fcbs.Flink;
+    while (le != &Vcb->all_fcbs) {
+        struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_all);
+        LIST_ENTRY* le2;
+
+        ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+        
+        le2 = fcb->extents.Flink;
+        while (le2 != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+            
+            if (!ext->ignore) {
+                if (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                    
+                    if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->size) {
+                        LIST_ENTRY* le3 = items.Flink;
+                        while (le3 != &items) {
+                            data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
+                            
+                            if (ed2->address == dr->address) {
+                                ed2->address = dr->new_address;
+                                break;
+                            }
+                            
+                            le3 = le3->Flink;
+                        }
+                    }
+                }
+            }
+            
+            le2 = le2->Flink;
+        }
+        
+        ExReleaseResourceLite(fcb->Header.Resource);
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     Status = STATUS_SUCCESS;
     
