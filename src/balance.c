@@ -468,17 +468,19 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         
 //         ERR("address %llx\n", mr->address);
         
-        mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
         if (!mr->data) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        // FIXME - pass in c if address is within chunk
-        Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data, NULL, NULL, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("read_data returned %08x\n", Status);
-            return Status;
+            mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+            if (!mr->data) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            // FIXME - pass in c if address is within chunk
+            Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data, NULL, NULL, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_data returned %08x\n", Status);
+                return Status;
+            }
         }
         
         if (mr->data->level > max_level)
@@ -1528,7 +1530,59 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         le = le->Flink;
     }
     
-    // FIXME - update metadata
+    // read metadata
+    
+    le = metadata_items.Flink;
+    while (le != &metadata_items) {
+        metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
+        
+        mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+        if (!mr->data) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data, NULL, NULL, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data returned %08x\n", Status);
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    // update metadata
+    
+    le = items.Flink;
+    while (le != &items) {
+        data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
+        LIST_ENTRY* le2;
+        
+        le2 = dr->refs.Flink;
+        while (le2 != &dr->refs) {
+            data_reloc_ref* ref = CONTAINING_RECORD(le2, data_reloc_ref, list_entry);
+            leaf_node* ln = (leaf_node*)&ref->parent->data[1];
+            UINT16 i;
+            
+            for (i = 0; i < ref->parent->data->num_items; i++) {
+                if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    EXTENT_DATA* ed = (EXTENT_DATA*)((UINT8*)ref->parent->data + sizeof(tree_header) + ln[i].offset);
+                    
+                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+                        
+                        if (ed2->address == dr->address)
+                            ed2->address = dr->new_address;
+                    }
+                }
+            }
+            
+            le2 = le2->Flink;
+        }
+        
+        le = le->Flink;
+    }
     
     Status = write_metadata_items(Vcb, &metadata_items, &rollback);
     if (!NT_SUCCESS(Status)) {
