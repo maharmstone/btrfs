@@ -2945,7 +2945,7 @@ static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG l
     return Status;
 }
 
-static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
+NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -2973,7 +2973,7 @@ static NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 
                 j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
             
             if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
-                ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
+                TRACE("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
                 return STATUS_INTERNAL_ERROR;
             }
             

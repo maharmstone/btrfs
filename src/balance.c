@@ -1508,6 +1508,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
         BOOL done = FALSE;
         LIST_ENTRY* le2;
+        UINT32* csum;
         
         if (newchunk) {
             ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
@@ -1576,6 +1577,48 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             
             ExReleaseResourceLite(&Vcb->chunk_lock);
         }
+        
+        csum = ExAllocatePoolWithTag(PagedPool, dr->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+        if (!csum) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        Status = load_csum_from_disk(Vcb, csum, dr->address, dr->size / Vcb->superblock.sector_size, NULL);
+        if (NT_SUCCESS(Status)) {
+            changed_sector *sc, *sc2;
+            
+            sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+            if (!sc) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            sc2 = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
+            if (!sc2) {
+                ERR("out of memory\n");
+                ExFreePool(sc);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            sc->ol.key = dr->address;
+            sc->checksums = NULL;
+            sc->length = dr->size / Vcb->superblock.sector_size;
+            sc->deleted = TRUE;
+            
+            InsertTailList(&Vcb->sector_checksums, &sc->ol.list_entry);
+            
+            sc2->ol.key = dr->new_address;
+            sc2->checksums = csum;
+            sc2->length = dr->size / Vcb->superblock.sector_size;
+            sc2->deleted = FALSE;
+            
+            InsertTailList(&Vcb->sector_checksums, &sc2->ol.list_entry);
+        } else
+            ExFreePool(csum);
 
         le = le->Flink;
     }
@@ -1600,7 +1643,6 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     }
     
     // FIXME - read and rewrite data
-    // FIXME - update checksums
     // FIXME - update changed_extent_ref
     
     // update open FCBs
