@@ -1440,6 +1440,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     LIST_ENTRY items, metadata_items, rollback, *le;
     UINT64 loaded = 0;
     chunk* newchunk = NULL;
+    UINT8* data = NULL;
     
     TRACE("chunk %llx\n", c->offset);
     
@@ -1502,6 +1503,13 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         goto end;
     } else
         *changed = TRUE;
+    
+    data = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
+    if (!data) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
     le = items.Flink;
     while (le != &items) {
@@ -1509,6 +1517,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         BOOL done = FALSE;
         LIST_ENTRY* le2;
         UINT32* csum;
+        UINT64 off;
         
         if (newchunk) {
             ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
@@ -1619,9 +1628,32 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             InsertTailList(&Vcb->sector_checksums, &sc2->ol.list_entry);
         } else
             ExFreePool(csum);
+        
+        off = 0;
+        
+        while (off < dr->size) {
+            ULONG ds = min(dr->size - off, 0x100000);
+            
+            Status = read_data(Vcb, dr->address + off, ds, NULL, FALSE, data, c, NULL, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_data returned %08x\n", Status);
+                goto end;
+            }
+            
+            Status = write_data_complete(Vcb, dr->new_address + off, data, ds, NULL, newchunk);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_complete returned %08x\n", Status);
+                goto end;
+            }
+            
+            off += ds;
+        }
 
         le = le->Flink;
     }
+    
+    ExFreePool(data);
+    data = NULL;
     
     Status = write_metadata_items(Vcb, &metadata_items, &items, &rollback);
     if (!NT_SUCCESS(Status)) {
@@ -1642,7 +1674,6 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         le = le->Flink;
     }
     
-    // FIXME - read and rewrite data
     // FIXME - update changed_extent_ref
     
     // update open FCBs
@@ -1702,6 +1733,9 @@ end:
         do_rollback(Vcb, &rollback);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    if (data)
+        ExFreePool(data);
     
     while (!IsListEmpty(&items)) {
         data_reloc* dr = CONTAINING_RECORD(RemoveHeadList(&items), data_reloc, list_entry);
