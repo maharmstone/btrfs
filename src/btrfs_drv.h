@@ -540,8 +540,6 @@ typedef struct _device_extension {
     fcb* volume_fcb;
     file_ref* root_fileref;
     LONG open_files;
-    ERESOURCE DirResource;
-    KSPIN_LOCK FcbListLock;
     ERESOURCE fcb_lock;
     ERESOURCE load_lock;
     ERESOURCE tree_lock;
@@ -551,7 +549,6 @@ typedef struct _device_extension {
     BOOL need_write;
 //     ERESOURCE LogToPhysLock;
 //     UINT64 chunk_root_phys_addr;
-    UINT64 root_tree_phys_addr;
     UINT64 data_flags;
 //     log_to_phys* log_to_phys;
     LIST_ENTRY roots;

@@ -3914,11 +3914,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!skip_lock)
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
         
-//         ExAcquireResourceExclusiveLite(&Vpb->DirResource, TRUE);
-    //     Status = NtfsCreateFile(DeviceObject,
-    //                             Irp);
         Status = open_file(DeviceObject, Irp, &rollback);
-//         ExReleaseResourceLite(&Vpb->DirResource);
         
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);

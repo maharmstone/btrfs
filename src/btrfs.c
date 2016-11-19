@@ -3573,7 +3573,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->need_write = FALSE;
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
-    ExInitializeResourceLite(&Vcb->DirResource);
     ExInitializeResourceLite(&Vcb->checksum_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
 
@@ -3927,8 +3926,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
 //     root_test(Vcb);
     
-    KeInitializeSpinLock(&Vcb->FcbListLock);
-
     NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
     Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
     Stack->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
@@ -3986,7 +3983,6 @@ exit:
             ExDeleteResourceLite(&Vcb->tree_lock);
             ExDeleteResourceLite(&Vcb->load_lock);
             ExDeleteResourceLite(&Vcb->fcb_lock);
-            ExDeleteResourceLite(&Vcb->DirResource);
             ExDeleteResourceLite(&Vcb->checksum_lock);
             ExDeleteResourceLite(&Vcb->chunk_lock);
 
