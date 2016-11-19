@@ -315,7 +315,6 @@ typedef struct _tree {
     UINT64 new_address;
     BOOL has_new_address;
     BOOL updated_extents;
-    UINT64 flags;
     BOOL write;
 } tree;
 
@@ -550,6 +549,8 @@ typedef struct _device_extension {
 //     ERESOURCE LogToPhysLock;
 //     UINT64 chunk_root_phys_addr;
     UINT64 data_flags;
+    UINT64 metadata_flags;
+    UINT64 system_flags;
 //     log_to_phys* log_to_phys;
     LIST_ENTRY roots;
     LIST_ENTRY drop_roots;

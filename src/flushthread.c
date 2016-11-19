@@ -381,16 +381,12 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
-    UINT64 flags = t->flags, addr;
+    UINT64 flags, addr;
     
-    if (flags == 0) {
-        if (t->root->id == BTRFS_ROOT_CHUNK)
-            flags = BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE;
-        else if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
-            flags = BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA;
-        else
-            flags = BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE;
-    }
+    if (t->root->id == BTRFS_ROOT_CHUNK)
+        flags = Vcb->system_flags;
+    else
+        flags = Vcb->metadata_flags;
     
 //     TRACE("flags = %x\n", (UINT32)wt->flags);
     
@@ -408,7 +404,8 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (!origchunk->readonly && !origchunk->reloc && insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
+        if (!origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags &&
+            insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
             t->new_address = addr;
             t->has_new_address = TRUE;
             return STATUS_SUCCESS;
@@ -2283,7 +2280,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->new_address = 0;
     nt->has_new_address = FALSE;
     nt->updated_extents = FALSE;
-    nt->flags = t->flags;
     nt->list_entry_hash.Flink = NULL;
     InitializeListHead(&nt->itemlist);
     
@@ -2418,7 +2414,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->updated_extents = FALSE;
 //     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
-    pt->flags = t->flags;
     pt->list_entry_hash.Flink = NULL;
     InitializeListHead(&pt->itemlist);
     

@@ -70,11 +70,6 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->updated_extents = FALSE;
     t->write = FALSE;
     
-    if (c)
-        t->flags = c->chunk_item->type;
-    else
-        t->flags = 0;
-    
 //     ExInitializeResourceLite(&t->nonpaged->load_tree_lock);
     
 //     t->items = ExAllocatePoolWithTag(PagedPool, num_items * sizeof(tree_data), ALLOC_TAG);

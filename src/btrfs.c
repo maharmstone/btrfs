@@ -934,7 +934,6 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
         t->new_address = 0;
         t->has_new_address = FALSE;
         t->updated_extents = FALSE;
-        t->flags = tp.tree->flags;
         
         InsertTailList(&Vcb->trees, &t->list_entry);
         t->list_entry_hash.Flink = NULL;
@@ -2928,6 +2927,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
     searchkey.offset = 0;
     
     Vcb->data_flags = 0;
+    Vcb->metadata_flags = 0;
+    Vcb->system_flags = 0;
     
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -3036,6 +3037,12 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 if (c->chunk_item->type & BLOCK_FLAG_DATA && c->chunk_item->type > Vcb->data_flags)
                     Vcb->data_flags = c->chunk_item->type;
                 
+                if (c->chunk_item->type & BLOCK_FLAG_METADATA && c->chunk_item->type > Vcb->metadata_flags)
+                    Vcb->metadata_flags = c->chunk_item->type;
+                
+                if (c->chunk_item->type & BLOCK_FLAG_SYSTEM && c->chunk_item->type > Vcb->system_flags)
+                    Vcb->system_flags = c->chunk_item->type;
+                
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     
@@ -3093,6 +3100,12 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
     
     if (Vcb->data_flags == 0)
         Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID0 : 0);
+    
+    if (Vcb->metadata_flags == 0)
+        Vcb->metadata_flags = BLOCK_FLAG_METADATA | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID1 : BLOCK_FLAG_DUPLICATE);
+    
+    if (Vcb->system_flags == 0)
+        Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID1 : BLOCK_FLAG_DUPLICATE);
     
     return STATUS_SUCCESS;
 }

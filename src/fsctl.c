@@ -69,7 +69,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64 dupflags, UINT64* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
     UINT8* buf;
     NTSTATUS Status;
     write_data_context* wtc;
@@ -100,7 +100,6 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     th = (tree_header*)buf;
     
     RtlZeroMemory(&t, sizeof(tree));
-    t.flags = dupflags;
     t.root = subvol;
     t.header.level = th->level;
     t.header.tree_id = t.root->id;
@@ -352,7 +351,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, tp.tree->flags, &address, Irp, &rollback);
+    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, &address, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("snapshot_tree_copy returned %08x\n", Status);
         goto end;
