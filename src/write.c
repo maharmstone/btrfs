@@ -2650,6 +2650,9 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     
     c = get_chunk_from_address(Vcb, ed2->address);
     
+    if (c->reloc || c->readonly || c->chunk_item->type != Vcb->data_flags)
+        return FALSE;
+    
     ExAcquireResourceExclusiveLite(&c->lock, TRUE);
     
     le = c->space.Flink;
