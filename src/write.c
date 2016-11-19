@@ -152,7 +152,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
                     while (le != &Vcb->devices[j].space) {
                         space* dh = CONTAINING_RECORD(le, space, list_entry);
                         
-                        if (dh->size >= max_stripe_size && (!dh1 || dh->size < dh1->size)) {
+                        if (dh->size >= max_stripe_size && (!dh1 || !dh2 || dh->size < dh1->size)) {
                             dh2 = dh1;
                             dh1 = dh;
                         }
