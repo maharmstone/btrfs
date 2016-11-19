@@ -457,7 +457,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
     traverse_ptr tp;
     UINT8 level, max_level = 0;
     chunk* newchunk = NULL;
-    UINT64 flags = BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_METADATA; // FIXME
+    UINT64 flags = Vcb->metadata_flags;
     
     InitializeListHead(&tree_writes);
     
