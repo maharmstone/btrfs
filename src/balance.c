@@ -6,6 +6,7 @@ typedef struct {
     tree_header* data;
     EXTENT_ITEM* ei;
     tree* t;
+    BOOL system;
     LIST_ENTRY refs;
     LIST_ENTRY list_entry;
 } metadata_reloc;
@@ -60,6 +61,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     mr->address = tp->item->key.obj_id;
     mr->data = NULL;
     mr->ei = (EXTENT_ITEM*)tp->item->data;
+    mr->system = FALSE;
     InitializeListHead(&mr->refs);
     
     delete_tree_item(Vcb, tp, rollback);
@@ -451,13 +453,12 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* data_items, LIST_ENTRY* rollback) {
+static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* data_items, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY tree_writes, *le;
     NTSTATUS Status;
     traverse_ptr tp;
     UINT8 level, max_level = 0;
     chunk* newchunk = NULL;
-    UINT64 flags = Vcb->metadata_flags;
     
     InitializeListHead(&tree_writes);
     
@@ -465,6 +466,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
     while (le != items) {
         metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
         LIST_ENTRY* le2;
+        chunk* pc;
         
 //         ERR("address %llx\n", mr->address);
         
@@ -474,12 +476,15 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        // FIXME - pass in c if address is within chunk
-        Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data, NULL, NULL, NULL);
+        Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data,
+                           c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->size ? c : NULL, &pc, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data returned %08x\n", Status);
             return Status;
         }
+        
+        if (pc->chunk_item->type & BLOCK_FLAG_SYSTEM)
+            mr->system = TRUE;
         
         if (data_items && mr->data->level == 0) {
             LIST_ENTRY* le2 = data_items->Flink;
@@ -617,11 +622,12 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 BOOL done = FALSE;
                 LIST_ENTRY* le2;
                 tree_write* tw;
+                UINT64 flags = mr->system ? Vcb->system_flags : Vcb->metadata_flags;
                 
                 if (newchunk) {
                     ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                     
-                    if (find_address_in_chunk(Vcb, newchunk, Vcb->superblock.node_size, &mr->new_address)) {
+                    if (newchunk->chunk_item->type == flags && find_address_in_chunk(Vcb, newchunk, Vcb->superblock.node_size, &mr->new_address)) {
                         increase_chunk_usage(newchunk, Vcb->superblock.node_size);
                         space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                         done = TRUE;
@@ -1026,7 +1032,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, BOOL* ch
     } else
         *changed = TRUE;
     
-    Status = write_metadata_items(Vcb, &items, NULL, &rollback);
+    Status = write_metadata_items(Vcb, &items, NULL, c, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("write_metadata_items returned %08x\n", Status);
         goto end;
@@ -1655,7 +1661,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     ExFreePool(data);
     data = NULL;
     
-    Status = write_metadata_items(Vcb, &metadata_items, &items, &rollback);
+    Status = write_metadata_items(Vcb, &metadata_items, &items, NULL, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("write_metadata_items returned %08x\n", Status);
         goto end;
@@ -1769,8 +1775,6 @@ static void balance_thread(void* context) {
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
     
-    // FIXME - handle data and system chunks
-    
     InitializeListHead(&chunks);
     
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
@@ -1781,7 +1785,7 @@ static void balance_thread(void* context) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        if (c->chunk_item->type & BLOCK_FLAG_DATA) { // FIXME
+        if (c->chunk_item->type & BLOCK_FLAG_SYSTEM) { // FIXME
             c->reloc = TRUE;
             
             InsertTailList(&chunks, &c->list_entry_balance);
@@ -1798,6 +1802,8 @@ static void balance_thread(void* context) {
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
     
+    // FIXME - do data chunks before metadata
+    
     while (!IsListEmpty(&chunks)) {
         chunk* c;
         NTSTATUS Status;
@@ -1807,7 +1813,7 @@ static void balance_thread(void* context) {
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         
         do {
-            if (c->chunk_item->type & BLOCK_FLAG_METADATA) {
+            if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
                 Status = balance_metadata_chunk(Vcb, c, &changed);
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_metadata_chunk returned %08x\n", Status);
