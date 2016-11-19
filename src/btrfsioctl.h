@@ -71,4 +71,41 @@ typedef struct {
     btrfs_usage_device devices[1];
 } btrfs_usage;
 
+#define BTRFS_BALANCE_OPTS_ENABLED      0x001
+#define BTRFS_BALANCE_OPTS_PROFILES     0x002
+#define BTRFS_BALANCE_OPTS_DEVID        0x004
+#define BTRFS_BALANCE_OPTS_DRANGE       0x008
+#define BTRFS_BALANCE_OPTS_VRANGE       0x010
+#define BTRFS_BALANCE_OPTS_LIMIT        0x020
+#define BTRFS_BALANCE_OPTS_STRIPES      0x040
+#define BTRFS_BALANCE_OPTS_USAGE        0x080
+#define BTRFS_BALANCE_OPTS_CONVERT      0x100
+#define BTRFS_BALANCE_OPTS_SOFT         0x200
+
+typedef struct {
+    UINT64 flags;
+    UINT64 profiles;
+    UINT64 devid;
+    UINT64 drange_start;
+    UINT64 drange_end;
+    UINT64 vrange_start;
+    UINT64 vrange_end;
+    UINT64 limit_start;
+    UINT64 limit_end;
+    UINT16 stripes_start;
+    UINT16 stripes_end;
+    UINT8 usage_start;
+    UINT8 usage_end;
+    UINT64 convert;
+} btrfs_balance_opts;
+
+typedef struct {
+    BOOL running;
+    UINT64 chunks_left;
+    UINT64 total_chunks;
+    btrfs_balance_opts data_opts;
+    btrfs_balance_opts metadata_opts;
+    btrfs_balance_opts system_opts;
+} btrfs_query_balance;
+
 #endif
