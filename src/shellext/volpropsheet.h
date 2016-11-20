@@ -85,12 +85,13 @@ public:
     INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void SaveBalanceOpts(HWND hwndDlg);
     
+    btrfs_device* devices;
+    
 private:
     LONG refcount;
     BOOL ignore;
     STGMEDIUM stgm;
     BOOL stgm_set;
-    btrfs_device* devices;
     btrfs_usage* usage;
     WCHAR fn[MAX_PATH];
     BOOL balance_started;

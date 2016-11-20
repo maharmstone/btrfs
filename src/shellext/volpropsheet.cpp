@@ -1372,10 +1372,30 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         {
             PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
             BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)psp->lParam;
+            BOOL readonly;
+            btrfs_device* bd;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+
+            readonly = TRUE;
+            bd = bps->devices;
+
+            while (TRUE) {
+                if (!bd->readonly) {
+                    readonly = FALSE;
+                    break;
+                }
+
+                if (bd->next_entry > 0)
+                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                else
+                    break;
+            }
+
+            if (readonly)
+                EnableWindow(GetDlgItem(hwndDlg, IDC_VOL_BALANCE), FALSE);
 
             return FALSE;
         }
