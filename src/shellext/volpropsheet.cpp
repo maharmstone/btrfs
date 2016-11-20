@@ -55,6 +55,8 @@ extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 #define BLOCK_FLAG_RAID5        0x080
 #define BLOCK_FLAG_RAID6        0x100
 
+static UINT64 convtypes2[] = { BLOCK_FLAG_SINGLE, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6, BLOCK_FLAG_RAID10 };
+
 HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this); 
@@ -821,11 +823,19 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_CONVERT) == BST_CHECKED) {
+        int sel;
+        
         opts->flags |= BTRFS_BALANCE_OPTS_CONVERT;
         
-        // FIXME - convert type
+        sel = SendMessageW(GetDlgItem(hwndDlg, IDC_CONVERT_COMBO), CB_GETCURSEL, 0, 0);
         
-        if (IsDlgButtonChecked(hwndDlg, IDC_SOFT) == BST_CHECKED) opts->flags |= BTRFS_BALANCE_OPTS_SOFT;
+        if (sel == CB_ERR || (unsigned int)sel >= sizeof(convtypes2) / sizeof(convtypes2[0]))
+            opts->flags &= ~BTRFS_BALANCE_OPTS_CONVERT;
+        else {
+            opts->convert = convtypes2[sel];
+            
+            if (IsDlgButtonChecked(hwndDlg, IDC_SOFT) == BST_CHECKED) opts->flags |= BTRFS_BALANCE_OPTS_SOFT;
+        }
     }
     
     EndDialog(hwndDlg, 0);
@@ -901,6 +911,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 }
                 
                 SendMessage(convcb, CB_ADDSTRING, NULL, (LPARAM)s);
+                
+                if (opts->convert == convtypes2[i])
+                    SendMessage(convcb, CB_SETCURSEL, i, 0);
+                
                 i++;
                 
                 // FIXME - this should be the number of non-readonly devices
