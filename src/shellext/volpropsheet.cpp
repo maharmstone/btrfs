@@ -707,6 +707,8 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
                 CheckDlgButton(hwndDlg, IDC_DATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_METADATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_SYSTEM, BST_UNCHECKED);
+                
+                SendMessage(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETPOS, 0, 0);
             }
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
