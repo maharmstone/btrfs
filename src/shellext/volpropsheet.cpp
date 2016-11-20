@@ -1064,10 +1064,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             _itow(opts->usage_start, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_USAGE_START, s);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), UDM_SETRANGE32, 0, 100);
             
             _itow(opts->usage_end, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_USAGE_END, s);
-            // FIXME - set spinner max and min
+            SendMessageW(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), UDM_SETRANGE32, 0, 100);
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
@@ -1079,11 +1080,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             // FIXME - disable devid if only one device
             CheckDlgButton(hwndDlg, IDC_DEVID, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? BST_CHECKED : BST_UNCHECKED);
             EnableWindow(devcb, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? TRUE : FALSE);
-            // FIXME - select item in combobox
             
             // drange
-            
-            // FIXME - disable drange if devid not set
             
             CheckDlgButton(hwndDlg, IDC_DRANGE, opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? BST_CHECKED : BST_UNCHECKED);
             
@@ -1115,10 +1113,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             _itow(opts->limit_start, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_LIMIT_START, s);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), UDM_SETRANGE32, 0, 0x7fffffff);
             
             _itow(opts->limit_end, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_LIMIT_END, s);
-            // FIXME - set spinner max and min
+            SendMessageW(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), UDM_SETRANGE32, 0, 0x7fffffff);
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
@@ -1131,10 +1130,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             _itow(opts->stripes_start, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_STRIPES_START, s);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), UDM_SETRANGE32, 0, 0xffff);
             
             _itow(opts->stripes_end, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_STRIPES_END, s);
-            // FIXME - set spinner max and min
+            SendMessageW(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), UDM_SETRANGE32, 0, 0xffff);
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
@@ -1146,7 +1146,6 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             CheckDlgButton(hwndDlg, IDC_CONVERT, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwndDlg, IDC_SOFT, opts->flags & BTRFS_BALANCE_OPTS_SOFT ? BST_CHECKED : BST_UNCHECKED);
             
-            // FIXME - select item in combobox
             EnableWindow(GetDlgItem(hwndDlg, IDC_SOFT), opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
             EnableWindow(convcb, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
               
