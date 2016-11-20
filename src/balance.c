@@ -29,6 +29,7 @@ typedef struct {
     UINT64 address;
     UINT64 size;
     UINT64 new_address;
+    chunk* newchunk;
     EXTENT_ITEM* ei;
     LIST_ENTRY refs;
     LIST_ENTRY list_entry;
@@ -1596,6 +1597,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             ExReleaseResourceLite(&Vcb->chunk_lock);
         }
         
+        dr->newchunk = newchunk;
+        
         csum = ExAllocatePoolWithTag(PagedPool, dr->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
         if (!csum) {
             ERR("out of memory\n");
@@ -1683,7 +1686,29 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         le = le->Flink;
     }
     
-    // FIXME - update changed_extent_ref
+    le = c->changed_extents.Flink;
+    while (le != &c->changed_extents) {
+        LIST_ENTRY *le2, *le3;
+        changed_extent* ce = CONTAINING_RECORD(le, changed_extent, list_entry);
+        
+        le3 = le->Flink;
+        
+        le2 = items.Flink;
+        while (le2 != &items) {
+            data_reloc* dr = CONTAINING_RECORD(le2, data_reloc, list_entry);
+            
+            if (ce->address == dr->address) {
+                ce->address = dr->new_address;
+                RemoveEntryList(&ce->list_entry);
+                InsertTailList(&dr->newchunk->changed_extents, &ce->list_entry);
+                break;
+            }
+            
+            le2 = le2->Flink;
+        }
+        
+        le = le3;
+    }
     
     // update open FCBs
     // FIXME - speed this up
