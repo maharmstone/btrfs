@@ -1861,6 +1861,13 @@ static BOOL should_balance_chunk(device_extension* Vcb, UINT8 sort, chunk* c) {
             return FALSE;
     }
     
+    if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
+        UINT64 usage = c->used * 100 / c->chunk_item->size;
+        
+        if (usage < opts->usage_start || usage > opts->usage_end)
+            return FALSE;
+    }
+    
     if (opts->flags & BTRFS_BALANCE_OPTS_CONVERT && opts->flags & BTRFS_BALANCE_OPTS_SOFT) {
         UINT64 type = get_chunk_dup_type(c);
         
