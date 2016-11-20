@@ -1957,6 +1957,7 @@ static void balance_thread(void* context) {
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     NTSTATUS Status;
     btrfs_start_balance* bsb = (btrfs_start_balance*)data;
+    UINT8 i;
     
     if (length < sizeof(btrfs_start_balance))
         return STATUS_INVALID_PARAMETER;
@@ -1974,7 +1975,64 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
         !(bsb->opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED))
         return STATUS_SUCCESS;
     
-    // FIXME - check params
+    for (i = 0; i < 3; i++) {
+        if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_ENABLED) {
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_PROFILES) {
+                bsb->opts[i].profiles &= BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1 | BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_RAID10 |
+                                         BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6 | BLOCK_FLAG_SINGLE;
+
+                if (bsb->opts[i].profiles == 0)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_DEVID) {
+                if (bsb->opts[i].devid == 0)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_DRANGE) {
+                if (bsb->opts[i].drange_start > bsb->opts[i].drange_end)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_VRANGE) {
+                if (bsb->opts[i].vrange_start > bsb->opts[i].vrange_end)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_LIMIT) {
+                bsb->opts[i].limit_start = max(1, bsb->opts[i].limit_start);
+                bsb->opts[i].limit_end = max(1, bsb->opts[i].limit_end);
+                
+                if (bsb->opts[i].limit_start > bsb->opts[i].limit_end)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_STRIPES) {
+                bsb->opts[i].stripes_start = max(1, bsb->opts[i].stripes_start);
+                bsb->opts[i].stripes_end = max(1, bsb->opts[i].stripes_end);
+                
+                if (bsb->opts[i].stripes_start > bsb->opts[i].stripes_end)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_USAGE) {
+                bsb->opts[i].usage_start = min(100, bsb->opts[i].stripes_start);
+                bsb->opts[i].usage_end = min(100, bsb->opts[i].stripes_end);
+                
+                if (bsb->opts[i].stripes_start > bsb->opts[i].stripes_end)
+                    return STATUS_INVALID_PARAMETER;
+            }
+            
+            if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_CONVERT) {
+                if (bsb->opts[i].convert != BLOCK_FLAG_RAID0 && bsb->opts[i].convert != BLOCK_FLAG_RAID1 &&
+                    bsb->opts[i].convert != BLOCK_FLAG_DUPLICATE && bsb->opts[i].convert != BLOCK_FLAG_RAID10 &&
+                    bsb->opts[i].convert != BLOCK_FLAG_RAID5 && bsb->opts[i].convert != BLOCK_FLAG_RAID6 &&
+                    bsb->opts[i].convert != BLOCK_FLAG_SINGLE)
+                    return STATUS_INVALID_PARAMETER;
+            }
+        }
+    }
     
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bsb->opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bsb->opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
