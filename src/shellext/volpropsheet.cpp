@@ -962,7 +962,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             btrfs_device* bd;
             btrfs_balance_opts* opts;
             static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
-            int i, num_devices = 0;
+            int i, num_devices = 0, num_writeable_devices = 0;
             WCHAR s[255], u[255];
             
             switch (opts_type) {
@@ -1008,6 +1008,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 
                 num_devices++;
                 
+                if (!bd->readonly)
+                    num_writeable_devices++;
+                
                 if (bd->next_entry > 0)
                     bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
                 else
@@ -1030,12 +1033,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 
                 i++;
                 
-                // FIXME - this should be the number of non-readonly devices
-                if (num_devices < 2 && i == 2)
+                if (num_writeable_devices < 2 && i == 2)
                     break;
-                else if (num_devices < 3 && i == 4)
+                else if (num_writeable_devices < 3 && i == 4)
                     break;
-                else if (num_devices < 4 && i == 6)
+                else if (num_writeable_devices < 4 && i == 6)
                     break;
             }
             
