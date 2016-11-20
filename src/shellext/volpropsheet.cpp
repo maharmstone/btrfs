@@ -873,6 +873,80 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
                         return TRUE;
+                        
+                        case IDC_PROFILES: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_PROFILES) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_SINGLE), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_DUP), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID0), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID1), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID10), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID5), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID6), enabled);
+                            break;
+                        }
+                        
+                        case IDC_USAGE: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_USAGE) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), enabled);
+                            break;
+                        }
+                        
+                        case IDC_DEVID: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_DEVID) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEVID_COMBO), enabled);
+                            break;
+                        }
+                        
+                        case IDC_DRANGE: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_DRANGE) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_START), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_END), enabled);
+                            break;
+                        }
+                        
+                        case IDC_VRANGE: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_VRANGE) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_START), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_END), enabled);
+                            break;
+                        }
+                        
+                        case IDC_LIMIT: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_LIMIT) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), enabled);
+                            break;
+                        }
+                        
+                        case IDC_STRIPES: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_STRIPES) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), enabled);
+                            break;
+                        }
+                        
+                        case IDC_CONVERT: {
+                            BOOL enabled = IsDlgButtonChecked(hwndDlg, IDC_CONVERT) == BST_CHECKED ? TRUE : FALSE;
+                            
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_CONVERT_COMBO), enabled);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_SOFT), enabled);
+                            break;
+                        }
                     }
                 break;
             }
