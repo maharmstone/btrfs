@@ -83,6 +83,7 @@ public:
     void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
     void ShowBalanceOptions(HWND hwndDlg, UINT8 type);
     INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void SaveBalanceOpts(HWND hwndDlg);
     
 private:
     LONG refcount;

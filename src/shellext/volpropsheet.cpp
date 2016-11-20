@@ -684,6 +684,127 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     // FIXME
 }
 
+void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
+    btrfs_balance_opts* opts;
+    
+    switch (opts_type) {
+        case 1:
+            opts = &data_opts;
+        break;
+        
+        case 2:
+            opts = &metadata_opts;
+        break;
+        
+        case 3:
+            opts = &system_opts;
+        break;
+        
+        default:
+            return;
+    }
+    
+    RtlZeroMemory(opts, sizeof(btrfs_balance_opts));
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES) == BST_CHECKED) {
+        opts->flags |= BTRFS_BALANCE_OPTS_PROFILES;
+        
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_SINGLE) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_SINGLE;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_DUP) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_DUPLICATE;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID0) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_RAID0;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID1) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_RAID1;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID10) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_RAID10;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID5) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_RAID5;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID6) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_RAID6;
+    }
+
+    if (IsDlgButtonChecked(hwndDlg, IDC_DEVID) == BST_CHECKED) {
+        opts->flags |= BTRFS_BALANCE_OPTS_DEVID;
+        
+        // FIXME - devid num
+    }
+
+    if (IsDlgButtonChecked(hwndDlg, IDC_DRANGE) == BST_CHECKED) {
+        WCHAR s[255];
+        
+        opts->flags |= BTRFS_BALANCE_OPTS_DRANGE;
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_DRANGE_START), s, sizeof(s) / sizeof(WCHAR));
+        opts->drange_start = _wtoi64(s);
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_DRANGE_END), s, sizeof(s) / sizeof(WCHAR));
+        opts->drange_end = _wtoi64(s);
+        
+        // FIXME - check start is before end
+    }
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_VRANGE) == BST_CHECKED) {
+        WCHAR s[255];
+        
+        opts->flags |= BTRFS_BALANCE_OPTS_VRANGE;
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_VRANGE_START), s, sizeof(s) / sizeof(WCHAR));
+        opts->vrange_start = _wtoi64(s);
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_VRANGE_END), s, sizeof(s) / sizeof(WCHAR));
+        opts->vrange_end = _wtoi64(s);
+        
+        // FIXME - check start is before end
+    }
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_LIMIT) == BST_CHECKED) {
+        WCHAR s[255];
+        
+        opts->flags |= BTRFS_BALANCE_OPTS_LIMIT;
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_LIMIT_START), s, sizeof(s) / sizeof(WCHAR));
+        opts->limit_start = _wtoi64(s);
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_LIMIT_END), s, sizeof(s) / sizeof(WCHAR));
+        opts->limit_end = _wtoi64(s);
+        
+        // FIXME - check start is before end
+    }
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_STRIPES) == BST_CHECKED) {
+        WCHAR s[255];
+        
+        opts->flags |= BTRFS_BALANCE_OPTS_STRIPES;
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_START), s, sizeof(s) / sizeof(WCHAR));
+        opts->stripes_start = _wtoi(s);
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_END), s, sizeof(s) / sizeof(WCHAR));
+        opts->stripes_end = _wtoi(s);
+        
+        // FIXME - check start is before end
+    }
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_USAGE) == BST_CHECKED) {
+        WCHAR s[255];
+        
+        opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_START), s, sizeof(s) / sizeof(WCHAR));
+        opts->usage_start = _wtoi(s);
+        
+        GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_END), s, sizeof(s) / sizeof(WCHAR));
+        opts->usage_end = _wtoi(s);
+        
+        // FIXME - check start is before end
+    }
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_CONVERT) == BST_CHECKED) {
+        opts->flags |= BTRFS_BALANCE_OPTS_CONVERT;
+        
+        // FIXME - convert type
+        
+        if (IsDlgButtonChecked(hwndDlg, IDC_SOFT) == BST_CHECKED) opts->flags |= BTRFS_BALANCE_OPTS_SOFT;
+    }
+    
+    EndDialog(hwndDlg, 0);
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -870,6 +991,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
+                            // FIXME - do nothing if balance running
+                            SaveBalanceOpts(hwndDlg);
+                        return TRUE;
+                        
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
                         return TRUE;
