@@ -629,7 +629,7 @@ void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_VOL_USAGE), hwndDlg, stub_UsageDlgProc, (LPARAM)this);
 }
 
-void BtrfsVolPropSheet::Balance(HWND hwndDlg) {
+void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
     HANDLE h;
     
     h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -638,10 +638,28 @@ void BtrfsVolPropSheet::Balance(HWND hwndDlg) {
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
+        btrfs_start_balance bsb;
         
-        // FIXME - take parameters
+        RtlCopyMemory(&bsb.opts[0], &data_opts, sizeof(btrfs_balance_opts));
+        RtlCopyMemory(&bsb.opts[1], &metadata_opts, sizeof(btrfs_balance_opts));
+        RtlCopyMemory(&bsb.opts[2], &system_opts, sizeof(btrfs_balance_opts));
         
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, NULL, 0, NULL, 0);
+        if (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED)
+            bsb.opts[0].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+        else
+            bsb.opts[0].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+        
+        if (IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED)
+            bsb.opts[1].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+        else
+            bsb.opts[1].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+        
+        if (IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED)
+            bsb.opts[2].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+        else
+            bsb.opts[2].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
         
         if (Status != STATUS_SUCCESS) {
             ShowNtStatusError(hwndDlg, Status);
@@ -1217,6 +1235,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                         
                         case IDC_SYSTEM_OPTIONS:
                             ShowBalanceOptions(hwndDlg, 3);
+                        return TRUE;
+                        
+                        case IDC_START_BALANCE:
+                            StartBalance(hwndDlg);
                         return TRUE;
                     }
                 break;

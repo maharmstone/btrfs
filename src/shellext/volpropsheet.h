@@ -77,7 +77,7 @@ public:
     void RefreshUsage(HWND hwndDlg);
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void Balance(HWND hwndDlg);
+    void StartBalance(HWND hwndDlg);
     INT_PTR CALLBACK BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowBalance(HWND hwndDlg);
     void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
