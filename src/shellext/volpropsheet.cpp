@@ -719,9 +719,35 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_DEVID) == BST_CHECKED) {
+        int sel;
+        
         opts->flags |= BTRFS_BALANCE_OPTS_DEVID;
         
-        // FIXME - devid num
+        sel = SendMessageW(GetDlgItem(hwndDlg, IDC_DEVID_COMBO), CB_GETCURSEL, 0, 0);
+        
+        if (sel == CB_ERR)
+            opts->flags &= ~BTRFS_BALANCE_OPTS_DEVID;
+        else {
+            btrfs_device* bd = devices;
+            int i = 0;
+            
+            while (TRUE) {
+                if (i == sel) {
+                    opts->devid = bd->dev_id;
+                    break;
+                }
+
+                i++;
+                
+                if (bd->next_entry > 0)
+                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                else
+                    break;
+            }
+            
+            if (opts->devid == 0)
+                opts->flags &= ~BTRFS_BALANCE_OPTS_DEVID;
+        }
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_DRANGE) == BST_CHECKED) {
@@ -854,7 +880,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
 
                 SendMessage(devcb, CB_ADDSTRING, NULL, (LPARAM)t);
                 
-                num_devices++; // FIXME - don't do this if device is readonly
+                if (opts->devid == bd->dev_id)
+                    SendMessage(devcb, CB_SETCURSEL, num_devices, 0);
+                
+                num_devices++;
                 
                 if (bd->next_entry > 0)
                     bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
@@ -874,6 +903,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 SendMessage(convcb, CB_ADDSTRING, NULL, (LPARAM)s);
                 i++;
                 
+                // FIXME - this should be the number of non-readonly devices
                 if (num_devices < 2 && i == 2)
                     break;
                 else if (num_devices < 3 && i == 4)
