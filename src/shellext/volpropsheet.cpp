@@ -1079,9 +1079,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             // devid
             
-            // FIXME - disable devid if only one device
+            if (num_devices < 2)
+                EnableWindow(GetDlgItem(hwndDlg, IDC_DEVID), FALSE);
+
             CheckDlgButton(hwndDlg, IDC_DEVID, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? BST_CHECKED : BST_UNCHECKED);
-            EnableWindow(devcb, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? TRUE : FALSE);
+            EnableWindow(devcb, (opts->flags & BTRFS_BALANCE_OPTS_DEVID && num_devices >= 2) ? TRUE : FALSE);
             
             // drange
             
