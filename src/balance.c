@@ -1,4 +1,5 @@
 #include "btrfs_drv.h"
+#include "btrfsioctl.h"
 
 typedef struct {
     UINT64 address;
@@ -44,6 +45,8 @@ typedef struct {
     metadata_reloc* parent;
     LIST_ENTRY list_entry;
 } data_reloc_ref;
+
+#define BLOCK_FLAG_SINGLE 0x001
 
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
@@ -1770,10 +1773,114 @@ end:
     return Status;
 }
 
+static __inline UINT64 get_chunk_dup_type(chunk* c) {
+    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        return BLOCK_FLAG_RAID0;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
+        return BLOCK_FLAG_RAID1;
+    else if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
+        return BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        return BLOCK_FLAG_RAID10;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+        return BLOCK_FLAG_RAID5;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        return BLOCK_FLAG_RAID6;
+    else
+        return BLOCK_FLAG_SINGLE;
+}
+
+static BOOL should_balance_chunk(device_extension* Vcb, UINT8 sort, chunk* c) {
+    btrfs_balance_opts* opts;
+    
+    opts = &Vcb->balance.opts[sort];
+    
+    if (!(opts->flags & BTRFS_BALANCE_OPTS_ENABLED))
+        return FALSE;
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_PROFILES) {
+        UINT64 type = get_chunk_dup_type(c);
+        
+        if (!(type & opts->profiles))
+            return FALSE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_DEVID) {
+        UINT16 i;
+        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        BOOL b = FALSE;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (cis[i].dev_id == opts->devid) {
+                b = TRUE;
+                break;
+            }
+        }
+        
+        if (!b)
+            return FALSE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
+        UINT16 i, factor;
+        UINT64 physsize;
+        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        BOOL b = FALSE;
+        
+        if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+            factor = c->chunk_item->num_stripes;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+            factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+            factor = c->chunk_item->num_stripes - 1;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+            factor = c->chunk_item->num_stripes - 2;
+        else // SINGLE, DUPLICATE, RAID1
+            factor = 1;
+        
+        physsize = c->chunk_item->size / factor;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (cis[i].offset >= opts->drange_start && cis[i].offset + physsize < opts->drange_end) {
+                b = TRUE;
+                break;
+            }
+        }
+        
+        if (!b)
+            return FALSE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_VRANGE) {
+        if (c->offset + c->chunk_item->size <= opts->vrange_start || c->offset > opts->vrange_end)
+            return FALSE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_STRIPES) {
+        if (c->chunk_item->num_stripes < opts->stripes_start || c->chunk_item->num_stripes < opts->stripes_end)
+            return FALSE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_CONVERT && opts->flags & BTRFS_BALANCE_OPTS_SOFT) {
+        UINT64 type = get_chunk_dup_type(c);
+        
+        if (type == opts->convert)
+            return FALSE;
+    }
+    
+    return TRUE;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
+    UINT64 num_chunks[3];
+    
+    // FIXME - handle convert
+    // FIXME - what are we supposed to do with limit_start?
+    
+    num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
     
     InitializeListHead(&chunks);
     
@@ -1782,17 +1889,29 @@ static void balance_thread(void* context) {
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+        UINT8 sort;
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        if (c->chunk_item->type & BLOCK_FLAG_SYSTEM) { // FIXME
+        if (c->chunk_item->type & BLOCK_FLAG_DATA)
+            sort = BALANCE_OPTS_DATA;
+        else if (c->chunk_item->type & BLOCK_FLAG_METADATA)
+            sort = BALANCE_OPTS_METADATA;
+        else if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
+            sort = BALANCE_OPTS_SYSTEM;
+        else {
+            ERR("unexpected chunk type %llx\n", c->chunk_item->type);
+            ExReleaseResourceLite(&c->lock);
+            break;
+        }
+        
+        if ((!(Vcb->balance.opts[sort].flags & BTRFS_BALANCE_OPTS_LIMIT) || num_chunks[sort] < Vcb->balance.opts[sort].limit_end) &&
+            should_balance_chunk(Vcb, sort, c)) {
             c->reloc = TRUE;
             
             InsertTailList(&chunks, &c->list_entry_balance);
             
-            // only do one chunk for now
-            ExReleaseResourceLite(&c->lock);
-            break;
+            num_chunks[sort]++;
         }
         
         ExReleaseResourceLite(&c->lock);
@@ -1835,8 +1954,12 @@ static void balance_thread(void* context) {
     Vcb->balance.thread = NULL;
 }
 
-NTSTATUS start_balance(device_extension* Vcb) {
+NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     NTSTATUS Status;
+    btrfs_start_balance* bsb = (btrfs_start_balance*)data;
+    
+    if (length < sizeof(btrfs_start_balance))
+        return STATUS_INVALID_PARAMETER;
     
     if (Vcb->balance.thread) {
         WARN("balance already running\n");
@@ -1845,6 +1968,17 @@ NTSTATUS start_balance(device_extension* Vcb) {
     
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
+    
+    if (!(bsb->opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED) &&
+        !(bsb->opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) &&
+        !(bsb->opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED))
+        return STATUS_SUCCESS;
+    
+    // FIXME - check params
+    
+    RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bsb->opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bsb->opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bsb->opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
     if (!NT_SUCCESS(Status)) {

@@ -10,7 +10,7 @@
 #define FSCTL_BTRFS_SET_INODE_INFO CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82d, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_GET_DEVICES CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82e, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_GET_USAGE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x82f, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
-#define FSCTL_BTRFS_START_BALANCE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x830, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+#define FSCTL_BTRFS_START_BALANCE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x830, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 
 typedef struct {
     UINT64 subvol;
@@ -107,5 +107,9 @@ typedef struct {
     btrfs_balance_opts metadata_opts;
     btrfs_balance_opts system_opts;
 } btrfs_query_balance;
+
+typedef struct {
+    btrfs_balance_opts opts[3];
+} btrfs_start_balance;
 
 #endif

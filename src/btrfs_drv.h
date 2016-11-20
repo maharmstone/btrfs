@@ -36,6 +36,7 @@
 #include <stddef.h>
 #include <emmintrin.h>
 #include "btrfs.h"
+#include "btrfsioctl.h"
 
 #ifdef _DEBUG
 // #define DEBUG_FCB_REFCOUNTS
@@ -514,8 +515,13 @@ typedef struct {
 } debug_stats;
 #endif
 
+#define BALANCE_OPTS_DATA       0
+#define BALANCE_OPTS_METADATA   1
+#define BALANCE_OPTS_SYSTEM     2
+
 typedef struct {
     HANDLE thread;
+    btrfs_balance_opts opts[3];
 } balance_info;
 
 typedef struct _device_extension {
@@ -1041,7 +1047,7 @@ NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32
 void free_calc_job(calc_job* cj);
 
 // in balance.c
-NTSTATUS start_balance(device_extension* Vcb);
+NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

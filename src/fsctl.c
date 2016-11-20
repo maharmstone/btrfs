@@ -2806,7 +2806,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
             
         case FSCTL_BTRFS_START_BALANCE:
-            Status = start_balance(DeviceObject->DeviceExtension);
+            Status = start_balance(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         default:
