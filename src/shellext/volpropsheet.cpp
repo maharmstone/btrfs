@@ -671,7 +671,6 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
 void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     HANDLE h;
     BOOL balancing = FALSE;
-    btrfs_query_balance bqb;
     WCHAR s[255], t[255];
     
     h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -967,15 +966,15 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             switch (opts_type) {
                 case 1:
-                    opts = &data_opts;
+                    opts = balance_started ? &bqb.data_opts : &data_opts;
                 break;
                 
                 case 2:
-                    opts = &metadata_opts;
+                    opts = balance_started ? &bqb.metadata_opts : &metadata_opts;
                 break;
                 
                 case 3:
-                    opts = &system_opts;
+                    opts = balance_started ? &bqb.system_opts : &system_opts;
                 break;
                 
                 default:
@@ -1052,13 +1051,14 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             CheckDlgButton(hwndDlg, IDC_PROFILES_RAID5, opts->profiles & BLOCK_FLAG_RAID5 ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwndDlg, IDC_PROFILES_RAID6, opts->profiles & BLOCK_FLAG_RAID6 ? BST_CHECKED : BST_UNCHECKED);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_SINGLE), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_DUP), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID0), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID1), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID10), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID5), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID6), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_SINGLE), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_DUP), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID0), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID1), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID10), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID5), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID6), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES), balance_started ? FALSE : TRUE);
             
             // usage
             
@@ -1072,18 +1072,19 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             SetDlgItemTextW(hwndDlg, IDC_USAGE_END, s);
             SendMessageW(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), UDM_SETRANGE32, 0, 100);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE), balance_started ? FALSE : TRUE);
             
             // devid
             
-            if (num_devices < 2)
+            if (num_devices < 2 || balance_started)
                 EnableWindow(GetDlgItem(hwndDlg, IDC_DEVID), FALSE);
 
             CheckDlgButton(hwndDlg, IDC_DEVID, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? BST_CHECKED : BST_UNCHECKED);
-            EnableWindow(devcb, (opts->flags & BTRFS_BALANCE_OPTS_DEVID && num_devices >= 2) ? TRUE : FALSE);
+            EnableWindow(devcb, (opts->flags & BTRFS_BALANCE_OPTS_DEVID && num_devices >= 2 && !balance_started) ? TRUE : FALSE);
             
             // drange
             
@@ -1095,8 +1096,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             _itow(opts->drange_end, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_DRANGE_END, s);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_START), opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_END), opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE), balance_started ? FALSE : TRUE);
             
             // vrange
             
@@ -1108,8 +1110,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             _itow(opts->vrange_end, s, 10);
             SetDlgItemTextW(hwndDlg, IDC_VRANGE_END, s);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_START), opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_END), opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE), balance_started ? FALSE : TRUE);
             
             // limit
             
@@ -1123,10 +1126,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             SetDlgItemTextW(hwndDlg, IDC_LIMIT_END, s);
             SendMessageW(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), UDM_SETRANGE32, 0, 0x7fffffff);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT), balance_started ? FALSE : TRUE);
             
             // stripes
             
@@ -1140,18 +1144,20 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             SetDlgItemTextW(hwndDlg, IDC_STRIPES_END, s);
             SendMessageW(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), UDM_SETRANGE32, 0, 0xffff);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES), balance_started ? FALSE : TRUE);
             
             // convert
             
             CheckDlgButton(hwndDlg, IDC_CONVERT, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? BST_CHECKED : BST_UNCHECKED);
             CheckDlgButton(hwndDlg, IDC_SOFT, opts->flags & BTRFS_BALANCE_OPTS_SOFT ? BST_CHECKED : BST_UNCHECKED);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_SOFT), opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
-            EnableWindow(convcb, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SOFT), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
+            EnableWindow(convcb, !balance_started && opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_CONVERT), balance_started ? FALSE : TRUE);
               
             break;
         }

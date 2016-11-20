@@ -97,4 +97,5 @@ private:
     BOOL balance_started;
     btrfs_balance_opts data_opts, metadata_opts, system_opts;
     UINT8 opts_type;
+    btrfs_query_balance bqb;
 };
