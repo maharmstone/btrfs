@@ -1898,6 +1898,7 @@ static void balance_thread(void* context) {
     // FIXME - what are we supposed to do with limit_start?
     
     num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
+    Vcb->balance.total_chunks = 0;
     
     InitializeListHead(&chunks);
     
@@ -1929,6 +1930,7 @@ static void balance_thread(void* context) {
             InsertTailList(&chunks, &c->list_entry_balance);
             
             num_chunks[sort]++;
+            Vcb->balance.total_chunks++;
         }
         
         ExReleaseResourceLite(&c->lock);
@@ -1937,6 +1939,8 @@ static void balance_thread(void* context) {
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
+    
+    Vcb->balance.chunks_left = Vcb->balance.total_chunks;
     
     // FIXME - do data chunks before metadata
     
@@ -1965,6 +1969,8 @@ static void balance_thread(void* context) {
                 }
             }
         } while (changed);
+        
+        Vcb->balance.chunks_left--;
     }
     
     ZwClose(Vcb->balance.thread);
@@ -1976,7 +1982,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     btrfs_start_balance* bsb = (btrfs_start_balance*)data;
     UINT8 i;
     
-    if (length < sizeof(btrfs_start_balance))
+    if (length < sizeof(btrfs_start_balance) || !data)
         return STATUS_INVALID_PARAMETER;
     
     if (Vcb->balance.thread) {
@@ -2061,5 +2067,26 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
         return Status;
     }
     
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
+    btrfs_query_balance* bqb = (btrfs_query_balance*)data;
+    
+    if (length < sizeof(btrfs_query_balance) || !data)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!Vcb->balance.thread) {
+        bqb->running = FALSE;
+        return STATUS_SUCCESS;
+    }
+    
+    bqb->running = TRUE;
+    bqb->chunks_left = Vcb->balance.chunks_left;
+    bqb->total_chunks = Vcb->balance.total_chunks;
+    RtlCopyMemory(&bqb->data_opts, &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&bqb->metadata_opts, &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&bqb->system_opts, &Vcb->balance.opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
+
     return STATUS_SUCCESS;
 }

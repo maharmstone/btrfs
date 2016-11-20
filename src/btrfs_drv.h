@@ -521,6 +521,8 @@ typedef struct {
 
 typedef struct {
     HANDLE thread;
+    UINT64 total_chunks;
+    UINT64 chunks_left;
     btrfs_balance_opts opts[3];
 } balance_info;
 
@@ -1048,6 +1050,7 @@ void free_calc_job(calc_job* cj);
 
 // in balance.c
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length);
+NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

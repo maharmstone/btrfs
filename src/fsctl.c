@@ -2808,6 +2808,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
         case FSCTL_BTRFS_START_BALANCE:
             Status = start_balance(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
+            
+        case FSCTL_BTRFS_QUERY_BALANCE:
+            Status = query_balance(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
 
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
