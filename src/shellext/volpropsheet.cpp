@@ -1161,8 +1161,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
-                            // FIXME - do nothing if balance running
-                            SaveBalanceOpts(hwndDlg);
+                            if (balance_started)
+                                EndDialog(hwndDlg, 0);
+                            else
+                                SaveBalanceOpts(hwndDlg);
                         return TRUE;
                         
                         case IDCANCEL:
