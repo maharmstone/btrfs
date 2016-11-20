@@ -1877,7 +1877,17 @@ static void balance_thread(void* context) {
     LIST_ENTRY* le;
     UINT64 num_chunks[3];
     
-    // FIXME - handle convert
+    // FIXME - handle converting mixed blocks
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
+        Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
+        Vcb->metadata_flags = BLOCK_FLAG_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT)
+        Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
+    
     // FIXME - what are we supposed to do with limit_start?
     
     num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
