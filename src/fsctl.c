@@ -1298,6 +1298,7 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         dev->next_entry = 0;
         dev->dev_id = Vcb->devices[i].devitem.dev_id;
         dev->size = Vcb->devices[i].length;
+        dev->readonly = (Vcb->readonly || Vcb->devices[i].readonly) ? TRUE : FALSE;
         
         length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
     }
