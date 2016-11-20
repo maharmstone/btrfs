@@ -912,6 +912,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
         
         c->cache->extents_changed = TRUE;
+        InsertTailList(&Vcb->all_fcbs, &c->cache->list_entry_all);
         
         flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
         
