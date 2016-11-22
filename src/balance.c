@@ -1911,6 +1911,9 @@ static void balance_thread(void* context) {
     
     // FIXME - handle converting mixed blocks
     
+    Vcb->balance.paused = FALSE;
+    KeInitializeEvent(&Vcb->balance.event, NotificationEvent, TRUE);
+    
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
         Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
     
@@ -1993,6 +1996,8 @@ static void balance_thread(void* context) {
                     break;
                 }
             }
+            
+            KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
         } while (changed);
         
         Vcb->balance.chunks_left--;
@@ -2102,16 +2107,42 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
         return STATUS_INVALID_PARAMETER;
     
     if (!Vcb->balance.thread) {
-        bqb->running = FALSE;
+        bqb->status = BTRFS_BALANCE_STOPPED;
         return STATUS_SUCCESS;
     }
     
-    bqb->running = TRUE;
+    bqb->status = Vcb->balance.paused ? BTRFS_BALANCE_PAUSED : BTRFS_BALANCE_RUNNING;
     bqb->chunks_left = Vcb->balance.chunks_left;
     bqb->total_chunks = Vcb->balance.total_chunks;
     RtlCopyMemory(&bqb->data_opts, &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->metadata_opts, &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->system_opts, &Vcb->balance.opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
 
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS pause_balance(device_extension* Vcb) {
+    if (!Vcb->balance.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    if (Vcb->balance.paused)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->balance.paused = TRUE;
+    KeClearEvent(&Vcb->balance.event);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS resume_balance(device_extension* Vcb) {
+    if (!Vcb->balance.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    if (!Vcb->balance.paused)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->balance.paused = FALSE;
+    KeSetEvent(&Vcb->balance.event, 0, FALSE);
+    
     return STATUS_SUCCESS;
 }
