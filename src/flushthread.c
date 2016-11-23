@@ -4620,6 +4620,12 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
+        if (c->list_entry_balance.Flink) {
+            ExReleaseResourceLite(&c->lock);
+            le = le2;
+            continue;
+        }
+        
         used_minus_cache = c->used;
         
         // subtract self-hosted cache

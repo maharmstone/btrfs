@@ -491,6 +491,7 @@ end:
         
         c->created = TRUE;
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+        c->list_entry_balance.Flink = NULL;
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);

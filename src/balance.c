@@ -2010,9 +2010,12 @@ static void balance_thread(void* context) {
                 c->reloc = FALSE;
                 
                 le = le->Flink;
+                c->list_entry_balance.Flink = NULL;
             }
             break;
         }
+        
+        c->list_entry_balance.Flink = NULL;
         
         Vcb->balance.chunks_left--;
     }

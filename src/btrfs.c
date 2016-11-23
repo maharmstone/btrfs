@@ -3087,6 +3087,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 
                 c->list_entry_changed.Flink = NULL;
+                c->list_entry_balance.Flink = NULL;
             }
         }
     
