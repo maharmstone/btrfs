@@ -769,6 +769,7 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         if (first || balance_status != BTRFS_BALANCE_STOPPED) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETSTATE, PBST_NORMAL, 0);
             EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_DATA), TRUE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), TRUE);
