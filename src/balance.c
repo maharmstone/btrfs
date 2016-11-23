@@ -1905,11 +1905,6 @@ static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     if (opts->flags & BTRFS_BALANCE_OPTS_PROFILES) {
         args->profiles = opts->profiles;
         args->flags |= BALANCE_ARGS_FLAGS_PROFILES;
-        
-        if (opts->profiles & BLOCK_FLAG_SINGLE) {
-            args->profiles &= ~BLOCK_FLAG_SINGLE;
-            args->profiles |= 0x1000000000000; // FIXME
-        }
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
@@ -1943,11 +1938,6 @@ static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     if (opts->flags & BTRFS_BALANCE_OPTS_CONVERT) {
         args->convert = opts->convert;
         args->flags |= BALANCE_ARGS_FLAGS_CONVERT;
-        
-        if (opts->convert & BLOCK_FLAG_SINGLE) {
-            args->convert &= ~BLOCK_FLAG_SINGLE;
-            args->convert |= 0x1000000000000; // FIXME
-        }
         
         if (opts->flags & BTRFS_BALANCE_OPTS_SOFT)
             args->flags |= BALANCE_ARGS_FLAGS_SOFT;
