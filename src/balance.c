@@ -47,8 +47,6 @@ typedef struct {
     LIST_ENTRY list_entry;
 } data_reloc_ref;
 
-#define BLOCK_FLAG_SINGLE 0x001
-
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
@@ -1903,11 +1901,192 @@ static BOOL should_balance_chunk(device_extension* Vcb, UINT8 sort, chunk* c) {
     return TRUE;
 }
 
+static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
+    if (opts->flags & BTRFS_BALANCE_OPTS_PROFILES) {
+        args->profiles = opts->profiles;
+        args->flags |= BALANCE_ARGS_FLAGS_PROFILES;
+        
+        if (opts->profiles & BLOCK_FLAG_SINGLE) {
+            args->profiles &= ~BLOCK_FLAG_SINGLE;
+            args->profiles |= 0x1000000000000; // FIXME
+        }
+    }
+
+    if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
+        if (args->usage_start == 0) {
+            args->flags |= BALANCE_ARGS_FLAGS_USAGE_RANGE;
+            args->usage_start = opts->usage_start;
+            args->usage_end = opts->usage_end;
+        } else {
+            args->flags |= BALANCE_ARGS_FLAGS_USAGE;
+            args->usage = opts->usage_end;
+        }
+    }
+
+    if (opts->flags & BTRFS_BALANCE_OPTS_DEVID) {
+        args->devid = opts->devid;
+        args->flags |= BALANCE_ARGS_FLAGS_DEVID;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
+        args->drange_start = opts->drange_start;
+        args->drange_end = opts->drange_end;
+        args->flags |= BALANCE_ARGS_FLAGS_DRANGE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_VRANGE) {
+        args->vrange_start = opts->vrange_start;
+        args->vrange_end = opts->vrange_end;
+        args->flags |= BALANCE_ARGS_FLAGS_VRANGE;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_CONVERT) {
+        args->convert = opts->convert;
+        args->flags |= BALANCE_ARGS_FLAGS_CONVERT;
+        
+        if (opts->convert & BLOCK_FLAG_SINGLE) {
+            args->convert &= ~BLOCK_FLAG_SINGLE;
+            args->convert |= 0x1000000000000; // FIXME
+        }
+        
+        if (opts->flags & BTRFS_BALANCE_OPTS_SOFT)
+            args->flags |= BALANCE_ARGS_FLAGS_SOFT;
+    }
+    
+    if (opts->flags & BTRFS_BALANCE_OPTS_LIMIT) {
+        if (args->limit_start == 0) {
+            args->flags |= BALANCE_ARGS_FLAGS_LIMIT_RANGE;
+            args->limit_start = opts->limit_start;
+            args->limit_end = opts->limit_end;
+        } else {
+            args->flags |= BALANCE_ARGS_FLAGS_LIMIT;
+            args->limit = opts->limit_end;
+        }
+    }
+
+    if (opts->flags & BTRFS_BALANCE_OPTS_STRIPES) {
+        args->stripes_start = opts->stripes_start;
+        args->stripes_end = opts->stripes_end;
+        args->flags |= BALANCE_ARGS_FLAGS_STRIPES_RANGE;
+    }
+}
+
+static NTSTATUS add_balance_item(device_extension* Vcb) {
+    LIST_ENTRY rollback;
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    BALANCE_ITEM* bi;
+    
+    InitializeListHead(&rollback);
+    
+    searchkey.obj_id = BALANCE_ITEM_ID;
+    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.offset = 0;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!keycmp(tp.item->key, searchkey))
+        delete_tree_item(Vcb, &tp, &rollback);
+    
+    bi = ExAllocatePoolWithTag(PagedPool, sizeof(BALANCE_ITEM), ALLOC_TAG);
+    if (!bi) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(bi, sizeof(BALANCE_ITEM));
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
+        bi->flags |= BALANCE_FLAGS_DATA;
+        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
+    }
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
+        bi->flags |= BALANCE_FLAGS_METADATA;
+        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->metadata);
+    }
+    
+    if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED) {
+        bi->flags |= BALANCE_FLAGS_SYSTEM;
+        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
+    }
+    
+    if (!insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (NT_SUCCESS(Status)) {
+        do_write(Vcb, NULL, &rollback);
+        free_trees(Vcb);
+        
+        clear_rollback(Vcb, &rollback);
+    } else
+        do_rollback(Vcb, &rollback);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
+static NTSTATUS remove_balance_item(device_extension* Vcb) {
+    LIST_ENTRY rollback;
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    
+    InitializeListHead(&rollback);
+    
+    searchkey.obj_id = BALANCE_ITEM_ID;
+    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.offset = 0;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!keycmp(tp.item->key, searchkey)) {
+        delete_tree_item(Vcb, &tp, &rollback);
+        
+        do_write(Vcb, NULL, &rollback);
+        free_trees(Vcb);
+    }
+
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(Vcb, &rollback);
+    else
+        do_rollback(Vcb, &rollback);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
     UINT64 num_chunks[3];
+    NTSTATUS Status;
     
     // FIXME - handle converting mixed blocks
     
@@ -1925,6 +2104,12 @@ static void balance_thread(void* context) {
         Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
     
     // FIXME - what are we supposed to do with limit_start?
+    
+    Status = add_balance_item(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_balance_item returned %08x\n", Status);
+        goto end;
+    }
     
     num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
     Vcb->balance.total_chunks = 0;
@@ -2020,6 +2205,13 @@ static void balance_thread(void* context) {
         Vcb->balance.chunks_left--;
     }
     
+    Status = remove_balance_item(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("remove_balance_item returned %08x\n", Status);
+        goto end;
+    }
+    
+end:
     ZwClose(Vcb->balance.thread);
     Vcb->balance.thread = NULL;
 }

@@ -87,6 +87,8 @@ typedef struct {
 #define BTRFS_BALANCE_OPTS_CONVERT      0x100
 #define BTRFS_BALANCE_OPTS_SOFT         0x200
 
+#define BLOCK_FLAG_SINGLE 0x001
+
 typedef struct {
     UINT64 flags;
     UINT64 profiles;
