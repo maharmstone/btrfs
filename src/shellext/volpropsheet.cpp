@@ -49,7 +49,6 @@ extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 #define BLOCK_FLAG_DATA         0x001
 #define BLOCK_FLAG_SYSTEM       0x002
 #define BLOCK_FLAG_METADATA     0x004
-#define BLOCK_FLAG_SINGLE       0x001 // only used in balance
 #define BLOCK_FLAG_RAID0        0x008
 #define BLOCK_FLAG_RAID1        0x010
 #define BLOCK_FLAG_DUPLICATE    0x020
