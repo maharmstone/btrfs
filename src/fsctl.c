@@ -2821,6 +2821,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
         case FSCTL_BTRFS_RESUME_BALANCE:
             Status = resume_balance(DeviceObject->DeviceExtension);
             break;
+            
+        case FSCTL_BTRFS_STOP_BALANCE:
+            Status = stop_balance(DeviceObject->DeviceExtension);
+            break;
 
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

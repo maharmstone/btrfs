@@ -1912,6 +1912,7 @@ static void balance_thread(void* context) {
     // FIXME - handle converting mixed blocks
     
     Vcb->balance.paused = FALSE;
+    Vcb->balance.stopping = FALSE;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, TRUE);
     
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
@@ -1998,7 +1999,20 @@ static void balance_thread(void* context) {
             }
             
             KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
+            
+            if (Vcb->balance.stopping)
+                break;
         } while (changed);
+        
+        if (Vcb->balance.stopping) {
+            while (le != &chunks) {
+                c = CONTAINING_RECORD(le, chunk, list_entry_balance);
+                c->reloc = FALSE;
+                
+                le = le->Flink;
+            }
+            break;
+        }
         
         Vcb->balance.chunks_left--;
     }
@@ -2142,6 +2156,17 @@ NTSTATUS resume_balance(device_extension* Vcb) {
         return STATUS_DEVICE_NOT_READY;
     
     Vcb->balance.paused = FALSE;
+    KeSetEvent(&Vcb->balance.event, 0, FALSE);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS stop_balance(device_extension* Vcb) {
+    if (!Vcb->balance.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->balance.paused = FALSE;
+    Vcb->balance.stopping = TRUE;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
     
     return STATUS_SUCCESS;

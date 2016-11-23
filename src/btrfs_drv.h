@@ -525,6 +525,7 @@ typedef struct {
     UINT64 chunks_left;
     btrfs_balance_opts opts[3];
     BOOL paused;
+    BOOL stopping;
     KEVENT event;
 } balance_info;
 
@@ -1055,6 +1056,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length);
 NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length);
 NTSTATUS pause_balance(device_extension* Vcb);
 NTSTATUS resume_balance(device_extension* Vcb);
+NTSTATUS stop_balance(device_extension* Vcb);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
