@@ -18,6 +18,8 @@
 #define ISOLATION_AWARE_ENABLED 1
 #define STRSAFE_NO_DEPRECATE
 
+#define NTDDI_VERSION NTDDI_WIN7
+
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
@@ -690,6 +692,40 @@ void BtrfsVolPropSheet::PauseBalance(HWND hwndDlg) {
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_BALANCE, NULL, 0, NULL, 0);
         else if (bqb2.status == BTRFS_BALANCE_RUNNING)
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, NULL, 0, NULL, 0);
+        else
+            return;
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+}
+
+void BtrfsVolPropSheet::StopBalance(HWND hwndDlg) {
+    HANDLE h;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        btrfs_query_balance bqb2;
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        if (bqb2.status == BTRFS_BALANCE_PAUSED || bqb2.status == BTRFS_BALANCE_RUNNING)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_STOP_BALANCE, NULL, 0, NULL, 0);
         else
             return;
         
@@ -1389,6 +1425,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                         
                         case IDC_PAUSE_BALANCE:
                             PauseBalance(hwndDlg);
+                            RefreshBalanceDlg(hwndDlg, FALSE);
+                        return TRUE;
+                        
+                        case IDC_CANCEL_BALANCE:
+                            StopBalance(hwndDlg);
                             RefreshBalanceDlg(hwndDlg, FALSE);
                         return TRUE;
                     }

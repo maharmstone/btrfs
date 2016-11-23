@@ -85,6 +85,7 @@ public:
     INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void SaveBalanceOpts(HWND hwndDlg);
     void PauseBalance(HWND hwndDlg);
+    void StopBalance(HWND hwndDlg);
     
     btrfs_device* devices;
     
