@@ -3310,6 +3310,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         file_ref* sf;
         
         if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
+            LARGE_INTEGER zero;
+            
 #ifdef DEBUG_STATS
             open_type = 1;
 #endif
@@ -3321,6 +3323,13 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             
             if (Vcb->readonly) {
                 Status = STATUS_MEDIA_WRITE_PROTECTED;
+                free_fileref(fileref);
+                goto exit;
+            }
+            
+            zero.QuadPart = 0;
+            if (!MmCanFileBeTruncated(&fileref->fcb->nonpaged->segment_object, &zero)) {
+                Status = STATUS_USER_MAPPED_FILE;
                 free_fileref(fileref);
                 goto exit;
             }
