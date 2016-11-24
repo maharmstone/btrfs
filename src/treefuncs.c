@@ -1306,448 +1306,477 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         bi->operation == Batch_DeleteInodeExtRef) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
-        if (bi->operation == Batch_SetXattr) {
-            if (td->size < sizeof(DIR_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
-            } else {
-                UINT8* newdata;
-                ULONG size = td->size;
-                DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
-                DIR_ITEM* xa = (DIR_ITEM*)td->data;
-                
-                while (TRUE) {
-                    ULONG oldxasize;
+        switch (bi->operation) {
+            case Batch_SetXattr: {
+                if (td->size < sizeof(DIR_ITEM)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+                } else {
+                    UINT8* newdata;
+                    ULONG size = td->size;
+                    DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
+                    DIR_ITEM* xa = (DIR_ITEM*)td->data;
                     
-                    if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                        ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
-                        break;
-                    }
-                    
-                    oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-                    
-                    if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
-                        UINT64 pos;
+                    while (TRUE) {
+                        ULONG oldxasize;
                         
-                        // replace
-                        
-                        if (td->size + bi->datalen - oldxasize > maxlen)
-                            ERR("DIR_ITEM would be over maximum size, truncating (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
-                        
-                        newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
-                        if (!newdata) {
-                            ERR("out of memory\n");
-                            return TRUE;
+                        if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                            ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+                            break;
                         }
                         
-                        pos = (UINT8*)xa - td->data;
-                        if (pos + oldxasize < td->size) { // copy after changed xattr
-                            RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
+                        oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+                        
+                        if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
+                            UINT64 pos;
+                            
+                            // replace
+                            
+                            if (td->size + bi->datalen - oldxasize > maxlen)
+                                ERR("DIR_ITEM would be over maximum size, truncating (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
+                            
+                            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
+                            if (!newdata) {
+                                ERR("out of memory\n");
+                                return TRUE;
+                            }
+                            
+                            pos = (UINT8*)xa - td->data;
+                            if (pos + oldxasize < td->size) { // copy after changed xattr
+                                RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
+                            }
+                            
+                            if (pos > 0) { // copy before changed xattr
+                                RtlCopyMemory(newdata, td->data, pos);
+                                xa = (DIR_ITEM*)(newdata + pos);
+                            } else
+                                xa = (DIR_ITEM*)newdata;
+                            
+                            RtlCopyMemory(xa, bi->data, bi->datalen);
+                            
+                            bi->datalen = min(td->size + bi->datalen - oldxasize, maxlen);
+                            
+                            ExFreePool(bi->data);
+                            bi->data = newdata;
+                            
+                            break;
                         }
                         
-                        if (pos > 0) { // copy before changed xattr
-                            RtlCopyMemory(newdata, td->data, pos);
-                            xa = (DIR_ITEM*)(newdata + pos);
-                        } else
-                            xa = (DIR_ITEM*)newdata;
-                        
-                        RtlCopyMemory(xa, bi->data, bi->datalen);
-                        
-                        bi->datalen = min(td->size + bi->datalen - oldxasize, maxlen);
-                        
-                        ExFreePool(bi->data);
-                        bi->data = newdata;
-                        
-                        break;
-                    }
-                    
-                    if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
-                        // not found, add to end of data
-                        
-                        if (td->size + bi->datalen > maxlen)
-                            ERR("DIR_ITEM would be over maximum size, truncating (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                        
-                        newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
-                        if (!newdata) {
-                            ERR("out of memory\n");
-                            return TRUE;
-                        }
-                        
-                        RtlCopyMemory(newdata, td->data, td->size);
-                        
-                        xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
-                        RtlCopyMemory(xa, bi->data, bi->datalen);
-                        
-                        bi->datalen = min(bi->datalen + td->size, maxlen);
-                        
-                        ExFreePool(bi->data);
-                        bi->data = newdata;
+                        if ((UINT8*)xa - (UINT8*)td->data + oldxasize >= size) {
+                            // not found, add to end of data
+                            
+                            if (td->size + bi->datalen > maxlen)
+                                ERR("DIR_ITEM would be over maximum size, truncating (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                            
+                            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                            if (!newdata) {
+                                ERR("out of memory\n");
+                                return TRUE;
+                            }
+                            
+                            RtlCopyMemory(newdata, td->data, td->size);
+                            
+                            xa = (DIR_ITEM*)((UINT8*)newdata + td->size);
+                            RtlCopyMemory(xa, bi->data, bi->datalen);
+                            
+                            bi->datalen = min(bi->datalen + td->size, maxlen);
+                            
+                            ExFreePool(bi->data);
+                            bi->data = newdata;
 
-                        break;
-                    } else {
-                        xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-                        size -= oldxasize;
+                            break;
+                        } else {
+                            xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                            size -= oldxasize;
+                        }
                     }
                 }
-            }
-        } else if (bi->operation == Batch_DirItem) {
-            UINT8* newdata;
-            
-            if (td->size + bi->datalen > maxlen) {
-                ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                return TRUE;
+                break;
             }
             
-            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
-            if (!newdata) {
-                ERR("out of memory\n");
-                return TRUE;
-            }
-            
-            RtlCopyMemory(newdata, td->data, td->size);
-            
-            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+            case Batch_DirItem: {
+                UINT8* newdata;
+                
+                if (td->size + bi->datalen > maxlen) {
+                    ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                    return TRUE;
+                }
+                
+                newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                if (!newdata) {
+                    ERR("out of memory\n");
+                    return TRUE;
+                }
+                
+                RtlCopyMemory(newdata, td->data, td->size);
+                
+                RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
 
-            bi->datalen += td->size;
-            
-            ExFreePool(bi->data);
-            bi->data = newdata;
-        } else if (bi->operation == Batch_InodeRef) {
-            UINT8* newdata;
-            
-            if (td->size + bi->datalen > maxlen) {
-                if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                    INODE_REF* ir = (INODE_REF*)bi->data;
-                    INODE_EXTREF* ier;
-                    ULONG ierlen;
-                    batch_item* bi2;
-                    LIST_ENTRY* le;
-                    BOOL inserted = FALSE;
-                    
-                    TRACE("INODE_REF would be too long, adding INODE_EXTREF instead\n");
-
-                    ierlen = sizeof(INODE_EXTREF) - 1 + ir->n;
-                    
-                    ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
-                    if (!ier) {
-                        ERR("out of memory\n");
-                        return TRUE;
-                    }
-                    
-                    ier->dir = bi->key.offset;
-                    ier->index = ir->index;
-                    ier->n = ir->n;
-                    RtlCopyMemory(ier->name, ir->name, ier->n);
-                    
-                    bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
-                    if (!bi2) {
-                        ERR("out of memory\n");
-                        ExFreePool(ier);
-                        return TRUE;
-                    }
-                    
-                    bi2->key.obj_id = bi->key.obj_id;
-                    bi2->key.obj_type = TYPE_INODE_EXTREF;
-                    bi2->key.offset = calc_crc32c((UINT32)ier->dir, (UINT8*)ier->name, ier->n);
-                    bi2->data = ier;
-                    bi2->datalen = ierlen;
-                    bi2->operation = Batch_InodeExtRef;
-                    
-                    le = bi->list_entry.Flink;
-                    while (le != listhead) {
-                        batch_item* bi3 = CONTAINING_RECORD(le, batch_item, list_entry);
+                bi->datalen += td->size;
+                
+                ExFreePool(bi->data);
+                bi->data = newdata;
+                
+                break;
+            }
+        
+            case Batch_InodeRef: {
+                UINT8* newdata;
+                
+                if (td->size + bi->datalen > maxlen) {
+                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                        INODE_REF* ir = (INODE_REF*)bi->data;
+                        INODE_EXTREF* ier;
+                        ULONG ierlen;
+                        batch_item* bi2;
+                        LIST_ENTRY* le;
+                        BOOL inserted = FALSE;
                         
-                        if (keycmp(bi3->key, bi2->key) != -1) {
-                            InsertHeadList(le->Blink, &bi2->list_entry);
-                            inserted = TRUE;
+                        TRACE("INODE_REF would be too long, adding INODE_EXTREF instead\n");
+
+                        ierlen = sizeof(INODE_EXTREF) - 1 + ir->n;
+                        
+                        ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
+                        if (!ier) {
+                            ERR("out of memory\n");
+                            return TRUE;
                         }
                         
-                        le = le->Flink;
+                        ier->dir = bi->key.offset;
+                        ier->index = ir->index;
+                        ier->n = ir->n;
+                        RtlCopyMemory(ier->name, ir->name, ier->n);
+                        
+                        bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
+                        if (!bi2) {
+                            ERR("out of memory\n");
+                            ExFreePool(ier);
+                            return TRUE;
+                        }
+                        
+                        bi2->key.obj_id = bi->key.obj_id;
+                        bi2->key.obj_type = TYPE_INODE_EXTREF;
+                        bi2->key.offset = calc_crc32c((UINT32)ier->dir, (UINT8*)ier->name, ier->n);
+                        bi2->data = ier;
+                        bi2->datalen = ierlen;
+                        bi2->operation = Batch_InodeExtRef;
+                        
+                        le = bi->list_entry.Flink;
+                        while (le != listhead) {
+                            batch_item* bi3 = CONTAINING_RECORD(le, batch_item, list_entry);
+                            
+                            if (keycmp(bi3->key, bi2->key) != -1) {
+                                InsertHeadList(le->Blink, &bi2->list_entry);
+                                inserted = TRUE;
+                            }
+                            
+                            le = le->Flink;
+                        }
+                        
+                        if (!inserted)
+                            InsertTailList(listhead, &bi2->list_entry);
+                        
+                        return TRUE;
+                    } else {
+                        ERR("INODE_REF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                        return TRUE;
                     }
-                    
-                    if (!inserted)
-                        InsertTailList(listhead, &bi2->list_entry);
-                    
+                }
+                
+                newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                if (!newdata) {
+                    ERR("out of memory\n");
+                    return TRUE;
+                }
+                
+                RtlCopyMemory(newdata, td->data, td->size);
+                
+                RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+
+                bi->datalen += td->size;
+                
+                ExFreePool(bi->data);
+                bi->data = newdata;
+                
+                break;
+            }
+        
+            case Batch_InodeExtRef: {
+                UINT8* newdata;
+                
+                if (td->size + bi->datalen > maxlen) {
+                    ERR("INODE_EXTREF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                    return TRUE;
+                }
+                
+                newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
+                if (!newdata) {
+                    ERR("out of memory\n");
+                    return TRUE;
+                }
+                
+                RtlCopyMemory(newdata, td->data, td->size);
+                
+                RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
+
+                bi->datalen += td->size;
+                
+                ExFreePool(bi->data);
+                bi->data = newdata;
+                
+                break;
+            }
+        
+            case Batch_DeleteDirItem: {
+                if (td->size < sizeof(DIR_ITEM)) {
+                    WARN("DIR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
                     return TRUE;
                 } else {
-                    ERR("INODE_REF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
+                    DIR_ITEM *di, *deldi;
+                    LONG len;
+                    
+                    deldi = (DIR_ITEM*)bi->data;
+                    di = (DIR_ITEM*)td->data;
+                    len = td->size;
+                    
+                    do {
+                        if (di->m == deldi->m && di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n + di->m) == di->n + di->m) {
+                            ULONG newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                            
+                            if (newlen == 0) {
+                                TRACE("deleting DIR_ITEM\n");
+                            } else {
+                                UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
+                                tree_data* td2;
+                                
+                                if (!newdi) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                TRACE("modifying DIR_ITEM\n");
+
+                                if ((UINT8*)di > td->data) {
+                                    RtlCopyMemory(newdi, td->data, (UINT8*)di - td->data);
+                                    dioff = newdi + ((UINT8*)di - td->data);
+                                } else {
+                                    dioff = newdi;
+                                }
+                                
+                                if ((UINT8*)&di->name[di->n + di->m] - td->data < td->size)
+                                    RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((UINT8*)&di->name[di->n + di->m] - td->data));
+                                
+                                td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                                if (!td2) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                td2->key = bi->key;
+                                td2->size = newlen;
+                                td2->data = newdi;
+                                td2->ignore = FALSE;
+                                td2->inserted = TRUE;
+                                
+                                InsertHeadList(td->list_entry.Blink, &td2->list_entry);
+                                
+                                t->header.num_items++;
+                                t->size += newlen + sizeof(leaf_node);
+                                t->write = TRUE;
+                            }
+                            
+                            break;
+                        }
+                        
+                        len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
+                        di = (DIR_ITEM*)&di->name[di->n + di->m];
+                        
+                        if (len == 0) {
+                            TRACE("could not find DIR_ITEM to delete\n");
+                            return TRUE;
+                        }
+                    } while (len > 0);
+                }
+                break;
+            }
+        
+            case Batch_DeleteInodeRef: {
+                if (td->size < sizeof(INODE_REF)) {
+                    WARN("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
                     return TRUE;
+                } else {
+                    INODE_REF *ir, *delir;
+                    ULONG len;
+                    BOOL changed = FALSE;
+                    
+                    delir = (INODE_REF*)bi->data;
+                    ir = (INODE_REF*)td->data;
+                    len = td->size;
+                    
+                    do {
+                        ULONG itemlen;
+                        
+                        if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                            ERR("INODE_REF was truncated\n");
+                            break;
+                        }
+                        
+                        itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+                        
+                        if (ir->n == delir->n && RtlCompareMemory(ir->name, delir->name, ir->n) == ir->n) {
+                            ULONG newlen = td->size - itemlen;
+                            
+                            changed = TRUE;
+                            
+                            if (newlen == 0)
+                                TRACE("deleting INODE_REF\n");
+                            else {
+                                UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
+                                tree_data* td2;
+                                
+                                if (!newir) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                TRACE("modifying INODE_REF\n");
+
+                                if ((UINT8*)ir > td->data) {
+                                    RtlCopyMemory(newir, td->data, (UINT8*)ir - td->data);
+                                    iroff = newir + ((UINT8*)ir - td->data);
+                                } else {
+                                    iroff = newir;
+                                }
+                                
+                                if ((UINT8*)&ir->name[ir->n] - td->data < td->size)
+                                    RtlCopyMemory(iroff, &ir->name[ir->n], td->size - ((UINT8*)&ir->name[ir->n] - td->data));
+                                
+                                td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                                if (!td2) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                td2->key = bi->key;
+                                td2->size = newlen;
+                                td2->data = newir;
+                                td2->ignore = FALSE;
+                                td2->inserted = TRUE;
+                                
+                                InsertHeadList(td->list_entry.Blink, &td2->list_entry);
+                                
+                                t->header.num_items++;
+                                t->size += newlen + sizeof(leaf_node);
+                                t->write = TRUE;
+                            }
+                            
+                            break;
+                        }
+                        
+                        if (len > itemlen) {
+                            len -= itemlen;
+                            ir = (INODE_REF*)&ir->name[ir->n];
+                        } else
+                            break;
+                    } while (len > 0);
+                    
+                    if (!changed) {
+                        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                            TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
+                            
+                            add_delete_inode_extref(Vcb, bi, listhead);
+                            
+                            return TRUE;
+                        } else
+                            WARN("entry not found in INODE_REF\n");
+                    }
                 }
-            }
-            
-            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
-            if (!newdata) {
-                ERR("out of memory\n");
-                return TRUE;
-            }
-            
-            RtlCopyMemory(newdata, td->data, td->size);
-            
-            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
-
-            bi->datalen += td->size;
-            
-            ExFreePool(bi->data);
-            bi->data = newdata;
-        } else if (bi->operation == Batch_InodeExtRef) {
-            UINT8* newdata;
-            
-            if (td->size + bi->datalen > maxlen) {
-                ERR("INODE_EXTREF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                return TRUE;
-            }
-            
-            newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
-            if (!newdata) {
-                ERR("out of memory\n");
-                return TRUE;
-            }
-            
-            RtlCopyMemory(newdata, td->data, td->size);
-            
-            RtlCopyMemory(newdata + td->size, bi->data, bi->datalen);
-
-            bi->datalen += td->size;
-            
-            ExFreePool(bi->data);
-            bi->data = newdata;
-        } else if (bi->operation == Batch_DeleteDirItem) {
-            if (td->size < sizeof(DIR_ITEM)) {
-                WARN("DIR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
-                return TRUE;
-            } else {
-                DIR_ITEM *di, *deldi;
-                LONG len;
                 
-                deldi = (DIR_ITEM*)bi->data;
-                di = (DIR_ITEM*)td->data;
-                len = td->size;
-                
-                do {
-                    if (di->m == deldi->m && di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n + di->m) == di->n + di->m) {
-                        ULONG newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                break;
+            }
+        
+            case Batch_DeleteInodeExtRef: {
+                if (td->size < sizeof(INODE_EXTREF)) {
+                    WARN("INODE_EXTREF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_EXTREF));
+                    return TRUE;
+                } else {
+                    INODE_EXTREF *ier, *delier;
+                    ULONG len;
+                    
+                    delier = (INODE_EXTREF*)bi->data;
+                    ier = (INODE_EXTREF*)td->data;
+                    len = td->size;
+                    
+                    do {
+                        ULONG itemlen;
                         
-                        if (newlen == 0) {
-                            TRACE("deleting DIR_ITEM\n");
-                        } else {
-                            UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
-                            tree_data* td2;
-                            
-                            if (!newdi) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            TRACE("modifying DIR_ITEM\n");
-
-                            if ((UINT8*)di > td->data) {
-                                RtlCopyMemory(newdi, td->data, (UINT8*)di - td->data);
-                                dioff = newdi + ((UINT8*)di - td->data);
-                            } else {
-                                dioff = newdi;
-                            }
-                            
-                            if ((UINT8*)&di->name[di->n + di->m] - td->data < td->size)
-                                RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((UINT8*)&di->name[di->n + di->m] - td->data));
-                            
-                            td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
-                            if (!td2) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            td2->key = bi->key;
-                            td2->size = newlen;
-                            td2->data = newdi;
-                            td2->ignore = FALSE;
-                            td2->inserted = TRUE;
-                            
-                            InsertHeadList(td->list_entry.Blink, &td2->list_entry);
-                            
-                            t->header.num_items++;
-                            t->size += newlen + sizeof(leaf_node);
-                            t->write = TRUE;
+                        if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                            ERR("INODE_REF was truncated\n");
+                            break;
                         }
                         
-                        break;
-                    }
-                    
-                    len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
-                    di = (DIR_ITEM*)&di->name[di->n + di->m];
-                    
-                    if (len == 0) {
-                        TRACE("could not find DIR_ITEM to delete\n");
-                        return TRUE;
-                    }
-                } while (len > 0);
-            }
-        } else if (bi->operation == Batch_DeleteInodeRef) {
-            if (td->size < sizeof(INODE_REF)) {
-                WARN("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
-                return TRUE;
-            } else {
-                INODE_REF *ir, *delir;
-                ULONG len;
-                BOOL changed = FALSE;
-                
-                delir = (INODE_REF*)bi->data;
-                ir = (INODE_REF*)td->data;
-                len = td->size;
-                
-                do {
-                    ULONG itemlen;
-                    
-                    if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
-                        ERR("INODE_REF was truncated\n");
-                        break;
-                    }
-                    
-                    itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
-                    
-                    if (ir->n == delir->n && RtlCompareMemory(ir->name, delir->name, ir->n) == ir->n) {
-                        ULONG newlen = td->size - itemlen;
+                        itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
                         
-                        changed = TRUE;
-                        
-                        if (newlen == 0)
-                            TRACE("deleting INODE_REF\n");
-                        else {
-                            UINT8 *newir = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *iroff;
-                            tree_data* td2;
+                        if (ier->dir == delier->dir && ier->n == delier->n && RtlCompareMemory(ier->name, delier->name, ier->n) == ier->n) {
+                            ULONG newlen = td->size - itemlen;
                             
-                            if (!newir) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            TRACE("modifying INODE_REF\n");
+                            if (newlen == 0)
+                                TRACE("deleting INODE_EXTREF\n");
+                            else {
+                                UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
+                                tree_data* td2;
+                                
+                                if (!newier) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                TRACE("modifying INODE_EXTREF\n");
 
-                            if ((UINT8*)ir > td->data) {
-                                RtlCopyMemory(newir, td->data, (UINT8*)ir - td->data);
-                                iroff = newir + ((UINT8*)ir - td->data);
-                            } else {
-                                iroff = newir;
+                                if ((UINT8*)ier > td->data) {
+                                    RtlCopyMemory(newier, td->data, (UINT8*)ier - td->data);
+                                    ieroff = newier + ((UINT8*)ier - td->data);
+                                } else {
+                                    ieroff = newier;
+                                }
+                                
+                                if ((UINT8*)&ier->name[ier->n] - td->data < td->size)
+                                    RtlCopyMemory(ieroff, &ier->name[ier->n], td->size - ((UINT8*)&ier->name[ier->n] - td->data));
+                                
+                                td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                                if (!td2) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                td2->key = bi->key;
+                                td2->size = newlen;
+                                td2->data = newier;
+                                td2->ignore = FALSE;
+                                td2->inserted = TRUE;
+                                
+                                InsertHeadList(td->list_entry.Blink, &td2->list_entry);
+                                
+                                t->header.num_items++;
+                                t->size += newlen + sizeof(leaf_node);
+                                t->write = TRUE;
                             }
                             
-                            if ((UINT8*)&ir->name[ir->n] - td->data < td->size)
-                                RtlCopyMemory(iroff, &ir->name[ir->n], td->size - ((UINT8*)&ir->name[ir->n] - td->data));
-                            
-                            td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
-                            if (!td2) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            td2->key = bi->key;
-                            td2->size = newlen;
-                            td2->data = newir;
-                            td2->ignore = FALSE;
-                            td2->inserted = TRUE;
-                            
-                            InsertHeadList(td->list_entry.Blink, &td2->list_entry);
-                            
-                            t->header.num_items++;
-                            t->size += newlen + sizeof(leaf_node);
-                            t->write = TRUE;
+                            break;
                         }
                         
-                        break;
-                    }
-                    
-                    if (len > itemlen) {
-                        len -= itemlen;
-                        ir = (INODE_REF*)&ir->name[ir->n];
-                    } else
-                        break;
-                } while (len > 0);
-                
-                if (!changed) {
-                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                        TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
-                        
-                        add_delete_inode_extref(Vcb, bi, listhead);
-                        
-                        return TRUE;
-                    } else
-                        WARN("entry not found in INODE_REF\n");
+                        if (len > itemlen) {
+                            len -= itemlen;
+                            ier = (INODE_EXTREF*)&ier->name[ier->n];
+                        } else
+                            break;
+                    } while (len > 0);
                 }
+                break;
             }
-        } else if (bi->operation == Batch_DeleteInodeExtRef) {
-            if (td->size < sizeof(INODE_EXTREF)) {
-                WARN("INODE_EXTREF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_EXTREF));
-                return TRUE;
-            } else {
-                INODE_EXTREF *ier, *delier;
-                ULONG len;
-                
-                delier = (INODE_EXTREF*)bi->data;
-                ier = (INODE_EXTREF*)td->data;
-                len = td->size;
-                
-                do {
-                    ULONG itemlen;
-                    
-                    if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
-                        ERR("INODE_REF was truncated\n");
-                        break;
-                    }
-                    
-                    itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
-                    
-                    if (ier->dir == delier->dir && ier->n == delier->n && RtlCompareMemory(ier->name, delier->name, ier->n) == ier->n) {
-                        ULONG newlen = td->size - itemlen;
-                        
-                        if (newlen == 0)
-                            TRACE("deleting INODE_EXTREF\n");
-                        else {
-                            UINT8 *newier = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *ieroff;
-                            tree_data* td2;
-                            
-                            if (!newier) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            TRACE("modifying INODE_EXTREF\n");
-
-                            if ((UINT8*)ier > td->data) {
-                                RtlCopyMemory(newier, td->data, (UINT8*)ier - td->data);
-                                ieroff = newier + ((UINT8*)ier - td->data);
-                            } else {
-                                ieroff = newier;
-                            }
-                            
-                            if ((UINT8*)&ier->name[ier->n] - td->data < td->size)
-                                RtlCopyMemory(ieroff, &ier->name[ier->n], td->size - ((UINT8*)&ier->name[ier->n] - td->data));
-                            
-                            td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
-                            if (!td2) {
-                                ERR("out of memory\n");
-                                return TRUE;
-                            }
-                            
-                            td2->key = bi->key;
-                            td2->size = newlen;
-                            td2->data = newier;
-                            td2->ignore = FALSE;
-                            td2->inserted = TRUE;
-                            
-                            InsertHeadList(td->list_entry.Blink, &td2->list_entry);
-                            
-                            t->header.num_items++;
-                            t->size += newlen + sizeof(leaf_node);
-                            t->write = TRUE;
-                        }
-                        
-                        break;
-                    }
-                    
-                    if (len > itemlen) {
-                        len -= itemlen;
-                        ier = (INODE_EXTREF*)&ier->name[ier->n];
-                    } else
-                        break;
-                } while (len > 0);
-            }
+            
+            default:
+                ERR("unexpected batch operation type\n");
+                break;
         }
         
         // delete old item
