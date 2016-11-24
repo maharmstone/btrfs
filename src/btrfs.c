@@ -55,6 +55,7 @@ UINT32 mount_flush_interval = 30;
 UINT32 mount_max_inline = 2048;
 UINT32 mount_raid5_recalculation = 1;
 UINT32 mount_raid6_recalculation = 1;
+UINT32 mount_skip_balance = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 

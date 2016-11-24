@@ -2427,10 +2427,9 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
     if (bi->flags & BALANCE_FLAGS_SYSTEM)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->data);
     
-    // FIXME - check for skip_balance mount option
     // FIXME - do the heuristics that Linux driver does
     
-    if (Vcb->readonly)
+    if (Vcb->readonly || Vcb->options.skip_balance)
         Vcb->balance.paused = TRUE;
     else
         Vcb->balance.paused = FALSE;

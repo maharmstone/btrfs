@@ -493,6 +493,7 @@ typedef struct {
     UINT64 subvol_id;
     UINT32 raid5_recalculation;
     UINT32 raid6_recalculation;
+    BOOL skip_balance;
 } mount_options;
 
 #define VCB_TYPE_VOLUME     1
@@ -783,6 +784,7 @@ extern UINT32 mount_flush_interval;
 extern UINT32 mount_max_inline;
 extern UINT32 mount_raid5_recalculation;
 extern UINT32 mount_raid6_recalculation;
+extern UINT32 mount_skip_balance;
 
 #ifdef _DEBUG
 
