@@ -88,6 +88,7 @@ public:
     void StopBalance(HWND hwndDlg);
     
     btrfs_device* devices;
+    BOOL readonly;
     
 private:
     LONG refcount;

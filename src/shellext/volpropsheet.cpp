@@ -1382,6 +1382,12 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
             cancelling = FALSE;
             RefreshBalanceDlg(hwndDlg, TRUE);
             
+            if (readonly) {
+                EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
+            }
+            
             SetTimer(hwndDlg, 1, 1000, NULL);
             
             break;
@@ -1482,19 +1488,18 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         {
             PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
             BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)psp->lParam;
-            BOOL readonly;
             btrfs_device* bd;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
-            readonly = TRUE;
+            bps->readonly = TRUE;
             bd = bps->devices;
 
             while (TRUE) {
                 if (!bd->readonly) {
-                    readonly = FALSE;
+                    bps->readonly = FALSE;
                     break;
                 }
 
@@ -1503,9 +1508,6 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 else
                     break;
             }
-
-            if (readonly)
-                EnableWindow(GetDlgItem(hwndDlg, IDC_VOL_BALANCE), FALSE);
 
             return FALSE;
         }
