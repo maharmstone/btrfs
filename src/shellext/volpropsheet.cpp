@@ -829,9 +829,9 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), bqb.system_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
         
         EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), FALSE);
-        
-        SendMessage(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqb.total_chunks);
     }
+    
+    SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqb.total_chunks);
     
     if (bqb.status == BTRFS_BALANCE_PAUSED && balance_status != bqb.status)
         SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETSTATE, PBST_PAUSED, 0);
