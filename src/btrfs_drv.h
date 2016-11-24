@@ -1057,6 +1057,7 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length);
 NTSTATUS pause_balance(device_extension* Vcb);
 NTSTATUS resume_balance(device_extension* Vcb);
 NTSTATUS stop_balance(device_extension* Vcb);
+NTSTATUS look_for_balance_item(device_extension* Vcb);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

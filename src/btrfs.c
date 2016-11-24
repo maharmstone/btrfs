@@ -3967,6 +3967,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (!NT_SUCCESS(Status))
         WARN("registry_mark_volume_mounted returned %08x\n", Status);
     
+    Status = look_for_balance_item(Vcb);
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+        WARN("look_for_balance_item returned %08x\n", Status);
+    
     Status = STATUS_SUCCESS;
 
 exit:

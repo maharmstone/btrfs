@@ -2071,6 +2071,71 @@ end:
     return Status;
 }
 
+static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
+    opts->flags = BTRFS_BALANCE_OPTS_ENABLED;
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_PROFILES) {
+        opts->flags |= BTRFS_BALANCE_OPTS_PROFILES;
+        opts->profiles = args->profiles;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_USAGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
+        
+        opts->usage_start = 0;
+        opts->usage_end = args->usage;
+    } else if (args->flags & BALANCE_ARGS_FLAGS_USAGE_RANGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
+        
+        opts->usage_start = args->usage_start;
+        opts->usage_end = args->usage_end;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_DEVID) {
+        opts->flags |= BTRFS_BALANCE_OPTS_DEVID;
+        opts->devid = args->devid;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_DRANGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_DRANGE;
+        opts->drange_start = args->drange_start;
+        opts->drange_end = args->drange_end;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_VRANGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_VRANGE;
+        opts->vrange_start = args->vrange_start;
+        opts->vrange_end = args->vrange_end;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_LIMIT) {
+        opts->flags |= BTRFS_BALANCE_OPTS_LIMIT;
+        
+        opts->limit_start = 0;
+        opts->limit_end = args->limit;
+    } else if (args->flags & BALANCE_ARGS_FLAGS_LIMIT_RANGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_LIMIT;
+        
+        opts->limit_start = args->limit_start;
+        opts->limit_end = args->limit_end;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_STRIPES_RANGE) {
+        opts->flags |= BTRFS_BALANCE_OPTS_STRIPES;
+        
+        opts->stripes_start = args->stripes_start;
+        opts->stripes_end = args->stripes_end;
+    }
+    
+    if (args->flags & BALANCE_ARGS_FLAGS_CONVERT) {
+        opts->flags |= BTRFS_BALANCE_OPTS_CONVERT;
+        opts->convert = args->convert;
+        
+        if (args->flags & BALANCE_ARGS_FLAGS_SOFT)
+            opts->flags |= BTRFS_BALANCE_OPTS_SOFT;
+    }
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
@@ -2289,6 +2354,60 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bsb->opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bsb->opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bsb->opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
+    
+    Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("PsCreateSystemThread returned %08x\n", Status);
+        return Status;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS look_for_balance_item(device_extension* Vcb) {
+    LIST_ENTRY rollback;
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    BALANCE_ITEM* bi;
+    
+    InitializeListHead(&rollback);
+    
+    searchkey.obj_id = BALANCE_ITEM_ID;
+    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(tp.item->key, searchkey)) {
+        TRACE("no balance item found\n");
+        return STATUS_NOT_FOUND;
+    }
+    
+    if (tp.item->size < sizeof(BALANCE_ITEM)) {
+        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+             tp.item->size, sizeof(BALANCE_ITEM));
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    bi = (BALANCE_ITEM*)tp.item->data;
+    
+    if (bi->flags & BALANCE_FLAGS_DATA)
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
+    
+    if (bi->flags & BALANCE_FLAGS_METADATA)
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->data);
+    
+    if (bi->flags & BALANCE_FLAGS_SYSTEM)
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->data);
+    
+    // FIXME - pause if readonly
+    // FIXME - check for skip_balance mount option
+    // FIXME - do the heuristics that Linux driver does
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
