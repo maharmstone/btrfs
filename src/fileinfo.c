@@ -1981,6 +1981,11 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("truncating file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
+        if (!MmCanFileBeTruncated(&fcb->nonpaged->segment_object, &feofi->EndOfFile)) {
+            Status = STATUS_USER_MAPPED_FILE;
+            goto end;
+        }
+        
         Status = truncate_file(fcb, feofi->EndOfFile.QuadPart, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - truncate_file failed\n");
