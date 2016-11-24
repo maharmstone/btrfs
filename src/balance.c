@@ -2145,9 +2145,7 @@ static void balance_thread(void* context) {
     
     // FIXME - handle converting mixed blocks
     
-    Vcb->balance.paused = FALSE;
     Vcb->balance.stopping = FALSE;
-    KeInitializeEvent(&Vcb->balance.event, NotificationEvent, TRUE);
     
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
         Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
@@ -2160,16 +2158,20 @@ static void balance_thread(void* context) {
     
     // FIXME - what are we supposed to do with limit_start?
     
-    Status = add_balance_item(Vcb);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_balance_item returned %08x\n", Status);
-        goto end;
+    if (!Vcb->readonly) {
+        Status = add_balance_item(Vcb);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_balance_item returned %08x\n", Status);
+            goto end;
+        }
     }
     
     num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
     Vcb->balance.total_chunks = 0;
     
     InitializeListHead(&chunks);
+    
+    KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
     
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
     
@@ -2355,6 +2357,9 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bsb->opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bsb->opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
     
+    Vcb->balance.paused = FALSE;
+    KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+    
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
@@ -2405,9 +2410,15 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
     if (bi->flags & BALANCE_FLAGS_SYSTEM)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->data);
     
-    // FIXME - pause if readonly
     // FIXME - check for skip_balance mount option
     // FIXME - do the heuristics that Linux driver does
+    
+    if (Vcb->readonly)
+        Vcb->balance.paused = TRUE;
+    else
+        Vcb->balance.paused = FALSE;
+    
+    KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
@@ -2458,6 +2469,9 @@ NTSTATUS resume_balance(device_extension* Vcb) {
     
     if (!Vcb->balance.paused)
         return STATUS_DEVICE_NOT_READY;
+    
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
     
     Vcb->balance.paused = FALSE;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
