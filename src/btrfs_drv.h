@@ -527,7 +527,9 @@ typedef struct {
     btrfs_balance_opts opts[3];
     BOOL paused;
     BOOL stopping;
+    BOOL cancelling;
     KEVENT event;
+    KEVENT finished;
 } balance_info;
 
 typedef struct _device_extension {

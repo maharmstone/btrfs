@@ -2163,6 +2163,8 @@ static void balance_thread(void* context) {
     // FIXME - handle converting mixed blocks
     
     Vcb->balance.stopping = FALSE;
+    Vcb->balance.cancelling = FALSE;
+    KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, FALSE);
     
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
         Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
@@ -2189,6 +2191,9 @@ static void balance_thread(void* context) {
     InitializeListHead(&chunks);
     
     KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
+    
+    if (Vcb->balance.stopping)
+        goto end;
     
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
     
@@ -2279,15 +2284,19 @@ static void balance_thread(void* context) {
         Vcb->balance.chunks_left--;
     }
     
-    Status = remove_balance_item(Vcb);
-    if (!NT_SUCCESS(Status)) {
-        ERR("remove_balance_item returned %08x\n", Status);
-        goto end;
+end:
+    if (!Vcb->readonly && Vcb->balance.cancelling) {
+        Status = remove_balance_item(Vcb);
+        if (!NT_SUCCESS(Status)) {
+            ERR("remove_balance_item returned %08x\n", Status);
+            goto end;
+        }
     }
     
-end:
     ZwClose(Vcb->balance.thread);
     Vcb->balance.thread = NULL;
+    
+    KeSetEvent(&Vcb->balance.finished, 0, FALSE);
 }
 
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
@@ -2501,6 +2510,7 @@ NTSTATUS stop_balance(device_extension* Vcb) {
     
     Vcb->balance.paused = FALSE;
     Vcb->balance.stopping = TRUE;
+    Vcb->balance.cancelling = TRUE;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
     
     return STATUS_SUCCESS;
