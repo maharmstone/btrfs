@@ -2990,9 +2990,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 
                                 Vcb->devices[Vcb->devices_loaded].devobj = DeviceObject;
                                 RtlCopyMemory(&Vcb->devices[Vcb->devices_loaded].devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
-                                init_device(Vcb, &Vcb->devices[i], FALSE);
-
                                 Vcb->devices[i].seeding = v->seeding;
+                                init_device(Vcb, &Vcb->devices[i], FALSE);
 
                                 Vcb->devices[i].length = v->length;
                                 Vcb->devices_loaded++;
