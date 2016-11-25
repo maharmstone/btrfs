@@ -1552,71 +1552,14 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             RtlCopyMemory(buf, stripes[stripe]->buf, readlen);
             stripeoff[stripe] += readlen;
             pos += readlen;
-            
-            if (context->csum) {
-#ifdef DEBUG_STATS
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                for (i = 0; i < readlen / Vcb->superblock.sector_size; i++) {
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                
-                    if (crc32 != context->csum[i]) {
-                        checksum_error = TRUE;
-                        stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                }
-#ifdef DEBUG_STATS
-                time2 = KeQueryPerformanceCounter(NULL);
-                
-                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-            }
         } else if (length - pos < ci->stripe_length) {
             RtlCopyMemory(buf + pos, &stripes[stripe]->buf[stripeoff[stripe]], length - pos);
-            
-            if (context->csum) {
-#ifdef DEBUG_STATS
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                for (i = 0; i < (length - pos) / Vcb->superblock.sector_size; i++) {
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                
-                    if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i]) {
-                        checksum_error = TRUE;
-                        stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                }
-#ifdef DEBUG_STATS
-                time2 = KeQueryPerformanceCounter(NULL);
-                
-                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-            }
             
             pos = length;
         } else {
             RtlCopyMemory(buf + pos, &stripes[stripe]->buf[stripeoff[stripe]], ci->stripe_length);
             stripeoff[stripe] += ci->stripe_length;
-            
-            if (context->csum) {
-#ifdef DEBUG_STATS
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
-                for (i = 0; i < ci->stripe_length / Vcb->superblock.sector_size; i++) {
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                
-                    if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i]) {
-                        checksum_error = TRUE;
-                        stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                }
-#ifdef DEBUG_STATS
-                time2 = KeQueryPerformanceCounter(NULL);
-                
-                Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
-            }
-            
+
             pos += ci->stripe_length;
         }
         
@@ -1632,6 +1575,25 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             checksum_error = TRUE;
             stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         }
+    } else if (context->csum) {
+        NTSTATUS Status;
+        
+#ifdef DEBUG_STATS
+        time1 = KeQueryPerformanceCounter(NULL);
+#endif
+        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        
+        if (Status == STATUS_CRC_ERROR)
+            checksum_error = TRUE;
+        else if (!NT_SUCCESS(Status)) {
+            ERR("check_csum returned %08x\n", Status);
+            return Status;
+        }
+#ifdef DEBUG_STATS
+        time2 = KeQueryPerformanceCounter(NULL);
+        
+        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
+#endif
     }
     
     if (checksum_error) {
@@ -1640,6 +1602,51 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         // FIXME - update dev stats
         
         WARN("checksum error\n");
+        
+        if (!context->tree) {
+            RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes);
+            
+            // find out which stripe the error was on
+            pos = 0;
+            stripe = startoffstripe / ci->sub_stripes;
+            while (pos < length) {
+                if (pos == 0) {
+                    UINT32 readlen = min(stripeend[stripe * ci->sub_stripes] - stripestart[stripe * ci->sub_stripes], ci->stripe_length - (stripestart[stripe * ci->sub_stripes] % ci->stripe_length));
+                    
+                    stripeoff[stripe] += readlen;
+                    pos += readlen;
+
+                    for (i = 0; i < readlen / Vcb->superblock.sector_size; i++) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                    
+                        if (crc32 != context->csum[i])
+                            stripes[stripe]->status = ReadDataStatus_CRCError;
+                    }
+                } else if (length - pos < ci->stripe_length) {
+                    for (i = 0; i < (length - pos) / Vcb->superblock.sector_size; i++) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                    
+                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i])
+                            stripes[stripe]->status = ReadDataStatus_CRCError;
+                    }
+                    
+                    pos = length;
+                } else {
+                    stripeoff[stripe] += ci->stripe_length;
+                    
+                    for (i = 0; i < ci->stripe_length / Vcb->superblock.sector_size; i++) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                    
+                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i])
+                            stripes[stripe]->status = ReadDataStatus_CRCError;
+                    }
+                    
+                    pos += ci->stripe_length;
+                }
+                
+                stripe = (stripe + 1) % (ci->num_stripes / ci->sub_stripes);
+            }
+        }
         
         context->stripes_left = 0;
         
