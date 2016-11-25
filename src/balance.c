@@ -562,7 +562,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 }
                 
                 Status = find_item_to_level(Vcb, r, &tp, firstitem, FALSE, mr->data->level + 1, NULL);
-                if (!NT_SUCCESS(Status)) {
+                if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
                     ERR("find_item_to_level returned %08x\n", Status);
                     return Status;
                 }

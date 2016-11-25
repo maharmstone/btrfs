@@ -541,6 +541,11 @@ NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_pt
         ERR("find_item_in_tree returned %08x\n", Status);
     }
     
+    if (Status == STATUS_NOT_FOUND) {
+        tp->tree = r->treeholder.tree;
+        tp->item = NULL;
+    }
+    
     return Status;
 }
 
