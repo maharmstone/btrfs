@@ -4576,6 +4576,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     
     RemoveEntryList(&c->list_entry);
     
+    Vcb->superblock.bytes_used -= c->oldused;
+    
     if (c->list_entry_changed.Flink)
         RemoveEntryList(&c->list_entry_changed);
     
