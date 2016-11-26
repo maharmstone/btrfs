@@ -1466,8 +1466,11 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         
-        if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+        if (crc32 != *((UINT32*)th->csum)) {
             WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+            return STATUS_CRC_ERROR;
+        } else if (addr != th->address) {
+            WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
             return STATUS_CRC_ERROR;
         }
     } else if (context->csum) {
@@ -1570,8 +1573,12 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         
-        if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+        if (crc32 != *((UINT32*)th->csum)) {
             WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+            checksum_error = TRUE;
+            stripes[startoffstripe]->status = ReadDataStatus_CRCError;
+        } else if (addr != th->address) {
+            WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
             checksum_error = TRUE;
             stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         }
