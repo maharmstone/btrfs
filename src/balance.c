@@ -1463,7 +1463,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     NTSTATUS Status;
     BOOL b;
     LIST_ENTRY items, metadata_items, rollback, *le;
-    UINT64 loaded = 0;
+    UINT64 loaded = 0, num_loaded = 0;
     chunk* newchunk = NULL;
     UINT8* data = NULL;
     
@@ -1510,8 +1510,9 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                 }
                 
                 loaded += tp.item->key.offset;
+                num_loaded++;
                 
-                if (loaded >= 0x1000000) // only do so much at a time, so we don't block too obnoxiously
+                if (loaded >= 0x1000000 || num_loaded >= 100) // only do so much at a time, so we don't block too obnoxiously
                     break;
             }
         }
