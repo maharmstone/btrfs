@@ -1394,8 +1394,8 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
         } else if (ref->type == TYPE_SHARED_DATA_REF) {
             SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)ptr;
             
-//             sdr->offset = ref->parent->new_address;
-            RtlCopyMemory(sdr, &ref->sdr, sizeof(SHARED_DATA_REF));
+            sdr->offset = ref->parent->new_address;
+            sdr->count = ref->sdr.count;
             
             ptr += sizeof(SHARED_DATA_REF);
         }
@@ -1424,7 +1424,6 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-//                 edr->offset = ref->tbr.offset;
                 RtlCopyMemory(edr, &ref->edr, sizeof(EXTENT_DATA_REF));
                 
                 off = get_extent_data_ref_hash2(ref->edr.root, ref->edr.objid, ref->edr.offset);
@@ -1442,7 +1441,8 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-//                 sdr->offset = ref->parent->new_address;
+                sdr->offset = ref->parent->new_address;
+                sdr->count = ref->sdr.count;
                 
                 if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, sdr->offset, sdr, sizeof(SHARED_DATA_REF), NULL, NULL, rollback)) {
                     ERR("insert_tree_item failed\n");
