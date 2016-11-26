@@ -88,10 +88,8 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                     
                     Status = remove_free_space_inode(Vcb, fsi->key.obj_id, batchlist, Irp, &rollback);
                     
-                    if (!NT_SUCCESS(Status)) {
+                    if (!NT_SUCCESS(Status))
                         ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
-                        goto end;
-                    }
                     
                     le = Vcb->chunks.Flink;
                     while (le != &Vcb->chunks) {
