@@ -1388,7 +1388,7 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length) {
                 
                 if (c2->chunk_item->type == c->chunk_item->type) {
                     UINT16 i;
-                    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c2->chunk_item[1];
                     UINT64 stripesize;
                     
                     bue->size += c2->chunk_item->size;
