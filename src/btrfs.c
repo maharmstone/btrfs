@@ -3230,9 +3230,6 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
     BLOCK_GROUP_ITEM* bgi;
     NTSTATUS Status;
     
-// c00000,c0,800000
-// block_group_item size=7f0000 chunktreeid=100 flags=1
-    
     searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
     
     while (le != &Vcb->chunks) {
@@ -3259,27 +3256,23 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
                     Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
             }
         }
-            
-//         if (addr >= c->offset && (addr - c->offset) < c->chunk_item->size && c->chunk_item->num_stripes > 0) {
-//             cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-// 
-//             return (addr - c->offset) + cis->offset;
-//         }
 
-        // It doesn't make a great deal of sense to load the free space cache of a
-        // readonly seeding chunk, as we'll never write to it. But btrfs check will
-        // complain if we don't write a valid cache, so we have to do it anyway...
+        if (!Vcb->readonly) {
+            // It doesn't make a great deal of sense to load the free space cache of a
+            // readonly seeding chunk, as we'll never write to it. But btrfs check will
+            // complain if we don't write a valid cache, so we have to do it anyway...
+                
+            // FIXME - make sure we free occasionally after doing one of these, or we
+            // might use up a lot of memory with a big disk.
             
-        // FIXME - make sure we free occasionally after doing one of these, or we
-        // might use up a lot of memory with a big disk.
-        
-        Status = load_free_space_cache(Vcb, c, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("load_free_space_cache returned %08x\n", Status);
-            return Status;
+            Status = load_free_space_cache(Vcb, c, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_free_space_cache returned %08x\n", Status);
+                return Status;
+            }
+            
+            protect_superblocks(Vcb, c);
         }
-        
-        protect_superblocks(Vcb, c);
 
         le = le->Flink;
     }
@@ -3818,12 +3811,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (!Vcb->readonly) {
-        Status = find_chunk_usage(Vcb, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_chunk_usage returned %08x\n", Status);
-            goto exit;
-        }
+    Status = find_chunk_usage(Vcb, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_chunk_usage returned %08x\n", Status);
+        goto exit;
     }
     
     InitializeListHead(&batchlist);
