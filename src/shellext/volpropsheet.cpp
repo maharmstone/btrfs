@@ -114,7 +114,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
         if (h != INVALID_HANDLE_VALUE) {
             NTSTATUS Status;
             IO_STATUS_BLOCK iosb;
-            ULONG devsize, usagesize, i;
+            ULONG devsize, i;
             
             i = 0;
             devsize = 1024;
@@ -129,32 +129,6 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                         
                         free(devices);
                         devices = (btrfs_device*)malloc(devsize);
-                        
-                        i++;
-                    } else
-                        return E_FAIL;
-                } else
-                    break;
-            }
-            
-            if (Status != STATUS_SUCCESS) {
-                CloseHandle(h);
-                return E_FAIL;
-            }
-            
-            i = 0;
-            usagesize = 1024;
-            
-            usage = (btrfs_usage*)malloc(usagesize);
-
-            while (TRUE) {
-                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
-                if (Status == STATUS_BUFFER_OVERFLOW) {
-                    if (i < 8) {
-                        usagesize += 1024;
-                        
-                        free(usage);
-                        usage = (btrfs_usage*)malloc(usagesize);
                         
                         i++;
                     } else
@@ -201,7 +175,7 @@ typedef struct {
     UINT64 size;
 } dev;
 
-void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size) {
+void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_usage* usage) {
     UINT8 i, j;
     UINT64 num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
@@ -500,6 +474,7 @@ end:
 void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     HANDLE h;
     WCHAR s[4096];
+    btrfs_usage* usage;
     
     h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -557,6 +532,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
         }
         
         if (Status != STATUS_SUCCESS) {
+            free(usage);
             CloseHandle(h);
             return;
         }
@@ -567,9 +543,11 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     } else
         return;
     
-    FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
+    FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR), usage);
     
     SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+    
+    free(usage);
 }
 
 INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -577,12 +555,55 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         case WM_INITDIALOG:
         {
             WCHAR s[4096];
+            int i;
+            ULONG usagesize;
+            NTSTATUS Status;
+            HANDLE h;
+            IO_STATUS_BLOCK iosb;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
-            FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
-            
-            SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+            if (h != INVALID_HANDLE_VALUE) {
+                btrfs_usage* usage;
+                
+                i = 0;
+                usagesize = 1024;
+                
+                usage = (btrfs_usage*)malloc(usagesize);
+
+                while (TRUE) {
+                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+                    if (Status == STATUS_BUFFER_OVERFLOW) {
+                        if (i < 8) {
+                            usagesize += 1024;
+                            
+                            free(usage);
+                            usage = (btrfs_usage*)malloc(usagesize);
+                            
+                            i++;
+                        } else
+                            break;
+                    } else
+                        break;
+                }
+                
+                if (Status != STATUS_SUCCESS) {
+                    free(usage);
+                    CloseHandle(h);
+                    break;
+                }
+                
+                CloseHandle(h);
+                
+                FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR), usage);
+                
+                SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+                
+                free(usage);
+            }
             
             break;
         }

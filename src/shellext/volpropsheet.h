@@ -27,7 +27,6 @@ public:
         ignore = TRUE;
         stgm_set = FALSE;
         devices = NULL;
-        usage = NULL;
         
         InterlockedIncrement(&objs_loaded);
     }
@@ -40,9 +39,6 @@ public:
         
         if (devices)
             free(devices);
-        
-        if (usage)
-            free(usage);
         
         InterlockedDecrement(&objs_loaded);
     }
@@ -73,7 +69,7 @@ public:
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
     
-    void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size);
+    void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_usage* usage);
     void RefreshUsage(HWND hwndDlg);
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -95,7 +91,6 @@ private:
     BOOL ignore;
     STGMEDIUM stgm;
     BOOL stgm_set;
-    btrfs_usage* usage;
     WCHAR fn[MAX_PATH];
     UINT32 balance_status;
     btrfs_balance_opts data_opts, metadata_opts, system_opts;
