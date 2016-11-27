@@ -2435,15 +2435,22 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
             return Status;
         }
         
-        TRACE("got superblock %u!\n", i);
-        
-        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-        
-        if (crc32 != *((UINT32*)sb->checksum))
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
-        else if (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation) {
-            RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
-            valid_superblocks++;
+        if (sb->magic != BTRFS_MAGIC) {
+            if (i == 0) {
+                ERR("not a BTRFS volume\n");
+                return STATUS_UNRECOGNIZED_VOLUME;
+            }
+        } else {
+            TRACE("got superblock %u!\n", i);
+            
+            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+            
+            if (crc32 != *((UINT32*)sb->checksum))
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+            else if (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation) {
+                RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
+                valid_superblocks++;
+            }
         }
         
         i++;
@@ -3634,14 +3641,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
 
-    if (Vcb->superblock.magic != BTRFS_MAGIC) {
-        ERR("not a BTRFS volume\n");
-        Status = STATUS_UNRECOGNIZED_VOLUME;
-        goto exit;
-    } else {
-        TRACE("btrfs magic found\n");
-    }
-    
     Status = registry_load_volume_options(Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("registry_load_volume_options returned %08x\n", Status);
