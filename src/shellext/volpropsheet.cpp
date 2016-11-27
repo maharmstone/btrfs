@@ -1518,6 +1518,15 @@ static void add_lv_column(HWND list, int string, int cx) {
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 }
 
+static int CALLBACK lv_sort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) {
+    if (lParam1 < lParam2)
+        return -1;
+    else if (lParam1 > lParam2)
+        return 1;
+    else
+        return 0;
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -1540,17 +1549,23 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 ULONG namelen;
                 
                 RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                lvi.mask = LVIF_TEXT;
+                lvi.mask = LVIF_TEXT | LVIF_PARAM;
                 lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
+                lvi.lParam = bd->dev_id;
                 
                 StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llu", bd->dev_id);
                 lvi.pszText = s;
 
                 SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
                 
+                lvi.mask = LVIF_TEXT;
                 lvi.iSubItem = 1;
                 
-                namelen = min(254, bd->namelen / sizeof(WCHAR));
+                namelen = bd->namelen / sizeof(WCHAR);
+                
+                if (namelen > 254)
+                    namelen = 254;
+                
                 memcpy(s, bd->name, namelen * sizeof(WCHAR));
                 s[namelen] = 0;
                 lvi.pszText = s;
@@ -1564,6 +1579,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 else
                     break;
             }
+            
+            SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
             
             break;
         }
