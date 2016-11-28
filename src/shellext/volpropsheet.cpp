@@ -1683,17 +1683,22 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
         case WM_INITDIALOG:
         {
             HWND devlist;
+            RECT rect;
+            ULONG w;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
             
-            add_lv_column(devlist, IDS_DEVLIST_ALLOC_PC, 50);
-            add_lv_column(devlist, IDS_DEVLIST_ALLOC, 60);
-            add_lv_column(devlist, IDS_DEVLIST_SIZE, 60);
-            add_lv_column(devlist, IDS_DEVLIST_READONLY, 70);
-            add_lv_column(devlist, IDS_DEVLIST_NAME, 160);
-            add_lv_column(devlist, IDS_DEVLIST_ID, 40);
+            GetClientRect(devlist, &rect);
+            w = rect.right - rect.left;
+            
+            add_lv_column(devlist, IDS_DEVLIST_ALLOC_PC, w * 5 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_ALLOC, w * 6 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_SIZE, w * 6 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_READONLY, w * 7 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_NAME, w * 16 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
             
             RefreshDevList(devlist);
             
