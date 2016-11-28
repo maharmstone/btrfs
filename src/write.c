@@ -3131,24 +3131,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
     NTSTATUS Status;
     chunk* c;
-    UINT32* csum;
-    ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
-    
-    if (changed_sector_list) {
-        csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
-        if (!csum) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        Status = calc_csum(fcb->Vcb, data, sl, csum);
-        if (!NT_SUCCESS(Status)) {
-            ERR("calc_csum returned %08x\n", Status);
-            ExFreePool(csum);
-            return Status;
-        }
-    } else
-        csum = NULL;
     
     if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
         EXTENT_DATA* ned;
@@ -3177,13 +3159,38 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (csum) {
-            Status = add_checksum_entry(ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+        if (changed_sector_list) {
+            ULONG sl = ed2->num_bytes / fcb->Vcb->superblock.sector_size;
+            UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+            
+            if (!csum) {
+                ERR("out of memory\n");
+                ExFreePool(ned);
+                ExFreePool(newext);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = calc_csum(fcb->Vcb, (UINT8*)data + ext->offset - start_data, sl, csum);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("calc_csum returned %08x\n", Status);
+                ExFreePool(csum);
+                ExFreePool(ned);
+                ExFreePool(newext);
                 return Status;
             }
-        }
+            
+            Status = add_checksum_entry(ed2->address + ed2->offset, sl, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                ExFreePool(csum);
+                ExFreePool(ned);
+                ExFreePool(newext);
+                return Status;
+            }
+            
+            newext->csum = csum;
+        } else
+            newext->csum = NULL;
         
         *written = ed2->num_bytes;
         
@@ -3192,7 +3199,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->datalen = ext->datalen;
         newext->unique = ext->unique;
         newext->ignore = FALSE;
-        newext->csum = csum;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
         add_insert_extent_rollback(rollback, fcb, newext);
@@ -3249,13 +3255,44 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (csum) {
-            Status = add_checksum_entry(ed2->address + ed2->offset, (end_data - ext->offset) / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+        if (changed_sector_list) {
+            ULONG sl = (end_data - ext->offset) / fcb->Vcb->superblock.sector_size;
+            UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+            
+            if (!csum) {
+                ERR("out of memory\n");
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = calc_csum(fcb->Vcb, (UINT8*)data + ext->offset - start_data, sl, csum);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("calc_csum returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(csum);
                 return Status;
             }
-        }
+            
+            Status = add_checksum_entry(ed2->address + ed2->offset, sl, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(csum);
+                return Status;
+            }
+            
+            newext1->csum = csum;
+        } else
+            newext1->csum = NULL;
         
         *written = end_data - ext->offset;
         
@@ -3264,7 +3301,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
-        newext1->csum = csum;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext1);
@@ -3347,13 +3383,44 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (csum) {
-            Status = add_checksum_entry(ed2->address + ned2->offset, ned2->num_bytes / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+        if (changed_sector_list) {
+            ULONG sl = ned2->num_bytes / fcb->Vcb->superblock.sector_size;
+            UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+            
+            if (!csum) {
+                ERR("out of memory\n");
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = calc_csum(fcb->Vcb, data, sl, csum);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("calc_csum returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(csum);
                 return Status;
             }
-        }
+            
+            Status = add_checksum_entry(ed2->address + ned2->offset, sl, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(csum);
+                return Status;
+            }
+            
+            newext2->csum = csum;
+        } else
+            newext2->csum = NULL;
         
         *written = ned2->num_bytes;
         
@@ -3372,7 +3439,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
-        newext2->csum = csum;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3471,14 +3537,51 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (csum) {
-            Status = add_checksum_entry(ed2->address + ned2->offset, (end_data - start_data) / fcb->Vcb->superblock.sector_size, csum, changed_sector_list);
+        if (changed_sector_list) {
+            ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
+            UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
+            
+            if (!csum) {
+                ERR("out of memory\n");
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(nedc);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(newext3);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = calc_csum(fcb->Vcb, data, sl, csum);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("calc_csum returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(nedc);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(newext3);
+                ExFreePool(csum);
                 return Status;
             }
-        }
-        
+            
+            Status = add_checksum_entry(ed2->address + ned2->offset, sl, csum, changed_sector_list);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_checksum_entry returned %08x\n", Status);
+                ExFreePool(ned);
+                ExFreePool(nedb);
+                ExFreePool(nedc);
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                ExFreePool(newext3);
+                ExFreePool(csum);
+                return Status;
+            }
+            
+            newext2->csum = csum;
+        } else
+            newext2->csum = NULL;
+
         *written = end_data - start_data;
         
         newext1->offset = ext->offset;
@@ -3496,7 +3599,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
-        newext2->csum = csum;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
