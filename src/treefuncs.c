@@ -1779,8 +1779,12 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 break;
             }
             
+            case Batch_Delete:
+                break;
+            
             default:
                 ERR("unexpected batch operation type\n");
+                int3;
                 break;
         }
         
