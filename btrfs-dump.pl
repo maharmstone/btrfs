@@ -699,11 +699,24 @@ sub read_data {
 				
 				seek($f,$physoff,0);
 				read($f,$data,$size);
+			} elsif ($obj->{'type'} & 0x8) { # RAID0
+				$stripeoff=($addr-$obj->{'offset'})%0x20000;
+				$stripe=int($stripeoff/0x10000);
+				
+				if ($stripe==0) {
+					$f=$devs{$obj->{'devid'}};
+					$physoff=$obj->{'physoffset'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				} else {
+					$f=$devs{$obj->{'devid2'}};
+					$physoff=$obj->{'physoffset2'}+(int(($addr-$obj->{'offset'})/0x20000)*0x10000)+($stripeoff%0x10000);
+				}
+				
+				seek($f,$physoff,0);
+				read($f,$data,$size);
 			} else { # SINGLE, DUP, RAID1
 				seek($devs{$obj->{'devid'}},$obj->{'physoffset'}+$addr-$obj->{'offset'},0);
 				read($devs{$obj->{'devid'}},$data,$size);
 			}
-			# FIXME - handle RAID0
 			
 			return $data;
 		}
