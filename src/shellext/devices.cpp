@@ -75,7 +75,9 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     
     tis.hParent = TVI_ROOT;
     tis.hInsertAfter = TVI_LAST;
-    tis.itemex.mask = TVIF_TEXT;
+    tis.itemex.mask = TVIF_TEXT | TVIF_STATE;
+    tis.itemex.state = TVIS_EXPANDED;
+    tis.itemex.stateMask = TVIS_EXPANDED;
     tis.itemex.pszText = us->Buffer;
     tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
     
