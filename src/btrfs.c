@@ -2905,9 +2905,9 @@ static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, apte, aptelen,
                        apte, aptelen, TRUE, NULL);
     
-    if (!NT_SUCCESS(Status)) {
-        ERR("error calling ATA IDENTIFY DEVICE: %08x\n", Status);
-    } else {
+    if (!NT_SUCCESS(Status))
+        TRACE("IOCTL_ATA_PASS_THROUGH returned %08x for IDENTIFY DEVICE\n", Status);
+    else {
         idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
         
         if (idd->NominalMediaRotationRate == 1) {
