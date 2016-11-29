@@ -20,6 +20,8 @@
 #include <shlobj.h>
 #include <stdio.h>
 #include <winternl.h>
+#include <vector>
+#include <algorithm>
 
 typedef struct _OBJECT_DIRECTORY_INFORMATION {
     UNICODE_STRING Name;
@@ -30,15 +32,6 @@ typedef struct _OBJECT_DIRECTORY_INFORMATION {
 #define DIRECTORY_QUERY         0x0001
 #define DIRECTORY_TRAVERSE      0x0002
 
-typedef NTSTATUS (NTAPI  *TFNNtOpenFile)(
-  OUT PHANDLE FileHandle,
-  IN ACCESS_MASK DesiredAccess,
-  IN POBJECT_ATTRIBUTES ObjectAttributes,
-  OUT PIO_STATUS_BLOCK IoStatusBlock,
-  IN ULONG ShareAccess,
-  IN ULONG OpenOptions
-);
-
 typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES* ObjectAttributes);
 
 typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
@@ -46,14 +39,14 @@ typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID 
 
 extern HMODULE module;
 
-static void add_partition_to_tree(HWND tree, HTREEITEM parent, UNICODE_STRING* us) {
+static void add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s) {
     TVINSERTSTRUCTW tis;
     
     tis.hParent = parent;
     tis.hInsertAfter = TVI_LAST;
     tis.itemex.mask = TVIF_TEXT;
-    tis.itemex.pszText = us->Buffer;
-    tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
+    tis.itemex.pszText = s;
+    tis.itemex.cchTextMax = wcslen(s);
     
     SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
 }
@@ -68,6 +61,8 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     TVINSERTSTRUCTW tis;
     HTREEITEM item;
     HMODULE ntdll;
+    std::vector<int> parts;
+    unsigned int i;
     
     pNtOpenDirectoryObject NtOpenDirectoryObject;
     pNtQueryDirectoryObject NtQueryDirectoryObject;
@@ -114,6 +109,8 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
         return;
     }
     
+    parts.clear();
+    
     restart = TRUE;
     do {
         Status = NtQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL/*&retlen*/);
@@ -125,19 +122,16 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
             while (odi2->Name.Buffer) {
                 if (odi2->Name.Length > wcslen(partition) * sizeof(WCHAR) &&
                     RtlCompareMemory(odi2->Name.Buffer, partition, wcslen(partition) * sizeof(WCHAR)) == wcslen(partition) * sizeof(WCHAR)) {
-                        UNICODE_STRING us2;
-                        
-                        us2.Length = us2.MaximumLength = us->Length + sizeof(WCHAR) + odi2->Name.Length;
-                        us2.Buffer = (WCHAR*)malloc(us2.Length + sizeof(WCHAR));
-                        
-                        memcpy(us2.Buffer, us->Buffer, us->Length);
-                        us2.Buffer[us->Length / sizeof(WCHAR)] = '\\';
-                        memcpy((UINT8*)us2.Buffer + us->Length + sizeof(WCHAR), odi2->Name.Buffer, odi2->Name.Length);
-                        us2.Buffer[us2.Length / sizeof(WCHAR)] = 0;
-                    
-                        add_partition_to_tree(tree, item, &us2);
-                        
-                        free(us2.Buffer);
+                    WCHAR s[255];
+                    int v;
+                
+                    memcpy(s, odi2->Name.Buffer + wcslen(partition), odi2->Name.Length - (wcslen(partition) * sizeof(WCHAR)));
+                    s[(odi2->Name.Length / sizeof(WCHAR)) - wcslen(partition)] = 0;
+                
+                    v = _wtoi(s);
+                
+                    if (v != 0)
+                        parts.push_back(v);
                 }
                 
                 odi2 = &odi2[1];
@@ -147,6 +141,28 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     
     free(odi);
     NtClose(h);
+    
+    std::sort(parts.begin(), parts.end());
+    
+    for (i = 0; i < parts.size(); i++) {
+        WCHAR n[255], *s;
+        int len;
+        
+        wcscpy(n, partition);
+        _itow(parts[i], n + wcslen(partition), 10);
+        
+        len = us->Length + sizeof(WCHAR) + (wcslen(n) * sizeof(WCHAR));
+        s = (WCHAR*)malloc(len + sizeof(WCHAR));
+        
+        memcpy(s, us->Buffer, us->Length);
+        s[us->Length / sizeof(WCHAR)] = '\\';
+        memcpy((UINT8*)s + us->Length + sizeof(WCHAR), n, wcslen(n) * sizeof(WCHAR));
+        s[len / sizeof(WCHAR)] = 0;
+    
+        add_partition_to_tree(tree, item, s);
+        
+        free(s);
+    }
 }
 
 static void populate_device_tree(HWND tree) {
