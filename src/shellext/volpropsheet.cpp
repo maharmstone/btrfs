@@ -153,7 +153,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     return S_OK;
 }
 
-static void ShowError(HWND hwnd, ULONG err) {
+void ShowError(HWND hwnd, ULONG err) {
     WCHAR* buf;
     
     if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,

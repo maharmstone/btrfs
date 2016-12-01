@@ -17,6 +17,7 @@
 
 #include "devices.h"
 #include "resource.h"
+#include "../btrfsioctl.h"
 #include <shlobj.h>
 #include <stdio.h>
 #include <winternl.h>
@@ -37,7 +38,17 @@ typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS
 typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
                                                   BOOLEAN RestartScan, PULONG Context, PULONG ReturnLength);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
+#ifdef __cplusplus
+}
+#endif
+
 extern HMODULE module;
+void ShowError(HWND hwnd, ULONG err);
+void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 
 static void add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s) {
     TVINSERTSTRUCTW tis;
@@ -252,6 +263,38 @@ static void populate_device_tree(HWND tree) {
     NtClose(h);
 }
 
+void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    HANDLE h;
+    
+    if (sel[0] == 0)
+        goto end;
+    
+    // FIXME - ask for confirmation
+    
+    h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_ADD_DEVICE, sel, wcslen(sel) * sizeof(WCHAR), NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwndDlg, Status);
+        goto end;
+    }
+    
+    // FIXME - say success
+
+end:
+    CloseHandle(h);
+    
+    EndDialog(hwndDlg, 0);
+}
+
 INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -265,6 +308,9 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
+                            AddDevice(hwndDlg);
+                        return TRUE;
+                        
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
                         return TRUE;
@@ -272,6 +318,28 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 break;
             }
         break;
+        
+        case WM_NOTIFY:
+            switch (((LPNMHDR)lParam)->code) {
+                case TVN_SELCHANGEDW:
+                {
+                    NMTREEVIEWW* nmtv = (NMTREEVIEWW*)lParam;
+                    TVITEMW tvi;
+                    
+                    RtlZeroMemory(&tvi, sizeof(TVITEMW));
+                    tvi.hItem = nmtv->itemNew.hItem;
+                    tvi.mask = TVIF_TEXT | TVIF_HANDLE;
+                    tvi.pszText = sel;
+                    tvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                    
+                    if (!SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
+                        sel[0] = 0;
+
+                    break;
+                }
+            }
+        break;
+                            
     }
     
     return FALSE;
@@ -294,13 +362,15 @@ static INT_PTR CALLBACK stub_DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wP
 }
 
 void BtrfsDeviceAdd::ShowDialog() {
-    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICE_ADD), hwnd, stub_DeviceAddDlgProc, (LPARAM)cmdline);
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICE_ADD), hwnd, stub_DeviceAddDlgProc, (LPARAM)this);
 }
 
 BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
     this->hinst = hinst;
     this->hwnd = hwnd;
     this->cmdline = cmdline;
+    
+    sel[0] = 0;
 }
 
 #ifdef __cplusplus

@@ -21,10 +21,12 @@ class BtrfsDeviceAdd {
 public:
     INT_PTR CALLBACK DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDialog();
+    void AddDevice(HWND hwndDlg);
     BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline);
     
 private:
     HINSTANCE hinst;
     HWND hwnd;
     WCHAR* cmdline;
+    WCHAR sel[255];
 };
