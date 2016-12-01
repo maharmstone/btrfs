@@ -2310,6 +2310,13 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS add_device(device_extension* Vcb, void* data, ULONG length) {
+    FIXME("add_device\n");
+    int3;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2824,6 +2831,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_STOP_BALANCE:
             Status = stop_balance(DeviceObject->DeviceExtension);
+            break;
+            
+        case FSCTL_BTRFS_ADD_DEVICE:
+            Status = add_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         default:
