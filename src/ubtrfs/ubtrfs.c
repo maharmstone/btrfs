@@ -609,7 +609,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
     UINT32 node_size;
     LIST_ENTRY roots, chunks;
-    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root;
+    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
     btrfs_device dev;
     BTRFS_UUID fsuuid, chunkuuid;
@@ -627,6 +627,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     dev_root = add_root(&roots, BTRFS_ROOT_DEVTREE);
     add_root(&roots, BTRFS_ROOT_CHECKSUM);
     fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
+    reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
     
     init_device(&dev, 1, size, &fsuuid);
     
@@ -639,6 +640,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
     
     init_fs_tree(fs_root, node_size);
+    init_fs_tree(reloc_root, node_size);
     
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
