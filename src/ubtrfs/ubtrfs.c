@@ -374,7 +374,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             ri.inode.st_nlink = 1;
             ri.inode.st_mode = 040755;
             ri.generation = 1;
-            ri.objid = 0; // FIXME - should be 0x100 for FS trees and 0xff..f7
+            ri.objid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
             ri.block_number = r->header.address;
             ri.bytes_used = node_size;
             ri.num_references = 1;
@@ -577,6 +577,34 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     return STATUS_SUCCESS;
 }
 
+static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
+    INODE_ITEM ii;
+    INODE_REF* ir;
+    
+    memset(&ii, 0, sizeof(INODE_ITEM));
+    
+    ii.generation = 1;
+    ii.st_blocks = node_size;
+    ii.st_nlink = 1;
+    ii.st_mode = 040755;
+//     BTRFS_TIME st_atime; // FIXME
+//     BTRFS_TIME st_ctime; // FIXME
+//     BTRFS_TIME st_mtime; // FIXME
+    
+    add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, &ii, sizeof(INODE_ITEM));
+    
+    ir = malloc(sizeof(INODE_REF) - 1 + 2);
+    
+    ir->index = 0;
+    ir->n = 2;
+    ir->name[0] = '.';
+    ir->name[1] = '.';
+    
+    add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, sizeof(INODE_REF) - 1 + ir->n);
+    
+    free(ir);
+}
+
 static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
     UINT32 node_size;
@@ -609,6 +637,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root);
     
     add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
+    
+    init_fs_tree(fs_root, node_size);
     
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
