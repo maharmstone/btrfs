@@ -503,8 +503,6 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
     dev->dev_item.fs_uuid = *fsuuid;
     
     dev->last_alloc = 0; // FIXME - should skip first megabyte
-    
-    // FIXME - add DEV_ITEM to chunk_root
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_chunk* sys_chunk,
@@ -609,6 +607,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     
     node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root);
+    
+    add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
     
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
