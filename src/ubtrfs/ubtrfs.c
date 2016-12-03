@@ -586,15 +586,21 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
     
     if (label->Length > 0) {
+        int i;
         ULONG utf8len;
+        
+        for (i = 0; i < label->Length / sizeof(WCHAR); i++) {
+            if (label->Buffer[i] == '/' || label->Buffer[i] == '\\') {
+                free(sb);
+                return STATUS_INVALID_VOLUME_LABEL;
+            }
+        }
         
         Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, label->Buffer, label->Length);
         if (!NT_SUCCESS(Status)) {
             free(sb);
             return Status;
         }
-        
-        // FIXME - check for slashes and backslashes
         
         if (utf8len > MAX_LABEL_SIZE) {
             free(sb);
