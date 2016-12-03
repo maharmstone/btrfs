@@ -709,6 +709,24 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
     }
 }
 
+static NTSTATUS clear_first_megabyte(HANDLE h) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER zero;
+    UINT8* mb;
+    
+    mb = malloc(0x100000);
+    memset(mb, 0, 0x100000);
+    
+    zero.QuadPart = 0;
+    
+    Status = NtWriteFile(h, NULL, NULL, NULL, &iosb, mb, 0x100000, &zero, NULL);
+    
+    free(mb);
+    
+    return Status;
+}
+
 static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     NTSTATUS Status;
     UINT32 sector_size, node_size;
@@ -759,11 +777,16 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     if (!NT_SUCCESS(Status))
         return Status;
     
+    Status = clear_first_megabyte(h);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    
     Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid, sector_size, label);
     if (!NT_SUCCESS(Status))
         return Status;
     
     free_roots(&roots);
+    // FIXME - free chunks etc.
     
     return STATUS_SUCCESS;
 }
