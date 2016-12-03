@@ -275,8 +275,8 @@ static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset
     while (le != &r->items) {
         btrfs_item* i2 = CONTAINING_RECORD(le, btrfs_item, list_entry);
         
-        if (keycmp(item->key, i2->key) != -1) {
-            InsertTailList(le->Blink, &item->list_entry);
+        if (keycmp(item->key, i2->key) != 1) {
+            InsertTailList(le, &item->list_entry);
             return;
         }
         
@@ -583,7 +583,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
     UINT32 node_size;
     LIST_ENTRY roots, chunks;
-    btrfs_root *root_root, *chunk_root, *extent_root;
+    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
     btrfs_device dev;
     BTRFS_UUID fsuuid, chunkuuid;
@@ -598,6 +598,9 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     root_root = add_root(&roots, BTRFS_ROOT_ROOT);
     chunk_root = add_root(&roots, BTRFS_ROOT_CHUNK);
     extent_root = add_root(&roots, BTRFS_ROOT_EXTENT);
+    dev_root = add_root(&roots, BTRFS_ROOT_DEVTREE);
+    add_root(&roots, BTRFS_ROOT_CHECKSUM);
+    fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
     
     init_device(&dev, 1, size, &fsuuid);
     
