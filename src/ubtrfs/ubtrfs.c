@@ -306,7 +306,7 @@ static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_device* dev, b
     return off;
 }
 
-static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
+static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, UINT32 sector_size) {
     UINT64 off, size;
     UINT16 stripes, i;
     btrfs_chunk* c;
@@ -347,7 +347,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     c->chunk_item->type = flags;
     c->chunk_item->opt_io_alignment = 0x10000;
     c->chunk_item->opt_io_width = 0x10000;
-    c->chunk_item->sector_size = 0x1000; // FIXME?
+    c->chunk_item->sector_size = sector_size;
     c->chunk_item->num_stripes = stripes;
     c->chunk_item->sub_stripes = 0;
     
@@ -521,13 +521,13 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuuid) {
+static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
     dev->dev_item.dev_id = id;
     dev->dev_item.num_bytes = size;
     dev->dev_item.bytes_used = 0;
-    dev->dev_item.optimal_io_align = 0x1000;
-    dev->dev_item.optimal_io_width = 0x1000;
-    dev->dev_item.minimal_io_size = 0x1000;
+    dev->dev_item.optimal_io_align = sector_size;
+    dev->dev_item.optimal_io_width = sector_size;
+    dev->dev_item.minimal_io_size = sector_size;
     dev->dev_item.type = 0;
     dev->dev_item.generation = 0;
     dev->dev_item.start_offset = 0;
@@ -541,7 +541,7 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_chunk* sys_chunk,
-                                  UINT32 node_size, BTRFS_UUID* fsuuid) {
+                                  UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
@@ -551,8 +551,8 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     KEY* key;
     
     sblen = sizeof(sb);
-    if (sblen & 0xfff) // FIXME - sector size
-        sblen = (sblen & 0x1000) + 0x1000;
+    if (sblen & (sector_size - 1))
+        sblen = (sblen & sector_size) + sector_size;
     
     sb = malloc(sblen);
     memset(sb, 0, sblen);
@@ -567,10 +567,10 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     sb->bytes_used = dev->dev_item.bytes_used;
     sb->root_dir_objectid = 6;
     sb->num_devices = 1;
-    sb->sector_size = 0x1000; // FIXME?
+    sb->sector_size = sector_size;
     sb->node_size = node_size;
     sb->leaf_size = node_size;
-    sb->stripe_size = 0x1000;
+    sb->stripe_size = sector_size;
     sb->n = sizeof(KEY) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
     sb->incompat_flags = BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
@@ -659,7 +659,7 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
 
 static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
-    UINT32 node_size;
+    UINT32 sector_size, node_size;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
@@ -681,10 +681,12 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
     reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
     
-    init_device(&dev, 1, size, &fsuuid);
+    sector_size = 0x1000; // FIXME - allow this to be set?
     
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid);
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid);
+    init_device(&dev, 1, size, &fsuuid, sector_size);
+    
+    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     
     node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
@@ -700,7 +702,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     if (!NT_SUCCESS(Status))
         return Status;
     
-    Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid);
+    Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid, sector_size);
     if (!NT_SUCCESS(Status))
         return Status;
     
