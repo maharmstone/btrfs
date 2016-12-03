@@ -36,6 +36,9 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 
 NTSTATUS NTAPI NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                            ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+
+NTSYSAPI NTSTATUS NTAPI RtlUnicodeToUTF8N(PCHAR UTF8StringDestination, ULONG UTF8StringMaxByteCount, PULONG UTF8StringActualByteCount,
+                                          PCWCH UnicodeStringSource, ULONG  UnicodeStringByteCount);
 #ifdef __cplusplus
 }
 #endif
@@ -541,7 +544,7 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_chunk* sys_chunk,
-                                  UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
+                                  UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
@@ -575,7 +578,29 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     sb->chunk_root_generation = 1;
     sb->incompat_flags = BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
-//     char label[MAX_LABEL_SIZE]; // FIXME
+    
+    if (label->Length > 0) {
+        ULONG utf8len;
+        
+        Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, label->Buffer, label->Length);
+        if (!NT_SUCCESS(Status)) {
+            free(sb);
+            return Status;
+        }
+        
+        // FIXME - check for slashes and backslashes
+        
+        if (utf8len > MAX_LABEL_SIZE) {
+            free(sb);
+            return STATUS_INVALID_VOLUME_LABEL;
+        }
+        
+        Status = RtlUnicodeToUTF8N((PCHAR)&sb->label, MAX_LABEL_SIZE, &utf8len, label->Buffer, label->Length);
+        if (!NT_SUCCESS(Status)) {
+            free(sb);
+            return Status;
+        }
+    }
     sb->cache_generation = 0xffffffffffffffff;
     
     key = (KEY*)sb->sys_chunk_array;
@@ -657,7 +682,7 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
     }
 }
 
-static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
+static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     NTSTATUS Status;
     UINT32 sector_size, node_size;
     LIST_ENTRY roots, chunks;
@@ -702,7 +727,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     if (!NT_SUCCESS(Status))
         return Status;
     
-    Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid, sector_size);
+    Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid, sector_size, label);
     if (!NT_SUCCESS(Status))
         return Status;
     
@@ -742,7 +767,7 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
     
-    Status = write_btrfs(h, gli.Length.QuadPart);
+    Status = write_btrfs(h, gli.Length.QuadPart, Label);
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
     
