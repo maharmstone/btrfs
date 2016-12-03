@@ -355,20 +355,36 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     return c;
 }
 
-static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size, btrfs_root* root_root) {
+typedef struct {
+    EXTENT_ITEM ei;
+    UINT8 type;
+    TREE_BLOCK_REF tbr;
+} EXTENT_ITEM_METADATA;
+
+static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size,
+                             btrfs_root* root_root, btrfs_root* extent_root) {
     LIST_ENTRY* le;
     
     le = roots->Flink;
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
+        EXTENT_ITEM_METADATA eim;
         
         r->header.address = c->lastoff;
         r->c = c;
         c->lastoff += node_size;
         
         // FIXME - avoid superblocks
-        // FIXME - add entry to tree 2
+        
+        eim.ei.refcount = 1;
+        eim.ei.generation = 1;
+        eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
+        eim.type = TYPE_TREE_BLOCK_REF;
+        eim.tbr.offset = r->id;
+        
+        // FIXME - support non-skinny EXTENT_ITEM
+        add_item(extent_root, r->header.address, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
         
         if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
             ROOT_ITEM ri;
@@ -642,7 +658,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev, dev_root, &chunkuuid);
     
     node_size = 0x4000;
-    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root);
+    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
     
     add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
     
