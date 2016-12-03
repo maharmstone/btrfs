@@ -326,21 +326,27 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
         
         le = le->Flink;
     }
-    
-    if (flags & BLOCK_FLAG_SYSTEM)
+
+    if (flags & BLOCK_FLAG_METADATA) {
+        if (dev->dev_item.num_bytes > 0xC80000000) // 50 GB
+            size = 0x40000000; // 1 GB
+        else
+            size = 0x10000000; // 256 MB
+    } else if (flags & BLOCK_FLAG_SYSTEM)
         size = 0x800000;
-    else
-        size = 0x40000000; // FIXME - 256 MB if small device
-        
-    // FIXME - make sure enough room
-    // FIXME - should be maximum of 10% of device size
+    
+    size = min(size, dev->dev_item.num_bytes / 10); // cap at 10%
+    size &= ~(sector_size - 1);
+    
+    stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
+    
+    if (dev->dev_item.num_bytes - dev->dev_item.bytes_used < stripes * size) // not enough space
+        return NULL;
     
     c = malloc(sizeof(btrfs_chunk));
     c->offset = off;
     c->lastoff = off;
     c->used = 0;
-    
-    stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
     
     c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE))); 
     
@@ -726,7 +732,12 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     init_device(&dev, 1, size, &fsuuid, sector_size);
     
     sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    if (!sys_chunk)
+        return STATUS_INTERNAL_ERROR;
+    
     metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    if (!metadata_chunk)
+        return STATUS_INTERNAL_ERROR;
     
     node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
