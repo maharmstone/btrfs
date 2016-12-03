@@ -348,7 +348,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     return c;
 }
 
-static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size) {
+static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size, btrfs_root* root_root) {
     LIST_ENTRY* le;
     
     le = roots->Flink;
@@ -362,6 +362,26 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         
         // FIXME - avoid superblocks
         // FIXME - add entry to tree 2
+        
+        if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
+            ROOT_ITEM ri;
+            
+            memset(&ri, 0, sizeof(ROOT_ITEM));
+            
+            ri.inode.generation = 1;
+            ri.inode.st_size = 3;
+            ri.inode.st_blocks = node_size;
+            ri.inode.st_nlink = 1;
+            ri.inode.st_mode = 040755;
+            ri.generation = 1;
+            ri.objid = 0; // FIXME - should be 0x100 for FS trees and 0xff..f7
+            ri.block_number = r->header.address;
+            ri.bytes_used = node_size;
+            ri.num_references = 1;
+            ri.generation2 = ri.generation;
+            
+            add_item(root_root, r->id, TYPE_ROOT_ITEM, 0, &ri, sizeof(ROOT_ITEM));
+        }
         
         le = le->Flink;
     }
@@ -563,7 +583,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
     UINT32 node_size;
     LIST_ENTRY roots, chunks;
-    btrfs_root *root_root, *chunk_root;
+    btrfs_root *root_root, *chunk_root, *extent_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
     btrfs_device dev;
     BTRFS_UUID fsuuid, chunkuuid;
@@ -577,6 +597,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     
     root_root = add_root(&roots, BTRFS_ROOT_ROOT);
     chunk_root = add_root(&roots, BTRFS_ROOT_CHUNK);
+    extent_root = add_root(&roots, BTRFS_ROOT_EXTENT);
     
     init_device(&dev, 1, size, &fsuuid);
     
@@ -584,7 +605,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev);
     
     node_size = 0x4000;
-    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size);
+    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root);
     
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
