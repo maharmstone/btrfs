@@ -240,19 +240,6 @@ static void free_roots(LIST_ENTRY* roots) {
     }
 }
 
-static UINT64 find_chunk_offset(UINT64 size, btrfs_device* dev) {
-    UINT64 off;
-    
-    // FIXME - add entry to root 4
-    
-    off = dev->last_alloc;
-    dev->last_alloc += size;
-    
-    dev->dev_item.bytes_used += size;
-    
-    return off;
-}
-
 static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT16 size) {
     LIST_ENTRY* le;
     btrfs_item* item;
@@ -286,7 +273,27 @@ static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset
     InsertTailList(&r->items, &item->list_entry);
 }
 
-static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_device* dev) {
+static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
+    UINT64 off;
+    DEV_EXTENT de;
+    
+    off = dev->last_alloc;
+    dev->last_alloc += size;
+    
+    dev->dev_item.bytes_used += size;
+    
+    de.chunktree = BTRFS_ROOT_CHUNK;
+    de.objid = 0x100;
+    de.address = offset;
+    de.length = size;
+    de.chunktree_uuid = *chunkuuid;
+    
+    add_item(dev_root, dev->dev_item.dev_id, TYPE_DEV_EXTENT, off, &de, sizeof(DEV_EXTENT));
+    
+    return off;
+}
+
+static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
     UINT64 off, size;
     UINT16 stripes, i;
     btrfs_chunk* c;
@@ -336,7 +343,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     
     for (i = 0; i < stripes; i++) {
         cis[i].dev_id = dev->dev_item.dev_id;
-        cis[i].offset = find_chunk_offset(size, dev);
+        cis[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
         cis[i].dev_uuid = dev->dev_item.device_uuid;
     }
     
@@ -631,8 +638,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     
     init_device(&dev, 1, size, &fsuuid);
     
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev);
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev);
+    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev, dev_root, &chunkuuid);
+    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev, dev_root, &chunkuuid);
     
     node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root);
