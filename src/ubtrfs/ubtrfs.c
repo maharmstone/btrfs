@@ -313,8 +313,6 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     LIST_ENTRY* le;
     CHUNK_ITEM_STRIPE* cis;
     
-    // FIXME - handle DUP flag
-    
     off = 0;
     le = chunks->Flink;
     while (le != chunks) {
@@ -339,7 +337,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     c->lastoff = off;
     c->used = 0;
     
-    stripes = 1; // FIXME
+    stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
     
     c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE))); 
     
@@ -362,7 +360,6 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     }
     
     add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE)));
-    // FIXME - add entry to root 2
 
     InsertTailList(chunks, &c->list_entry);
     
@@ -686,8 +683,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     
     init_device(&dev, 1, size, &fsuuid);
     
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev, dev_root, &chunkuuid);
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA/* | BLOCK_FLAG_DUPLICATE*/, chunk_root, &dev, dev_root, &chunkuuid);
+    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid);
+    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid);
     
     node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
