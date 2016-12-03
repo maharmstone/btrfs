@@ -637,9 +637,19 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     return STATUS_SUCCESS;
 }
 
+static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
+    ULONGLONG l = t.QuadPart - 116444736000000000;
+    
+    out->seconds = l / 10000000;
+    out->nanoseconds = (l % 10000000) * 100;
+}
+
 static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
     INODE_ITEM ii;
     INODE_REF* ir;
+    SYSTEMTIME systime;
+    FILETIME filetime;
+    LARGE_INTEGER time;
     
     memset(&ii, 0, sizeof(INODE_ITEM));
     
@@ -647,9 +657,14 @@ static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
     ii.st_blocks = node_size;
     ii.st_nlink = 1;
     ii.st_mode = 040755;
-//     BTRFS_TIME st_atime; // FIXME
-//     BTRFS_TIME st_ctime; // FIXME
-//     BTRFS_TIME st_mtime; // FIXME
+    
+    GetSystemTime(&systime);
+    SystemTimeToFileTime(&systime, &filetime);
+    time.LowPart = filetime.dwLowDateTime;
+    time.HighPart = filetime.dwHighDateTime;
+
+    win_time_to_unix(time, &ii.st_atime);
+    ii.st_ctime = ii.st_mtime = ii.st_atime;
     
     add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, &ii, sizeof(INODE_ITEM));
     
