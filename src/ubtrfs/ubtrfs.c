@@ -65,6 +65,7 @@ typedef struct {
     UINT64 offset;
     CHUNK_ITEM* chunk_item;
     UINT64 lastoff;
+    UINT64 used;
     LIST_ENTRY list_entry;
 } btrfs_chunk;
 
@@ -324,6 +325,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     c = malloc(sizeof(btrfs_chunk));
     c->offset = off;
     c->lastoff = off;
+    c->used = 0;
     
     stripes = 1; // FIXME
     
@@ -374,6 +376,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         r->header.address = c->lastoff;
         r->c = c;
         c->lastoff += node_size;
+        c->used += node_size;
         
         // FIXME - avoid superblocks
         
@@ -628,6 +631,23 @@ static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
     free(ir);
 }
 
+static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
+    LIST_ENTRY* le;
+    
+    le = chunks->Flink;
+    while (le != chunks) {
+        btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
+        BLOCK_GROUP_ITEM bgi;
+        
+        bgi.used = c->used;
+        bgi.chunk_tree = 0x100;
+        bgi.flags = c->chunk_item->type;
+        add_item(extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, &bgi, sizeof(BLOCK_GROUP_ITEM));
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     NTSTATUS Status;
     UINT32 node_size;
@@ -664,6 +684,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size) {
     
     init_fs_tree(fs_root, node_size);
     init_fs_tree(reloc_root, node_size);
+    
+    add_block_group_items(&chunks, extent_root);
     
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
