@@ -537,7 +537,7 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
     get_uuid(&dev->dev_item.device_uuid);
     dev->dev_item.fs_uuid = *fsuuid;
     
-    dev->last_alloc = 0; // FIXME - should skip first megabyte
+    dev->last_alloc = 0x100000; // skip first megabyte
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_chunk* sys_chunk,
