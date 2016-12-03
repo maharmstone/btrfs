@@ -231,10 +231,22 @@ static void free_roots(LIST_ENTRY* roots) {
     
     le = roots->Flink;
     while (le != roots) {
-        LIST_ENTRY* le2 = le->Flink;
+        LIST_ENTRY *le2 = le->Flink, *le3;
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         
-        // FIXME - free items
+        le3 = r->items.Flink;
+        while (le3 != &r->items) {
+            LIST_ENTRY* le4 = le3->Flink;
+            btrfs_item* item = CONTAINING_RECORD(le3, btrfs_item, list_entry);
+            
+            if (item->data)
+                free(item->data);
+            
+            free(item);
+            
+            le3 = le4;
+        }
+        
         free(r);
         
         le = le2;
