@@ -3543,10 +3543,14 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (fcb == Vcb->volume_fcb) {
-        TRACE("not allowing read of volume FCB\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto exit;
+    if (fcb == Vcb->volume_fcb) { // FIXME - check permissions?
+        TRACE("reading volume FCB\n");
+        
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(Vcb->devices[0].devobj, Irp);
+        
+        goto exit2;
     }
     
     ccb = FileObject->FsContext2;
