@@ -3871,18 +3871,16 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 #ifdef DEBUG_FCB_REFCOUNTS
         LONG rc, oc;
 #endif
+        ccb* ccb;
         
         TRACE("open operation for volume\n");
 
-        if (RequestedDisposition != FILE_OPEN &&
-            RequestedDisposition != FILE_OPEN_IF)
-        {
+        if (RequestedDisposition != FILE_OPEN && RequestedDisposition != FILE_OPEN_IF) {
             Status = STATUS_ACCESS_DENIED;
             goto exit;
         }
 
-        if (RequestedOptions & FILE_DIRECTORY_FILE)
-        {
+        if (RequestedOptions & FILE_DIRECTORY_FILE) {
             Status = STATUS_NOT_A_DIRECTORY;
             goto exit;
         }
@@ -3891,6 +3889,22 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Status = STATUS_ACCESS_DENIED;
             goto exit;
         }
+        
+        ccb = ExAllocatePoolWithTag(NonPagedPool, sizeof(*ccb), ALLOC_TAG);
+        if (!ccb) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        RtlZeroMemory(ccb, sizeof(*ccb));
+        
+        ccb->NodeType = BTRFS_NODE_TYPE_CCB;
+        ccb->NodeSize = sizeof(ccb);
+        ccb->disposition = RequestedDisposition;
+        ccb->options = RequestedOptions;
+        // FIXME - permissions?
+//         ccb->access = access_state->OriginalDesiredAccess;
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
@@ -3899,6 +3913,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         InterlockedIncrement(&Vcb->volume_fcb->refcount);
 #endif
         IrpSp->FileObject->FsContext = Vcb->volume_fcb;
+        IrpSp->FileObject->FsContext2 = ccb;
         
         IrpSp->FileObject->SectionObjectPointer = &Vcb->volume_fcb->nonpaged->segment_object;
 
