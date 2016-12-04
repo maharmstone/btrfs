@@ -2445,6 +2445,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     Vcb->superblock.num_devices++;
     Vcb->superblock.total_bytes += gli.Length.QuadPart;
+    Vcb->devices_loaded++;
     
     // FIXME - update volumes list
     // FIXME - remove device from mountmgr
