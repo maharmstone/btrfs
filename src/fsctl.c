@@ -2320,6 +2320,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     device *devices, *dev;
     DEV_ITEM* di;
     UINT64 dev_id, i;
+    UINT8* mb;
     
     // FIXME - deny access to non-Administrators
     // FIXME - check device is not readonly
@@ -2400,8 +2401,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         Status = add_space_entry(&dev->space, NULL, 0x100000, gli.Length.QuadPart - 0x100000);
         if (!NT_SUCCESS(Status)) {
             ERR("add_space_entry returned %08x\n", Status);
-            ObDereferenceObject(fileobj);
-            return STATUS_INTERNAL_ERROR;
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
         }
     }
     
@@ -2447,13 +2448,35 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     // FIXME - add stats entry to dev tree
-    // FIXME - clear first megabyte of device
+    
+    // We clear the first megabyte of the device, so Windows doesn't identify it as another FS
+    mb = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
+    if (!mb) {
+        ERR("out of memory\n");
+        ExFreePool(di);
+        ExFreePool(devices);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(mb, 0x100000);
+    
+    Status = write_data_phys(fileobj->DeviceObject, 0, mb, 0x100000);
+    if (!NT_SUCCESS(Status)) {
+        ERR("write_data_phys returned %08x\n", Status);
+        ExFreePool(di);
+        ExFreePool(devices);
+        goto end;
+    }
+    
+    ExFreePool(mb);
     
     Vcb->superblock.num_devices++;
     Vcb->superblock.total_bytes += gli.Length.QuadPart;
     Vcb->devices_loaded++;
     
     // FIXME - update volumes list
+    // FIXME - force dismount(?)
     // FIXME - remove device from mountmgr
 
     // update device pointers in chunks
