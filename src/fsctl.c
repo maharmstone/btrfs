@@ -2462,6 +2462,12 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         le = le->Flink;
     }
     
+    // update device space lists
+    for (i = 0; i < Vcb->superblock.num_devices - 1; i++) {
+        Vcb->devices[i].space.Flink->Blink = &devices[i].space;
+        Vcb->devices[i].space.Blink->Flink = &devices[i].space;
+    }
+    
     ExFreePool(Vcb->devices);
     Vcb->devices = devices;
     
