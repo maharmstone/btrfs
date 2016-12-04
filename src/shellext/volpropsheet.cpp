@@ -1700,6 +1700,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             add_lv_column(devlist, IDS_DEVLIST_NAME, w * 16 / 44);
             add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
             
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, TRUE);
+            
             RefreshDevList(devlist);
             
             break;
@@ -1714,6 +1716,36 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             KillTimer(hwndDlg, 1);
                             EndDialog(hwndDlg, 0);
                         return TRUE;
+                        
+                        case IDC_DEVICE_ADD:
+                        {
+                            WCHAR t[MAX_PATH + 100];
+                            SHELLEXECUTEINFOW sei;
+                            
+                            t[0] = '"';
+                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+                            wcscat(t, L"\",AddDevice");
+                            
+                            RtlZeroMemory(&sei, sizeof(sei));
+                            
+                            sei.cbSize = sizeof(sei);
+                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+                            sei.hwnd = 0;
+                            sei.lpVerb = L"runas";
+                            sei.lpFile = L"rundll32.exe";
+                            sei.lpParameters = t;
+                            sei.lpDirectory = 0;
+                            sei.nShow = SW_SHOW;
+                            sei.hInstApp = 0;  
+
+                            if (ShellExecuteExW(&sei)) {
+                                WaitForSingleObject(sei.hProcess, INFINITE);
+                                CloseHandle(sei.hProcess);
+                            } else
+                                ShowError(hwndDlg, GetLastError());
+                            
+                            return TRUE;
+                        }
                     }
                 break;
             }
@@ -1857,3 +1889,15 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
 HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
     return S_OK;
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void CALLBACK AddDevice(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow) {
+    MessageBoxW(hwnd, L"STUB", L"", MB_OK);
+}
+
+#ifdef __cplusplus
+}
+#endif

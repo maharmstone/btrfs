@@ -134,6 +134,7 @@
 #define IDC_LIMIT_START_SPINNER         1044
 #define IDC_BUTTON1                     1044
 #define IDC_DATA_OPTIONS                1044
+#define IDC_DEVICE_ADD                  1044
 #define IDC_LIMIT_START                 1045
 #define IDC_BUTTON2                     1045
 #define IDC_METADATA_OPTIONS            1045
