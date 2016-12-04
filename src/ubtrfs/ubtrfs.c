@@ -20,10 +20,23 @@
 #include <windef.h>
 #include <winbase.h>
 #include <winternl.h>
+#include <devioctl.h>
+#include <ntdddisk.h>
+
+#define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
+#ifdef __cplusplus
+}
+#endif
 
 HMODULE module;
 
-// following definitions come from fmifs.h in ReactOS
+// the following definitions come from fmifs.h in ReactOS
 
 typedef struct {
     ULONG Lines;
@@ -98,7 +111,46 @@ NTSTATUS WINAPI ChkdskEx(PUNICODE_STRING DriveRoot, BOOLEAN FixErrors, BOOLEAN V
 NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                         BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
-    // STUB
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES attr;
+    IO_STATUS_BLOCK iosb;
+    GET_LENGTH_INFORMATION gli;
+    
+    DebugBreak();
+    
+    InitializeObjectAttributes(&attr, DriveRoot, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&h, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+    
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli));
+    
+    if (!NT_SUCCESS(Status)) {
+        NtClose(h);
+        return Status;
+    }
+    
+    if (Callback) {
+        ULONG pc = 0;
+        Callback(PROGRESS, 0, (PVOID)&pc);
+    }
+    
+    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
+    
+    // FIXME - write
+    
+    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
+    
+    NtClose(h);
+    
+    if (Callback) {
+        BOOL success = NT_SUCCESS(Status);
+        Callback(DONE, 0, (PVOID)&success);
+    }
     
     return STATUS_NOT_IMPLEMENTED;
 }
