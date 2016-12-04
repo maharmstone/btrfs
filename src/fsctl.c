@@ -2441,8 +2441,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     // FIXME - add stats entry to dev tree
-    // FIXME - update values in superblocks (num devices, total size)
     // FIXME - clear first megabyte of device
+    
+    Vcb->superblock.num_devices++;
+    Vcb->superblock.total_bytes += gli.Length.QuadPart;
+    
     // FIXME - update volumes list
     // FIXME - remove device from mountmgr
 
