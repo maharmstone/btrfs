@@ -75,11 +75,31 @@ typedef NTSTATUS (NTAPI* pFormatEx)(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG 
                                     PUNICODE_STRING Label, BOOLEAN QuickFormat, ULONG ClusterSize,
                                     PFMIFSCALLBACK Callback);
 
-int main() {
+int main(int argc, char** argv) {
     HMODULE ubtrfs;
     NTSTATUS Status;
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
+    
+    if (argc != 2) {
+        char* c = argv[0] + strlen(argv[0]) - 1;
+        char* fn = NULL;
+        
+        while (c > argv[0]) {
+            if (*c == '/' || *c == '\\') {
+                fn = c + 1;
+                break;
+            }
+            c--;
+        }
+        
+        if (!fn)
+            fn = argv[0];
+
+        printf("Usage: %s [drive]\n", fn);
+        
+        return 0;
+    }
     
     ubtrfs = LoadLibraryW(L"ubtrfs.dll");
     
