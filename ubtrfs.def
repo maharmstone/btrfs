@@ -1,0 +1,3 @@
+EXPORTS
+    ChkdskEx			PRIVATE
+    FormatEx			PRIVATE

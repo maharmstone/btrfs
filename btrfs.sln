@@ -5,6 +5,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "btrfs", "btrfs.vcproj", "{1
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shellbtrfs", "shellbtrfs.vcproj", "{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubtrfs", "ubtrfs.vcproj", "{9A74844D-FC12-404A-B131-0AF7F3B4EB10}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -29,6 +31,14 @@ Global
 		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|Win32.Build.0 = Release|Win32
 		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|x64.ActiveCfg = Release|x64
 		{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}.Release|x64.Build.0 = Release|x64
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Debug|Win32.Build.0 = Debug|Win32
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Debug|x64.ActiveCfg = Debug|x64
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Debug|x64.Build.0 = Debug|x64
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|Win32.ActiveCfg = Release|Win32
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|Win32.Build.0 = Release|Win32
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|x64.ActiveCfg = Release|x64
+		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
