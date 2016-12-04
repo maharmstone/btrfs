@@ -416,6 +416,8 @@ BEGIN
     IDS_DEVLIST_SIZE        "Size"
     IDS_DEVLIST_READONLY_YES "Yes"
     IDS_DEVLIST_READONLY_NO "No"
+    IDS_DEVLIST_ALLOC       "Allocated"
+    IDS_DEVLIST_ALLOC_PC    "%"
 END
 
 #endif    // English (U.K.) resources

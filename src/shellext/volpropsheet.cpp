@@ -1527,80 +1527,175 @@ static int CALLBACK lv_sort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) {
         return 0;
 }
 
+static UINT64 find_dev_alloc(UINT64 dev_id, btrfs_usage* usage) {
+    btrfs_usage* bue;
+    UINT64 alloc;
+    
+    alloc = 0;
+    
+    bue = usage;
+    while (TRUE) {
+        UINT64 k;
+        
+        for (k = 0; k < bue->num_devices; k++) {
+            if (bue->devices[k].dev_id == dev_id)
+                alloc += bue->devices[k].alloc;
+        }
+
+        if (bue->next_entry > 0)
+            bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+        else
+            break;
+    }
+    
+    return alloc;
+}
+
+void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
+    HANDLE h;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    ULONG usagesize;
+    btrfs_usage* usage;
+    btrfs_device* bd = devices;
+    int i;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowError(GetParent(devlist), GetLastError());
+        return;
+    }
+
+    i = 0;
+    usagesize = 1024;
+    
+    usage = (btrfs_usage*)malloc(usagesize);
+
+    while (TRUE) {
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+        if (Status == STATUS_BUFFER_OVERFLOW) {
+            if (i < 8) {
+                usagesize += 1024;
+                
+                free(usage);
+                usage = (btrfs_usage*)malloc(usagesize);
+                
+                i++;
+            } else {
+                free(usage);
+                CloseHandle(h);
+                return;
+            }
+        } else
+            break;
+    }
+    
+    if (Status != STATUS_SUCCESS) {
+        free(usage);
+        CloseHandle(h);
+        return;
+    }
+
+    CloseHandle(h);
+    
+    i = 0;
+    while (TRUE) {
+        LVITEMW lvi;
+        WCHAR s[255];
+        ULONG namelen;
+        UINT64 alloc;
+        
+        // ID
+        
+        RtlZeroMemory(&lvi, sizeof(LVITEMW));
+        lvi.mask = LVIF_TEXT | LVIF_PARAM;
+        lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
+        lvi.lParam = bd->dev_id;
+        
+        StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llu", bd->dev_id);
+        lvi.pszText = s;
+
+        SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+        
+        // name
+        
+        lvi.mask = LVIF_TEXT;
+        lvi.iSubItem = 1;
+        
+        namelen = bd->namelen / sizeof(WCHAR);
+        
+        if (namelen > 254)
+            namelen = 254;
+        
+        memcpy(s, bd->name, namelen * sizeof(WCHAR));
+        s[namelen] = 0;
+        lvi.pszText = s;
+        
+        SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+        
+        // readonly
+        
+        lvi.iSubItem = 2;
+        LoadStringW(module, bd->readonly ? IDS_DEVLIST_READONLY_YES : IDS_DEVLIST_READONLY_NO, s, sizeof(s) / sizeof(WCHAR));
+        lvi.pszText = s;
+        SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+        
+        // size
+        
+        lvi.iSubItem = 3;
+        format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), FALSE);
+        lvi.pszText = s;
+        SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+        
+        // alloc
+        
+        alloc = find_dev_alloc(bd->dev_id, usage);
+        
+        lvi.iSubItem = 4;
+        format_size(alloc, s, sizeof(s) / sizeof(WCHAR), FALSE);
+        lvi.pszText = s;
+        SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+        
+        // alloc %
+        
+        StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%1.1f%%", (float)alloc * 100.0f / (float)bd->size);
+        lvi.iSubItem = 5;
+        lvi.pszText = s;
+        SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+
+        i++;
+        
+        if (bd->next_entry > 0)
+            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+        else
+            break;
+    }
+    
+    free(usage);
+    
+    SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
         {
             HWND devlist;
-            btrfs_device* bd = devices;
-            int i;
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
             
-            add_lv_column(devlist, IDS_DEVLIST_SIZE, 70);
+            add_lv_column(devlist, IDS_DEVLIST_ALLOC_PC, 50);
+            add_lv_column(devlist, IDS_DEVLIST_ALLOC, 60);
+            add_lv_column(devlist, IDS_DEVLIST_SIZE, 60);
             add_lv_column(devlist, IDS_DEVLIST_READONLY, 70);
             add_lv_column(devlist, IDS_DEVLIST_NAME, 160);
             add_lv_column(devlist, IDS_DEVLIST_ID, 40);
             
-            i = 0;
-            while (TRUE) {
-                LVITEMW lvi;
-                WCHAR s[255];
-                ULONG namelen;
-                
-                // ID
-                
-                RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                lvi.mask = LVIF_TEXT | LVIF_PARAM;
-                lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
-                lvi.lParam = bd->dev_id;
-                
-                StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llu", bd->dev_id);
-                lvi.pszText = s;
-
-                SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
-                
-                // name
-                
-                lvi.mask = LVIF_TEXT;
-                lvi.iSubItem = 1;
-                
-                namelen = bd->namelen / sizeof(WCHAR);
-                
-                if (namelen > 254)
-                    namelen = 254;
-                
-                memcpy(s, bd->name, namelen * sizeof(WCHAR));
-                s[namelen] = 0;
-                lvi.pszText = s;
-                
-                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
-                
-                // readonly
-                
-                lvi.iSubItem = 2;
-                LoadStringW(module, bd->readonly ? IDS_DEVLIST_READONLY_YES : IDS_DEVLIST_READONLY_NO, s, sizeof(s) / sizeof(WCHAR));
-                lvi.pszText = s;
-                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
-                
-                // size
-                
-                lvi.iSubItem = 3;
-                format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), FALSE);
-                lvi.pszText = s;
-                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
-
-                i++;
-                
-                if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
-                else
-                    break;
-            }
-            
-            SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
+            RefreshDevList(devlist);
             
             break;
         }

@@ -76,6 +76,8 @@
 #define IDS_DEVLIST_SIZE                165
 #define IDS_DEVLIST_READONLY_YES        166
 #define IDS_DEVLIST_READONLY_NO         167
+#define IDS_DEVLIST_ALLOC               168
+#define IDS_DEVLIST_ALLOC_PC            169
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
