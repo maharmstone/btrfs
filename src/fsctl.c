@@ -2310,9 +2310,42 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_device(device_extension* Vcb, void* data, ULONG length) {
-    FIXME("add_device\n");
-    int3;
+static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    NTSTATUS Status;
+    PFILE_OBJECT fileobj;
+    HANDLE h;
+    
+#if defined(_WIN64)
+    if (IoIs32bitProcess(Irp)) {
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength != sizeof(UINT32))
+            return STATUS_INVALID_PARAMETER;
+
+        h = (HANDLE)LongToHandle((*(PUINT32)Irp->AssociatedIrp.SystemBuffer));
+    } else {
+#endif
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength != sizeof(HANDLE))
+            return STATUS_INVALID_PARAMETER;
+
+        h = *(PHANDLE)Irp->AssociatedIrp.SystemBuffer;
+#if defined(_WIN64)
+    }
+#endif
+
+    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+        return Status;
+    }
+    
+    // FIXME - check not part of mounted multi-device Btrfs volume
+    // FIXME - add entries to chunk tree
+    // FIXME - update values in superblocks
+    // FIXME - write superblock on new device
+    // FIXME - update volumes list
+    
+    ObDereferenceObject(fileobj);
     
     return STATUS_SUCCESS;
 }
@@ -2859,7 +2892,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
             
         case FSCTL_BTRFS_ADD_DEVICE:
-            Status = add_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         default:
