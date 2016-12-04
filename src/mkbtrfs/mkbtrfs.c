@@ -78,6 +78,9 @@ typedef NTSTATUS (NTAPI* pFormatEx)(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG 
 int main(int argc, char** argv) {
     HMODULE ubtrfs;
     NTSTATUS Status;
+    BOOL baddrive = FALSE;
+    char* ds;
+    WCHAR dsw[10];
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
     
@@ -96,9 +99,29 @@ int main(int argc, char** argv) {
         if (!fn)
             fn = argv[0];
 
-        printf("Usage: %s [drive]\n", fn);
+        printf("Usage: %s drive\n", fn);
         
         return 0;
+    }
+    
+    ds = argv[1];
+    if ((ds[0] >= 'A' && ds[0] <= 'Z') || (ds[0] >= 'a' && ds[0] <= 'z')) {
+        if (ds[1] == 0 || (ds[1] == ':' && ds[2] == 0) || (ds[1] == ':' && ds[2] == '\\' && ds[3] == 0)) {
+            dsw[0] = '\\';
+            dsw[1] = '?';
+            dsw[2] = '?';
+            dsw[3] = '\\';
+            dsw[4] = ds[0];
+            dsw[5] = ':';
+            dsw[6] = 0;
+        } else
+            baddrive = TRUE;
+    } else
+        baddrive = TRUE;
+    
+    if (baddrive) {
+        fprintf(stderr, "Could not recognize drive %s\n", ds);
+        return 1;
     }
     
     ubtrfs = LoadLibraryW(L"ubtrfs.dll");
@@ -123,7 +146,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    drive.Buffer = L"\\??\\D:";
+    drive.Buffer = dsw;
     drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
     
     label.Buffer = L"test";
