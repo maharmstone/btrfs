@@ -4,4 +4,4 @@ EXPORTS
     DllRegisterServer   	PRIVATE
     DllUnregisterServer 	PRIVATE
     DllInstall				PRIVATE
-    AddDevice			PRIVATE
+    AddDeviceW			PRIVATE

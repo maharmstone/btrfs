@@ -1,4 +1,4 @@
-OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o
+OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o devices.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
@@ -26,6 +26,9 @@ propsheet.o: propsheet.cpp propsheet.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 volpropsheet.o: volpropsheet.cpp volpropsheet.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+devices.o: devices.cpp devices.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)

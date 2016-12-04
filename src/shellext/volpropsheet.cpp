@@ -1724,24 +1724,19 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             
                             t[0] = '"';
                             GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-                            wcscat(t, L"\",AddDevice");
+                            wcscat(t, L"\",AddDevice ");
+                            wcscat(t, fn);
                             
                             RtlZeroMemory(&sei, sizeof(sei));
                             
                             sei.cbSize = sizeof(sei);
-                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-                            sei.hwnd = 0;
+                            sei.hwnd = hwndDlg;
                             sei.lpVerb = L"runas";
                             sei.lpFile = L"rundll32.exe";
                             sei.lpParameters = t;
-                            sei.lpDirectory = 0;
                             sei.nShow = SW_SHOW;
-                            sei.hInstApp = 0;  
 
-                            if (ShellExecuteExW(&sei)) {
-                                WaitForSingleObject(sei.hProcess, INFINITE);
-                                CloseHandle(sei.hProcess);
-                            } else
+                            if (!ShellExecuteExW(&sei))
                                 ShowError(hwndDlg, GetLastError());
                             
                             return TRUE;
@@ -1889,15 +1884,3 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
 HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
     return S_OK;
 }
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void CALLBACK AddDevice(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow) {
-    MessageBoxW(hwnd, L"STUB", L"", MB_OK);
-}
-
-#ifdef __cplusplus
-}
-#endif

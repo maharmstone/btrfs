@@ -400,6 +400,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\shellext\devices.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\factory.h"
 				>
 			</File>
@@ -425,6 +429,10 @@
 			>
 			<File
 				RelativePath=".\src\shellext\contextmenu.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\src\shellext\devices.cpp"
 				>
 			</File>
 			<File

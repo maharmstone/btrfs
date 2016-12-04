@@ -1,0 +1,302 @@
+/* Copyright (c) Mark Harmstone 2016
+ * 
+ * This file is part of WinBtrfs.
+ * 
+ * WinBtrfs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public Licence as published by
+ * the Free Software Foundation, either version 3 of the Licence, or
+ * (at your option) any later version.
+ * 
+ * WinBtrfs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public Licence for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public Licence
+ * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
+
+#include "devices.h"
+#include "resource.h"
+#include <shlobj.h>
+#include <stdio.h>
+#include <winternl.h>
+
+typedef struct _OBJECT_DIRECTORY_INFORMATION {
+    UNICODE_STRING Name;
+    UNICODE_STRING TypeName;
+} OBJECT_DIRECTORY_INFORMATION, *POBJECT_DIRECTORY_INFORMATION;
+
+#define STATUS_SUCCESS          0
+#define DIRECTORY_QUERY         0x0001
+#define DIRECTORY_TRAVERSE      0x0002
+
+typedef NTSTATUS (NTAPI  *TFNNtOpenFile)(
+  OUT PHANDLE FileHandle,
+  IN ACCESS_MASK DesiredAccess,
+  IN POBJECT_ATTRIBUTES ObjectAttributes,
+  OUT PIO_STATUS_BLOCK IoStatusBlock,
+  IN ULONG ShareAccess,
+  IN ULONG OpenOptions
+);
+
+typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES* ObjectAttributes);
+
+typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
+                                                  BOOLEAN RestartScan, PULONG Context, PULONG ReturnLength);
+
+extern HMODULE module;
+
+static void add_partition_to_tree(HWND tree, HTREEITEM parent, UNICODE_STRING* us) {
+    TVINSERTSTRUCTW tis;
+    
+    tis.hParent = parent;
+    tis.hInsertAfter = TVI_LAST;
+    tis.itemex.mask = TVIF_TEXT;
+    tis.itemex.pszText = us->Buffer;
+    tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
+    
+    SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
+}
+
+static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES attr;
+    HANDLE h;
+    ULONG odisize, context;
+    OBJECT_DIRECTORY_INFORMATION* odi;
+    BOOL restart;
+    TVINSERTSTRUCTW tis;
+    HTREEITEM item;
+    HMODULE ntdll;
+    
+    pNtOpenDirectoryObject NtOpenDirectoryObject;
+    pNtQueryDirectoryObject NtQueryDirectoryObject;
+    
+    static const WCHAR partition[] = L"Partition";
+    
+    ntdll = GetModuleHandleW(L"ntdll.dll");
+    NtOpenDirectoryObject = (pNtOpenDirectoryObject)GetProcAddress(ntdll, "NtOpenDirectoryObject");
+    NtQueryDirectoryObject = (pNtQueryDirectoryObject)GetProcAddress(ntdll, "NtQueryDirectoryObject");
+    
+    tis.hParent = TVI_ROOT;
+    tis.hInsertAfter = TVI_LAST;
+    tis.itemex.mask = TVIF_TEXT;
+    tis.itemex.pszText = us->Buffer;
+    tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
+    
+    item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
+    if (!item) {
+        MessageBoxW(GetParent(tree), L"TVM_INSERTITEM failed", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    attr.Length = sizeof(attr);
+    attr.RootDirectory = 0;
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
+    attr.ObjectName = us;
+    attr.SecurityDescriptor = NULL;
+    attr.SecurityQualityOfService = NULL;
+
+    Status = NtOpenDirectoryObject(&h, DIRECTORY_TRAVERSE | DIRECTORY_QUERY, &attr);
+
+    if (!NT_SUCCESS(Status)) {
+        char s[255];
+        sprintf(s, "NtOpenDirectoryObject returned %08lx\n", Status);
+        MessageBoxA(GetParent(tree), s, "Error", MB_ICONERROR);
+        return;
+    }
+    
+    odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
+    odi = (OBJECT_DIRECTORY_INFORMATION*)malloc(odisize);
+    if (!odi) {
+        NtClose(h);
+        MessageBoxA(GetParent(tree), "Out of memory", "Error", MB_ICONERROR);
+        return;
+    }
+    
+    restart = TRUE;
+    do {
+        Status = NtQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL/*&retlen*/);
+        restart = FALSE;
+        
+        if (NT_SUCCESS(Status)) {
+            OBJECT_DIRECTORY_INFORMATION* odi2 = odi;
+            
+            while (odi2->Name.Buffer) {
+                if (odi2->Name.Length > wcslen(partition) * sizeof(WCHAR) &&
+                    RtlCompareMemory(odi2->Name.Buffer, partition, wcslen(partition) * sizeof(WCHAR)) == wcslen(partition) * sizeof(WCHAR)) {
+                        UNICODE_STRING us2;
+                        
+                        us2.Length = us2.MaximumLength = us->Length + sizeof(WCHAR) + odi2->Name.Length;
+                        us2.Buffer = (WCHAR*)malloc(us2.Length + sizeof(WCHAR));
+                        
+                        memcpy(us2.Buffer, us->Buffer, us->Length);
+                        us2.Buffer[us->Length / sizeof(WCHAR)] = '\\';
+                        memcpy((UINT8*)us2.Buffer + us->Length + sizeof(WCHAR), odi2->Name.Buffer, odi2->Name.Length);
+                        us2.Buffer[us2.Length / sizeof(WCHAR)] = 0;
+                    
+                        add_partition_to_tree(tree, item, &us2);
+                        
+                        free(us2.Buffer);
+                }
+                
+                odi2 = &odi2[1];
+            }
+        }
+    } while (NT_SUCCESS(Status));
+    
+    free(odi);
+    NtClose(h);
+}
+
+static void populate_device_tree(HWND tree) {
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES attr;
+    NTSTATUS Status;
+    HANDLE h;
+    ULONG odisize, context;
+    OBJECT_DIRECTORY_INFORMATION* odi;
+    BOOL restart;
+    HMODULE ntdll;
+    
+    pNtOpenDirectoryObject NtOpenDirectoryObject;
+    pNtQueryDirectoryObject NtQueryDirectoryObject;
+    
+    static const WCHAR device[] = L"\\Device";
+    static const WCHAR directory[] = L"Directory";
+    static const WCHAR harddisk[] = L"Harddisk";
+    
+    ntdll = GetModuleHandleW(L"ntdll.dll");
+    NtOpenDirectoryObject = (pNtOpenDirectoryObject)GetProcAddress(ntdll, "NtOpenDirectoryObject");
+    NtQueryDirectoryObject = (pNtQueryDirectoryObject)GetProcAddress(ntdll, "NtQueryDirectoryObject");
+    
+    us.Buffer = (WCHAR*)device;
+    us.Length = us.MaximumLength = wcslen(us.Buffer) * sizeof(WCHAR);
+    
+    attr.Length = sizeof(attr);
+    attr.RootDirectory = 0;
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
+    attr.ObjectName = &us;
+    attr.SecurityDescriptor = NULL;
+    attr.SecurityQualityOfService = NULL;
+
+    Status = NtOpenDirectoryObject(&h, DIRECTORY_TRAVERSE | DIRECTORY_QUERY, &attr);
+
+    if (!NT_SUCCESS(Status)) {
+        char s[255];
+        sprintf(s, "NtOpenDirectoryObject returned %08lx\n", Status);
+        MessageBoxA(GetParent(tree), s, "Error", MB_ICONERROR);
+        return;
+    }
+    
+    odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
+    odi = (OBJECT_DIRECTORY_INFORMATION*)malloc(odisize);
+    if (!odi) {
+        NtClose(h);
+        MessageBoxA(GetParent(tree), "Out of memory", "Error", MB_ICONERROR);
+        return;
+    }
+    
+    restart = TRUE;
+    do {
+        Status = NtQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL);
+        restart = FALSE;
+        
+        if (NT_SUCCESS(Status)) {
+            OBJECT_DIRECTORY_INFORMATION* odi2 = odi;
+            
+            while (odi2->Name.Buffer) {
+                if (odi2->TypeName.Length == wcslen(directory) * sizeof(WCHAR) &&
+                    RtlCompareMemory(odi2->TypeName.Buffer, directory, odi2->TypeName.Length) == odi2->TypeName.Length &&
+                    odi2->Name.Length > wcslen(harddisk) * sizeof(WCHAR) &&
+                    RtlCompareMemory(odi2->Name.Buffer, harddisk, wcslen(harddisk) * sizeof(WCHAR)) == wcslen(harddisk) * sizeof(WCHAR)) {
+                        UNICODE_STRING us2;
+                        
+                        us2.Length = us2.MaximumLength = us.Length + sizeof(WCHAR) + odi2->Name.Length;
+                        us2.Buffer = (WCHAR*)malloc(us2.Length + sizeof(WCHAR));
+                        
+                        memcpy(us2.Buffer, us.Buffer, us.Length);
+                        us2.Buffer[us.Length / sizeof(WCHAR)] = '\\';
+                        memcpy((UINT8*)us2.Buffer + us.Length + sizeof(WCHAR), odi2->Name.Buffer, odi2->Name.Length);
+                        us2.Buffer[us2.Length / sizeof(WCHAR)] = 0;
+                    
+                        add_device_to_tree(tree, &us2);
+                        
+                        free(us2.Buffer);
+                }
+                
+                odi2 = &odi2[1];
+            }
+        }
+    } while (NT_SUCCESS(Status));
+    
+    free(odi);
+    NtClose(h);
+}
+
+INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsDeviceAdd* bda;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bda = (BtrfsDeviceAdd*)lParam;
+    } else {
+        bda = (BtrfsDeviceAdd*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bda)
+        return bda->DeviceAddDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsDeviceAdd::ShowDialog() {
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICE_ADD), hwnd, stub_DeviceAddDlgProc, (LPARAM)cmdline);
+}
+
+BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
+    this->hinst = hinst;
+    this->hwnd = hwnd;
+    this->cmdline = cmdline;
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    BtrfsDeviceAdd* bda;
+    
+    bda = new BtrfsDeviceAdd(hinst, hwnd, lpszCmdLine);
+    bda->ShowDialog();
+    delete bda;
+}
+
+#ifdef __cplusplus
+}
+#endif

@@ -76,6 +76,7 @@
 #define IDS_DEVLIST_SIZE                165
 #define IDS_DEVLIST_READONLY_YES        166
 #define IDS_DEVLIST_READONLY_NO         167
+#define IDD_DEVICE_ADD                  167
 #define IDS_DEVLIST_ALLOC               168
 #define IDS_DEVLIST_ALLOC_PC            169
 #define IDC_UID                         1001
@@ -154,6 +155,7 @@
 #define IDC_STRIPES_START               1052
 #define IDC_DEVLIST                     1052
 #define IDC_STRIPES_END_SPINNER         1053
+#define IDC_DEVICE_TREE                 1053
 #define IDC_STRIPES_END                 1054
 #define IDC_CONVERT                     1055
 #define IDC_CONVERT_COMBO               1056
@@ -163,9 +165,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        167
+#define _APS_NEXT_RESOURCE_VALUE        168
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1053
+#define _APS_NEXT_CONTROL_VALUE         1054
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
