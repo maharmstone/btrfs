@@ -168,10 +168,8 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             ignore = FALSE;
 
             CloseHandle(h);
-        } else {
-            CloseHandle(h);
+        } else
             return E_FAIL;
-        }
     } else
         return E_FAIL;
 
@@ -563,10 +561,8 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
         ignore = FALSE;
 
         CloseHandle(h);
-    } else {
-        CloseHandle(h);
+    } else
         return;
-    }
     
     FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR));
     
@@ -668,43 +664,106 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
         }
     } else {
         ShowError(hwndDlg, GetLastError());
-        CloseHandle(h);
         return;
     }
 }
 
 void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
+    HANDLE h;
     BOOL balancing = FALSE;
+    btrfs_query_balance bqb;
+    WCHAR s[255], t[255];
     
-    // FIXME - get balance status
-    
-    if (!balancing && (first || balance_started)) {
-        WCHAR s[255];
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb, sizeof(btrfs_query_balance));
         
-        EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), FALSE);
-        
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
-        
-        if (!LoadStringW(module, IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
             return;
         }
-        
-        SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
-        
-        EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                     IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
-        
-        balance_started = FALSE;
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    balancing = bqb.running;
+    
+    if (!balancing) {
+        if (first || balance_started) {
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DATA), TRUE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), TRUE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM), TRUE);
+            
+            if (balance_started) {
+                CheckDlgButton(hwndDlg, IDC_DATA, BST_UNCHECKED);
+                CheckDlgButton(hwndDlg, IDC_METADATA, BST_UNCHECKED);
+                CheckDlgButton(hwndDlg, IDC_SYSTEM, BST_UNCHECKED);
+            }
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
+            
+            if (!LoadStringW(module, IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
+                ShowError(hwndDlg, GetLastError());
+                return;
+            }
+            
+            SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
+                        IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
+            
+            balance_started = FALSE;
+        }
         
         return;
     }
     
-    // FIXME
+    if (first || !balance_started) {
+        EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DATA), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM), FALSE);
+        
+        CheckDlgButton(hwndDlg, IDC_DATA, bqb.data_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwndDlg, IDC_METADATA, bqb.metadata_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwndDlg, IDC_SYSTEM, bqb.system_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? BST_CHECKED : BST_UNCHECKED);
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), bqb.data_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), bqb.metadata_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), bqb.system_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), FALSE);
+        
+        SendMessage(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqb.total_chunks);
+        
+        balance_started = TRUE;
+    }
+    
+    if (!LoadStringW(module, IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    SendMessage(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETPOS, (WPARAM)(bqb.total_chunks - bqb.chunks_left), 0);
+    
+    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.total_chunks - bqb.chunks_left,
+        bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        return;
+    
+    SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
 }
 
 void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {

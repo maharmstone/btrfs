@@ -59,6 +59,7 @@
 #define IDS_NO_BALANCE                  149
 #define IDS_SINGLE2                     150
 #define IDS_DEVID_LIST                  151
+#define IDS_BALANCE_RUNNING             152
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

@@ -377,6 +377,7 @@ BEGIN
     IDS_NO_BALANCE          "No balance is currently running."
     IDS_SINGLE2             "Single"
     IDS_DEVID_LIST          "%llu: %s"
+    IDS_BALANCE_RUNNING     "Balance is currently running (%llu out of %llu chunks processed, %1.1f%%)"
 END
 
 #endif    // English (U.K.) resources
