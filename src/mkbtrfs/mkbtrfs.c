@@ -21,6 +21,7 @@
 #include <devioctl.h>
 #include <ntdddisk.h>
 #include <stdio.h>
+#include <stringapiset.h>
 
 typedef enum {
     FMIFS_UNKNOWN0,
@@ -80,11 +81,11 @@ int main(int argc, char** argv) {
     NTSTATUS Status;
     BOOL baddrive = FALSE;
     char* ds;
-    WCHAR dsw[10];
+    WCHAR dsw[10], labelw[255];
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
     
-    if (argc != 2) {
+    if (argc < 2 || argc > 3) {
         char* c = argv[0] + strlen(argv[0]) - 1;
         char* fn = NULL;
         
@@ -99,7 +100,7 @@ int main(int argc, char** argv) {
         if (!fn)
             fn = argv[0];
 
-        printf("Usage: %s drive\n", fn);
+        printf("Usage: %s drive [label]\n", fn);
         
         return 0;
     }
@@ -122,6 +123,19 @@ int main(int argc, char** argv) {
     if (baddrive) {
         fprintf(stderr, "Could not recognize drive %s\n", ds);
         return 1;
+    }
+    
+    if (argc > 2) {
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[2], -1, labelw, sizeof(labelw) / sizeof(WCHAR))) {
+            fprintf(stderr, "MultiByteToWideChar failed (error %u)\n", GetLastError());
+            return 1;
+        }
+
+        label.Buffer = labelw;
+        label.Length = label.MaximumLength = wcslen(labelw) * sizeof(WCHAR);
+    } else {
+        label.Buffer = NULL;
+        label.Length = label.MaximumLength = 0;
     }
     
     ubtrfs = LoadLibraryW(L"ubtrfs.dll");
@@ -148,9 +162,6 @@ int main(int argc, char** argv) {
     
     drive.Buffer = dsw;
     drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
-    
-    label.Buffer = L"test";
-    label.Length = label.MaximumLength = wcslen(label.Buffer) * sizeof(WCHAR);
     
     Status = FormatEx(&drive, FMIFS_HARDDISK, &label, FALSE, 4096, NULL);
     
