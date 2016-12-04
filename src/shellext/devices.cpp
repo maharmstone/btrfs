@@ -265,31 +265,59 @@ static void populate_device_tree(HWND tree) {
 
 void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     NTSTATUS Status;
+    UNICODE_STRING vn;
+    OBJECT_ATTRIBUTES attr;
     IO_STATUS_BLOCK iosb;
-    HANDLE h;
+    HANDLE h, h2;
     
-    if (sel[0] == 0)
-        goto end;
+    if (sel[0] == 0) {
+        EndDialog(hwndDlg, 0);
+        return;
+    }
     
     // FIXME - ask for confirmation
     
     h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwndDlg, GetLastError());
         return;
     }
+    
+    vn.Length = vn.MaximumLength = wcslen(sel) * sizeof(WCHAR);
+    vn.Buffer = sel;
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_ADD_DEVICE, sel, wcslen(sel) * sizeof(WCHAR), NULL, 0);
+    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
-        goto end;
+        CloseHandle(h);
+        return;
+    }
+
+    Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwndDlg, Status);
+        NtClose(h2);
+        CloseHandle(h);
+        return;
+    }
+
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwndDlg, Status);
+        NtClose(h2);
+        CloseHandle(h);
+        return;
     }
     
-    // FIXME - say success
-
-end:
+    Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
+    if (!NT_SUCCESS(Status))
+        ShowNtStatusError(hwndDlg, Status);
+    
+    NtClose(h2);
     CloseHandle(h);
     
     EndDialog(hwndDlg, 0);
