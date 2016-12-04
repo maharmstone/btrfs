@@ -2321,6 +2321,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     DEV_ITEM* di;
     UINT64 dev_id, i;
     UINT8* mb;
+    UINT64* stats;
     
     // FIXME - deny access to non-Administrators
     // FIXME - check device is not readonly
@@ -2447,7 +2448,24 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         goto end;
     }
     
-    // FIXME - add stats entry to dev tree
+    // add stats entry to dev tree
+    stats = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * 5, ALLOC_TAG);
+    if (!stats) {
+        ERR("out of memory\n");
+        ExFreePool(devices);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    RtlZeroMemory(stats, sizeof(UINT64) * 5);
+    
+    if (!insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(devices);
+        ExFreePool(stats);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
     
     // We clear the first megabyte of the device, so Windows doesn't identify it as another FS
     mb = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
