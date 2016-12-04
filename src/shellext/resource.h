@@ -72,6 +72,10 @@
 #define IDS_BALANCE_CANCELLED           161
 #define IDS_DEVLIST_ID                  162
 #define IDS_DEVLIST_NAME                163
+#define IDS_DEVLIST_READONLY            164
+#define IDS_DEVLIST_SIZE                165
+#define IDS_DEVLIST_READONLY_YES        166
+#define IDS_DEVLIST_READONLY_NO         167
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -156,7 +160,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        111
+#define _APS_NEXT_RESOURCE_VALUE        167
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1053
 #define _APS_NEXT_SYMED_VALUE           101

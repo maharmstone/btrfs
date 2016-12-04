@@ -1539,6 +1539,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             
             devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
             
+            add_lv_column(devlist, IDS_DEVLIST_SIZE, 70);
+            add_lv_column(devlist, IDS_DEVLIST_READONLY, 70);
             add_lv_column(devlist, IDS_DEVLIST_NAME, 160);
             add_lv_column(devlist, IDS_DEVLIST_ID, 40);
             
@@ -1547,6 +1549,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 LVITEMW lvi;
                 WCHAR s[255];
                 ULONG namelen;
+                
+                // ID
                 
                 RtlZeroMemory(&lvi, sizeof(LVITEMW));
                 lvi.mask = LVIF_TEXT | LVIF_PARAM;
@@ -1557,6 +1561,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 lvi.pszText = s;
 
                 SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+                
+                // name
                 
                 lvi.mask = LVIF_TEXT;
                 lvi.iSubItem = 1;
@@ -1570,6 +1576,20 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 s[namelen] = 0;
                 lvi.pszText = s;
                 
+                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+                
+                // readonly
+                
+                lvi.iSubItem = 2;
+                LoadStringW(module, bd->readonly ? IDS_DEVLIST_READONLY_YES : IDS_DEVLIST_READONLY_NO, s, sizeof(s) / sizeof(WCHAR));
+                lvi.pszText = s;
+                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+                
+                // size
+                
+                lvi.iSubItem = 3;
+                format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), FALSE);
+                lvi.pszText = s;
                 SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
                 i++;
