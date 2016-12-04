@@ -668,6 +668,42 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
     }
 }
 
+void BtrfsVolPropSheet::PauseBalance(HWND hwndDlg) {
+    HANDLE h;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        btrfs_query_balance bqb2;
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        if (bqb2.status == BTRFS_BALANCE_PAUSED)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_BALANCE, NULL, 0, NULL, 0);
+        else if (bqb2.status == BTRFS_BALANCE_RUNNING)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, NULL, 0, NULL, 0);
+        else
+            return;
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+}
+
 void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     HANDLE h;
     BOOL balancing = FALSE;
@@ -691,10 +727,10 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         return;
     }
     
-    balancing = bqb.running;
+    balancing = bqb.status != BTRFS_BALANCE_STOPPED;
     
     if (!balancing) {
-        if (first || balance_started) {
+        if (first || balance_status != BTRFS_BALANCE_STOPPED) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), FALSE);
@@ -702,7 +738,7 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), TRUE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM), TRUE);
             
-            if (balance_started) {
+            if (balance_status != BTRFS_BALANCE_STOPPED) {
                 CheckDlgButton(hwndDlg, IDC_DATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_METADATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_SYSTEM, BST_UNCHECKED);
@@ -714,7 +750,7 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
             
-            if (!LoadStringW(module, balance_started ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
+            if (!LoadStringW(module, balance_status != BTRFS_BALANCE_STOPPED ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
@@ -722,15 +758,15 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                        IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
+                         IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
             
-            balance_started = FALSE;
+            balance_status = bqb.status;
         }
         
         return;
     }
     
-    if (first || !balance_started) {
+    if (first || balance_status == BTRFS_BALANCE_STOPPED) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), TRUE);
@@ -749,11 +785,11 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), FALSE);
         
         SendMessage(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqb.total_chunks);
-        
-        balance_started = TRUE;
     }
     
-    if (!LoadStringW(module, IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
+    balance_status = bqb.status;
+    
+    if (!LoadStringW(module, balance_status == BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
         ShowError(hwndDlg, GetLastError());
         return;
     }
@@ -963,6 +999,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
             int i, num_devices = 0, num_writeable_devices = 0;
             WCHAR s[255], u[255];
+            BOOL balance_started = balance_status != BTRFS_BALANCE_STOPPED;
             
             switch (opts_type) {
                 case 1:
@@ -1167,7 +1204,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
-                            if (balance_started)
+                            if (balance_status != BTRFS_BALANCE_STOPPED)
                                 EndDialog(hwndDlg, 0);
                             else
                                 SaveBalanceOpts(hwndDlg);
@@ -1290,6 +1327,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
             RtlZeroMemory(&metadata_opts, sizeof(btrfs_balance_opts));
             RtlZeroMemory(&system_opts, sizeof(btrfs_balance_opts));
             
+            balance_status = BTRFS_BALANCE_STOPPED;
             RefreshBalanceDlg(hwndDlg, TRUE);
             
             SetTimer(hwndDlg, 1, 1000, NULL);
@@ -1342,6 +1380,11 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                         
                         case IDC_START_BALANCE:
                             StartBalance(hwndDlg);
+                        return TRUE;
+                        
+                        case IDC_PAUSE_BALANCE:
+                            PauseBalance(hwndDlg);
+                            RefreshBalanceDlg(hwndDlg, FALSE);
                         return TRUE;
                     }
                 break;

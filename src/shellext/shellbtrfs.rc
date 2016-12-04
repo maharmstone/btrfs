@@ -387,6 +387,11 @@ BEGIN
     IDS_BALANCE_COMPLETE    "Balance completed successfully."
 END
 
+STRINGTABLE 
+BEGIN
+    IDS_BALANCE_PAUSED      "Balance is currently paused (%llu out of %llu chunks processed, %1.1f%%)"
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

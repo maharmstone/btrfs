@@ -84,6 +84,7 @@ public:
     void ShowBalanceOptions(HWND hwndDlg, UINT8 type);
     INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void SaveBalanceOpts(HWND hwndDlg);
+    void PauseBalance(HWND hwndDlg);
     
     btrfs_device* devices;
     
@@ -94,7 +95,7 @@ private:
     BOOL stgm_set;
     btrfs_usage* usage;
     WCHAR fn[MAX_PATH];
-    BOOL balance_started;
+    UINT32 balance_status;
     btrfs_balance_opts data_opts, metadata_opts, system_opts;
     UINT8 opts_type;
     btrfs_query_balance bqb;
