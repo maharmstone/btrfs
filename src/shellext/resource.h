@@ -14,7 +14,9 @@
 #define IDS_SNAPSHOT_FILENAME           107
 #define IDD_PROP_SHEET                  107
 #define IDS_PROP_SHEET_TITLE            108
+#define IDD_BALANCE_OPTIONS             108
 #define IDS_INODE_FILE                  109
+#define IDD_BALANCE                     109
 #define IDS_INODE_DIR                   110
 #define IDS_INODE_CHAR                  111
 #define IDS_INODE_BLOCK                 112
@@ -80,16 +82,64 @@
 #define IDC_SIZE_ZLIB2                  1022
 #define IDC_SIZE_LZO                    1022
 #define IDC_VOL_SHOW_USAGE              1022
-#define IDC_VOL_SHOW_USAGE2             1023
 #define IDC_VOL_BALANCE                 1023
+#define IDC_PROFILES                    1024
+#define IDC_PROFILES_SINGLE             1025
+#define IDC_PROFILES_DUP                1026
+#define IDC_PROFILES_RAID0              1027
+#define IDC_PROFILES_RAID1              1028
+#define IDC_PROFILES_RAID10             1029
+#define IDC_PROFILES_RAID5              1030
+#define IDC_PROFILES_RAID6              1031
+#define IDC_USAGE                       1032
+#define IDC_USAGE_START_SPINNER         1033
+#define IDC_USAGE_START                 1034
+#define IDC_USAGE_END_SPINNER           1035
+#define IDC_USAGE_END                   1036
+#define IDC_DEVID                       1037
+#define IDC_DEVID_COMBO                 1038
+#define IDC_DRANGE_START                1039
+#define IDC_DRANGE                      1040
+#define IDC_PROGRESS1                   1040
+#define IDC_DRANGE_END                  1041
+#define IDC_DATA                        1041
+#define IDC_LIMIT                       1042
+#define IDC_METADATA                    1042
+#define IDC_VRANGE                      1043
+#define IDC_SYSTEM                      1043
+#define IDC_LIMIT_START_SPINNER         1044
+#define IDC_BUTTON1                     1044
+#define IDC_DATA_OPTIONS                1044
+#define IDC_LIMIT_START                 1045
+#define IDC_BUTTON2                     1045
+#define IDC_METADATA_OPTIONS            1045
+#define IDC_VRANGE_END                  1046
+#define IDC_BUTTON3                     1046
+#define IDC_SYSTEM_OPTIONS              1046
+#define IDC_VRANGE_START                1047
+#define IDC_BALANCE_STATUS              1047
+#define IDC_LIMIT_END_SPINNER           1048
+#define IDC_START_BALANCE               1048
+#define IDC_LIMIT_END                   1049
+#define IDC_PAUSE_BALANCE               1049
+#define IDC_STRIPES                     1050
+#define IDC_BUTTON6                     1050
+#define IDC_CANCEL_BALANCE              1050
+#define IDC_STRIPES_START_SPINNER       1051
+#define IDC_STRIPES_START               1052
+#define IDC_STRIPES_END_SPINNER         1053
+#define IDC_STRIPES_END                 1054
+#define IDC_CONVERT                     1055
+#define IDC_CONVERT_COMBO               1056
+#define IDC_SOFT                        1057
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        107
+#define _APS_NEXT_RESOURCE_VALUE        110
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1024
+#define _APS_NEXT_CONTROL_VALUE         1051
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -78,6 +78,8 @@ public:
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void Balance(HWND hwndDlg);
+    INT_PTR CALLBACK BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void ShowBalance(HWND hwndDlg);
     
 private:
     LONG refcount;

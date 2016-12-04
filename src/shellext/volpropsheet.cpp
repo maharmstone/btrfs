@@ -600,6 +600,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                     }
                 break;
             }
+        break;
     }
     
     return FALSE;
@@ -651,6 +652,55 @@ void BtrfsVolPropSheet::Balance(HWND hwndDlg) {
     }
 }
 
+INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                            
+//                         case IDC_USAGE_REFRESH:
+//                             RefreshUsage(hwndDlg);
+//                         return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsVolPropSheet* bvps;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bvps = (BtrfsVolPropSheet*)lParam;
+    } else {
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bvps)
+        return bvps->BalanceDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsVolPropSheet::ShowBalance(HWND hwndDlg) {
+   DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE), hwndDlg, stub_BalanceDlgProc, (LPARAM)this);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -688,7 +738,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             break;
                             
                             case IDC_VOL_BALANCE:
-                                bps->Balance(hwndDlg);
+                                bps->ShowBalance(hwndDlg);
+//                                 bps->Balance(hwndDlg);
                             break;
                         }
                     }
