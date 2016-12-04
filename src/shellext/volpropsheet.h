@@ -80,6 +80,7 @@ public:
     void Balance(HWND hwndDlg);
     INT_PTR CALLBACK BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowBalance(HWND hwndDlg);
+    void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
     
 private:
     LONG refcount;
@@ -89,4 +90,5 @@ private:
     btrfs_device* devices;
     btrfs_usage* usage;
     WCHAR fn[MAX_PATH];
+    BOOL balance_started;
 };

@@ -56,6 +56,7 @@
 #define IDS_USAGE_DEV_UNALLOC           146
 #define IDS_USAGE_DATA_RATIO            147
 #define IDS_USAGE_METADATA_RATIO        148
+#define IDS_NO_BALANCE                  149
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -101,6 +102,7 @@
 #define IDC_DRANGE_START                1039
 #define IDC_DRANGE                      1040
 #define IDC_PROGRESS1                   1040
+#define IDC_BALANCE_PROGRESS            1040
 #define IDC_DRANGE_END                  1041
 #define IDC_DATA                        1041
 #define IDC_LIMIT                       1042

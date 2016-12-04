@@ -652,11 +652,46 @@ void BtrfsVolPropSheet::Balance(HWND hwndDlg) {
     }
 }
 
+void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
+    BOOL balancing = FALSE;
+    
+    // FIXME - get balance status
+    
+    if (!balancing && (first || balance_started)) {
+        WCHAR s[255];
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), FALSE);
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
+        
+        if (!LoadStringW(module, IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
+        
+        balance_started = FALSE;
+        
+        return;
+    }
+    
+    // FIXME
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
         {
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            RefreshBalanceDlg(hwndDlg, TRUE);
+            
+            SetTimer(hwndDlg, 1, 1000, NULL);
+            
             break;
         }
         
@@ -666,16 +701,29 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                     switch (LOWORD(wParam)) {
                         case IDOK:
                         case IDCANCEL:
+                            KillTimer(hwndDlg, 1);
                             EndDialog(hwndDlg, 0);
                         return TRUE;
-                            
-//                         case IDC_USAGE_REFRESH:
-//                             RefreshUsage(hwndDlg);
-//                         return TRUE;
+                        
+                        case IDC_DATA:
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
+                        return TRUE;
+                        
+                        case IDC_METADATA:
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
+                        return TRUE;
+                        
+                        case IDC_SYSTEM:
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
+                        return TRUE;
                     }
                 break;
             }
         break;
+        
+        case WM_TIMER:
+            RefreshBalanceDlg(hwndDlg, FALSE);
+            break;
     }
     
     return FALSE;
