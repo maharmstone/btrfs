@@ -2317,6 +2317,32 @@ static NTSTATUS add_device(device_extension* Vcb, void* data, ULONG length) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS allow_extended_dasd_io(device_extension* Vcb, PFILE_OBJECT FileObject) {
+    fcb* fcb;
+    ccb* ccb;
+    
+    TRACE("FSCTL_ALLOW_EXTENDED_DASD_IO\n");
+    
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+    
+    fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+    
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (fcb != Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!ccb || !ccb->manage_volume_privilege)
+        return STATUS_INVALID_PARAMETER;
+    
+    ccb->allow_extended_dasd_io = TRUE;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2451,8 +2477,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_ALLOW_EXTENDED_DASD_IO:
-            WARN("STUB: FSCTL_ALLOW_EXTENDED_DASD_IO\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = allow_extended_dasd_io(DeviceObject->DeviceExtension, IrpSp->FileObject);
             break;
 
         case FSCTL_FIND_FILES_BY_SID:

@@ -238,6 +238,7 @@ typedef struct _ccb {
     BOOL has_wildcard;
     BOOL specific_file;
     BOOL manage_volume_privilege;
+    BOOL allow_extended_dasd_io;
     ACCESS_MASK access;
     file_ref* fileref;
     UNICODE_STRING filename;
