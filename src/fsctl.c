@@ -2322,6 +2322,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     UINT64 dev_id, i;
     UINT8* mb;
     UINT64* stats;
+    MOUNTDEV_NAME mdn1, *mdn2;
+    UNICODE_STRING volname;
+    volume* v;
+    
+    volname.Buffer = NULL;
     
     // FIXME - deny access to non-Administrators
     // FIXME - check device is not readonly
@@ -2367,6 +2372,58 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         ObDereferenceObject(fileobj);
         return STATUS_INTERNAL_ERROR;
     }
+    
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
+                       &mdn1, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+    if (Status == STATUS_BUFFER_OVERFLOW) {
+        mdn2 = ExAllocatePoolWithTag(PagedPool, sizeof(MOUNTDEV_NAME) - 1 + mdn1.NameLength, ALLOC_TAG);
+        if (!mdn2) {
+            ERR("out of memory\n");
+            ObDereferenceObject(fileobj);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
+                           mdn2, sizeof(MOUNTDEV_NAME) - 1 + mdn1.NameLength, TRUE, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+            ObDereferenceObject(fileobj);
+            return Status;
+        }
+    } else if (NT_SUCCESS(Status)) {
+        mdn2 = ExAllocatePoolWithTag(PagedPool, sizeof(MOUNTDEV_NAME), ALLOC_TAG);
+        if (!mdn2) {
+            ERR("out of memory\n");
+            ObDereferenceObject(fileobj);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        RtlCopyMemory(mdn2, &mdn1, sizeof(MOUNTDEV_NAME));
+    } else {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        ObDereferenceObject(fileobj);
+        return Status;
+    }
+    
+    if (mdn2->NameLength == 0) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned zero-length name\n");
+        ObDereferenceObject(fileobj);
+        ExFreePool(mdn2);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    volname.Length = volname.MaximumLength = mdn2->NameLength;
+    volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG);
+    if (!volname.Buffer) {
+        ERR("out of memory\n");
+        ObDereferenceObject(fileobj);
+        ExFreePool(mdn2);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(volname.Buffer, mdn2->Name, volname.Length);
+    ExFreePool(mdn2);
     
     InitializeListHead(&rollback);
     
@@ -2471,7 +2528,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     mb = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
     if (!mb) {
         ERR("out of memory\n");
-        ExFreePool(di);
         ExFreePool(devices);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -2482,7 +2538,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     Status = write_data_phys(fileobj->DeviceObject, 0, mb, 0x100000);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data_phys returned %08x\n", Status);
-        ExFreePool(di);
         ExFreePool(devices);
         goto end;
     }
@@ -2493,8 +2548,25 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     Vcb->superblock.total_bytes += gli.Length.QuadPart;
     Vcb->devices_loaded++;
     
-    // FIXME - update volumes list
-    // FIXME - force dismount(?)
+    v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
+    if (!v) {
+        ERR("out of memory\n");
+        ExFreePool(devices);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    v->fsuuid = Vcb->superblock.uuid;
+    v->devuuid = dev->devitem.device_uuid;
+    v->devnum = dev_id;
+    v->devpath = volname;
+    v->length = gli.Length.QuadPart;
+    v->gen1 = v->gen2 = Vcb->superblock.generation;
+    v->seeding = FALSE;
+    v->processed = TRUE;
+    InsertTailList(&volumes, &v->list_entry);
+    volname.Buffer = NULL;
+    
     // FIXME - remove device from mountmgr
 
     // update device pointers in chunks
@@ -2531,6 +2603,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
 end:
     ExReleaseResourceLite(&Vcb->tree_lock);
     ObDereferenceObject(fileobj);
+    
+    if (volname.Buffer)
+        ExFreePool(volname.Buffer);
     
     return Status;
 }
