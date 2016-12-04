@@ -1503,6 +1503,109 @@ void BtrfsVolPropSheet::ShowBalance(HWND hwndDlg) {
    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE), hwndDlg, stub_BalanceDlgProc, (LPARAM)this);
 }
 
+static void add_lv_column(HWND list, int string, int cx) {
+    LVCOLUMNW lvc;
+    WCHAR s[255];
+    
+    if (!LoadStringW(module, string, s, sizeof(s) / sizeof(WCHAR))) {
+        ShowError(GetParent(list), GetLastError());
+        return;
+    }
+    
+    lvc.mask = LVCF_TEXT|LVCF_WIDTH;
+    lvc.pszText = s;
+    lvc.cx = cx;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
+}
+
+INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            HWND devlist;
+            btrfs_device* bd = devices;
+            int i;
+            
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            
+            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+            
+            add_lv_column(devlist, IDS_DEVLIST_NAME, 160);
+            add_lv_column(devlist, IDS_DEVLIST_ID, 40);
+            
+            i = 0;
+            while (TRUE) {
+                LVITEMW lvi;
+                WCHAR s[255];
+                ULONG namelen;
+                
+                RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                lvi.mask = LVIF_TEXT;
+                lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
+                
+                StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llu", bd->dev_id);
+                lvi.pszText = s;
+
+                SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+                
+                lvi.iSubItem = 1;
+                
+                namelen = min(254, bd->namelen / sizeof(WCHAR));
+                memcpy(s, bd->name, namelen * sizeof(WCHAR));
+                s[namelen] = 0;
+                lvi.pszText = s;
+                
+                SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
+
+                i++;
+                
+                if (bd->next_entry > 0)
+                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                else
+                    break;
+            }
+            
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            KillTimer(hwndDlg, 1);
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsVolPropSheet* bvps;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bvps = (BtrfsVolPropSheet*)lParam;
+    } else {
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bvps)
+        return bvps->DeviceDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsVolPropSheet::ShowDevices(HWND hwndDlg) {
+   DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICES), hwndDlg, stub_DeviceDlgProc, (LPARAM)this);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -1558,6 +1661,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             case IDC_VOL_BALANCE:
                                 bps->ShowBalance(hwndDlg);
 //                                 bps->Balance(hwndDlg);
+                            break;
+                            
+                            case IDC_VOL_DEVICES:
+                                bps->ShowDevices(hwndDlg);
                             break;
                         }
                     }

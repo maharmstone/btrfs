@@ -160,7 +160,8 @@ CAPTION "s"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
     PUSHBUTTON      "Show &usage...",IDC_VOL_SHOW_USAGE,24,27,67,19
-    PUSHBUTTON      "Balance...",IDC_VOL_BALANCE,24,55,67,19
+    PUSHBUTTON      "&Balance...",IDC_VOL_BALANCE,24,54,67,19
+    PUSHBUTTON      "&Devices...",IDC_VOL_DEVICES,24,81,67,19
 END
 
 IDD_VOL_USAGE DIALOGEX 0, 0, 235, 242
@@ -241,6 +242,16 @@ BEGIN
     PUSHBUTTON      "&Cancel balance",IDC_CANCEL_BALANCE,163,117,58,14
 END
 
+IDD_DEVICES DIALOGEX 0, 0, 318, 185
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Devices"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,207,164,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,261,164,50,14
+    CONTROL         "",IDC_DEVLIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,7,7,304,144
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -296,6 +307,14 @@ BEGIN
         RIGHTMARGIN, 247
         TOPMARGIN, 7
         BOTTOMMARGIN, 160
+    END
+
+    IDD_DEVICES, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 311
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 178
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -391,6 +410,8 @@ STRINGTABLE
 BEGIN
     IDS_BALANCE_PAUSED      "Balance is currently paused (%llu out of %llu chunks processed, %1.1f%%)"
     IDS_BALANCE_CANCELLED   "Balance cancelled."
+    IDS_DEVLIST_ID          "ID"
+    IDS_DEVLIST_NAME        "Name"
 END
 
 #endif    // English (U.K.) resources

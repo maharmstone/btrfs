@@ -18,6 +18,7 @@
 #define IDS_INODE_FILE                  109
 #define IDD_BALANCE                     109
 #define IDS_INODE_DIR                   110
+#define IDD_DEVICES                     110
 #define IDS_INODE_CHAR                  111
 #define IDS_INODE_BLOCK                 112
 #define IDS_INODE_FIFO                  113
@@ -69,6 +70,8 @@
 #define IDS_BALANCE_COMPLETE            159
 #define IDS_BALANCE_PAUSED              160
 #define IDS_BALANCE_CANCELLED           161
+#define IDS_DEVLIST_ID                  162
+#define IDS_DEVLIST_NAME                163
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -99,6 +102,7 @@
 #define IDC_PROFILES                    1024
 #define IDC_PROFILES_SINGLE             1025
 #define IDC_PROFILES_DUP                1026
+#define IDC_VOL_DEVICES                 1026
 #define IDC_PROFILES_RAID0              1027
 #define IDC_PROFILES_RAID1              1028
 #define IDC_PROFILES_RAID10             1029
@@ -141,6 +145,7 @@
 #define IDC_CANCEL_BALANCE              1050
 #define IDC_STRIPES_START_SPINNER       1051
 #define IDC_STRIPES_START               1052
+#define IDC_DEVLIST                     1052
 #define IDC_STRIPES_END_SPINNER         1053
 #define IDC_STRIPES_END                 1054
 #define IDC_CONVERT                     1055
@@ -151,9 +156,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        110
+#define _APS_NEXT_RESOURCE_VALUE        111
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1051
+#define _APS_NEXT_CONTROL_VALUE         1053
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
