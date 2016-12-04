@@ -66,6 +66,7 @@
 #define IDS_STRIPES_END_BEFORE_START    156
 #define IDS_USAGE_END_BEFORE_START      157
 #define IDS_ERROR                       158
+#define IDS_BALANCE_COMPLETE            159
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

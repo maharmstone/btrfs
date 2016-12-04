@@ -384,6 +384,7 @@ BEGIN
     IDS_STRIPES_END_BEFORE_START "Stripes end is before start."
     IDS_USAGE_END_BEFORE_START "Usage end is before start."
     IDS_ERROR               "Error"
+    IDS_BALANCE_COMPLETE    "Balance completed successfully."
 END
 
 #endif    // English (U.K.) resources

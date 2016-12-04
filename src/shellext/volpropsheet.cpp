@@ -714,7 +714,7 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
             
-            if (!LoadStringW(module, IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
+            if (!LoadStringW(module, balance_started ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
