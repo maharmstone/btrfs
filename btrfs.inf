@@ -66,10 +66,14 @@ LoadOrderGroup   = "File System"
 
 [Btrfs.DllFiles]
 shellbtrfs.dll
+ubtrfs.dll
+mkbtrfs.exe
 
 [SourceDisksFiles]
 btrfs.sys = 1,,
 shellbtrfs.dll = 1,,
+ubtrfs.dll = 1,,
+mkbtrfs.exe = 1,,
 
 [SourceDisksNames.x86]
 1 = %DiskId1%,,,\x86
