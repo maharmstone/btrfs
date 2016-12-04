@@ -3787,6 +3787,17 @@ NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static BOOL has_manage_volume_privilege(ACCESS_STATE* access_state, KPROCESSOR_MODE processor_mode) {
+    PRIVILEGE_SET privset;
+
+    privset.PrivilegeCount = 1;
+    privset.Control = PRIVILEGE_SET_ALL_NECESSARY;
+    privset.Privilege[0].Luid = RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE);
+    privset.Privilege[0].Attributes = 0;
+
+    return SePrivilegeCheck(&privset, &access_state->SubjectSecurityContext, processor_mode) ? TRUE : FALSE;
+}
+
 NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
@@ -3905,6 +3916,8 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ccb->options = RequestedOptions;
         // FIXME - permissions?
 //         ccb->access = access_state->OriginalDesiredAccess;
+        ccb->manage_volume_privilege = has_manage_volume_privilege(IrpSp->Parameters.Create.SecurityContext->AccessState,
+                                                                   IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode);
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);

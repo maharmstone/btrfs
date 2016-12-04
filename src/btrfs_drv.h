@@ -237,6 +237,7 @@ typedef struct _ccb {
     UNICODE_STRING query_string;
     BOOL has_wildcard;
     BOOL specific_file;
+    BOOL manage_volume_privilege;
     ACCESS_MASK access;
     file_ref* fileref;
     UNICODE_STRING filename;
