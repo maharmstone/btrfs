@@ -378,6 +378,12 @@ BEGIN
     IDS_SINGLE2             "Single"
     IDS_DEVID_LIST          "%llu: %s"
     IDS_BALANCE_RUNNING     "Balance is currently running (%llu out of %llu chunks processed, %1.1f%%)"
+    IDS_DRANGE_END_BEFORE_START "Device range end is before start."
+    IDS_VRANGE_END_BEFORE_START "Virtual range end is before start."
+    IDS_LIMIT_END_BEFORE_START "Limit end is before start."
+    IDS_STRIPES_END_BEFORE_START "Stripes end is before start."
+    IDS_USAGE_END_BEFORE_START "Usage end is before start."
+    IDS_ERROR               "Error"
 END
 
 #endif    // English (U.K.) resources

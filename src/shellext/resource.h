@@ -60,6 +60,12 @@
 #define IDS_SINGLE2                     150
 #define IDS_DEVID_LIST                  151
 #define IDS_BALANCE_RUNNING             152
+#define IDS_DRANGE_END_BEFORE_START     153
+#define IDS_VRANGE_END_BEFORE_START     154
+#define IDS_LIMIT_END_BEFORE_START      155
+#define IDS_STRIPES_END_BEFORE_START    156
+#define IDS_USAGE_END_BEFORE_START      157
+#define IDS_ERROR                       158
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

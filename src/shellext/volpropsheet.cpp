@@ -768,6 +768,22 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
 }
 
+void ShowStringError(HWND hwndDlg, int num) {
+    WCHAR title[255], s[255];
+    
+    if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    if (!LoadStringW(module, num, s, sizeof(s) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    MessageBoxW(hwndDlg, s, title, MB_ICONERROR);
+}
+
 void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
     btrfs_balance_opts* opts;
     
@@ -845,7 +861,10 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_DRANGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->drange_end = _wtoi64(s);
         
-        // FIXME - check start is before end
+        if (opts->drange_end < opts->drange_start) {
+            ShowStringError(hwndDlg, IDS_DRANGE_END_BEFORE_START);
+            return;
+        }
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_VRANGE) == BST_CHECKED) {
@@ -859,7 +878,10 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_VRANGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->vrange_end = _wtoi64(s);
         
-        // FIXME - check start is before end
+        if (opts->vrange_end < opts->vrange_start) {
+            ShowStringError(hwndDlg, IDS_VRANGE_END_BEFORE_START);
+            return;
+        }
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_LIMIT) == BST_CHECKED) {
@@ -873,7 +895,10 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_LIMIT_END), s, sizeof(s) / sizeof(WCHAR));
         opts->limit_end = _wtoi64(s);
         
-        // FIXME - check start is before end
+        if (opts->limit_end < opts->limit_start) {
+            ShowStringError(hwndDlg, IDS_LIMIT_END_BEFORE_START);
+            return;
+        }
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_STRIPES) == BST_CHECKED) {
@@ -887,7 +912,10 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_END), s, sizeof(s) / sizeof(WCHAR));
         opts->stripes_end = _wtoi(s);
         
-        // FIXME - check start is before end
+        if (opts->stripes_end < opts->stripes_start) {
+            ShowStringError(hwndDlg, IDS_STRIPES_END_BEFORE_START);
+            return;
+        }
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_USAGE) == BST_CHECKED) {
@@ -901,7 +929,10 @@ void BtrfsVolPropSheet::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->usage_end = _wtoi(s);
         
-        // FIXME - check start is before end
+        if (opts->usage_end < opts->usage_start) {
+            ShowStringError(hwndDlg, IDS_USAGE_END_BEFORE_START);
+            return;
+        }
     }
     
     if (IsDlgButtonChecked(hwndDlg, IDC_CONVERT) == BST_CHECKED) {
