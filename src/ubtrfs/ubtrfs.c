@@ -256,6 +256,21 @@ static void free_roots(LIST_ENTRY* roots) {
     }
 }
 
+static void free_chunks(LIST_ENTRY* chunks) {
+    LIST_ENTRY* le;
+    
+    le = chunks->Flink;
+    while (le != chunks) {
+        LIST_ENTRY *le2 = le->Flink;
+        btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
+        
+        free(c->chunk_item);
+        free(c);
+        
+        le = le2;
+    }
+}
+
 static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT16 size) {
     LIST_ENTRY* le;
     btrfs_item* item;
@@ -755,6 +770,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     
     init_device(&dev, 1, size, &fsuuid, sector_size);
     
+    // FIXME - don't set DUPLICATE flag if SSD
+    
     sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
@@ -786,7 +803,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
         return Status;
     
     free_roots(&roots);
-    // FIXME - free chunks etc.
+    free_chunks(&chunks);
     
     return STATUS_SUCCESS;
 }
