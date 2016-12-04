@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shellbtrfs", "shellbtrfs.vc
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubtrfs", "ubtrfs.vcproj", "{9A74844D-FC12-404A-B131-0AF7F3B4EB10}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mkbtrfs", "mkbtrfs.vcproj", "{2518533B-5F76-4B31-B906-7BFD15C1379A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -39,6 +41,14 @@ Global
 		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|Win32.Build.0 = Release|Win32
 		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|x64.ActiveCfg = Release|x64
 		{9A74844D-FC12-404A-B131-0AF7F3B4EB10}.Release|x64.Build.0 = Release|x64
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Debug|Win32.Build.0 = Debug|Win32
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Debug|x64.ActiveCfg = Debug|x64
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Debug|x64.Build.0 = Debug|x64
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Release|Win32.ActiveCfg = Release|Win32
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Release|Win32.Build.0 = Release|Win32
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Release|x64.ActiveCfg = Release|x64
+		{2518533B-5F76-4B31-B906-7BFD15C1379A}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
