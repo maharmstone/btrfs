@@ -333,7 +333,8 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;_USRDLL"
+				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared"
+				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;_USRDLL;_AMD64_"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
