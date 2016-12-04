@@ -390,6 +390,7 @@ END
 STRINGTABLE 
 BEGIN
     IDS_BALANCE_PAUSED      "Balance is currently paused (%llu out of %llu chunks processed, %1.1f%%)"
+    IDS_BALANCE_CANCELLED   "Balance cancelled."
 END
 
 #endif    // English (U.K.) resources

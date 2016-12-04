@@ -658,6 +658,7 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
             bsb.opts[2].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
+        cancelling = FALSE;
         
         if (Status != STATUS_SUCCESS) {
             ShowNtStatusError(hwndDlg, Status);
@@ -734,6 +735,8 @@ void BtrfsVolPropSheet::StopBalance(HWND hwndDlg) {
             CloseHandle(h);
             return;
         }
+        
+        cancelling = TRUE;
     } else {
         ShowError(hwndDlg, GetLastError());
         return;
@@ -763,6 +766,9 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         return;
     }
     
+    if (cancelling)
+        bqb.status = BTRFS_BALANCE_STOPPED;
+    
     balancing = bqb.status != BTRFS_BALANCE_STOPPED;
     
     if (!balancing) {
@@ -787,7 +793,8 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
             
-            if (!LoadStringW(module, balance_status != BTRFS_BALANCE_STOPPED ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE, s, sizeof(s) / sizeof(WCHAR))) {
+            if (!LoadStringW(module, cancelling ? IDS_BALANCE_CANCELLED : (balance_status != BTRFS_BALANCE_STOPPED ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE),
+                             s, sizeof(s) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
@@ -798,6 +805,7 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
                          IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
             
             balance_status = bqb.status;
+            cancelling = FALSE;
         }
         
         return;
@@ -1370,6 +1378,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
             RtlZeroMemory(&system_opts, sizeof(btrfs_balance_opts));
             
             balance_status = BTRFS_BALANCE_STOPPED;
+            cancelling = FALSE;
             RefreshBalanceDlg(hwndDlg, TRUE);
             
             SetTimer(hwndDlg, 1, 1000, NULL);

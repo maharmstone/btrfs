@@ -68,6 +68,7 @@
 #define IDS_ERROR                       158
 #define IDS_BALANCE_COMPLETE            159
 #define IDS_BALANCE_PAUSED              160
+#define IDS_BALANCE_CANCELLED           161
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
