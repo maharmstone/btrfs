@@ -313,6 +313,10 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         return;
     }
     
+    Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
+    if (!NT_SUCCESS(Status))
+        ShowNtStatusError(hwndDlg, Status);
+    
     Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
     if (!NT_SUCCESS(Status))
         ShowNtStatusError(hwndDlg, Status);
