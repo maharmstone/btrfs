@@ -2360,9 +2360,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         return Status;
     }
     
-    if (gli.Length.QuadPart < superblock_addrs[0] + sizeof(superblock)) {
-        ERR("device was not large enough to hold FS (%llx bytes, need at least %llx)\n",
-            gli.Length.QuadPart, superblock_addrs[0] + sizeof(superblock));
+    if (gli.Length.QuadPart < 0x100000) {
+        ERR("device was not large enough to hold FS (%llx bytes, need at least 1 MB)\n", gli.Length.QuadPart);
         ObDereferenceObject(fileobj);
         return STATUS_INTERNAL_ERROR;
     }
@@ -2397,7 +2396,14 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     InitializeListHead(&dev->space);
     
-    // FIXME - add disk holes
+    if (gli.Length.QuadPart > 0x100000) { // add disk hole - the first MB is marked as used
+        Status = add_space_entry(&dev->space, NULL, 0x100000, gli.Length.QuadPart - 0x100000);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_space_entry returned %08x\n", Status);
+            ObDereferenceObject(fileobj);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
     
     dev_id = 0;
     
