@@ -2313,7 +2313,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
 static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
-    PFILE_OBJECT fileobj;
+    PFILE_OBJECT fileobj, mountmgrfo;
     HANDLE h;
     LIST_ENTRY rollback, *le;
     GET_LENGTH_INFORMATION gli;
@@ -2323,8 +2323,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     UINT8* mb;
     UINT64* stats;
     MOUNTDEV_NAME mdn1, *mdn2;
-    UNICODE_STRING volname;
+    UNICODE_STRING volname, mmdevpath;
     volume* v;
+    PDEVICE_OBJECT mountmgr;
     
     volname.Buffer = NULL;
     
@@ -2567,7 +2568,15 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     InsertTailList(&volumes, &v->list_entry);
     volname.Buffer = NULL;
     
-    // FIXME - remove device from mountmgr
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status))
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+    else {
+        remove_drive_letter(mountmgr, v);
+        
+        ObDereferenceObject(mountmgrfo);
+    }
 
     // update device pointers in chunks
     le = Vcb->chunks.Flink;

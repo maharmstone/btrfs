@@ -475,7 +475,7 @@ end:
     return Status;
 }
 
-static void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
+void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     NTSTATUS Status;
     KEVENT Event;
     PIRP Irp;
