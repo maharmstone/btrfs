@@ -57,6 +57,7 @@
 #define IDS_USAGE_DATA_RATIO            147
 #define IDS_USAGE_METADATA_RATIO        148
 #define IDS_NO_BALANCE                  149
+#define IDS_SINGLE2                     150
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

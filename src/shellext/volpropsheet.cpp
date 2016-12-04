@@ -47,6 +47,7 @@ extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 #define BLOCK_FLAG_DATA         0x001
 #define BLOCK_FLAG_SYSTEM       0x002
 #define BLOCK_FLAG_METADATA     0x004
+#define BLOCK_FLAG_SINGLE       0x001 // only used in balance
 #define BLOCK_FLAG_RAID0        0x008
 #define BLOCK_FLAG_RAID1        0x010
 #define BLOCK_FLAG_DUPLICATE    0x020
@@ -683,11 +684,235 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     // FIXME
 }
 
+INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            HWND devcb, convcb;
+            btrfs_device* bd;
+            btrfs_balance_opts* opts;
+            static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
+            int i, num_devices = 0;
+            WCHAR s[255];
+            
+            switch (opts_type) {
+                case 1:
+                    opts = &data_opts;
+                break;
+                
+                case 2:
+                    opts = &metadata_opts;
+                break;
+                
+                case 3:
+                    opts = &system_opts;
+                break;
+                
+                default:
+                    return TRUE;
+            }
+            
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            
+            devcb = GetDlgItem(hwndDlg, IDC_DEVID_COMBO);
+            
+            bd = devices;
+            while (TRUE) {
+                RtlCopyMemory(s, bd->name, bd->namelen);
+                s[bd->namelen / sizeof(WCHAR)] = 0;
+
+                SendMessage(devcb, CB_ADDSTRING, NULL, (LPARAM)s);
+                
+                num_devices++; // FIXME - don't do this if device is readonly
+                
+                if (bd->next_entry > 0)
+                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                else
+                    break;
+            }
+            
+            convcb = GetDlgItem(hwndDlg, IDC_CONVERT_COMBO);
+                        
+            i = 0;
+            while (convtypes[i] != 0) {
+                if (!LoadStringW(module, convtypes[i], s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    break;
+                }
+                
+                SendMessage(convcb, CB_ADDSTRING, NULL, (LPARAM)s);
+                i++;
+                
+                if (num_devices < 2 && i == 2)
+                    break;
+                else if (num_devices < 3 && i == 4)
+                    break;
+                else if (num_devices < 4 && i == 6)
+                    break;
+            }
+            
+            // profiles
+            
+            CheckDlgButton(hwndDlg, IDC_PROFILES, opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_SINGLE, opts->profiles & BLOCK_FLAG_SINGLE ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_DUP, opts->profiles & BLOCK_FLAG_DUPLICATE ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_RAID0, opts->profiles & BLOCK_FLAG_RAID0 ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_RAID1, opts->profiles & BLOCK_FLAG_RAID1 ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_RAID10, opts->profiles & BLOCK_FLAG_RAID10 ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_RAID5, opts->profiles & BLOCK_FLAG_RAID5 ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_PROFILES_RAID6, opts->profiles & BLOCK_FLAG_RAID6 ? BST_CHECKED : BST_UNCHECKED);
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_SINGLE), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_DUP), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID0), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID1), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID10), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID5), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PROFILES_RAID6), opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? TRUE : FALSE);
+            
+            // usage
+            
+            CheckDlgButton(hwndDlg, IDC_USAGE, opts->flags & BTRFS_BALANCE_OPTS_USAGE ? BST_CHECKED : BST_UNCHECKED);
+            
+            _itow(opts->usage_start, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_USAGE_START, s);
+            
+            _itow(opts->usage_end, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_USAGE_END, s);
+            // FIXME - set spinner max and min
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_USAGE ? TRUE : FALSE);
+            
+            // devid
+            
+            // FIXME - disable devid if only one device
+            CheckDlgButton(hwndDlg, IDC_DEVID, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? BST_CHECKED : BST_UNCHECKED);
+            EnableWindow(devcb, opts->flags & BTRFS_BALANCE_OPTS_DEVID ? TRUE : FALSE);
+            // FIXME - select item in combobox
+            
+            // drange
+            
+            // FIXME - disable drange if devid not set
+            
+            CheckDlgButton(hwndDlg, IDC_DRANGE, opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? BST_CHECKED : BST_UNCHECKED);
+            
+            _itow(opts->drange_start, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_DRANGE_START, s);
+            
+            _itow(opts->drange_end, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_DRANGE_END, s);
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_START), opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_END), opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? TRUE : FALSE);
+            
+            // vrange
+            
+            CheckDlgButton(hwndDlg, IDC_VRANGE, opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? BST_CHECKED : BST_UNCHECKED);
+            
+            _itow(opts->vrange_start, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_VRANGE_START, s);
+            
+            _itow(opts->vrange_end, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_VRANGE_END, s);
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_START), opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_END), opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? TRUE : FALSE);
+            
+            // limit
+            
+            CheckDlgButton(hwndDlg, IDC_LIMIT, opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? BST_CHECKED : BST_UNCHECKED);
+            
+            _itow(opts->limit_start, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_LIMIT_START, s);
+            
+            _itow(opts->limit_end, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_LIMIT_END, s);
+            // FIXME - set spinner max and min
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? TRUE : FALSE);
+            
+            // stripes
+            
+            CheckDlgButton(hwndDlg, IDC_STRIPES, opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? BST_CHECKED : BST_UNCHECKED);
+            
+            _itow(opts->stripes_start, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_STRIPES_START, s);
+            
+            _itow(opts->stripes_end, s, 10);
+            SetDlgItemTextW(hwndDlg, IDC_STRIPES_END, s);
+            // FIXME - set spinner max and min
+            
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? TRUE : FALSE);
+            
+            // convert
+            
+            CheckDlgButton(hwndDlg, IDC_CONVERT, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, IDC_SOFT, opts->flags & BTRFS_BALANCE_OPTS_SOFT ? BST_CHECKED : BST_UNCHECKED);
+            
+            // FIXME - select item in combobox
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SOFT), opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
+            EnableWindow(convcb, opts->flags & BTRFS_BALANCE_OPTS_CONVERT ? TRUE : FALSE);
+              
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsVolPropSheet* bvps;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bvps = (BtrfsVolPropSheet*)lParam;
+    } else {
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bvps)
+        return bvps->BalanceOptsDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsVolPropSheet::ShowBalanceOptions(HWND hwndDlg, UINT8 type) {
+    opts_type = type;
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE_OPTIONS), hwndDlg, stub_BalanceOptsDlgProc, (LPARAM)this);
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
         {
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+            
+            RtlZeroMemory(&data_opts, sizeof(btrfs_balance_opts));
+            RtlZeroMemory(&metadata_opts, sizeof(btrfs_balance_opts));
+            RtlZeroMemory(&system_opts, sizeof(btrfs_balance_opts));
+            
             RefreshBalanceDlg(hwndDlg, TRUE);
             
             SetTimer(hwndDlg, 1, 1000, NULL);
@@ -715,6 +940,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                         
                         case IDC_SYSTEM:
                             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
+                        return TRUE;
+                        
+                        case IDC_DATA_OPTIONS:
+                            ShowBalanceOptions(hwndDlg, 1);
+                        return TRUE;
+                        
+                        case IDC_METADATA_OPTIONS:
+                            ShowBalanceOptions(hwndDlg, 2);
+                        return TRUE;
+                        
+                        case IDC_SYSTEM_OPTIONS:
+                            ShowBalanceOptions(hwndDlg, 3);
                         return TRUE;
                     }
                 break;

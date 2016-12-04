@@ -81,6 +81,8 @@ public:
     INT_PTR CALLBACK BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowBalance(HWND hwndDlg);
     void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
+    void ShowBalanceOptions(HWND hwndDlg, UINT8 type);
+    INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
 private:
     LONG refcount;
@@ -91,4 +93,6 @@ private:
     btrfs_usage* usage;
     WCHAR fn[MAX_PATH];
     BOOL balance_started;
+    btrfs_balance_opts data_opts, metadata_opts, system_opts;
+    UINT8 opts_type;
 };
