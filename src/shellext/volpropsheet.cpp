@@ -814,7 +814,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             btrfs_balance_opts* opts;
             static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
             int i, num_devices = 0;
-            WCHAR s[255];
+            WCHAR s[255], u[255];
             
             switch (opts_type) {
                 case 1:
@@ -837,12 +837,22 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
             
             devcb = GetDlgItem(hwndDlg, IDC_DEVID_COMBO);
             
+            if (!LoadStringW(module, IDS_DEVID_LIST, u, sizeof(u) / sizeof(WCHAR))) {
+                ShowError(hwndDlg, GetLastError());
+                return TRUE;
+            }
+            
             bd = devices;
             while (TRUE) {
+                WCHAR t[255];
+                
                 RtlCopyMemory(s, bd->name, bd->namelen);
                 s[bd->namelen / sizeof(WCHAR)] = 0;
+                
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->dev_id, s) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    break;
 
-                SendMessage(devcb, CB_ADDSTRING, NULL, (LPARAM)s);
+                SendMessage(devcb, CB_ADDSTRING, NULL, (LPARAM)t);
                 
                 num_devices++; // FIXME - don't do this if device is readonly
                 

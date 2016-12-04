@@ -376,6 +376,7 @@ BEGIN
     IDS_USAGE_METADATA_RATIO "Metadata ratio:\t\t%1.2f"
     IDS_NO_BALANCE          "No balance is currently running."
     IDS_SINGLE2             "Single"
+    IDS_DEVID_LIST          "%llu: %s"
 END
 
 #endif    // English (U.K.) resources
