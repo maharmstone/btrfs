@@ -2855,7 +2855,7 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
-static void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
+void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     NTSTATUS Status;
     GET_LENGTH_INFORMATION gli;
     ULONG aptelen;

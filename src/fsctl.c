@@ -2315,6 +2315,17 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     NTSTATUS Status;
     PFILE_OBJECT fileobj;
     HANDLE h;
+    LIST_ENTRY rollback, *le;
+    GET_LENGTH_INFORMATION gli;
+    device *devices, *dev;
+    DEV_ITEM* di;
+    UINT64 dev_id, i;
+    
+    // FIXME - deny access to non-Administrators
+    // FIXME - check device is not readonly
+    
+    if (Vcb->readonly) // FIXME - handle adding R/W device to seeding device
+        return STATUS_MEDIA_WRITE_PROTECTED;
     
 #if defined(_WIN64)
     if (IoIs32bitProcess(Irp)) {
@@ -2340,14 +2351,131 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     // FIXME - check not part of mounted multi-device Btrfs volume
-    // FIXME - add entries to chunk tree
-    // FIXME - update values in superblocks
-    // FIXME - write superblock on new device
-    // FIXME - update volumes list
     
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                       &gli, sizeof(gli), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error reading length information: %08x\n", Status);
+        ObDereferenceObject(fileobj);
+        return Status;
+    }
+    
+    if (gli.Length.QuadPart < superblock_addrs[0] + sizeof(superblock)) {
+        ERR("device was not large enough to hold FS (%llx bytes, need at least %llx)\n",
+            gli.Length.QuadPart, superblock_addrs[0] + sizeof(superblock));
+        ObDereferenceObject(fileobj);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    InitializeListHead(&rollback);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        
+    if (Vcb->need_write) {
+        Status = do_write(Vcb, Irp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_write returned %08x\n", Status);
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
+    }
+    
+    free_trees(Vcb);
+    
+    clear_rollback(Vcb, &rollback);
+    
+    devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device) * (Vcb->superblock.num_devices + 1), ALLOC_TAG);
+    RtlCopyMemory(devices, Vcb->devices, sizeof(device) * Vcb->superblock.num_devices);
+    
+    dev = &devices[Vcb->superblock.num_devices];
+    RtlZeroMemory(dev, sizeof(device));
+
+    dev->devobj = fileobj->DeviceObject;
+    dev->seeding = FALSE;
+    dev->length = gli.Length.QuadPart;
+    init_device(Vcb, dev, FALSE);
+    
+    InitializeListHead(&dev->space);
+    
+    // FIXME - add disk holes
+    
+    dev_id = 0;
+    
+    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+        if (Vcb->devices[i].devitem.dev_id > dev_id)
+            dev_id = Vcb->devices[i].devitem.dev_id;
+    }
+    
+    dev_id++;
+    
+    dev->devitem.dev_id = dev_id;
+    dev->devitem.num_bytes = gli.Length.QuadPart;
+    dev->devitem.bytes_used = 0;
+    dev->devitem.optimal_io_align = Vcb->superblock.sector_size;
+    dev->devitem.optimal_io_width = Vcb->superblock.sector_size;
+    dev->devitem.minimal_io_size = Vcb->superblock.sector_size;
+    dev->devitem.type = 0;
+    dev->devitem.generation = 0;
+    dev->devitem.start_offset = 0;
+    dev->devitem.dev_group = 0;
+    dev->devitem.seek_speed = 0;
+    dev->devitem.bandwidth = 0;
+    get_uuid(&dev->devitem.device_uuid);
+    dev->devitem.fs_uuid = Vcb->superblock.uuid;
+    
+    di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+    if (!di) {
+        ERR("out of memory\n");
+        ExFreePool(devices);
+        goto end;
+    }
+    
+    RtlCopyMemory(di, &dev->devitem, sizeof(DEV_ITEM));
+    
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp, &rollback)) {
+        ERR("insert_tree_item failed\n");
+        ExFreePool(di);
+        ExFreePool(devices);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    // FIXME - add stats entry to dev tree
+    // FIXME - update values in superblocks (num devices, total size)
+    // FIXME - clear first megabyte of device
+    // FIXME - update volumes list
+    // FIXME - remove device from mountmgr
+
+    // update device pointers in chunks
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            c->devices[i] = c->devices[i] - Vcb->devices + devices;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExFreePool(Vcb->devices);
+    Vcb->devices = devices;
+    
+    ObReferenceObject(fileobj->DeviceObject);
+    
+    do_write(Vcb, Irp, &rollback);
+
+    free_trees(Vcb);
+    
+    clear_rollback(Vcb, &rollback);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
     ObDereferenceObject(fileobj);
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS allow_extended_dasd_io(device_extension* Vcb, PFILE_OBJECT FileObject) {

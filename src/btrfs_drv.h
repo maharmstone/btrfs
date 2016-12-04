@@ -767,6 +767,7 @@ void mark_fileref_dirty(file_ref* fileref);
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);
 void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
+void init_device(device_extension* Vcb, device* dev, BOOL get_length);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
