@@ -316,7 +316,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     LIST_ENTRY* le;
     CHUNK_ITEM_STRIPE* cis;
     
-    off = 0;
+    off = 0xc00000;
     le = chunks->Flink;
     while (le != chunks) {
         c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
