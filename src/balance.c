@@ -1905,6 +1905,10 @@ static BOOL should_balance_chunk(device_extension* Vcb, UINT8 sort, chunk* c) {
     if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
         UINT64 usage = c->used * 100 / c->chunk_item->size;
         
+        // usage == 0 should mean completely empty, not just that usage rounds to 0%
+        if (c->used > 0 && usage == 0)
+            usage = 1;
+        
         if (usage < opts->usage_start || usage > opts->usage_end)
             return FALSE;
     }
