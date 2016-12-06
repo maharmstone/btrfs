@@ -2743,7 +2743,7 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
     
     *length -= sizeof(FILE_ALIGNMENT_INFORMATION);
     
-    fai->AlignmentRequirement = Vcb->devices[0].devobj->AlignmentRequirement;
+    fai->AlignmentRequirement = first_device(Vcb)->devobj->AlignmentRequirement;
     
     return STATUS_SUCCESS;
 }

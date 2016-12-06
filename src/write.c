@@ -135,21 +135,27 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
 }
 
 static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 max_stripe_size) {
-    UINT64 j, devnum, devusage = 0xffffffffffffffff;
+    UINT64 devusage = 0xffffffffffffffff;
     space *devdh1 = NULL, *devdh2 = NULL;
+    LIST_ENTRY* le;
+    device* dev2;
     
-    for (j = 0; j < Vcb->superblock.num_devices; j++) {
-        if (!Vcb->devices[j].readonly) {
-            UINT64 usage = (Vcb->devices[j].devitem.bytes_used * 4096) / Vcb->devices[j].devitem.num_bytes;
+    le = Vcb->devices.Flink;
+    
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (!dev->readonly) {
+            UINT64 usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
             
             // favour devices which have been used the least
             if (usage < devusage) {
-                if (!IsListEmpty(&Vcb->devices[j].space)) {
+                if (!IsListEmpty(&dev->space)) {
                     LIST_ENTRY* le;
                     space *dh1 = NULL, *dh2 = NULL;
                     
-                    le = Vcb->devices[j].space.Flink;
-                    while (le != &Vcb->devices[j].space) {
+                    le = dev->space.Flink;
+                    while (le != &dev->space) {
                         space* dh = CONTAINING_RECORD(le, space, list_entry);
                         
                         if (dh->size >= max_stripe_size && (!dh1 || !dh2 || dh->size < dh1->size)) {
@@ -161,7 +167,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
                     }
                     
                     if (dh1 && (dh2 || dh1->size >= 2 * max_stripe_size)) {
-                        devnum = j;
+                        dev2 = dev;
                         devusage = usage;
                         devdh1 = dh1;
                         devdh2 = dh2 ? dh2 : dh1;
@@ -169,12 +175,14 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
                 }
             }
         }
+        
+        le = le->Flink;
     }
     
     if (!devdh1)
         return FALSE;
     
-    stripes[0].device = &Vcb->devices[devnum];
+    stripes[0].device = dev2;
     stripes[0].dh = devdh1;
     stripes[1].device = stripes[0].device;
     stripes[1].dh = devdh2;
@@ -183,20 +191,26 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
 }
 
 static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, UINT16 type) {
-    UINT64 j, k, devnum = 0xffffffffffffffff, devusage = 0xffffffffffffffff;
+    UINT64 k, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
+    LIST_ENTRY* le;
+    device* dev2 = NULL;
     
-    for (j = 0; j < Vcb->superblock.num_devices; j++) {
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
         UINT64 usage;
         BOOL skip = FALSE;
         
-        if (Vcb->devices[j].readonly)
+        if (dev->readonly) {
+            le = le->Flink;
             continue;
+        }
 
         // skip this device if it already has a stripe
         if (i > 0) {
             for (k = 0; k < i; k++) {
-                if (stripes[k].device == &Vcb->devices[j]) {
+                if (stripes[k].device == dev) {
                     skip = TRUE;
                     break;
                 }
@@ -204,22 +218,22 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
         }
         
         if (!skip) {
-            usage = (Vcb->devices[j].devitem.bytes_used * 4096) / Vcb->devices[j].devitem.num_bytes;
+            usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
             
             // favour devices which have been used the least
             if (usage < devusage) {
-                if (!IsListEmpty(&Vcb->devices[j].space)) {
+                if (!IsListEmpty(&dev->space)) {
                     LIST_ENTRY* le;
                     
-                    le = Vcb->devices[j].space.Flink;
-                    while (le != &Vcb->devices[j].space) {
+                    le = dev->space.Flink;
+                    while (le != &dev->space) {
                         space* dh = CONTAINING_RECORD(le, space, list_entry);
                         
-                        if ((devnum != j && dh->size >= max_stripe_size) ||
-                            (devnum == j && dh->size >= max_stripe_size && dh->size < devdh->size)
+                        if ((dev2 != dev && dh->size >= max_stripe_size) ||
+                            (dev2 == dev && dh->size >= max_stripe_size && dh->size < devdh->size)
                         ) {
                             devdh = dh;
-                            devnum = j;
+                            dev2 = dev;
                             devusage = usage;
                         }
 
@@ -228,13 +242,15 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
                 }
             }
         }
+        
+        le = le->Flink;
     }
     
     if (!devdh)
         return FALSE;
     
     stripes[i].dh = devdh;
-    stripes[i].device = &Vcb->devices[devnum];
+    stripes[i].device = dev2;
 
     return TRUE;
 }
@@ -249,12 +265,18 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     chunk* c = NULL;
     space* s = NULL;
     BOOL success = FALSE;
+    LIST_ENTRY* le;
     
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        total_size += Vcb->devices[i].devitem.num_bytes;
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        total_size += dev->devitem.num_bytes;
+        
+        le = le->Flink;
     }
+    
     TRACE("total_size = %llx\n", total_size);
     
     // We purposely check for DATA first - mixed blocks have the same size

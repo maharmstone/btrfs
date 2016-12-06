@@ -1824,7 +1824,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 ULONG cc;
                 IO_STATUS_BLOCK iosb;
                 
-                Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+                Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
                 
                 if (!NT_SUCCESS(Status))
                     return Status;
@@ -3741,15 +3741,18 @@ exit2:
 }
 
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
-    UINT64 i;
+    LIST_ENTRY* le;
     
-    for (i = 0; i < Vcb->devices_loaded; i++) {
-        if (Vcb->devices[i].removable) {
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->removable) {
             NTSTATUS Status;
             ULONG cc;
             IO_STATUS_BLOCK iosb;
             
-            Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+            Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("dev_ioctl returned %08x\n", Status);
@@ -3761,27 +3764,29 @@ NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
                 return STATUS_INTERNAL_ERROR;
             }
             
-            if (cc != Vcb->devices[i].change_count) {
-                PDEVICE_OBJECT dev;
+            if (cc != dev->change_count) {
+                PDEVICE_OBJECT devobj;
                 
-                Vcb->devices[i].devobj->Flags |= DO_VERIFY_VOLUME;
+                dev->devobj->Flags |= DO_VERIFY_VOLUME;
                 
-                dev = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
+                devobj = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
                 IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
                 
-                if (!dev) {
-                    dev = IoGetDeviceToVerify(PsGetCurrentThread());
+                if (!devobj) {
+                    devobj = IoGetDeviceToVerify(PsGetCurrentThread());
                     IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
                 }
                 
-                dev = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
+                devobj = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
                 
-                if (dev)
-                    IoVerifyVolume(dev, FALSE);
+                if (devobj)
+                    IoVerifyVolume(devobj, FALSE);
                 
                 return STATUS_VERIFY_REQUIRED;
             }
         }
+        
+        le = le->Flink;
     }
     
     return STATUS_SUCCESS;

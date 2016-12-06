@@ -392,6 +392,7 @@ typedef struct {
     ULONG change_count;
     UINT64 length;
     LIST_ENTRY space;
+    LIST_ENTRY list_entry;
 } device;
 
 typedef struct {
@@ -538,7 +539,7 @@ typedef struct _device_extension {
     UINT32 type;
     mount_options options;
     PVPB Vpb;
-    device* devices;
+    LIST_ENTRY devices;
 #ifdef DEBUG_STATS
     debug_stats stats;
 #endif
@@ -1121,6 +1122,8 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
         buf2++;
     }
 }
+
+#define first_device(Vcb) CONTAINING_RECORD(Vcb->devices.Flink, device, list_entry)
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES

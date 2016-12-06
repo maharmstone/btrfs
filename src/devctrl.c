@@ -128,7 +128,7 @@ static NTSTATUS get_partition_info_ex(device_extension* Vcb, PIRP Irp) {
     
     TRACE("IOCTL_DISK_GET_PARTITION_INFO_EX\n");
     
-    Status = dev_ioctl(Vcb->devices[0].devobj, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
+    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
                        Irp->UserBuffer, IrpSp->Parameters.DeviceIoControl.OutputBufferLength, TRUE, &Irp->IoStatus);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -193,7 +193,7 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     IoSkipCurrentIrpStackLocation(Irp);
     
-    Status = IoCallDriver(Vcb->devices[0].devobj, Irp);
+    Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
     
     goto end2;
     

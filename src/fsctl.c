@@ -1272,11 +1272,13 @@ end:
 }
 
 static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
-    UINT64 i;
     btrfs_device* dev = NULL;
     NTSTATUS Status;
+    LIST_ENTRY* le;
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev2 = CONTAINING_RECORD(le, device, list_entry);
         ULONG structlen;
         
         if (length < sizeof(btrfs_device) - sizeof(WCHAR))
@@ -1291,16 +1293,18 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         
         structlen = length - offsetof(btrfs_device, namelen);
         
-        Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
+        Status = dev_ioctl(dev2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
         if (!NT_SUCCESS(Status))
             return Status;
         
         dev->next_entry = 0;
-        dev->dev_id = Vcb->devices[i].devitem.dev_id;
-        dev->size = Vcb->devices[i].length;
-        dev->readonly = (Vcb->readonly || Vcb->devices[i].readonly) ? TRUE : FALSE;
+        dev->dev_id = dev2->devitem.dev_id;
+        dev->size = dev2->length;
+        dev->readonly = (Vcb->readonly || dev2->readonly) ? TRUE : FALSE;
         
         length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
+        
+        le = le->Flink;
     }
       
     return STATUS_SUCCESS;
@@ -1441,34 +1445,38 @@ end:
 }
 
 static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
-    UINT64 i, num_devices;
     NTSTATUS Status;
     ULONG cc;
     IO_STATUS_BLOCK iosb;
     BOOL verify = FALSE;
+    LIST_ENTRY* le;
     
-    num_devices = Vcb->superblock.num_devices;
-    for (i = 0; i < num_devices; i++) {
-        if (Vcb->devices[i].devobj && Vcb->devices[i].removable) {
-            Status = dev_ioctl(Vcb->devices[i].devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), FALSE, &iosb);
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devobj && dev->removable) {
+            Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), FALSE, &iosb);
             
             if (iosb.Information != sizeof(ULONG))
                 cc = 0;
             
-            if (Status == STATUS_VERIFY_REQUIRED || (NT_SUCCESS(Status) && cc != Vcb->devices[i].change_count)) {
-                Vcb->devices[i].devobj->Flags |= DO_VERIFY_VOLUME;
+            if (Status == STATUS_VERIFY_REQUIRED || (NT_SUCCESS(Status) && cc != dev->change_count)) {
+                dev->devobj->Flags |= DO_VERIFY_VOLUME;
                 verify = TRUE;
             }
             
             if (NT_SUCCESS(Status) && iosb.Information == sizeof(ULONG))
-                Vcb->devices[i].change_count = cc;
+                dev->change_count = cc;
             
             if (!NT_SUCCESS(Status) || verify) {
-                IoSetHardErrorOrVerifyDevice(Irp, Vcb->devices[i].devobj);
+                IoSetHardErrorOrVerifyDevice(Irp, dev->devobj);
                 
                 return verify ? STATUS_VERIFY_REQUIRED : Status;
             }
         }
+        
+        le = le->Flink;
     }
     
     return STATUS_SUCCESS;
@@ -2250,13 +2258,18 @@ static void update_volumes(device_extension* Vcb) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
         
         if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            UINT64 i;
+            LIST_ENTRY* le;
             
-            for (i = 0; i < Vcb->superblock.num_devices; i++) {
-                if (RtlCompareMemory(&Vcb->devices[i].devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            le = Vcb->devices.Flink;
+            while (le != &Vcb->devices) {
+                device* dev = CONTAINING_RECORD(le, device, list_entry);
+                
+                if (RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                     v->gen1 = v->gen2 = Vcb->superblock.generation - 1;
                     break;
                 }
+                
+                le = le->Flink;
             }
         }
         
@@ -2317,9 +2330,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     HANDLE h;
     LIST_ENTRY rollback, *le;
     GET_LENGTH_INFORMATION gli;
-    device *devices, *dev;
+    device* dev;
     DEV_ITEM* di;
-    UINT64 dev_id, i;
+    UINT64 dev_id;
     UINT8* mb;
     UINT64* stats;
     MOUNTDEV_NAME mdn1, *mdn2;
@@ -2443,10 +2456,13 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     clear_rollback(Vcb, &rollback);
     
-    devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device) * (Vcb->superblock.num_devices + 1), ALLOC_TAG);
-    RtlCopyMemory(devices, Vcb->devices, sizeof(device) * Vcb->superblock.num_devices);
+    dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
+    if (!dev) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
     
-    dev = &devices[Vcb->superblock.num_devices];
     RtlZeroMemory(dev, sizeof(device));
 
     dev->devobj = fileobj->DeviceObject;
@@ -2467,9 +2483,14 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     dev_id = 0;
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        if (Vcb->devices[i].devitem.dev_id > dev_id)
-            dev_id = Vcb->devices[i].devitem.dev_id;
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devitem.dev_id > dev_id)
+            dev_id = dev->devitem.dev_id;
+        
+        le = le->Flink;
     }
     
     dev_id++;
@@ -2492,7 +2513,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
-        ExFreePool(devices);
         goto end;
     }
     
@@ -2501,7 +2521,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp, &rollback)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(di);
-        ExFreePool(devices);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -2510,7 +2529,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     stats = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * 5, ALLOC_TAG);
     if (!stats) {
         ERR("out of memory\n");
-        ExFreePool(devices);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -2519,7 +2537,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     if (!insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, &rollback)) {
         ERR("insert_tree_item failed\n");
-        ExFreePool(devices);
         ExFreePool(stats);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
@@ -2529,7 +2546,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     mb = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
     if (!mb) {
         ERR("out of memory\n");
-        ExFreePool(devices);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -2539,20 +2555,14 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     Status = write_data_phys(fileobj->DeviceObject, 0, mb, 0x100000);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data_phys returned %08x\n", Status);
-        ExFreePool(devices);
         goto end;
     }
     
     ExFreePool(mb);
     
-    Vcb->superblock.num_devices++;
-    Vcb->superblock.total_bytes += gli.Length.QuadPart;
-    Vcb->devices_loaded++;
-    
     v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
     if (!v) {
         ERR("out of memory\n");
-        ExFreePool(devices);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -2577,27 +2587,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         
         ObDereferenceObject(mountmgrfo);
     }
-
-    // update device pointers in chunks
-    le = Vcb->chunks.Flink;
-    while (le != &Vcb->chunks) {
-        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
-        
-        for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            c->devices[i] = c->devices[i] - Vcb->devices + devices;
-        }
-        
-        le = le->Flink;
-    }
     
-    // update device space lists
-    for (i = 0; i < Vcb->superblock.num_devices - 1; i++) {
-        Vcb->devices[i].space.Flink->Blink = &devices[i].space;
-        Vcb->devices[i].space.Blink->Flink = &devices[i].space;
-    }
-    
-    ExFreePool(Vcb->devices);
-    Vcb->devices = devices;
+    Vcb->superblock.num_devices++;
+    Vcb->superblock.total_bytes += gli.Length.QuadPart;
+    Vcb->devices_loaded++;
+    InsertTailList(&Vcb->devices, &dev->list_entry);
     
     ObReferenceObject(fileobj->DeviceObject);
     

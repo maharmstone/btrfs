@@ -1711,14 +1711,19 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     
     update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1], Irp);
     
-    for (i = 0; i < Vcb->superblock.num_devices; i++) {
-        if (Vcb->devices[i].devobj && !Vcb->devices[i].readonly) {
-            Status = write_superblock(Vcb, &Vcb->devices[i]);
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devobj && !dev->readonly) {
+            Status = write_superblock(Vcb, dev);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_superblock returned %08x\n", Status);
                 return Status;
             }
         }
+        
+        le = le->Flink;
     }
     
     return STATUS_SUCCESS;
