@@ -2293,7 +2293,7 @@ static void balance_thread(void* context) {
     }
     
 end:
-    if (!Vcb->readonly && Vcb->balance.cancelling) {
+    if (!Vcb->readonly) {
         Status = remove_balance_item(Vcb);
         if (!NT_SUCCESS(Status)) {
             ERR("remove_balance_item returned %08x\n", Status);
