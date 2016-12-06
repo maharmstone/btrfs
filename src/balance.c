@@ -2273,6 +2273,9 @@ static void balance_thread(void* context) {
                 break;
         } while (changed);
         
+        if (!c->list_entry_changed.Flink)
+            InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+        
         if (Vcb->balance.stopping) {
             while (le != &chunks) {
                 c = CONTAINING_RECORD(le, chunk, list_entry_balance);
