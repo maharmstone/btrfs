@@ -1557,7 +1557,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     IO_STATUS_BLOCK iosb;
     ULONG usagesize, devsize;
     btrfs_usage* usage;
-    btrfs_device* bd = devices;
+    btrfs_device* bd;
     int i;
     
     h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -1570,6 +1570,9 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     
     i = 0;
     devsize = 1024;
+    
+    if (devices)
+        free(devices);
     
     devices = (btrfs_device*)malloc(devsize);
 
@@ -1593,6 +1596,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         CloseHandle(h);
         return;
     }
+    
+    bd = devices;
 
     i = 0;
     usagesize = 1024;
@@ -1763,9 +1768,15 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.lpFile = L"rundll32.exe";
                             sei.lpParameters = t;
                             sei.nShow = SW_SHOW;
+                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
                             if (!ShellExecuteExW(&sei))
                                 ShowError(hwndDlg, GetLastError());
+                            
+                            WaitForSingleObject(sei.hProcess, INFINITE);
+                            CloseHandle(sei.hProcess);
+                            
+                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
                             
                             return TRUE;
                         }
