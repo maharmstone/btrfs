@@ -19,6 +19,7 @@
 #include "resource.h"
 #include "../btrfsioctl.h"
 #include <shlobj.h>
+#include <uxtheme.h>
 #include <stdio.h>
 #include <winternl.h>
 #include <vector>
@@ -331,6 +332,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
     switch (uMsg) {
         case WM_INITDIALOG:
         {
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
             break;
         }
