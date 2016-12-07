@@ -4424,6 +4424,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
+    BOOL wait = IoIsOperationSynchronous(Irp);
 
     FsRtlEnterFileSystem();
 
@@ -4477,7 +4478,12 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Irp->MdlAddress = NULL;
             Status = STATUS_SUCCESS;
         } else {
-            Status = write_file(Vcb, Irp, IoIsOperationSynchronous(Irp) && !(Irp->Flags & IRP_PAGING_IO), FALSE);
+            // Don't offload jobs when doing paging IO - otherwise this can lead to
+            // deadlocks in CcCopyWrite.
+            if (Irp->Flags & IRP_PAGING_IO)
+                wait = TRUE;
+            
+            Status = write_file(Vcb, Irp, wait, FALSE);
         }
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
