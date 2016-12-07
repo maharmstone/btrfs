@@ -419,6 +419,11 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     delete bda;
 }
 
+void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    // FIXME
+    MessageBoxW(hwnd, lpszCmdLine, L"STUB", MB_OK);
+}
+
 #ifdef __cplusplus
 }
 #endif

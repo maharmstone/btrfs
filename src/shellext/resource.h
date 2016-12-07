@@ -143,6 +143,8 @@
 #define IDC_VRANGE_END                  1046
 #define IDC_BUTTON3                     1046
 #define IDC_SYSTEM_OPTIONS              1046
+#define IDC_DEVICE_ADD2                 1046
+#define IDC_DEVICE_REMOVE               1046
 #define IDC_VRANGE_START                1047
 #define IDC_BALANCE_STATUS              1047
 #define IDC_LIMIT_END_SPINNER           1048

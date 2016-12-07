@@ -1734,6 +1734,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
             
             SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, TRUE);
             
             RefreshDevList(devlist);
             
@@ -1784,6 +1785,57 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                         case IDC_DEVICE_REFRESH:
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
                             return TRUE;
+                            
+                        case IDC_DEVICE_REMOVE:
+                        {
+                            WCHAR t[2*MAX_PATH + 100], sel[MAX_PATH];
+                            HWND devlist;
+                            SHELLEXECUTEINFOW sei;
+                            int index;
+                            LVITEMW lvi;
+                            
+                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+                            
+                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+                            
+                            if (index == -1)
+                                return TRUE;
+                            
+                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                            lvi.mask = LVIF_TEXT;
+                            lvi.iItem = index;
+                            lvi.iSubItem = 1;
+                            lvi.pszText = sel;
+                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM) &lvi);
+                            
+                            t[0] = '"';
+                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+                            wcscat(t, L"\",RemoveDevice ");
+                            wcscat(t, fn);
+                            wcscat(t, L" ");
+                            wcscat(t, sel);
+                            
+                            RtlZeroMemory(&sei, sizeof(sei));
+                            
+                            sei.cbSize = sizeof(sei);
+                            sei.hwnd = hwndDlg;
+                            sei.lpVerb = L"runas";
+                            sei.lpFile = L"rundll32.exe";
+                            sei.lpParameters = t;
+                            sei.nShow = SW_SHOW;
+                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                            if (!ShellExecuteExW(&sei))
+                                ShowError(hwndDlg, GetLastError());
+                            
+                            WaitForSingleObject(sei.hProcess, INFINITE);
+                            CloseHandle(sei.hProcess);
+                            
+                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+                            
+                            return TRUE;
+                        }
                     }
                 break;
             }
