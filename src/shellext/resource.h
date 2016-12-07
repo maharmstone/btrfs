@@ -139,6 +139,7 @@
 #define IDC_LIMIT_START                 1045
 #define IDC_BUTTON2                     1045
 #define IDC_METADATA_OPTIONS            1045
+#define IDC_DEVICE_REFRESH              1045
 #define IDC_VRANGE_END                  1046
 #define IDC_BUTTON3                     1046
 #define IDC_SYSTEM_OPTIONS              1046

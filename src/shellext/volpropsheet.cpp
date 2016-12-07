@@ -1555,7 +1555,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     HANDLE h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
-    ULONG usagesize;
+    ULONG usagesize, devsize;
     btrfs_usage* usage;
     btrfs_device* bd = devices;
     int i;
@@ -1565,6 +1565,32 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(GetParent(devlist), GetLastError());
+        return;
+    }
+    
+    i = 0;
+    devsize = 1024;
+    
+    devices = (btrfs_device*)malloc(devsize);
+
+    while (TRUE) {
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+        if (Status == STATUS_BUFFER_OVERFLOW) {
+            if (i < 8) {
+                devsize += 1024;
+                
+                free(devices);
+                devices = (btrfs_device*)malloc(devsize);
+                
+                i++;
+            } else
+                return;
+        } else
+            break;
+    }
+    
+    if (Status != STATUS_SUCCESS) {
+        CloseHandle(h);
         return;
     }
 
@@ -1599,6 +1625,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     }
 
     CloseHandle(h);
+    
+    SendMessageW(devlist, LVM_DELETEALLITEMS, 0, 0);
     
     i = 0;
     while (TRUE) {
@@ -1741,6 +1769,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             
                             return TRUE;
                         }
+                        
+                        case IDC_DEVICE_REFRESH:
+                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+                            return TRUE;
                     }
                 break;
             }
