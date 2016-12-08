@@ -1174,6 +1174,8 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                 }
             } else if (context->csum) {
 #ifdef DEBUG_STATS
+                LARGE_INTEGER time1, time2;
+                
                 time1 = KeQueryPerformanceCounter(NULL);
 #endif
                 Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].Irp->IoStatus.Information / context->sector_size, context->csum);
@@ -1203,6 +1205,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
         // FIXME - update dev stats
         
         if (cancelled > 0) {
+#ifdef DEBUG_STATS
+            LARGE_INTEGER time1, time2;
+#endif
             context->stripes_left = 0;
             
             for (i = 0; i < ci->num_stripes; i++) {
@@ -1268,7 +1273,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
             KeClearEvent(&context->Event);
             
 #ifdef DEBUG_STATS
-            if (!is_tree)
+            if (!context->tree)
                 time1 = KeQueryPerformanceCounter(NULL);
 #endif
 
@@ -1281,7 +1286,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
             KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
             
 #ifdef DEBUG_STATS
-            if (!is_tree) {
+            if (!context->tree) {
                 time2 = KeQueryPerformanceCounter(NULL);
                 
                 Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
@@ -1350,8 +1355,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
         for (i = 0; i < (stripeend[0] - stripestart[0]) / context->sector_size; i++) {
             UINT16 j;
             BOOL success = FALSE;
-            
 #ifdef DEBUG_STATS
+            LARGE_INTEGER time1, time2;
+            
             time1 = KeQueryPerformanceCounter(NULL);
 #endif
             
@@ -1475,8 +1481,9 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
     } else if (context->csum) {
         NTSTATUS Status;
-        
 #ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+        
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
@@ -1584,8 +1591,9 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         }
     } else if (context->csum) {
         NTSTATUS Status;
-        
 #ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+        
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
@@ -1605,6 +1613,9 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
     
     if (checksum_error) {
         CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+#ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+#endif
         
         // FIXME - update dev stats
         
@@ -1731,7 +1742,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         KeClearEvent(&context->Event);
         
 #ifdef DEBUG_STATS
-        if (!is_tree)
+        if (!context->tree)
             time1 = KeQueryPerformanceCounter(NULL);
 #endif
 
@@ -1744,7 +1755,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
         
 #ifdef DEBUG_STATS
-        if (!is_tree) {
+        if (!context->tree) {
             time2 = KeQueryPerformanceCounter(NULL);
             
             Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
@@ -1976,6 +1987,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             checksum_error = TRUE;
     } else if (context->csum) {
 #ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+        
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
@@ -2000,6 +2013,9 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         if (needs_reconstruct) {
             PIO_STACK_LOCATION IrpSp;
+#ifdef DEBUG_STATS
+            LARGE_INTEGER time1, time2;
+#endif
             
             // re-run Irp that we cancelled
             
@@ -2058,7 +2074,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             KeClearEvent(&context->Event);
             
 #ifdef DEBUG_STATS
-            if (!is_tree)
+            if (!context->tree)
                 time1 = KeQueryPerformanceCounter(NULL);
 #endif
 
@@ -2067,7 +2083,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
             
 #ifdef DEBUG_STATS
-            if (!is_tree) {
+            if (!context->tree) {
                 time2 = KeQueryPerformanceCounter(NULL);
                 
                 Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
@@ -2274,6 +2290,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             checksum_error = TRUE;
     } else if (context->csum) {
 #ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+        
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
@@ -2354,11 +2372,14 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
             
         if (needs_reconstruct > 0) {
+#ifdef DEBUG_STATS
+            LARGE_INTEGER time1, time2;
+#endif
             context->stripes_left = needs_reconstruct;
             KeClearEvent(&context->Event);
             
 #ifdef DEBUG_STATS
-            if (!is_tree)
+            if (!context->tree)
                 time1 = KeQueryPerformanceCounter(NULL);
 #endif
             
@@ -2371,7 +2392,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
             
 #ifdef DEBUG_STATS
-            if (!is_tree) {
+            if (!context->tree) {
                 time2 = KeQueryPerformanceCounter(NULL);
                 
                 Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
