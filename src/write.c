@@ -121,7 +121,7 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     UINT64 lastaddr;
     LIST_ENTRY* le;
     
-    lastaddr = 0;
+    lastaddr = 0xc00000;
     
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
