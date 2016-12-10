@@ -104,7 +104,7 @@ static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceO
     return STATUS_SUCCESS;
 }
 
-static void STDCALL add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
+void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ULONG tnsize;
     MOUNTMGR_TARGET_NAME* tn;
     KEVENT Event;

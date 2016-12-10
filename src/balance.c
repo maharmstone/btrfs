@@ -2263,7 +2263,23 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         
         if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
             RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            PFILE_OBJECT FileObject;
+            PDEVICE_OBJECT mountmgr;
+            UNICODE_STRING mmdevpath;
+        
             RemoveEntryList(&v->list_entry);
+        
+            // re-add entry to mountmgr
+            // FIXME - don't do this if partition 0
+        
+            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            else {
+                add_volume(mountmgr, &v->devpath);
+                ObDereferenceObject(FileObject);
+            }
         
             if (v->devpath.Buffer)
                 ExFreePool(v->devpath.Buffer);
@@ -2290,7 +2306,6 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
-    // FIXME - re-add entry to mountmgr (unless partition 0)
     // FIXME - handle deleting device with lowest number
     
     return STATUS_SUCCESS;

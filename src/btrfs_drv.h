@@ -905,6 +905,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 // in search.c
 void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes);
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v);
+void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us);
 
 // in cache.c
 NTSTATUS STDCALL init_cache();
