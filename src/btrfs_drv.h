@@ -1216,4 +1216,13 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #define called_from_lxss() FALSE
 #endif
 
+typedef BOOLEAN (*tPsIsDiskCountersEnabled)();
+
+typedef VOID (*tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULONG64 BytesWritten,
+                                      ULONG ReadOperationCount, ULONG WriteOperationCount, ULONG FlushOperationCount);
+
+#undef RtlIsNtDdiVersionAvailable
+
+BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
+
 #endif

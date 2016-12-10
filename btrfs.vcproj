@@ -65,7 +65,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ntoskrnl.lib hal.lib $(NOINHERIT)"
+				AdditionalDependencies="ntoskrnl.lib hal.lib BufferOverflowK.lib rtlver.lib $(NOINHERIT)"
 				OutputFile="$(OutDir)\$(ProjectName).sys"
 				LinkIncremental="0"
 				AdditionalLibraryDirectories="C:\WinDDK\Lib\win7\km\x86"
@@ -149,7 +149,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ntoskrnl.lib hal.lib $(NOINHERIT)"
+				AdditionalDependencies="ntoskrnl.lib hal.lib BufferOverflowK.lib rtlver.lib $(NOINHERIT)"
 				OutputFile="$(OutDir)\$(ProjectName).sys"
 				LinkIncremental="0"
 				AdditionalLibraryDirectories="C:\WinDDK\Lib\win7\km\x64"
@@ -231,7 +231,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ntoskrnl.lib hal.lib $(NOINHERIT)"
+				AdditionalDependencies="ntoskrnl.lib hal.lib BufferOverflowK.lib rtlver.lib $(NOINHERIT)"
 				OutputFile="$(OutDir)\$(ProjectName).sys"
 				LinkIncremental="0"
 				AdditionalLibraryDirectories="C:\WinDDK\Lib\win7\km\x86"
@@ -315,7 +315,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="ntoskrnl.lib hal.lib $(NOINHERIT)"
+				AdditionalDependencies="ntoskrnl.lib hal.lib BufferOverflowK.lib rtlver.lib $(NOINHERIT)"
 				OutputFile="$(OutDir)\$(ProjectName).sys"
 				LinkIncremental="0"
 				AdditionalLibraryDirectories="C:\WinDDK\Lib\win7\km\x64"

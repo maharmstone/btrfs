@@ -58,14 +58,14 @@ UINT32 mount_raid6_recalculation = 1;
 UINT32 mount_skip_balance = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
+tPsUpdateDiskCounters PsUpdateDiskCounters;
+BOOL diskacc = FALSE;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
 PDEVICE_OBJECT comdo = NULL;
 HANDLE log_handle = NULL;
 #endif
-
-int __security_cookie = __LINE__;
 
 static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject);
 
@@ -4563,6 +4563,25 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     check_cpu();
    
 //    TRACE("check CRC32C: %08x\n", calc_crc32c((UINT8*)"123456789", 9)); // should be e3069283
+    
+    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
+        UNICODE_STRING name;
+        tPsIsDiskCountersEnabled PsIsDiskCountersEnabled;
+        
+        RtlInitUnicodeString(&name, L"PsIsDiskCountersEnabled");
+        PsIsDiskCountersEnabled = (tPsIsDiskCountersEnabled)MmGetSystemRoutineAddress(&name);
+        
+        if (PsIsDiskCountersEnabled) {
+            diskacc = PsIsDiskCountersEnabled();
+            
+            RtlInitUnicodeString(&name, L"PsUpdateDiskCounters");
+            PsUpdateDiskCounters = (tPsUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
+            
+            if (!PsUpdateDiskCounters)
+                diskacc = FALSE;
+        }
+    } else
+        PsUpdateDiskCounters = NULL;
    
     drvobj = DriverObject;
 
