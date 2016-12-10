@@ -769,6 +769,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
 void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 void init_device(device_extension* Vcb, device* dev, BOOL get_length);
+void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

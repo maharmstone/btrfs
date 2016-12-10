@@ -4050,12 +4050,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ccfs.FileSize = fcb->Header.FileSize;
             ccfs.ValidDataLength = fcb->Header.ValidDataLength;
             
-            if (!FileObject->PrivateCacheMap) {
-                TRACE("calling CcInitializeCacheMap...\n");
-                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, FileObject);
-                
-                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
-            }
+            if (!FileObject->PrivateCacheMap)
+                init_file_cache(FileObject, &ccfs);
             
             CcSetFileSizes(FileObject, &ccfs);
         }

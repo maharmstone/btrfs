@@ -3461,11 +3461,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
                 ccfs.FileSize = fcb->Header.FileSize;
                 ccfs.ValidDataLength = fcb->Header.ValidDataLength;
                 
-                TRACE("calling CcInitializeCacheMap (%llx, %llx, %llx)\n",
-                            ccfs.AllocationSize.QuadPart, ccfs.FileSize.QuadPart, ccfs.ValidDataLength.QuadPart);
-                CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, FileObject);
-
-                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+                init_file_cache(FileObject, &ccfs);
             }
             
             if (IrpSp->MinorFunction & IRP_MN_MDL) {

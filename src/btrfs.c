@@ -3503,6 +3503,14 @@ end:
     return NULL;
 }
 
+void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs) {
+    TRACE("(%p, %p)\n", FileObject, ccfs);
+    
+    CcInitializeCacheMap(FileObject, ccfs, FALSE, cache_callbacks, FileObject);
+
+    CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+}
+
 static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG i;
