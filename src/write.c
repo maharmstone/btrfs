@@ -45,6 +45,7 @@ static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP 
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
+extern tCcCopyWriteEx CcCopyWriteEx;
 extern BOOL diskacc;
 
 BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
@@ -4065,12 +4066,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             Status = Irp->IoStatus.Status;
             goto end;
         } else {
-            TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
-            if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
-                Status = STATUS_PENDING;
-                goto end;
+            if (CcCopyWriteEx) {
+                TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, offset.QuadPart, *length, wait, buf, Irp->Tail.Overlay.Thread);
+                if (!CcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
+                    Status = STATUS_PENDING;
+                    goto end;
+                }
+                TRACE("CcCopyWriteEx finished\n");
+            } else {
+                TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
+                if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
+                    Status = STATUS_PENDING;
+                    goto end;
+                }
+                TRACE("CcCopyWrite finished\n");
             }
-            TRACE("CcCopyWrite finished\n");
         }
         
         Status = STATUS_SUCCESS;

@@ -1221,6 +1221,9 @@ typedef BOOLEAN (*tPsIsDiskCountersEnabled)();
 typedef VOID (*tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULONG64 BytesWritten,
                                       ULONG ReadOperationCount, ULONG WriteOperationCount, ULONG FlushOperationCount);
 
+typedef BOOLEAN (*tCcCopyWriteEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
+                                  PVOID Buffer, PETHREAD IoIssuerThread);
+
 #undef RtlIsNtDdiVersionAvailable
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);

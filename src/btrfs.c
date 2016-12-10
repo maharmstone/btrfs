@@ -59,6 +59,7 @@ UINT32 mount_skip_balance = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
+tCcCopyWriteEx CcCopyWriteEx;
 BOOL diskacc = FALSE;
 
 #ifdef _DEBUG
@@ -4580,8 +4581,13 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
             if (!PsUpdateDiskCounters)
                 diskacc = FALSE;
         }
-    } else
+        
+        RtlInitUnicodeString(&name, L"CcCopyWriteEx");
+        CcCopyWriteEx = (tCcCopyWriteEx)MmGetSystemRoutineAddress(&name);
+    } else {
         PsUpdateDiskCounters = NULL;
+        CcCopyWriteEx = NULL;
+    }
    
     drvobj = DriverObject;
 
