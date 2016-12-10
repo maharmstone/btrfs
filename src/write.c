@@ -44,6 +44,9 @@ typedef struct {
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
+extern tPsUpdateDiskCounters PsUpdateDiskCounters;
+extern BOOL diskacc;
+
 BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
     LIST_ENTRY* le;
     space* s;
@@ -4397,6 +4400,20 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     
 //         check_extent_tree_consistent(Vcb);
 #endif
+        
+        if (diskacc && Status != STATUS_PENDING && Irp->Flags & IRP_NOCACHE) {
+            PETHREAD thread = NULL;
+            
+            if (Irp->Tail.Overlay.Thread && !IoIsSystemThread(Irp->Tail.Overlay.Thread))
+                thread = Irp->Tail.Overlay.Thread;
+            else if (!IoIsSystemThread(PsGetCurrentThread()))
+                thread = PsGetCurrentThread();
+            else if (IoIsSystemThread(PsGetCurrentThread()) && IoGetTopLevelIrp() == Irp)
+                thread = PsGetCurrentThread();
+            
+            if (thread)
+                PsUpdateDiskCounters(PsGetThreadProcess(thread), 0, IrpSp->Parameters.Write.Length, 0, 1, 0);
+        }
     }
     
 exit:

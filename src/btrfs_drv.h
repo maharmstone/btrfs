@@ -1225,4 +1225,6 @@ typedef VOID (*tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULON
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
 
+PEPROCESS PsGetThreadProcess(PETHREAD Thread); // not in mingw
+
 #endif
