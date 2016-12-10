@@ -2824,6 +2824,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->devitem.device_uuid = *uuid;
                 dev->seeding = v->seeding;
                 dev->readonly = dev->seeding;
+                dev->reloc = FALSE;
                 dev->removable = FALSE;
                 Vcb->devices_loaded++;
                 InsertTailList(&Vcb->devices, &dev->list_entry);
@@ -2899,6 +2900,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     dev->ssd = FALSE;
     dev->trim = FALSE;
     dev->readonly = dev->seeding;
+    dev->reloc = FALSE;
     
     if (!dev->readonly) {
         Status = dev_ioctl(dev->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0,

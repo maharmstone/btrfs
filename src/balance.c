@@ -2158,6 +2158,77 @@ static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     }
 }
 
+static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    LIST_ENTRY rollback;
+    
+    InitializeListHead(&rollback);
+    
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+    if (Vcb->need_write)
+        do_write(Vcb, NULL, &rollback);
+    
+    free_trees(Vcb);
+    
+    clear_rollback(Vcb, &rollback);
+    
+    // remove entry in chunk tree
+
+    searchkey.obj_id = 1;
+    searchkey.obj_type = TYPE_DEV_ITEM;
+    searchkey.offset = dev->devitem.dev_id;
+    
+    Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    if (!keycmp(searchkey, tp.item->key))
+        delete_tree_item(Vcb, &tp, &rollback);
+    
+    // remove stats entry in device tree
+    
+    searchkey.obj_id = 0;
+    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.offset = dev->devitem.dev_id;
+    
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    if (!keycmp(searchkey, tp.item->key))
+        delete_tree_item(Vcb, &tp, &rollback);
+    
+    Vcb->superblock.num_devices--;
+    Vcb->superblock.total_bytes -= dev->devitem.num_bytes;
+    Vcb->devices_loaded--;
+    RemoveEntryList(&dev->list_entry);
+    
+    do_write(Vcb, NULL, &rollback);
+    
+    free_trees(Vcb);
+    
+    clear_rollback(Vcb, &rollback);
+    
+    // FIXME - write over superblocks
+    // FIXME - remove entry in volume list
+    // FIXME - reduce refcount of DeviceObject
+    // FIXME - free dev
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    // FIXME - re-add entry to mountmgr (unless partition 0)
+    // FIXME - handle deleting device with lowest number
+    
+    return STATUS_SUCCESS;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
@@ -2298,21 +2369,38 @@ static void balance_thread(void* context) {
     
 end:
     if (!Vcb->readonly) {
-        if (!Vcb->removing) {
+        if (!Vcb->balance.removing) {
             Status = remove_balance_item(Vcb);
             if (!NT_SUCCESS(Status)) {
                 ERR("remove_balance_item returned %08x\n", Status);
                 goto end;
             }
         } else {
-            // FIXME - finish off removing device if successful:
-            // FIXME - update chunk and dev trees
-            // FIXME - remove entry in volume list
-            // FIXME - write over superblocks
-            // FIXME - re-add entry to mountmgr (unless partition 0)
-            // FIXME - handle deleting device with lowest number
+            device* dev = NULL;
             
-            // FIXME - if not successful, reset device readonly status
+            le = Vcb->devices.Flink;
+            while (le != &Vcb->devices) {
+                device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+                
+                if (dev2->devitem.dev_id == Vcb->balance.opts[0].devid) {
+                    dev = dev2;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+            
+            if (dev) {
+                if (Vcb->balance.chunks_left == 0) {
+                    Status = finish_removing_device(Vcb, dev);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("finish_removing_device returned %08x\n", Status);
+                        dev->reloc = FALSE;
+                    }
+                } else
+                    dev->reloc = FALSE;
+            }
         }
     }
     
@@ -2587,8 +2675,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     // FIXME - check enough devices left for current RAID type
     // FIXME - mark device as readonly
     
-    Vcb->balance.dev_readonly = dev->readonly;
-    dev->readonly = TRUE;
+    dev->reloc = TRUE;
     
     RtlZeroMemory(Vcb->balance.opts, sizeof(btrfs_balance_opts) * 3);
     
@@ -2604,7 +2691,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
-        dev->readonly = Vcb->balance.dev_readonly;
+        dev->reloc = FALSE;
         return Status;
     }
     

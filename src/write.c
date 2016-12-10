@@ -149,7 +149,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
-        if (!dev->readonly) {
+        if (!dev->readonly && !dev->reloc) {
             UINT64 usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
             
             // favour devices which have been used the least
@@ -206,7 +206,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
         UINT64 usage;
         BOOL skip = FALSE;
         
-        if (dev->readonly) {
+        if (dev->readonly || dev->reloc) {
             le = le->Flink;
             continue;
         }

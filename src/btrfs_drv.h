@@ -387,6 +387,7 @@ typedef struct {
     BOOL removable;
     BOOL seeding;
     BOOL readonly;
+    BOOL reloc;
     BOOL ssd;
     BOOL trim;
     ULONG change_count;
