@@ -3157,6 +3157,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
         case FSCTL_BTRFS_ADD_DEVICE:
             Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
+            
+        case FSCTL_BTRFS_REMOVE_DEVICE:
+            Status = remove_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+        break;
 
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

@@ -2183,10 +2183,14 @@ static void balance_thread(void* context) {
     // FIXME - what are we supposed to do with limit_start?
     
     if (!Vcb->readonly) {
-        Status = add_balance_item(Vcb);
-        if (!NT_SUCCESS(Status)) {
-            ERR("add_balance_item returned %08x\n", Status);
-            goto end;
+        if (!Vcb->balance.removing) {
+            Status = add_balance_item(Vcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_balance_item returned %08x\n", Status);
+                goto end;
+            }
+        } else {
+            // FIXME - flush
         }
     }
     
@@ -2294,10 +2298,21 @@ static void balance_thread(void* context) {
     
 end:
     if (!Vcb->readonly) {
-        Status = remove_balance_item(Vcb);
-        if (!NT_SUCCESS(Status)) {
-            ERR("remove_balance_item returned %08x\n", Status);
-            goto end;
+        if (!Vcb->removing) {
+            Status = remove_balance_item(Vcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("remove_balance_item returned %08x\n", Status);
+                goto end;
+            }
+        } else {
+            // FIXME - finish off removing device if successful:
+            // FIXME - update chunk and dev trees
+            // FIXME - remove entry in volume list
+            // FIXME - write over superblocks
+            // FIXME - re-add entry to mountmgr (unless partition 0)
+            // FIXME - handle deleting device with lowest number
+            
+            // FIXME - if not successful, reset device readonly status
         }
     }
     
@@ -2392,6 +2407,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length) {
     RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bsb->opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
     
     Vcb->balance.paused = FALSE;
+    Vcb->balance.removing = FALSE;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
@@ -2451,6 +2467,7 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
     else
         Vcb->balance.paused = FALSE;
     
+    Vcb->balance.removing = FALSE;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
@@ -2479,6 +2496,7 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
     RtlCopyMemory(&bqb->data_opts, &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->metadata_opts, &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->system_opts, &Vcb->balance.opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
+    // FIXME - return whether removing device or not
 
     return STATUS_SUCCESS;
 }
@@ -2520,6 +2538,75 @@ NTSTATUS stop_balance(device_extension* Vcb) {
     Vcb->balance.stopping = TRUE;
     Vcb->balance.cancelling = TRUE;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
+    UINT64 devid;
+    LIST_ENTRY* le;
+    device* dev = NULL;
+    NTSTATUS Status;
+    int i;
+    
+    TRACE("(%p, %p, %x)\n", Vcb, data, length);
+    
+    if (length < sizeof(UINT64))
+        return STATUS_INVALID_PARAMETER;
+    
+    // FIXME - check running as admin
+    
+    devid = *(UINT64*)data;
+    
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+    
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev2->devitem.dev_id == devid) {
+            dev = dev2;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!dev) {
+        WARN("device %llx not found\n", devid);
+        return STATUS_NOT_FOUND;
+    } 
+    
+    if (Vcb->balance.thread) {
+        WARN("balance already running\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+    
+    // FIXME - check not only non-readonly device
+    // FIXME - check enough devices left for current RAID type
+    // FIXME - mark device as readonly
+    
+    Vcb->balance.dev_readonly = dev->readonly;
+    dev->readonly = TRUE;
+    
+    RtlZeroMemory(Vcb->balance.opts, sizeof(btrfs_balance_opts) * 3);
+    
+    for (i = 0; i < 3; i++) {
+        Vcb->balance.opts[i].flags = BTRFS_BALANCE_OPTS_ENABLED | BTRFS_BALANCE_OPTS_DEVID;
+        Vcb->balance.opts[i].devid = devid;
+    }
+    
+    Vcb->balance.paused = FALSE;
+    Vcb->balance.removing = TRUE;
+    KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+    
+    Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("PsCreateSystemThread returned %08x\n", Status);
+        dev->readonly = Vcb->balance.dev_readonly;
+        return Status;
+    }
     
     return STATUS_SUCCESS;
 }

@@ -531,6 +531,8 @@ typedef struct {
     BOOL paused;
     BOOL stopping;
     BOOL cancelling;
+    BOOL removing;
+    BOOL dev_readonly;
     KEVENT event;
     KEVENT finished;
 } balance_info;
@@ -1068,6 +1070,7 @@ NTSTATUS pause_balance(device_extension* Vcb);
 NTSTATUS resume_balance(device_extension* Vcb);
 NTSTATUS stop_balance(device_extension* Vcb);
 NTSTATUS look_for_balance_item(device_extension* Vcb);
+NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
