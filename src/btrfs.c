@@ -61,6 +61,7 @@ UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
 tCcCopyReadEx CcCopyReadEx;
 tCcCopyWriteEx CcCopyWriteEx;
+tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 BOOL diskacc = FALSE;
 
 #ifdef _DEBUG
@@ -3507,6 +3508,9 @@ void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs) {
     TRACE("(%p, %p)\n", FileObject, ccfs);
     
     CcInitializeCacheMap(FileObject, ccfs, FALSE, cache_callbacks, FileObject);
+    
+    if (diskacc)
+        CcSetAdditionalCacheAttributesEx(FileObject, CC_ENABLE_DISK_IO_ACCOUNTING);
 
     CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
 }
@@ -4596,10 +4600,14 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
         
         RtlInitUnicodeString(&name, L"CcCopyWriteEx");
         CcCopyWriteEx = (tCcCopyWriteEx)MmGetSystemRoutineAddress(&name);
+        
+        RtlInitUnicodeString(&name, L"CcSetAdditionalCacheAttributesEx");
+        CcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
     } else {
         PsUpdateDiskCounters = NULL;
         CcCopyReadEx = NULL;
         CcCopyWriteEx = NULL;
+        CcSetAdditionalCacheAttributesEx = NULL;
     }
    
     drvobj = DriverObject;

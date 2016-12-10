@@ -1228,6 +1228,10 @@ typedef BOOLEAN (*tCcCopyWriteEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOf
 typedef BOOLEAN (*tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
                                  PVOID Buffer, PIO_STATUS_BLOCK IoStatus, PETHREAD IoIssuerThread);
 
+#define CC_ENABLE_DISK_IO_ACCOUNTING 0x00000010
+
+typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
+
 #undef RtlIsNtDdiVersionAvailable
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
