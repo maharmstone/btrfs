@@ -56,6 +56,9 @@ typedef struct {
     KSPIN_LOCK spin_lock;
 } read_data_context;
 
+extern BOOL diskacc;
+extern tPsUpdateDiskCounters PsUpdateDiskCounters;
+
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
@@ -3517,6 +3520,20 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         TRACE("read %u bytes\n", *bytes_read);
         
         Irp->IoStatus.Information = *bytes_read;
+        
+        if (diskacc && Status != STATUS_PENDING) {
+            PETHREAD thread = NULL;
+            
+            if (Irp->Tail.Overlay.Thread && !IoIsSystemThread(Irp->Tail.Overlay.Thread))
+                thread = Irp->Tail.Overlay.Thread;
+            else if (!IoIsSystemThread(PsGetCurrentThread()))
+                thread = PsGetCurrentThread();
+            else if (IoIsSystemThread(PsGetCurrentThread()) && IoGetTopLevelIrp() == Irp)
+                thread = PsGetCurrentThread();
+            
+            if (thread)
+                PsUpdateDiskCounters(PsGetThreadProcess(thread), *bytes_read, 0, 1, 0, 0);
+        }
         
         return Status;
     }
