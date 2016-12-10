@@ -64,6 +64,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } data_reloc_ref;
 
+extern LIST_ENTRY volumes;
+
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
@@ -2191,7 +2193,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    LIST_ENTRY rollback;
+    LIST_ENTRY rollback, *le;
     
     InitializeListHead(&rollback);
     
@@ -2253,7 +2255,27 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     if (!NT_SUCCESS(Status))
         WARN("remove_superblocks returned %08x\n", Status);
     
-    // FIXME - remove entry in volume list
+    // remove entry in volume list
+    
+    le = volumes.Flink;
+    while (le != &volumes) {
+        volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        
+        if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
+            RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            RemoveEntryList(&v->list_entry);
+        
+            if (v->devpath.Buffer)
+                ExFreePool(v->devpath.Buffer);
+            
+            ExFreePool(v);
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    // free dev
     
     ObDereferenceObject(dev->devobj);
     
