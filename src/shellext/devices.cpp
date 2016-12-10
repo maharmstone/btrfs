@@ -420,8 +420,44 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 }
 
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    // FIXME
-    MessageBoxW(hwnd, lpszCmdLine, L"STUB", MB_OK);
+    WCHAR *s, *vol, *dev;
+    UINT64 devid;
+    HANDLE h;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    
+    s = wcsstr(lpszCmdLine, L"|");
+    if (!s)
+        return;
+    
+    s[0] = 0;
+    
+    vol = lpszCmdLine;
+    dev = &s[1];
+    
+    devid = _wtoi(dev);
+    if (devid == 0)
+        return;
+    
+    // FIXME - ask for confirmation
+    // FIXME - show balance dialog box, with progress bar and status
+    
+    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(UINT64), NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwnd, Status);
+        CloseHandle(h);
+        return;
+    }
+    
+    CloseHandle(h);
 }
 
 #ifdef __cplusplus

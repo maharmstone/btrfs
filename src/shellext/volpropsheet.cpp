@@ -1804,7 +1804,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             RtlZeroMemory(&lvi, sizeof(LVITEMW));
                             lvi.mask = LVIF_TEXT;
                             lvi.iItem = index;
-                            lvi.iSubItem = 1;
+                            lvi.iSubItem = 0;
                             lvi.pszText = sel;
                             lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM) &lvi);
@@ -1813,7 +1813,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
                             wcscat(t, L"\",RemoveDevice ");
                             wcscat(t, fn);
-                            wcscat(t, L" ");
+                            wcscat(t, L"|");
                             wcscat(t, sel);
                             
                             RtlZeroMemory(&sei, sizeof(sei));
