@@ -58,6 +58,7 @@ typedef struct {
 
 extern BOOL diskacc;
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
+extern tCcCopyReadEx CcCopyReadEx;
 
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
@@ -3470,15 +3471,28 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
             if (IrpSp->MinorFunction & IRP_MN_MDL) {
                 CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
             } else {
-                TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
-                TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
-                if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
-                    TRACE("CcCopyRead could not wait\n");
-                    
-                    IoMarkIrpPending(Irp);
-                    return STATUS_PENDING;
+                if (CcCopyReadEx) {
+                    TRACE("CcCopyReadEx(%p, %llx, %x, %u, %p, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
+                          length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread);
+                    TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                    if (!CcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
+                        TRACE("CcCopyReadEx could not wait\n");
+                        
+                        IoMarkIrpPending(Irp);
+                        return STATUS_PENDING;
+                    }
+                    TRACE("CcCopyReadEx finished\n");
+                } else {
+                    TRACE("CcCopyRead(%p, %llx, %x, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+                    TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                    if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
+                        TRACE("CcCopyRead could not wait\n");
+                        
+                        IoMarkIrpPending(Irp);
+                        return STATUS_PENDING;
+                    }
+                    TRACE("CcCopyRead finished\n");
                 }
-                TRACE("CcCopyRead finished\n");
             }
         } except (EXCEPTION_EXECUTE_HANDLER) {
             Status = GetExceptionCode();

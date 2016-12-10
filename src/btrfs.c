@@ -59,6 +59,7 @@ UINT32 mount_skip_balance = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
+tCcCopyReadEx CcCopyReadEx;
 tCcCopyWriteEx CcCopyWriteEx;
 BOOL diskacc = FALSE;
 
@@ -4582,10 +4583,14 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
                 diskacc = FALSE;
         }
         
+        RtlInitUnicodeString(&name, L"CcCopyReadEx");
+        CcCopyReadEx = (tCcCopyReadEx)MmGetSystemRoutineAddress(&name);
+        
         RtlInitUnicodeString(&name, L"CcCopyWriteEx");
         CcCopyWriteEx = (tCcCopyWriteEx)MmGetSystemRoutineAddress(&name);
     } else {
         PsUpdateDiskCounters = NULL;
+        CcCopyReadEx = NULL;
         CcCopyWriteEx = NULL;
     }
    
