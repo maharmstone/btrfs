@@ -2158,6 +2158,35 @@ static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     }
 }
 
+static NTSTATUS remove_superblocks(device* dev) {
+    NTSTATUS Status;
+    superblock* sb;
+    int i = 0;
+    
+    sb = ExAllocatePoolWithTag(PagedPool, sizeof(superblock), ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(sb, sizeof(superblock));
+    
+    while (superblock_addrs[i] > 0 && dev->length >= superblock_addrs[i] + sizeof(superblock)) {
+        Status = write_data_phys(dev->devobj, superblock_addrs[i], sb, sizeof(superblock));
+        
+        if (!NT_SUCCESS(Status)) {
+            ExFreePool(sb);
+            return Status;
+        }
+        
+        i++;
+    }
+    
+    ExFreePool(sb);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
@@ -2205,10 +2234,14 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     if (!keycmp(searchkey, tp.item->key))
         delete_tree_item(Vcb, &tp, &rollback);
     
+    // update superblock
+    
     Vcb->superblock.num_devices--;
     Vcb->superblock.total_bytes -= dev->devitem.num_bytes;
     Vcb->devices_loaded--;
     RemoveEntryList(&dev->list_entry);
+    
+    // flush
     
     do_write(Vcb, NULL, &rollback);
     
@@ -2216,7 +2249,10 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     clear_rollback(Vcb, &rollback);
     
-    // FIXME - write over superblocks
+    Status = remove_superblocks(dev);
+    if (!NT_SUCCESS(Status))
+        WARN("remove_superblocks returned %08x\n", Status);
+    
     // FIXME - remove entry in volume list
     // FIXME - reduce refcount of DeviceObject
     // FIXME - free dev
