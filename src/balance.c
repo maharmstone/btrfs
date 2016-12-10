@@ -2254,8 +2254,17 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         WARN("remove_superblocks returned %08x\n", Status);
     
     // FIXME - remove entry in volume list
-    // FIXME - reduce refcount of DeviceObject
-    // FIXME - free dev
+    
+    ObDereferenceObject(dev->devobj);
+    
+    while (!IsListEmpty(&dev->space)) {
+        LIST_ENTRY* le2 = RemoveHeadList(&dev->space);
+        space* s = CONTAINING_RECORD(le2, space, list_entry);
+        
+        ExFreePool(s);
+    }
+    
+    ExFreePool(dev);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
