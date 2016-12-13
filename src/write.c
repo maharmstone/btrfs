@@ -487,6 +487,9 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     
     success = TRUE;
     
+    if (flags & BLOCK_FLAG_RAID5 || flags & BLOCK_FLAG_RAID6)
+        Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_RAID56;
+    
 end:
     if (stripes)
         ExFreePool(stripes);
