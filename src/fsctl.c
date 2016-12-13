@@ -3143,7 +3143,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_BTRFS_PAUSE_BALANCE:
-            Status = pause_balance(DeviceObject->DeviceExtension);
+            Status = pause_balance(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
 
         case FSCTL_BTRFS_RESUME_BALANCE:

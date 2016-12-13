@@ -1068,7 +1068,7 @@ void free_calc_job(calc_job* cj);
 // in balance.c
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
 NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length);
-NTSTATUS pause_balance(device_extension* Vcb);
+NTSTATUS pause_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS resume_balance(device_extension* Vcb);
 NTSTATUS stop_balance(device_extension* Vcb);
 NTSTATUS look_for_balance_item(device_extension* Vcb);

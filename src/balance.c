@@ -2674,7 +2674,10 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS pause_balance(device_extension* Vcb) {
+NTSTATUS pause_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     if (!Vcb->balance.thread)
         return STATUS_DEVICE_NOT_READY;
     
