@@ -7,4 +7,5 @@ EXPORTS
     AddDeviceW			PRIVATE
     RemoveDeviceW		PRIVATE
     StartBalanceW		PRIVATE
+    PauseBalanceW		PRIVATE
 

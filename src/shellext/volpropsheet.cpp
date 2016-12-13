@@ -730,39 +730,31 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
 }
 
 void BtrfsVolPropSheet::PauseBalance(HWND hwndDlg) {
-    HANDLE h;
+    WCHAR t[MAX_PATH + 100];
+    SHELLEXECUTEINFOW sei;
     
-    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    t[0] = '"';
+    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+    wcscat(t, L"\",PauseBalance ");
+    wcscat(t, fn);
+    
+    RtlZeroMemory(&sei, sizeof(sei));
+    
+    sei.cbSize = sizeof(sei);
+    sei.hwnd = hwndDlg;
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"rundll32.exe";
+    sei.lpParameters = t;
+    sei.nShow = SW_SHOW;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-    if (h != INVALID_HANDLE_VALUE) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
-        btrfs_query_balance bqb2;
-        
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
-        if (Status != STATUS_SUCCESS) {
-            ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
-            return;
-        }
-        
-        if (bqb2.status == BTRFS_BALANCE_PAUSED)
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_BALANCE, NULL, 0, NULL, 0);
-        else if (bqb2.status == BTRFS_BALANCE_RUNNING)
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, NULL, 0, NULL, 0);
-        else
-            return;
-        
-        if (Status != STATUS_SUCCESS) {
-            ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
-            return;
-        }
-    } else {
+    if (!ShellExecuteExW(&sei)) {
         ShowError(hwndDlg, GetLastError());
         return;
     }
+    
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    CloseHandle(sei.hProcess);
 }
 
 void BtrfsVolPropSheet::StopBalance(HWND hwndDlg) {
@@ -2103,6 +2095,67 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         IO_STATUS_BLOCK iosb;
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwnd, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        CloseHandle(h);
+    } else {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+}
+
+void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    HANDLE h, token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    h = CreateFileW(lpszCmdLine, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        btrfs_query_balance bqb2;
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwnd, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        if (bqb2.status == BTRFS_BALANCE_PAUSED)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_BALANCE, NULL, 0, NULL, 0);
+        else if (bqb2.status == BTRFS_BALANCE_RUNNING)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, NULL, 0, NULL, 0);
+        else {
+            CloseHandle(h);
+            return;
+        }
         
         if (Status != STATUS_SUCCESS) {
             ShowNtStatusError(hwnd, Status);
