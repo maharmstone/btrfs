@@ -649,48 +649,84 @@ void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_VOL_USAGE), hwndDlg, stub_UsageDlgProc, (LPARAM)this);
 }
 
-void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
-    HANDLE h;
-    
-    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+static WCHAR hex_digit(UINT8 u) {
+    if (u >= 0xa && u <= 0xf)
+        return u - 0xa + 'a';
+    else
+        return u + '0';
+}
 
-    if (h != INVALID_HANDLE_VALUE) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
-        btrfs_start_balance bsb;
+static void serialize(void* data, ULONG len, WCHAR* s) {
+    UINT8* d;
+    
+    d = (UINT8*)data;
+    
+    while (TRUE) {
+        *s = hex_digit(*d >> 4); s++;
+        *s = hex_digit(*d & 0xf); s++;
         
-        RtlCopyMemory(&bsb.opts[0], &data_opts, sizeof(btrfs_balance_opts));
-        RtlCopyMemory(&bsb.opts[1], &metadata_opts, sizeof(btrfs_balance_opts));
-        RtlCopyMemory(&bsb.opts[2], &system_opts, sizeof(btrfs_balance_opts));
+        d++;
+        len--;
         
-        if (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED)
-            bsb.opts[0].flags |= BTRFS_BALANCE_OPTS_ENABLED;
-        else
-            bsb.opts[0].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
-        
-        if (IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED)
-            bsb.opts[1].flags |= BTRFS_BALANCE_OPTS_ENABLED;
-        else
-            bsb.opts[1].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
-        
-        if (IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED)
-            bsb.opts[2].flags |= BTRFS_BALANCE_OPTS_ENABLED;
-        else
-            bsb.opts[2].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
-        
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
-        cancelling = FALSE;
-        
-        if (Status != STATUS_SUCCESS) {
-            ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
+        if (len == 0) {
+            *s = 0;
             return;
         }
-    } else {
+    }
+}
+
+void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
+    WCHAR t[MAX_PATH + 600], u[600];
+    SHELLEXECUTEINFOW sei;
+    btrfs_start_balance bsb;
+    
+    t[0] = '"';
+    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+    wcscat(t, L"\",StartBalance ");
+    wcscat(t, fn);
+    wcscat(t, L" ");
+    
+    RtlCopyMemory(&bsb.opts[0], &data_opts, sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&bsb.opts[1], &metadata_opts, sizeof(btrfs_balance_opts));
+    RtlCopyMemory(&bsb.opts[2], &system_opts, sizeof(btrfs_balance_opts));
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED)
+        bsb.opts[0].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+    else
+        bsb.opts[0].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED)
+        bsb.opts[1].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+    else
+        bsb.opts[1].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+    
+    if (IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED)
+        bsb.opts[2].flags |= BTRFS_BALANCE_OPTS_ENABLED;
+    else
+        bsb.opts[2].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
+    
+    serialize(&bsb, sizeof(btrfs_start_balance), u);
+    wcscat(t, u);
+    
+    RtlZeroMemory(&sei, sizeof(sei));
+    
+    sei.cbSize = sizeof(sei);
+    sei.hwnd = hwndDlg;
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"rundll32.exe";
+    sei.lpParameters = t;
+    sei.nShow = SW_SHOW;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+    if (!ShellExecuteExW(&sei)) {
         ShowError(hwndDlg, GetLastError());
         return;
     }
+    
+    cancelling = FALSE;
+    
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    CloseHandle(sei.hProcess);
 }
 
 void BtrfsVolPropSheet::PauseBalance(HWND hwndDlg) {
@@ -1785,8 +1821,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.nShow = SW_SHOW;
                             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-                            if (!ShellExecuteExW(&sei))
+                            if (!ShellExecuteExW(&sei)) {
                                 ShowError(hwndDlg, GetLastError());
+                                return TRUE;
+                            }
                             
                             WaitForSingleObject(sei.hProcess, INFINITE);
                             CloseHandle(sei.hProcess);
@@ -1840,8 +1878,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.nShow = SW_SHOW;
                             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-                            if (!ShellExecuteExW(&sei))
+                            if (!ShellExecuteExW(&sei)) {
                                 ShowError(hwndDlg, GetLastError());
+                                return TRUE;
+                            }
                             
                             WaitForSingleObject(sei.hProcess, INFINITE);
                             CloseHandle(sei.hProcess);
@@ -1992,4 +2032,87 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
 
 HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
     return S_OK;
+}
+
+static UINT8 from_hex_digit(WCHAR c) {
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 0xa;
+    else if (c >= 'A' && c <= 'F')
+        return c - 'A' + 0xa;
+    else
+        return c - '0';
+}
+
+static void unserialize(void* data, ULONG len, WCHAR* s) {
+    UINT8* d;
+    
+    d = (UINT8*)data;
+    
+    while (s[0] != 0 && s[1] != 0 && len > 0) {
+        *d = from_hex_digit(s[0]) << 4 | from_hex_digit(s[1]);
+        
+        s += 2;
+        d++;
+        len--;
+    }
+}
+
+void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    WCHAR *s, *vol, *block;
+    HANDLE h, token;
+    btrfs_start_balance bsb;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    
+    s = wcsstr(lpszCmdLine, L" ");
+    if (!s)
+        return;
+    
+    s[0] = 0;
+    
+    vol = lpszCmdLine;
+    block = &s[1];
+    
+    RtlZeroMemory(&bsb, sizeof(btrfs_start_balance));
+    unserialize(&bsb, sizeof(btrfs_start_balance), block);
+    
+   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+   }
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    h = CreateFileW(vol, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwnd, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        CloseHandle(h);
+    } else {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
 }

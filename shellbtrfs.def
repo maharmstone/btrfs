@@ -6,3 +6,5 @@ EXPORTS
     DllInstall				PRIVATE
     AddDeviceW			PRIVATE
     RemoveDeviceW		PRIVATE
+    StartBalanceW		PRIVATE
+
