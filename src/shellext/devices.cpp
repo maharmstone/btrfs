@@ -422,9 +422,30 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *dev;
     UINT64 devid;
-    HANDLE h;
+    HANDLE h, token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
+    
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
     
     s = wcsstr(lpszCmdLine, L"|");
     if (!s)
