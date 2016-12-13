@@ -2495,13 +2495,12 @@ end:
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
     NTSTATUS Status;
     btrfs_start_balance* bsb = (btrfs_start_balance*)data;
-    LUID manage_volume_privilege = {SE_MANAGE_VOLUME_PRIVILEGE, 0};
     UINT8 i;
     
     if (length < sizeof(btrfs_start_balance) || !data)
         return STATUS_INVALID_PARAMETER;
     
-    if (!SeSinglePrivilegeCheck(manage_volume_privilege, processor_mode))
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
     
     if (Vcb->balance.thread) {
