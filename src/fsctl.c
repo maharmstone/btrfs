@@ -2323,7 +2323,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length) {
+static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
     PFILE_OBJECT fileobj, mountmgrfo;
@@ -2342,7 +2342,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     volname.Buffer = NULL;
     
-    // FIXME - deny access to non-Administrators
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     // FIXME - check device is not readonly
     
     if (Vcb->readonly) // FIXME - handle adding R/W device to seeding device
@@ -3155,7 +3157,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
             
         case FSCTL_BTRFS_ADD_DEVICE:
-            Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
             break;
             
         case FSCTL_BTRFS_REMOVE_DEVICE:
