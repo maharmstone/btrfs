@@ -1559,6 +1559,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     btrfs_usage* usage;
     btrfs_device* bd;
     int i;
+    UINT64 num_rw_devices;
     
     h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -1633,6 +1634,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     
     SendMessageW(devlist, LVM_DELETEALLITEMS, 0, 0);
     
+    num_rw_devices = 0;
+    
     i = 0;
     while (TRUE) {
         LVITEMW lvi;
@@ -1675,6 +1678,9 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.pszText = s;
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
         
+        if (!bd->readonly)
+            num_rw_devices++;
+        
         // size
         
         lvi.iSubItem = 3;
@@ -1709,6 +1715,10 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     free(usage);
     
     SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
+    
+    // FIXME - disable both buttons if volume is readonly
+    
+    EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_REMOVE), num_rw_devices > 1);
 }
 
 INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
