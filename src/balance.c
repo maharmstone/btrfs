@@ -2718,6 +2718,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     device* dev = NULL;
     NTSTATUS Status;
     int i;
+    UINT64 num_rw_devices;
     
     TRACE("(%p, %p, %x)\n", Vcb, data, length);
     
@@ -2731,14 +2732,17 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
     
+    num_rw_devices = 0;
+    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
         
-        if (dev2->devitem.dev_id == devid) {
+        if (dev2->devitem.dev_id == devid)
             dev = dev2;
-            break;
-        }
+        
+        if (!dev2->readonly)
+            num_rw_devices++;
         
         le = le->Flink;
     }
@@ -2746,7 +2750,12 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     if (!dev) {
         WARN("device %llx not found\n", devid);
         return STATUS_NOT_FOUND;
-    } 
+    }
+    
+    if (num_rw_devices == 1 && !dev->readonly) {
+        WARN("not removing last non-readonly device\n");
+        return STATUS_INVALID_PARAMETER;
+    }
     
     if (Vcb->balance.thread) {
         WARN("balance already running\n");
