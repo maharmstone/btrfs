@@ -2724,7 +2724,7 @@ NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
+NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
     UINT64 devid;
     LIST_ENTRY* le;
     device* dev = NULL;
@@ -2734,10 +2734,11 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length) {
     
     TRACE("(%p, %p, %x)\n", Vcb, data, length);
     
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     if (length < sizeof(UINT64))
         return STATUS_INVALID_PARAMETER;
-    
-    // FIXME - check running as admin
     
     devid = *(UINT64*)data;
     

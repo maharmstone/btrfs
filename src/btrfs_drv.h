@@ -1072,7 +1072,7 @@ NTSTATUS pause_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS resume_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS look_for_balance_item(device_extension* Vcb);
-NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length);
+NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
