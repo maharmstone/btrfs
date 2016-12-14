@@ -4581,6 +4581,28 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     
     RemoveEntryList(&c->list_entry);
     
+    // clear raid56 incompat flag if dropping last RAID5/6 chunk
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        LIST_ENTRY* le;
+        BOOL clear_flag = TRUE;
+        
+        le = Vcb->chunks.Flink;
+        while (le != &Vcb->chunks) {
+            chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
+            
+            if (c2->chunk_item->type & BLOCK_FLAG_RAID5 || c2->chunk_item->type & BLOCK_FLAG_RAID6) {
+                clear_flag = FALSE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (clear_flag)
+            Vcb->superblock.incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_RAID56;
+    }
+    
     Vcb->superblock.bytes_used -= c->oldused;
     
     if (c->list_entry_changed.Flink)
