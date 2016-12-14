@@ -1167,7 +1167,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, 
                     break;
                 else if (num_writeable_devices < 3 && i == 4)
                     break;
-                else if (num_writeable_devices < 4 && i == 6)
+                else if (num_writeable_devices < 4 && i == 5)
                     break;
             }
             
