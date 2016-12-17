@@ -2419,6 +2419,9 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     
     to_read = sector_align(sizeof(superblock), device->SectorSize);
     
+    if (to_read < sizeof(superblock))
+        return STATUS_DEVICE_NOT_READY;
+    
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
         ERR("out of memory\n");
