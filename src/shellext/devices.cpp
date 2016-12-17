@@ -18,6 +18,7 @@
 #include "devices.h"
 #include "resource.h"
 #include "../btrfsioctl.h"
+#include "balance.h"
 #include <shlobj.h>
 #include <uxtheme.h>
 #include <stdio.h>
@@ -449,6 +450,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     LUID luid;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
+    BtrfsBalance* bb;
     
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
         ShowError(hwnd, GetLastError());
@@ -483,7 +485,6 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         return;
     
     // FIXME - ask for confirmation
-    // FIXME - show balance dialog box, with progress bar and status
     
     h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -501,6 +502,12 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     }
     
     CloseHandle(h);
+    
+    bb = new BtrfsBalance(vol);
+    
+    bb->ShowBalance(hwnd);
+    
+    delete bb;
 }
 
 #ifdef __cplusplus
