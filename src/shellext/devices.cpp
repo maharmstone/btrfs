@@ -57,8 +57,6 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     TVINSERTSTRUCTW tis;
     WCHAR t[255], u[255], *v, *vn;
     
-    // FIXME - can we fetch actual GPT partition numbers?
-    
     if (!LoadStringW(module, partnum != 0 ? IDS_PARTITION : IDS_WHOLE_DISK, t, sizeof(t) / sizeof(WCHAR))) {
         ShowError(GetParent(tree), GetLastError());
         return;
