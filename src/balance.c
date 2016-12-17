@@ -2251,9 +2251,11 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     clear_rollback(Vcb, &rollback);
     
-    Status = remove_superblocks(dev);
-    if (!NT_SUCCESS(Status))
-        WARN("remove_superblocks returned %08x\n", Status);
+    if (!dev->readonly) {
+        Status = remove_superblocks(dev);
+        if (!NT_SUCCESS(Status))
+            WARN("remove_superblocks returned %08x\n", Status);
+    }
     
     // remove entry in volume list
     
