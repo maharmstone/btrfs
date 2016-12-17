@@ -2189,7 +2189,7 @@ static NTSTATUS remove_superblocks(device* dev) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS replace_mount_dev(device_extension* Vcb, device* dev, PDEVICE_OBJECT mountmgr) {
+static NTSTATUS replace_mount_dev(device_extension* Vcb, device* dev, PDEVICE_OBJECT mountmgr, BOOL part0) {
     NTSTATUS Status;
     MOUNTDEV_NAME mdn, *mdn2 = NULL, *mdn3 = NULL;
     ULONG mdnsize, mmpsize;
@@ -2318,12 +2318,13 @@ static NTSTATUS replace_mount_dev(device_extension* Vcb, device* dev, PDEVICE_OB
     
 end2:
     // re-add old device back to mountmgr
-    // FIXME - don't do this if partition 0
     
-    us.Buffer = mdn2->Name;
-    us.Length = us.MaximumLength = mdn2->NameLength;
-    
-    add_volume(mountmgr, &us);
+    if (!part0) {
+        us.Buffer = mdn2->Name;
+        us.Length = us.MaximumLength = mdn2->NameLength;
+        
+        add_volume(mountmgr, &us);
+    }
     
 end:
     if (mdn2)
@@ -2346,7 +2347,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     traverse_ptr tp;
     NTSTATUS Status;
     LIST_ENTRY rollback, *le;
-    BOOL first_dev;
+    BOOL first_dev, part0 = FALSE;
     
     InitializeListHead(&rollback);
     
@@ -2439,6 +2440,8 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
                     ObDereferenceObject(FileObject);
                 }
             }
+            
+            part0 = v->part0;
         
             if (v->devpath.Buffer)
                 ExFreePool(v->devpath.Buffer);
@@ -2471,7 +2474,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         if (!NT_SUCCESS(Status))
             ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
         else {
-            Status = replace_mount_dev(Vcb, dev, mountmgr);
+            Status = replace_mount_dev(Vcb, dev, mountmgr, part0);
             if (!NT_SUCCESS(Status))
                 ERR("replace_mount_dev returned %08x\n", Status);
             
