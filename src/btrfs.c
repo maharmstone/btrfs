@@ -3592,7 +3592,7 @@ static BOOL raid_generations_okay(device_extension* Vcb) {
 }
 
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-    PIO_STACK_LOCATION Stack;
+    PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
     PDEVICE_OBJECT DeviceToMount;
     NTSTATUS Status;
@@ -3606,40 +3606,30 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL init_lookaside = FALSE;
     device* dev;
     
-    TRACE("mount_vol called\n");
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
     
-    if (DeviceObject != devobj)
-    {
+    if (DeviceObject != devobj) {
         Status = STATUS_INVALID_DEVICE_REQUEST;
         goto exit;
     }
 
-    Stack = IoGetCurrentIrpStackLocation(Irp);
-    DeviceToMount = Stack->Parameters.MountVolume.DeviceObject;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
 
-    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-                       &gli, sizeof(gli), TRUE, NULL);
+    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("error reading length information: %08x\n", Status);
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
 
-    Status = IoCreateDevice(drvobj,
-                            sizeof(device_extension),
-                            NULL,
-                            FILE_DEVICE_DISK_FILE_SYSTEM,
-                            0,
-                            FALSE,
-                            &NewDeviceObject);
+    Status = IoCreateDevice(drvobj, sizeof(device_extension), NULL, FILE_DEVICE_DISK_FILE_SYSTEM, 0, FALSE, &NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
     
-//     TRACE("DEV_ITEM = %x, superblock = %x\n", sizeof(DEV_ITEM), sizeof(superblock));
-
     NewDeviceObject->Flags |= DO_DIRECT_IO;
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
@@ -3660,27 +3650,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializeResourceLite(&Vcb->load_lock);
     ExAcquireResourceExclusiveLite(&Vcb->load_lock, TRUE);
 
-//     Vcb->Identifier.Type = NTFS_TYPE_VCB;
-//     Vcb->Identifier.Size = sizeof(NTFS_TYPE_VCB);
-// 
-//     Status = NtfsGetVolumeData(DeviceToMount,
-//                                Vcb);
-//     if (!NT_SUCCESS(Status))
-//         goto ByeBye;
-    
-//     Vcb->device = DeviceToMount;
     DeviceToMount->Flags |= DO_DIRECT_IO;
-    
-//     Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0,
-//                        &Vcb->geometry, sizeof(DISK_GEOMETRY), TRUE);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error reading disk geometry: %08x\n", Status);
-//         goto exit;
-//     } else {
-//         TRACE("media type = %u, cylinders = %u, tracks per cylinder = %u, sectors per track = %u, bytes per sector = %u\n",
-//                       Vcb->geometry.MediaType, Vcb->geometry.Cylinders, Vcb->geometry.TracksPerCylinder,
-//                       Vcb->geometry.SectorsPerTrack, Vcb->geometry.BytesPerSector);
-//     }
     
     TRACE("partition length = %llx\n", gli.Length.QuadPart);
 
@@ -3756,7 +3726,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Vcb->disallow_dismount = TRUE;
     
     TRACE("DeviceToMount = %p\n", DeviceToMount);
-    TRACE("Stack->Parameters.MountVolume.Vpb = %p\n", Stack->Parameters.MountVolume.Vpb);
+    TRACE("IrpSp->Parameters.MountVolume.Vpb = %p\n", IrpSp->Parameters.MountVolume.Vpb);
 
     NewDeviceObject->StackSize = DeviceToMount->StackSize + 1;
     NewDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
@@ -4000,11 +3970,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         le = le->Flink;
     }
     
-//     root_test(Vcb);
-    
-    NewDeviceObject->Vpb = Stack->Parameters.MountVolume.Vpb;
-    Stack->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
-    Stack->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
+    NewDeviceObject->Vpb = IrpSp->Parameters.MountVolume.Vpb;
+    IrpSp->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
+    IrpSp->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
     NewDeviceObject->Vpb->VolumeLabelLength = 4; // FIXME
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
