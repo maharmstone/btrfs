@@ -4450,7 +4450,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
-    BOOL wait = IoIsOperationSynchronous(Irp);
+    BOOL wait = FileObject ? IoIsOperationSynchronous(Irp) : TRUE;
 
     FsRtlEnterFileSystem();
 
