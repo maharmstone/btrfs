@@ -2341,6 +2341,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     PDEVICE_OBJECT mountmgr;
     KEY searchkey;
     traverse_ptr tp;
+    PARTITION_INFORMATION_EX piex;
     
     volname.Buffer = NULL;
     
@@ -2592,9 +2593,16 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     v->gen1 = v->gen2 = Vcb->superblock.generation;
     v->seeding = FALSE;
     v->processed = TRUE;
-    v->part0 = FALSE; // FIXME
     InsertTailList(&volumes, &v->list_entry);
     volname.Buffer = NULL;
+    
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
+                       &piex, sizeof(piex), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        WARN("IOCTL_DISK_GET_PARTITION_INFO_EX returned %08x\n", Status);
+        v->part0 = TRUE;
+    } else
+        v->part0 = piex.PartitionNumber == 0 ? TRUE : FALSE;
     
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
