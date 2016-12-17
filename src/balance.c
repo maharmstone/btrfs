@@ -2189,11 +2189,156 @@ static NTSTATUS remove_superblocks(device* dev) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS replace_mount_dev(device_extension* Vcb, device* dev, PDEVICE_OBJECT mountmgr) {
+    NTSTATUS Status;
+    MOUNTDEV_NAME mdn, *mdn2 = NULL, *mdn3 = NULL;
+    ULONG mdnsize, mmpsize;
+    MOUNTMGR_MOUNT_POINT* mmp = NULL;
+    MOUNTMGR_MOUNT_POINTS mmps, *mmps2 = NULL;
+    ULONG i;
+
+    // get old device name
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        return Status;
+    }
+    
+    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    
+    mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+    if (!mdn2) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        goto end;
+    }
+    
+    // get new device name
+    
+    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        return Status;
+    }
+    
+    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    
+    mdn3 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+    if (!mdn3) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn3, mdnsize, TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        goto end;
+    }
+    
+    // query and delete existing mount points
+    
+    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + mdn2->NameLength;
+    
+    mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
+    if (!mmp) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(mmp, sizeof(MOUNTMGR_MOUNT_POINT));
+    mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
+    mmp->DeviceNameLength = mdn2->NameLength;
+    RtlCopyMemory(&mmp[1], mdn2->Name, mdn2->NameLength);
+    
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_QUERY_POINTS, mmp, mmpsize, &mmps, mmpsize, TRUE, NULL);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08x\n", Status);
+        goto end;
+    }
+    
+    mmps2 = ExAllocatePoolWithTag(PagedPool, mmps.Size, ALLOC_TAG);
+    if (!mmps2) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, mmps2, mmps.Size, TRUE, NULL);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("IOCTL_MOUNTMGR_DELETE_POINTS returned %08x\n", Status);
+        goto end;
+    }
+    
+    // re-create mount points
+    
+    for (i = 0; i < mmps2->NumberOfMountPoints; i++) {
+        if (mmps2->MountPoints[i].SymbolicLinkNameOffset != 0) {
+            ULONG mcpilen;
+            MOUNTMGR_CREATE_POINT_INPUT* mcpi;
+            
+            mcpilen = sizeof(MOUNTMGR_CREATE_POINT_INPUT) + mmps2->MountPoints[i].SymbolicLinkNameLength + mdn3->NameLength;
+            
+            mcpi = ExAllocatePoolWithTag(PagedPool, mcpilen, ALLOC_TAG);
+            if (!mcpi) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            mcpi->SymbolicLinkNameOffset = sizeof(MOUNTMGR_CREATE_POINT_INPUT);
+            mcpi->SymbolicLinkNameLength = mmps2->MountPoints[i].SymbolicLinkNameLength;
+            mcpi->DeviceNameOffset = mcpi->SymbolicLinkNameOffset + mcpi->SymbolicLinkNameLength;
+            mcpi->DeviceNameLength = mdn3->NameLength;
+            
+            RtlCopyMemory((UINT8*)mcpi + mcpi->SymbolicLinkNameOffset, (UINT8*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset,
+                          mcpi->SymbolicLinkNameLength);
+            RtlCopyMemory((UINT8*)mcpi + mcpi->DeviceNameOffset, mdn3->Name, mdn3->NameLength);
+
+            Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_CREATE_POINT, mcpi, mcpilen, NULL, 0, TRUE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("IOCTL_MOUNTMGR_CREATE_POINT returned %08x\n", Status);
+                ExFreePool(mcpi);
+                goto end;
+            }
+            
+            ExFreePool(mcpi);
+        }
+    }
+    
+    // FIXME - remove mount point of new device
+    // FIXME - add old first device back to mountmgr (unless partition 0)
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (mdn2)
+        ExFreePool(mdn2);
+    
+    if (mdn3)
+        ExFreePool(mdn3);
+    
+    if (mmp)
+        ExFreePool(mmp);
+    
+    if (mmps2)
+        ExFreePool(mmps2);
+
+    return Status;
+}
+
 static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     LIST_ENTRY rollback, *le;
+    BOOL first_dev;
     
     InitializeListHead(&rollback);
     
@@ -2241,6 +2386,9 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     Vcb->superblock.num_devices--;
     Vcb->superblock.total_bytes -= dev->devitem.num_bytes;
     Vcb->devices_loaded--;
+    
+    first_dev = first_device(Vcb) == dev;
+    
     RemoveEntryList(&dev->list_entry);
     
     // flush
@@ -2273,14 +2421,16 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         
             // re-add entry to mountmgr
             // FIXME - don't do this if partition 0
-        
-            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
-            if (!NT_SUCCESS(Status))
-                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-            else {
-                add_volume(mountmgr, &v->devpath);
-                ObDereferenceObject(FileObject);
+
+            if (!first_dev) {
+                RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+                Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+                if (!NT_SUCCESS(Status))
+                    ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+                else {
+                    add_volume(mountmgr, &v->devpath);
+                    ObDereferenceObject(FileObject);
+                }
             }
         
             if (v->devpath.Buffer)
@@ -2291,6 +2441,36 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         }
         
         le = le->Flink;
+    }
+    
+    if (first_dev) {
+        PDEVICE_OBJECT DeviceObject, olddev;
+        device* newfirstdev;
+        PFILE_OBJECT FileObject;
+        UNICODE_STRING mmdevpath;
+        PDEVICE_OBJECT mountmgr;
+        
+        DeviceObject = Vcb->Vpb->DeviceObject;
+        
+        olddev = DeviceObject->Vpb->RealDevice;
+        newfirstdev = first_device(Vcb);
+        
+        ObReferenceObject(newfirstdev->devobj);
+        DeviceObject->Vpb->RealDevice = newfirstdev->devobj;
+        ObDereferenceObject(olddev);
+        
+        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+        if (!NT_SUCCESS(Status))
+            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        else {
+            Status = replace_mount_dev(Vcb, dev, mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("replace_mount_dev returned %08x\n", Status);
+            
+            ObDereferenceObject(FileObject);
+        }
+        
     }
     
     // free dev
@@ -2307,8 +2487,6 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     ExFreePool(dev);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
-    
-    // FIXME - handle deleting device with lowest number
     
     return STATUS_SUCCESS;
 }
