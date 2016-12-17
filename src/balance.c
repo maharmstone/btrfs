@@ -2428,9 +2428,8 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
             RemoveEntryList(&v->list_entry);
         
             // re-add entry to mountmgr
-            // FIXME - don't do this if partition 0
 
-            if (!first_dev) {
+            if (!first_dev && !v->part0) {
                 RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
                 Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
                 if (!NT_SUCCESS(Status))
