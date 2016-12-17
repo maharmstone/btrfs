@@ -2443,7 +2443,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
         
         if (sb->magic != BTRFS_MAGIC) {
             if (i == 0) {
-                ERR("not a BTRFS volume\n");
+                TRACE("not a BTRFS volume\n");
                 return STATUS_UNRECOGNIZED_VOLUME;
             }
         } else {
