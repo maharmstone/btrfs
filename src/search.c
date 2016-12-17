@@ -315,6 +315,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         v->gen1 = sb->generation;
         v->gen2 = 0;
         v->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
+        v->part0 = TRUE;
         InsertTailList(volumes, &v->list_entry);
         
         i = 1;

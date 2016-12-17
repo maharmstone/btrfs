@@ -2592,6 +2592,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     v->gen1 = v->gen2 = Vcb->superblock.generation;
     v->seeding = FALSE;
     v->processed = TRUE;
+    v->part0 = FALSE; // FIXME
     InsertTailList(&volumes, &v->list_entry);
     volname.Buffer = NULL;
     

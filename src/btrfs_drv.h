@@ -99,6 +99,7 @@ typedef struct {
     UINT64 gen1, gen2;
     BOOL seeding;
     BOOL processed;
+    BOOL part0;
     LIST_ENTRY list_entry;
 } volume;
 
