@@ -2664,12 +2664,15 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
     }
     
     bqb->status = Vcb->balance.paused ? BTRFS_BALANCE_PAUSED : BTRFS_BALANCE_RUNNING;
+    
+    if (Vcb->balance.removing)
+        bqb->status |= BTRFS_BALANCE_REMOVAL;
+    
     bqb->chunks_left = Vcb->balance.chunks_left;
     bqb->total_chunks = Vcb->balance.total_chunks;
     RtlCopyMemory(&bqb->data_opts, &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->metadata_opts, &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->system_opts, &Vcb->balance.opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
-    // FIXME - return whether removing device or not
 
     return STATUS_SUCCESS;
 }

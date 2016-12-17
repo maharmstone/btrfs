@@ -111,6 +111,7 @@ typedef struct {
 #define BTRFS_BALANCE_STOPPED   0
 #define BTRFS_BALANCE_RUNNING   1
 #define BTRFS_BALANCE_PAUSED    2
+#define BTRFS_BALANCE_REMOVAL   4
 
 typedef struct {
     UINT32 status;
