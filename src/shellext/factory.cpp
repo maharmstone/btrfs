@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#include "shellext.h"
 #include <windows.h>
 #include "factory.h"
 #include "iconoverlay.h"

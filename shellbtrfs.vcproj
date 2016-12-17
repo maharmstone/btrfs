@@ -425,6 +425,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\shellext\shellext.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\volpropsheet.h"
 				>
 			</File>

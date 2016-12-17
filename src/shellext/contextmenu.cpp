@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#include "shellext.h"
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
@@ -31,15 +32,6 @@
 #define SNAPSHOT_VERBA "snapshot"
 #define SNAPSHOT_VERBW L"snapshot"
 
-// FIXME - is there a way to link to the proper header files without breaking everything?
-#ifdef __cplusplus
-extern "C" {
-#endif
-NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
-#ifdef __cplusplus
-}
-#endif
-
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 
 typedef struct _KEY_NAME_INFORMATION {
@@ -48,8 +40,6 @@ typedef struct _KEY_NAME_INFORMATION {
 } KEY_NAME_INFORMATION;
 
 typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
-
-extern HMODULE module;
 
 // FIXME - don't assume subvol's top inode is 0x100
 
@@ -191,20 +181,6 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         return E_FAIL;
 
     return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
-}
-
-static void ShowError(HWND hwnd, ULONG err) {
-    WCHAR* buf;
-    
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
-        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
-        return;
-    }
-    
-    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
-    
-    LocalFree(buf);
 }
 
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {

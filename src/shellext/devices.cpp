@@ -18,6 +18,7 @@
 #define ISOLATION_AWARE_ENABLED 1
 #define STRSAFE_NO_DEPRECATE
 
+#include "shellext.h"
 #include "devices.h"
 #include "resource.h"
 #include "../btrfsioctl.h"
@@ -32,7 +33,6 @@ typedef struct _OBJECT_DIRECTORY_INFORMATION {
     UNICODE_STRING TypeName;
 } OBJECT_DIRECTORY_INFORMATION, *POBJECT_DIRECTORY_INFORMATION;
 
-#define STATUS_SUCCESS          0
 #define DIRECTORY_QUERY         0x0001
 #define DIRECTORY_TRAVERSE      0x0002
 
@@ -40,18 +40,6 @@ typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS
 
 typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
                                                   BOOLEAN RestartScan, PULONG Context, PULONG ReturnLength);
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
-#ifdef __cplusplus
-}
-#endif
-
-extern HMODULE module;
-void ShowError(HWND hwnd, ULONG err);
-void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 
 void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum) {
     TVINSERTSTRUCTW tis;

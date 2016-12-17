@@ -18,6 +18,7 @@
 #define ISOLATION_AWARE_ENABLED 1
 #define STRSAFE_NO_DEPRECATE
 
+#include "shellext.h"
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
@@ -29,30 +30,7 @@
 #include "propsheet.h"
 #include "resource.h"
 
-// FIXME - is there a way to link to the proper header files without breaking everything?
-#ifdef __cplusplus
-extern "C" {
-#endif
-NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
-#ifdef __cplusplus
-}
-#endif
-
-#define STATUS_SUCCESS          (NTSTATUS)0x00000000
-
-#define BTRFS_TYPE_FILE      1
-#define BTRFS_TYPE_DIRECTORY 2
-#define BTRFS_TYPE_CHARDEV   3
-#define BTRFS_TYPE_BLOCKDEV  4
-#define BTRFS_TYPE_FIFO      5
-#define BTRFS_TYPE_SOCKET    6
-#define BTRFS_TYPE_SYMLINK   7
-
-extern HMODULE module;
-
-extern void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
-static void ShowError(HWND hwnd, ULONG err);
 
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
@@ -349,20 +327,6 @@ static ULONG inode_type_to_string_ref(UINT8 type) {
         default:
             return IDS_INODE_UNKNOWN;
     }
-}
-
-static void ShowError(HWND hwnd, ULONG err) {
-    WCHAR* buf;
-    
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
-        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
-        return;
-    }
-    
-    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
-    
-    LocalFree(buf);
 }
 
 void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {

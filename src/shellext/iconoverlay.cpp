@@ -15,21 +15,11 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#include "shellext.h"
 #include <windows.h>
 #include <winternl.h>
 #include "iconoverlay.h"
 #include "../btrfsioctl.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
-#ifdef __cplusplus
-}
-#endif
-#define STATUS_SUCCESS 0
-
-extern HMODULE module;
 
 HRESULT __stdcall BtrfsIconOverlay::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellIconOverlayIdentifier) {

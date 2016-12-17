@@ -15,8 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
-#define _WIN32_WINNT 0x0600
-
+#include "shellext.h"
 #include <windows.h>
 #include <commctrl.h>
 #include "factory.h"

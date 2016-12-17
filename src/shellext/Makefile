@@ -10,28 +10,28 @@ CC = i686-w64-mingw32-g++
 
 all: ../../x86/shellbtrfs.dll
 
-main.o: main.cpp factory.h
+main.o: main.cpp factory.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-factory.o: factory.cpp factory.h iconoverlay.h
+factory.o: factory.cpp factory.h iconoverlay.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-iconoverlay.o: iconoverlay.cpp iconoverlay.h
+iconoverlay.o: iconoverlay.cpp iconoverlay.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-contextmenu.o: contextmenu.cpp contextmenu.h
+contextmenu.o: contextmenu.cpp contextmenu.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-propsheet.o: propsheet.cpp propsheet.h
+propsheet.o: propsheet.cpp propsheet.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-volpropsheet.o: volpropsheet.cpp volpropsheet.h
+volpropsheet.o: volpropsheet.cpp volpropsheet.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-devices.o: devices.cpp devices.h
+devices.o: devices.cpp devices.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-balance.o: balance.cpp balance.h
+balance.o: balance.cpp balance.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)
