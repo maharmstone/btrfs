@@ -2339,6 +2339,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     UNICODE_STRING volname, mmdevpath;
     volume* v;
     PDEVICE_OBJECT mountmgr;
+    KEY searchkey;
+    traverse_ptr tp;
     
     volname.Buffer = NULL;
     
@@ -2536,6 +2538,19 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     RtlZeroMemory(stats, sizeof(UINT64) * 5);
+    
+    searchkey.obj_id = 0;
+    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.offset = di->dev_id;
+    
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (!keycmp(tp.item->key, searchkey))
+        delete_tree_item(Vcb, &tp, &rollback);
     
     if (!insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, &rollback)) {
         ERR("insert_tree_item failed\n");
