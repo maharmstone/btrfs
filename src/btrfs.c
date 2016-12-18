@@ -2313,7 +2313,7 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     return att;
 }
 
-static NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
+NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
     IO_STATUS_BLOCK* IoStatus;
     LARGE_INTEGER Offset;
     PIRP Irp;

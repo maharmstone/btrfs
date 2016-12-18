@@ -2323,6 +2323,89 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    ULONG to_read;
+    superblock* sb;
+    UINT32 crc32;
+    BTRFS_UUID fsuuid, devuuid;
+    LIST_ENTRY* le;
+    
+    to_read = sector_align(sizeof(superblock), devobj->SectorSize);
+    
+    if (to_read < sizeof(superblock))
+        return STATUS_DEVICE_NOT_READY;
+    
+    sb = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = sync_read_phys(devobj, superblock_addrs[0], to_read, (UINT8*)sb, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("sync_read_phys returned %08x\n", Status);
+        ExFreePool(sb);
+        return Status;
+    }
+    
+    if (sb->magic != BTRFS_MAGIC) {
+        TRACE("device is not Btrfs\n");
+        ExFreePool(sb);
+        return STATUS_SUCCESS;
+    }
+    
+    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+
+    if (crc32 != *((UINT32*)sb->checksum)) {
+        TRACE("device has Btrfs magic, but invalid superblock checksum\n");
+        ExFreePool(sb);
+        return STATUS_SUCCESS;
+    }
+    
+    fsuuid = sb->uuid;
+    devuuid = sb->dev_item.device_uuid;
+    
+    ExFreePool(sb);
+    
+    ExAcquireResourceSharedLite(&global_loading_lock, TRUE);
+    
+    le = VcbList.Flink;
+    
+    while (le != &VcbList) {
+        device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        
+        if (RtlCompareMemory(&Vcb->superblock.uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            LIST_ENTRY* le2;
+            
+            // FIXME - device lock?
+            
+            if (Vcb->superblock.num_devices > 1) {
+                le2 = Vcb->devices.Flink;
+                while (le2 != &Vcb->devices) {
+                    device* dev = CONTAINING_RECORD(le2, device, list_entry);
+                    
+                    if (RtlCompareMemory(&dev->devitem.device_uuid, &devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                        ExReleaseResourceLite(&global_loading_lock);
+                        return STATUS_DEVICE_NOT_READY;
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+            }
+            
+            ExReleaseResourceLite(&global_loading_lock);
+            return STATUS_SUCCESS;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&global_loading_lock);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2374,7 +2457,12 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         return Status;
     }
     
-    // FIXME - check not part of mounted multi-device Btrfs volume
+    Status = is_device_part_of_mounted_btrfs_raid(fileobj->DeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("is_device_part_of_mounted_btrfs_raid returned %08x\n", Status);
+        ObDereferenceObject(fileobj);
+        return Status;
+    }
     
     Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
