@@ -2750,7 +2750,7 @@ static NTSTATUS allow_extended_dasd_io(device_extension* Vcb, PFILE_OBJECT FileO
     if (fcb != Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
     
-    if (!ccb || !ccb->manage_volume_privilege)
+    if (!ccb)
         return STATUS_INVALID_PARAMETER;
     
     ccb->allow_extended_dasd_io = TRUE;
