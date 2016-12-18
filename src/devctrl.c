@@ -77,7 +77,7 @@ static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
             name = Irp->AssociatedIrp.SystemBuffer;
             name->NameLength = p0de->name.Length;
 
-            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_NAME) - 1 + name->NameLength) {
+            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength) {
                 Status = STATUS_BUFFER_OVERFLOW;
                 Irp->IoStatus.Status = Status;
                 Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME);
@@ -89,7 +89,7 @@ static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
             Status = STATUS_SUCCESS;
             Irp->IoStatus.Status = Status;
-            Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME) - 1 + name->NameLength;
+            Irp->IoStatus.Information = offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength;
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             
             return Status;
