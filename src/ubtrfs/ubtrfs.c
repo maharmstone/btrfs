@@ -392,6 +392,42 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     return c;
 }
 
+static BOOL superblock_collision(btrfs_chunk* c, UINT64 address) {
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    UINT64 stripe = (address - c->offset) / c->chunk_item->stripe_length;
+    UINT16 i, j;
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        j = 0;
+        while (superblock_addrs[j] != 0) {
+            if (superblock_addrs[j] >= cis[i].offset) {
+                UINT64 stripe2 = (superblock_addrs[j] - cis[i].offset) / c->chunk_item->stripe_length;
+                
+                if (stripe2 == stripe)
+                    return TRUE;
+            }
+            j++;
+        }
+    }
+    
+    return FALSE;
+}
+
+static UINT64 get_next_address(btrfs_chunk* c) {
+    UINT64 addr;
+    
+    addr = c->lastoff;
+    
+    while (superblock_collision(c, addr)) {
+        addr = addr - ((addr - c->offset) % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        
+        if (addr >= c->offset + c->chunk_item->size) // chunk has been exhausted
+            return 0;
+    }
+    
+    return addr;
+}
+
 typedef struct {
     EXTENT_ITEM ei;
     UINT8 type;
@@ -408,12 +444,10 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
         EXTENT_ITEM_METADATA eim;
         
-        r->header.address = c->lastoff;
+        r->header.address = get_next_address(c);
         r->c = c;
-        c->lastoff += node_size;
+        c->lastoff = r->header.address + node_size;
         c->used += node_size;
-        
-        // FIXME - avoid superblocks
         
         eim.ei.refcount = 1;
         eim.ei.generation = 1;
