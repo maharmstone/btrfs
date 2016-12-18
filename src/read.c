@@ -3591,16 +3591,6 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    if (fcb == Vcb->volume_fcb) { // FIXME - check permissions?
-        TRACE("reading volume FCB\n");
-        
-        IoSkipCurrentIrpStackLocation(Irp);
-    
-        Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
-        
-        goto exit2;
-    }
-    
     ccb = FileObject->FsContext2;
     
     if (!ccb) {
@@ -3613,6 +3603,16 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         WARN("insufficient privileges\n");
         Status = STATUS_ACCESS_DENIED;
         goto exit;
+    }
+    
+    if (fcb == Vcb->volume_fcb) {
+        TRACE("reading volume FCB\n");
+        
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+        
+        goto exit2;
     }
     
     wait = IoIsOperationSynchronous(Irp);
