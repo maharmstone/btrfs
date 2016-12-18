@@ -449,6 +449,11 @@ BEGIN
     IDS_WHOLE_DISK          "Whole disk"
 END
 
+STRINGTABLE 
+BEGIN
+    IDS_CANNOT_REMOVE_RAID  "The current RAID levels do not allow this device to be removed. You must do a conversion balance before you will be able to proceed."
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

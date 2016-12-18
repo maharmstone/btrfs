@@ -302,7 +302,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
 }
 
-static void ShowStringError(HWND hwndDlg, int num) {
+void ShowStringError(HWND hwndDlg, int num) {
     WCHAR title[255], s[255];
     
     if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {

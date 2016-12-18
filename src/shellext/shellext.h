@@ -27,6 +27,7 @@
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 #define STATUS_BUFFER_OVERFLOW  (NTSTATUS)0x80000005
+#define STATUS_CANNOT_DELETE    (NTSTATUS)0xc0000121
 
 #define BLOCK_FLAG_DATA         0x001
 #define BLOCK_FLAG_SYSTEM       0x002
@@ -57,3 +58,4 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
+void ShowStringError(HWND hwndDlg, int num);
