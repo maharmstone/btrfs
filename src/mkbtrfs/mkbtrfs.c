@@ -21,7 +21,11 @@
 #include <devioctl.h>
 #include <ntdddisk.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stringapiset.h>
+#include "resource.h"
+
+#define UBTRFS_DLL L"ubtrfs.dll"
 
 typedef enum {
     FMIFS_UNKNOWN0,
@@ -76,6 +80,23 @@ typedef NTSTATUS (NTAPI* pFormatEx)(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG 
                                     PUNICODE_STRING Label, BOOLEAN QuickFormat, ULONG ClusterSize,
                                     PFMIFSCALLBACK Callback);
 
+static void print_string(FILE* f, int resid, ...) {
+    WCHAR s[1024], t[1024];
+    va_list ap;
+    
+    if (!LoadStringW(GetModuleHandle(NULL), resid, s, sizeof(s) / sizeof(WCHAR))) {
+        fprintf(stderr, "LoadString failed (error %lu)\n", GetLastError());
+        return;
+    }
+    
+    va_start(ap, resid);
+    vswprintf(t, sizeof(t) / sizeof(WCHAR), s, ap);
+    
+    fwprintf(f, L"%s\n", t);
+    
+    va_end(ap);
+}
+
 int main(int argc, char** argv) {
     HMODULE ubtrfs;
     NTSTATUS Status;
@@ -88,6 +109,7 @@ int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
         char* c = argv[0] + strlen(argv[0]) - 1;
         char* fn = NULL;
+        WCHAR fnw[MAX_PATH];
         
         while (c > argv[0]) {
             if (*c == '/' || *c == '\\') {
@@ -99,8 +121,13 @@ int main(int argc, char** argv) {
         
         if (!fn)
             fn = argv[0];
+        
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, fn, -1, fnw, sizeof(fnw) / sizeof(WCHAR))) {
+            print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
+            return 1;
+        }
 
-        printf("Usage: %s drive [label]\n", fn); // FIXME - add note that drive can be either letter or device
+        print_string(stdout, IDS_USAGE, fnw);
         
         return 0;
     }
@@ -126,7 +153,7 @@ int main(int argc, char** argv) {
             baddrive = TRUE;
     } else {
         if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
-            fprintf(stderr, "MultiByteToWideChar failed (error %u)\n", GetLastError());
+            print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
             return 1;
         }
         
@@ -135,13 +162,18 @@ int main(int argc, char** argv) {
     }
     
     if (baddrive) {
-        fprintf(stderr, "Could not recognize drive %s\n", ds);
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, ds, -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
+            print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
+            return 1;
+        }
+        
+        print_string(stderr, IDS_CANT_RECOGNIZE_DRIVE, dsw2);
         return 1;
     }
     
     if (argc > 2) {
         if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[2], -1, labelw, sizeof(labelw) / sizeof(WCHAR))) {
-            fprintf(stderr, "MultiByteToWideChar failed (error %u)\n", GetLastError());
+            print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
             return 1;
         }
 
@@ -152,7 +184,7 @@ int main(int argc, char** argv) {
         label.Length = label.MaximumLength = 0;
     }
     
-    ubtrfs = LoadLibraryW(L"ubtrfs.dll");
+    ubtrfs = LoadLibraryW(UBTRFS_DLL);
     
     if (!ubtrfs) {
 #if defined(__i386) || defined(_M_IX86)
@@ -163,25 +195,25 @@ int main(int argc, char** argv) {
     }
     
     if (!ubtrfs) {
-        fprintf(stderr, "unable to load ubtrfs.dll\n");
+        print_string(stderr, IDS_CANT_LOAD_DLL, UBTRFS_DLL);
         return 1;
     }
     
     FormatEx = (pFormatEx)GetProcAddress(ubtrfs, "FormatEx");
     
     if (!FormatEx) {
-        fprintf(stderr, "could not load function FormatEx in ubtrfs.dll\n");
+        print_string(stderr, IDS_CANT_FIND_FORMATEX, UBTRFS_DLL);
         return 1;
     }
     
     Status = FormatEx(&drive, FMIFS_HARDDISK, &label, FALSE, 4096, NULL);
     
     if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "FormatEx returned status %08lx\n", Status);
+        print_string(stderr, IDS_FORMATEX_ERROR, Status);
         return 1;
     }
     
-    printf("Completed successfully.\n");
+    print_string(stdout, IDS_SUCCESS);
     
     return 0;
 }

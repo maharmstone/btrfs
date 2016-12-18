@@ -84,6 +84,23 @@ BEGIN
     END
 END
 
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_USAGE               "Usage: %s drive [label]"
+    IDS_MULTIBYTE_FAILED    "MultiByteToWideChar failed (error %lu)"
+    IDS_CANT_RECOGNIZE_DRIVE "Could not recognize drive %s"
+    IDS_CANT_LOAD_DLL       "Unable to load %s"
+    IDS_CANT_FIND_FORMATEX  "Could not load function FormatEx in %s"
+    IDS_FORMATEX_ERROR      "FormatEx returned status %08lx"
+    IDS_SUCCESS             "Completed successfully."
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 
