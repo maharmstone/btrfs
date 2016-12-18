@@ -2348,8 +2348,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
     
-    // FIXME - check device is not readonly
-    
     if (Vcb->readonly) // FIXME - handle adding R/W device to seeding device
         return STATUS_MEDIA_WRITE_PROTECTED;
     
@@ -2377,6 +2375,13 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     // FIXME - check not part of mounted multi-device Btrfs volume
+    
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_DISK_IS_WRITABLE returned %08x\n", Status);
+        ObDereferenceObject(fileobj);
+        return Status;
+    }
     
     Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
                        &gli, sizeof(gli), TRUE, NULL);
