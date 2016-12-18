@@ -22,7 +22,7 @@
 		<Configuration
 			Name="Debug|Win32"
 			OutputDirectory=".\Debug\x86"
-			IntermediateDirectory=".."
+			IntermediateDirectory=".\Debug\x86\shellext"
 			ConfigurationType="2"
 			UseOfATL="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
@@ -116,7 +116,7 @@
 		<Configuration
 			Name="Debug|x64"
 			OutputDirectory=".\Debug\x64"
-			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
+			IntermediateDirectory=".\Debug\x64\shellext"
 			ConfigurationType="2"
 			UseOfATL="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
@@ -208,7 +208,7 @@
 		<Configuration
 			Name="Release|Win32"
 			OutputDirectory=".\x86"
-			IntermediateDirectory="$(ConfigurationName)"
+			IntermediateDirectory=".\x86\shellext"
 			ConfigurationType="2"
 			UseOfATL="2"
 			ATLMinimizesCRunTimeLibraryUsage="false"
@@ -300,7 +300,7 @@
 		<Configuration
 			Name="Release|x64"
 			OutputDirectory=".\x64"
-			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
+			IntermediateDirectory=".\x64\shellext"
 			ConfigurationType="2"
 			UseOfATL="2"
 			ATLMinimizesCRunTimeLibraryUsage="false"
