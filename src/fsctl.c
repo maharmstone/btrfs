@@ -2395,7 +2395,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
                        &mdn1, sizeof(MOUNTDEV_NAME), TRUE, NULL);
     if (Status == STATUS_BUFFER_OVERFLOW) {
-        mdn2 = ExAllocatePoolWithTag(PagedPool, sizeof(MOUNTDEV_NAME) - 1 + mdn1.NameLength, ALLOC_TAG);
+        mdn2 = ExAllocatePoolWithTag(PagedPool, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, ALLOC_TAG);
         if (!mdn2) {
             ERR("out of memory\n");
             ObDereferenceObject(fileobj);
@@ -2403,7 +2403,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         }
         
         Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
-                           mdn2, sizeof(MOUNTDEV_NAME) - 1 + mdn1.NameLength, TRUE, NULL);
+                           mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, TRUE, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
