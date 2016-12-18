@@ -86,6 +86,8 @@
 #define IDS_PARTITION                   174
 #define IDS_WHOLE_DISK                  175
 #define IDS_CANNOT_REMOVE_RAID          176
+#define IDS_REMOVE_DEVICE_CONFIRMATION  177
+#define IDS_CONFIRMATION_TITLE          178
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

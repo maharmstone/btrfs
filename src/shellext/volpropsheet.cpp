@@ -919,7 +919,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             
                         case IDC_DEVICE_REMOVE:
                         {
-                            WCHAR t[2*MAX_PATH + 100], sel[MAX_PATH];
+                            WCHAR t[2*MAX_PATH + 100], sel[MAX_PATH], sel2[MAX_PATH], mess[255], mess2[255], title[255];
                             HWND devlist;
                             SHELLEXECUTEINFOW sei;
                             int index;
@@ -938,7 +938,28 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             lvi.iSubItem = 0;
                             lvi.pszText = sel;
                             lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
-                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM) &lvi);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                            
+                            lvi.iSubItem = 1;
+                            lvi.pszText = sel2;
+                            lvi.cchTextMax = sizeof(sel2) / sizeof(WCHAR);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                            
+                            if (!LoadStringW(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
+                                ShowError(hwndDlg, GetLastError());
+                                return TRUE;
+                            }
+                            
+                            if (StringCchPrintfW(mess2, sizeof(mess2) / sizeof(WCHAR), mess, sel, sel2) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                                return TRUE;
+                            
+                            if (!LoadStringW(module, IDS_CONFIRMATION_TITLE, title, sizeof(title) / sizeof(WCHAR))) {
+                                ShowError(hwndDlg, GetLastError());
+                                return TRUE;
+                            }
+                            
+                            if (MessageBoxW(hwndDlg, mess2, title, MB_YESNO) != IDYES)
+                                return TRUE;
                             
                             t[0] = '"';
                             GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);

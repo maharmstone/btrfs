@@ -452,6 +452,9 @@ END
 STRINGTABLE 
 BEGIN
     IDS_CANNOT_REMOVE_RAID  "The current RAID levels do not allow this device to be removed. You must do a conversion balance before you will be able to proceed."
+    IDS_REMOVE_DEVICE_CONFIRMATION 
+                            "Are you sure that you want to remove device %s, %s?"
+    IDS_CONFIRMATION_TITLE  "Confirmation"
 END
 
 #endif    // English (U.K.) resources
