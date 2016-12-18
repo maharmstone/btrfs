@@ -564,8 +564,8 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
     dev->last_alloc = 0x100000; // skip first megabyte
 }
 
-static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_chunk* sys_chunk,
-                                  UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label) {
+static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
+                                  btrfs_chunk* sys_chunk, UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
@@ -573,10 +573,26 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     UINT32 crc32;
     superblock* sb;
     KEY* key;
+    UINT64 bytes_used;
+    LIST_ENTRY* le;
     
     sblen = sizeof(sb);
     if (sblen & (sector_size - 1))
         sblen = (sblen & sector_size) + sector_size;
+    
+    bytes_used = 0;
+    
+    le = extent_root->items.Flink;
+    while (le != &extent_root->items) {
+        btrfs_item* item = CONTAINING_RECORD(le, btrfs_item, list_entry);
+        
+        if (item->key.obj_type == TYPE_EXTENT_ITEM)
+            bytes_used += item->key.offset;
+        else if (item->key.obj_type == TYPE_METADATA_ITEM)
+            bytes_used += node_size;
+        
+        le = le->Flink;
+    }
     
     sb = malloc(sblen);
     memset(sb, 0, sblen);
@@ -588,7 +604,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk
     sb->root_tree_addr = root_root->header.address;
     sb->chunk_tree_addr = chunk_root->header.address;
     sb->total_bytes = dev->dev_item.num_bytes;
-    sb->bytes_used = dev->dev_item.bytes_used;
+    sb->bytes_used = bytes_used;
     sb->root_dir_objectid = 6;
     sb->num_devices = 1;
     sb->sector_size = sector_size;
@@ -798,7 +814,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     if (!NT_SUCCESS(Status))
         return Status;
     
-    Status = write_superblocks(h, &dev, chunk_root, root_root, sys_chunk, node_size, &fsuuid, sector_size, label);
+    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label);
     if (!NT_SUCCESS(Status))
         return Status;
     
