@@ -2958,19 +2958,38 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
         return STATUS_NOT_FOUND;
     }
     
-    if (num_rw_devices == 1 && !dev->readonly) {
-        WARN("not removing last non-readonly device\n");
-        return STATUS_INVALID_PARAMETER;
+    if (!dev->readonly) {
+        if (num_rw_devices == 1) {
+            WARN("not removing last non-readonly device\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        if (num_rw_devices == 4 &&
+            ((Vcb->data_flags & BLOCK_FLAG_RAID10 || Vcb->metadata_flags & BLOCK_FLAG_RAID10 || Vcb->system_flags & BLOCK_FLAG_RAID10) ||
+             (Vcb->data_flags & BLOCK_FLAG_RAID6 || Vcb->metadata_flags & BLOCK_FLAG_RAID6 || Vcb->system_flags & BLOCK_FLAG_RAID6))
+        ) {
+            ERR("would not be enough devices to satisfy RAID requirement (RAID6/10)\n");
+            return STATUS_CANNOT_DELETE;
+        }
+        
+        if (num_rw_devices == 3 && (Vcb->data_flags & BLOCK_FLAG_RAID5 || Vcb->metadata_flags & BLOCK_FLAG_RAID5 || Vcb->system_flags & BLOCK_FLAG_RAID5)) {
+            ERR("would not be enough devices to satisfy RAID requirement (RAID5)\n");
+            return STATUS_CANNOT_DELETE;
+        }
+        
+        if (num_rw_devices == 2 &&
+            ((Vcb->data_flags & BLOCK_FLAG_RAID0 || Vcb->metadata_flags & BLOCK_FLAG_RAID0 || Vcb->system_flags & BLOCK_FLAG_RAID0) ||
+             (Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->metadata_flags & BLOCK_FLAG_RAID1 || Vcb->system_flags & BLOCK_FLAG_RAID1))
+        ) {
+            ERR("would not be enough devices to satisfy RAID requirement (RAID0/1)\n");
+            return STATUS_CANNOT_DELETE;
+        }
     }
     
     if (Vcb->balance.thread) {
         WARN("balance already running\n");
         return STATUS_DEVICE_NOT_READY;
     }
-    
-    // FIXME - check not only non-readonly device
-    // FIXME - check enough devices left for current RAID type
-    // FIXME - mark device as readonly
     
     dev->reloc = TRUE;
     
