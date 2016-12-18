@@ -3919,8 +3919,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ccb->NodeSize = sizeof(ccb);
         ccb->disposition = RequestedDisposition;
         ccb->options = RequestedOptions;
-        // FIXME - permissions?
-//         ccb->access = access_state->OriginalDesiredAccess;
+        ccb->access = IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess;
         ccb->manage_volume_privilege = has_manage_volume_privilege(IrpSp->Parameters.Create.SecurityContext->AccessState,
                                                                    IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode);
 
