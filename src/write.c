@@ -4473,10 +4473,25 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
     
-    if (fcb == Vcb->volume_fcb) {
-        FIXME("FIXME - allow writing directly to volume\n");
-        Status = STATUS_NOT_IMPLEMENTED;
+    if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
+        WARN("insufficient permissions\n");
+        Status = STATUS_ACCESS_DENIED;
         goto end;
+    }
+    
+    if (fcb == Vcb->volume_fcb) {
+        if (!Vcb->locked || Vcb->locked_fileobj != FileObject) {
+            ERR("trying to write to volume when not locked, or locked with another FileObject\n");
+            Status = STATUS_ACCESS_DENIED;
+            goto end;
+        }
+        
+        TRACE("writing directly to volume\n");
+        
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+        goto exit;
     }
     
     if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
@@ -4486,12 +4501,6 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     if (Vcb->readonly) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
-        goto end;
-    }
-    
-    if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
-        WARN("insufficient permissions\n");
-        Status = STATUS_ACCESS_DENIED;
         goto end;
     }
     
