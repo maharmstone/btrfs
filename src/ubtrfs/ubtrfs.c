@@ -24,6 +24,8 @@
 #include <winternl.h>
 #include <devioctl.h>
 #include <ntdddisk.h>
+#include <ntddscsi.h>
+#include <ata.h>
 #include "../btrfs.h"
 
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -758,6 +760,37 @@ static NTSTATUS clear_first_megabyte(HANDLE h) {
     return Status;
 }
 
+static BOOL is_ssd(HANDLE h) {
+    ULONG aptelen;
+    ATA_PASS_THROUGH_EX* apte;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    IDENTIFY_DEVICE_DATA* idd;
+    
+    aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
+    apte = malloc(aptelen);
+    
+    RtlZeroMemory(apte, aptelen);
+    
+    apte->Length = sizeof(ATA_PASS_THROUGH_EX);
+    apte->AtaFlags = ATA_FLAGS_DATA_IN;
+    apte->DataTransferLength = aptelen - sizeof(ATA_PASS_THROUGH_EX);
+    apte->TimeOutValue = 3;
+    apte->DataBufferOffset = apte->Length;
+    apte->CurrentTaskFile[6] = IDE_COMMAND_IDENTIFY;
+    
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_ATA_PASS_THROUGH, apte, aptelen, apte, aptelen);
+    
+    if (NT_SUCCESS(Status)) {
+        idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        
+        if (idd->NominalMediaRotationRate == 1)
+            return TRUE;
+    }
+    
+    return FALSE;
+}
+
 static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     NTSTATUS Status;
     UINT32 sector_size, node_size;
@@ -766,6 +799,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     btrfs_chunk *sys_chunk, *metadata_chunk; 
     btrfs_device dev;
     BTRFS_UUID fsuuid, chunkuuid;
+    BOOL ssd;
     
     srand(time(0));
     get_uuid(&fsuuid);
@@ -786,13 +820,13 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     
     init_device(&dev, 1, size, &fsuuid, sector_size);
     
-    // FIXME - don't set DUPLICATE flag if SSD
+    ssd = is_ssd(h);
     
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | (ssd ? 0 : BLOCK_FLAG_DUPLICATE), chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
     
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | BLOCK_FLAG_DUPLICATE, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | (ssd ? 0 : BLOCK_FLAG_DUPLICATE), chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
     
