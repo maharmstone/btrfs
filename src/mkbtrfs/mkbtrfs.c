@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     NTSTATUS Status;
     BOOL baddrive = FALSE;
     char* ds;
-    WCHAR dsw[10], labelw[255];
+    WCHAR dsw[10], labelw[255], dsw2[255];
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
     
@@ -100,25 +100,39 @@ int main(int argc, char** argv) {
         if (!fn)
             fn = argv[0];
 
-        printf("Usage: %s drive [label]\n", fn);
+        printf("Usage: %s drive [label]\n", fn); // FIXME - add note that drive can be either letter or device
         
         return 0;
     }
     
     ds = argv[1];
-    if ((ds[0] >= 'A' && ds[0] <= 'Z') || (ds[0] >= 'a' && ds[0] <= 'z')) {
-        if (ds[1] == 0 || (ds[1] == ':' && ds[2] == 0) || (ds[1] == ':' && ds[2] == '\\' && ds[3] == 0)) {
-            dsw[0] = '\\';
-            dsw[1] = '?';
-            dsw[2] = '?';
-            dsw[3] = '\\';
-            dsw[4] = ds[0];
-            dsw[5] = ':';
-            dsw[6] = 0;
+    
+    if (ds[0] != '\\') {
+        if ((ds[0] >= 'A' && ds[0] <= 'Z') || (ds[0] >= 'a' && ds[0] <= 'z')) {
+            if (ds[1] == 0 || (ds[1] == ':' && ds[2] == 0) || (ds[1] == ':' && ds[2] == '\\' && ds[3] == 0)) {
+                dsw[0] = '\\';
+                dsw[1] = '?';
+                dsw[2] = '?';
+                dsw[3] = '\\';
+                dsw[4] = ds[0];
+                dsw[5] = ':';
+                dsw[6] = 0;
+                
+                drive.Buffer = dsw;
+                drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
+            } else
+                baddrive = TRUE;
         } else
             baddrive = TRUE;
-    } else
-        baddrive = TRUE;
+    } else {
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
+            fprintf(stderr, "MultiByteToWideChar failed (error %u)\n", GetLastError());
+            return 1;
+        }
+        
+        drive.Buffer = dsw2;
+        drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
+    }
     
     if (baddrive) {
         fprintf(stderr, "Could not recognize drive %s\n", ds);
@@ -159,9 +173,6 @@ int main(int argc, char** argv) {
         fprintf(stderr, "could not load function FormatEx in ubtrfs.dll\n");
         return 1;
     }
-    
-    drive.Buffer = dsw;
-    drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
     
     Status = FormatEx(&drive, FMIFS_HARDDISK, &label, FALSE, 4096, NULL);
     
