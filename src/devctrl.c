@@ -151,6 +151,12 @@ static NTSTATUS is_writable(device_extension* Vcb, PIRP Irp) {
     return Vcb->readonly ? STATUS_MEDIA_WRITE_PROTECTED : STATUS_SUCCESS;
 }
 
+static NTSTATUS control_ioctl(PIRP Irp) {
+    // FIXME
+    
+    return STATUS_NOT_SUPPORTED;
+}
+
 NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -163,9 +169,17 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     Irp->IoStatus.Information = 0;
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_device_control(DeviceObject, Irp);
-        goto end2;
+    if (Vcb) {
+        if (Vcb->type == VCB_TYPE_PARTITION0) {
+            Status = part0_device_control(DeviceObject, Irp);
+            goto end2;
+        } else if (Vcb->type == VCB_TYPE_CONTROL) {
+            Status = control_ioctl(Irp);
+            goto end;
+        }
+    } else {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     if (!IrpSp->FileObject || IrpSp->FileObject->FsContext != Vcb->volume_fcb) {
