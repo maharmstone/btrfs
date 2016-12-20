@@ -503,6 +503,7 @@ typedef struct {
 
 #define VCB_TYPE_VOLUME     1
 #define VCB_TYPE_PARTITION0 2
+#define VCB_TYPE_CONTROL    3
 
 #ifdef DEBUG_STATS
 typedef struct {
@@ -618,6 +619,10 @@ typedef struct {
     BTRFS_UUID uuid;
     UNICODE_STRING name;
 } part0_device_extension;
+
+typedef struct {
+    UINT32 type;
+} control_device_extension;
 
 typedef struct {
     LIST_ENTRY listentry;

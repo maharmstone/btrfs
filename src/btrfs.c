@@ -4518,6 +4518,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     PDEVICE_OBJECT DeviceObject;
     UNICODE_STRING device_nameW;
     UNICODE_STRING dosdevice_nameW;
+    control_device_extension* cde;
     
     InitializeListHead(&uid_map_list);
     
@@ -4615,13 +4616,17 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     dosdevice_nameW.Buffer = dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = (USHORT)wcslen(dosdevice_name) * sizeof(WCHAR);
 
-    Status = IoCreateDevice(DriverObject, 0, &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM, FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
+    Status = IoCreateDevice(DriverObject, sizeof(control_device_extension), &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM,
+                            FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         return Status;
     }
     
     devobj = DeviceObject;
+    cde = (control_device_extension*)devobj->DeviceExtension;
+    
+    cde->type = VCB_TYPE_CONTROL;
     
     DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 
