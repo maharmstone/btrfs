@@ -4079,7 +4079,7 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
         return Status;
     }
     
-    to_read = sector_align(sizeof(superblock), devobj->SectorSize);
+    to_read = devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), devobj->SectorSize);
     
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
