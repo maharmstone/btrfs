@@ -227,11 +227,11 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
             // favour devices which have been used the least
             if (usage < devusage) {
                 if (!IsListEmpty(&dev->space)) {
-                    LIST_ENTRY* le;
+                    LIST_ENTRY* le2;
                     
-                    le = dev->space.Flink;
-                    while (le != &dev->space) {
-                        space* dh = CONTAINING_RECORD(le, space, list_entry);
+                    le2 = dev->space.Flink;
+                    while (le2 != &dev->space) {
+                        space* dh = CONTAINING_RECORD(le2, space, list_entry);
                         
                         if ((dev2 != dev && dh->size >= max_stripe_size) ||
                             (dev2 == dev && dh->size >= max_stripe_size && dh->size < devdh->size)
@@ -241,7 +241,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
                             devusage = usage;
                         }
 
-                        le = le->Flink;
+                        le2 = le2->Flink;
                     }
                 }
             }
@@ -250,8 +250,53 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
         le = le->Flink;
     }
     
-    if (!devdh)
-        return FALSE;
+    if (!devdh) {
+        // Can't find hole of at least max_stripe_size; look for the largest one we can find
+        
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+            BOOL skip = FALSE;
+            
+            if (dev->readonly || dev->reloc) {
+                le = le->Flink;
+                continue;
+            }
+
+            // skip this device if it already has a stripe
+            if (i > 0) {
+                for (k = 0; k < i; k++) {
+                    if (stripes[k].device == dev) {
+                        skip = TRUE;
+                        break;
+                    }
+                }
+            }
+            
+            if (!skip) {
+                if (!IsListEmpty(&dev->space)) {
+                    LIST_ENTRY* le2;
+                    
+                    le2 = dev->space.Flink;
+                    while (le2 != &dev->space) {
+                        space* dh = CONTAINING_RECORD(le2, space, list_entry);
+                        
+                        if (!devdh || devdh->size < dh->size) {
+                            devdh = dh;
+                            dev2 = dev;
+                        }
+
+                        le2 = le2->Flink;
+                    }
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!devdh)
+            return FALSE;
+    }
     
     stripes[i].dh = devdh;
     stripes[i].device = dev2;
