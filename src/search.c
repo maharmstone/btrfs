@@ -37,34 +37,26 @@ NTSTATUS WINAPI ZwQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULO
                                        PULONG  ReturnLength);
 #endif
 
-VOID WINAPI IopNotifyPlugPlayNotification(
-    IN PDEVICE_OBJECT DeviceObject,
-    IN IO_NOTIFICATION_EVENT_CATEGORY EventCategory,
-    IN LPCGUID Event,
-    IN PVOID EventCategoryData1,
-    IN PVOID EventCategoryData2
-);
+extern LIST_ENTRY volumes;
 
-static const WCHAR devpath[] = {'\\','D','e','v','i','c','e',0};
-
-static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pardir, PUNICODE_STRING nameus,
-                             BTRFS_UUID* uuid) {
+static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
+                             PUNICODE_STRING nameus, BTRFS_UUID* uuid) {
     PDEVICE_OBJECT newdevobj;
     UNICODE_STRING name;
     NTSTATUS Status;
     part0_device_extension* p0de;
     
-    static const WCHAR btrfs_partition[] = L"\\BtrfsPartition";
+    static const WCHAR part0_suffix[] = L"Btrfs";
     
-    name.Length = name.MaximumLength = pardir->Length + (wcslen(btrfs_partition) * sizeof(WCHAR));
+    name.Length = name.MaximumLength = devpath->Length + (wcslen(part0_suffix) * sizeof(WCHAR));
     name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
     if (!name.Buffer) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlCopyMemory(name.Buffer, pardir->Buffer, pardir->Length);
-    RtlCopyMemory(&name.Buffer[pardir->Length / sizeof(WCHAR)], btrfs_partition, wcslen(btrfs_partition) * sizeof(WCHAR));
+    RtlCopyMemory(name.Buffer, devpath->Buffer, devpath->Length);
+    RtlCopyMemory(&name.Buffer[devpath->Length / sizeof(WCHAR)], part0_suffix, wcslen(part0_suffix) * sizeof(WCHAR));
     
     Status = IoCreateDevice(DriverObject, sizeof(part0_device_extension), &name, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &newdevobj);
     if (!NT_SUCCESS(Status)) {
@@ -185,7 +177,7 @@ void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ExFreePool(mmdlt);
 }
 
-static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING pardir, PUNICODE_STRING us, BOOL part0, LIST_ENTRY* volumes) {
+static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, BOOL part0, LIST_ENTRY* volumes) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -194,31 +186,15 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     PDEVICE_OBJECT DeviceObject;
     LARGE_INTEGER Offset;
     ULONG toread;
-    UINT8* data;
-    UNICODE_STRING us2;
-    BOOL added_entry = FALSE;
+    UINT8* data = NULL;
     UINT32 sector_size;
     
-    TRACE("%.*S\n", us->Length / sizeof(WCHAR), us->Buffer);
+    TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
     
-    us2.Length = pardir->Length + sizeof(WCHAR) + us->Length;
-    us2.MaximumLength = us2.Length;
-    us2.Buffer = ExAllocatePoolWithTag(PagedPool, us2.Length, ALLOC_TAG);
-    if (!us2.Buffer) {
-        ERR("out of memory\n");
-        return;
-    }
-    
-    RtlCopyMemory(us2.Buffer, pardir->Buffer, pardir->Length);
-    us2.Buffer[pardir->Length / sizeof(WCHAR)] = '\\';
-    RtlCopyMemory(&us2.Buffer[(pardir->Length / sizeof(WCHAR))+1], us->Buffer, us->Length);
-    
-    TRACE("%.*S\n", us2.Length / sizeof(WCHAR), us2.Buffer);
-    
-    Status = IoGetDeviceObjectPointer(&us2, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        goto exit;
+        return;
     }
 
     sector_size = DeviceObject->SectorSize;
@@ -232,20 +208,20 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         
         if (!NT_SUCCESS(Status)) {
             ERR("%.*S had a sector size of 0, and IOCTL_DISK_GET_DRIVE_GEOMETRY returned %08x\n",
-                us2.Length / sizeof(WCHAR), us2.Buffer, Status);
-            goto exit;
+                devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
+            goto deref;
         }
         
         if (iosb.Information < sizeof(DISK_GEOMETRY)) {
             ERR("%.*S: IOCTL_DISK_GET_DRIVE_GEOMETRY returned %u bytes, expected %u\n",
-                us2.Length / sizeof(WCHAR), us2.Buffer, iosb.Information, sizeof(DISK_GEOMETRY));
+                devpath->Length / sizeof(WCHAR), devpath->Buffer, iosb.Information, sizeof(DISK_GEOMETRY));
         }
         
         sector_size = geometry.BytesPerSector;
         
         if (sector_size == 0) {
-            ERR("%.*S had a sector size of 0\n", us2.Length / sizeof(WCHAR), us2.Buffer);
-            goto exit;
+            ERR("%.*S had a sector size of 0\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+            goto deref;
         }
     }
     
@@ -289,27 +265,38 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
                            &gli, sizeof(gli), TRUE, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("error reading length information: %08x\n", Status);
+            ExFreePool(v);
             goto deref;
         }
         
         if (part0) {
             UNICODE_STRING us3;
             
-            Status = create_part0(DriverObject, DeviceObject, pardir, &us3, &sb->dev_item.device_uuid);
+            Status = create_part0(DriverObject, DeviceObject, devpath, &us3, &sb->dev_item.device_uuid);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("create_part0 returned %08x\n", Status);
+                ExFreePool(v);
                 goto deref;
             }
             
-            ExFreePool(us2.Buffer);
-            us2 = us3;
+            v->devpath = us3;
+        } else {
+            v->devpath.Length = v->devpath.MaximumLength = devpath->Length;
+            v->devpath.Buffer = ExAllocatePoolWithTag(PagedPool, v->devpath.Length, ALLOC_TAG);
+            
+            if (!v->devpath.Buffer) {
+                ERR("out of memory\n");
+                ExFreePool(v);
+                goto deref;
+            }
+            
+            RtlCopyMemory(v->devpath.Buffer, devpath->Buffer, v->devpath.Length);
         }
         
         RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
         RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
         v->devnum = sb->dev_item.dev_id;
-        v->devpath = us2;
         v->processed = FALSE;
         v->length = gli.Length.QuadPart;
         v->gen1 = sb->generation;
@@ -363,117 +350,13 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
               v->devuuid.uuid[0], v->devuuid.uuid[1], v->devuuid.uuid[2], v->devuuid.uuid[3], v->devuuid.uuid[4], v->devuuid.uuid[5], v->devuuid.uuid[6], v->devuuid.uuid[7],
               v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
         TRACE("device number %llx\n", v->devnum);
-
-        added_entry = TRUE;
     }
     
 deref:
-    ExFreePool(data);
+    if (data)
+        ExFreePool(data);
+    
     ObDereferenceObject(FileObject);
-    
-exit:
-    if (!added_entry)
-        ExFreePool(us2.Buffer);
-}
-
-static NTSTATUS look_in_harddisk_dir(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING name, LIST_ENTRY* volumes) {
-    UNICODE_STRING path;
-    OBJECT_ATTRIBUTES attr;
-    NTSTATUS Status;
-    HANDLE h;
-    OBJECT_DIRECTORY_INFORMATION* odi;
-    ULONG odisize, context;
-    BOOL restart, has_part0 = FALSE, has_parts = FALSE;
-    
-    static const WCHAR partition[] = L"Partition";
-    static WCHAR partition0[] = L"Partition0";
-    
-    path.Buffer = ExAllocatePoolWithTag(PagedPool, ((wcslen(devpath) + 1) * sizeof(WCHAR)) + name->Length, ALLOC_TAG);
-    if (!path.Buffer) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(path.Buffer, devpath, wcslen(devpath) * sizeof(WCHAR));
-    path.Buffer[wcslen(devpath)] = '\\';
-    RtlCopyMemory(&path.Buffer[wcslen(devpath) + 1], name->Buffer, name->Length);
-    path.Length = path.MaximumLength = ((wcslen(devpath) + 1) * sizeof(WCHAR)) + name->Length;
-
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.ObjectName = &path;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-    
-    Status = ZwOpenDirectoryObject(&h, DIRECTORY_TRAVERSE, &attr);
-
-    if (!NT_SUCCESS(Status)) {
-        ERR("ZwOpenDirectoryObject returned %08x\n", Status);
-        goto end;
-    }
-    
-    odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
-    odi = ExAllocatePoolWithTag(PagedPool, odisize, ALLOC_TAG);
-    if (!odi) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        ZwClose(h);
-        goto end;
-    }
-    
-    restart = TRUE;
-    do {
-        Status = ZwQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL/*&retlen*/);
-        restart = FALSE;
-        
-        if (!NT_SUCCESS(Status)) {
-            if (Status != STATUS_NO_MORE_ENTRIES)
-                ERR("ZwQueryDirectoryObject returned %08x\n", Status);
-        } else {
-            OBJECT_DIRECTORY_INFORMATION* odi2 = odi;
-            
-            while (odi2->Name.Buffer) {
-                TRACE("%.*S, %.*S\n", odi2->TypeName.Length / sizeof(WCHAR), odi2->TypeName.Buffer, odi2->Name.Length / sizeof(WCHAR), odi2->Name.Buffer);
-                
-                if (odi2->Name.Length > wcslen(partition) * sizeof(WCHAR) &&
-                    RtlCompareMemory(odi2->Name.Buffer, partition, wcslen(partition) * sizeof(WCHAR)) == wcslen(partition) * sizeof(WCHAR)) {
-                    
-                    if (odi2->Name.Length == (wcslen(partition) + 1) * sizeof(WCHAR) && odi2->Name.Buffer[(odi2->Name.Length / sizeof(WCHAR)) - 1] == '0') {
-                        // Partition0 refers to the whole disk
-                        has_part0 = TRUE;
-                    } else {
-                        has_parts = TRUE;
-                        
-                        test_vol(DriverObject, mountmgr, &path, &odi2->Name, FALSE, volumes);
-                    }
-                }
-                
-                odi2 = &odi2[1];
-            }
-        }
-    } while (NT_SUCCESS(Status));
-    
-    // If disk had no partitions, test the whole disk
-    if (!has_parts && has_part0) {
-        UNICODE_STRING part0us;
-        
-        part0us.Buffer = partition0;
-        part0us.Length = part0us.MaximumLength = wcslen(partition0) * sizeof(WCHAR);
-        
-        test_vol(DriverObject, mountmgr, &path, &part0us, TRUE, volumes);
-    }
-    
-    ZwClose(h);
-    
-    ExFreePool(odi);
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    ExFreePool(path.Buffer);
-    
-    return Status;
 }
 
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
@@ -561,79 +444,8 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     ExFreePool(mmp);
 }
 
-void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
-    PFILE_OBJECT FileObject;
-    PDEVICE_OBJECT mountmgr;
-    OBJECT_ATTRIBUTES attr;
-    UNICODE_STRING mmdevpath, us;
-    HANDLE h;
-    OBJECT_DIRECTORY_INFORMATION* odi;
-    ULONG odisize;
-    ULONG context;
-    BOOL restart;
-    NTSTATUS Status;
+static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
     LIST_ENTRY* le;
-    
-    static const WCHAR directory[] = L"Directory";
-    static const WCHAR harddisk[] = L"Harddisk";
-    
-    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        return;
-    }
-    
-    RtlInitUnicodeString(&us, devpath);
-    
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.ObjectName = &us;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
-    Status = ZwOpenDirectoryObject(&h, DIRECTORY_TRAVERSE, &attr);
-
-    if (!NT_SUCCESS(Status)) {
-        ERR("ZwOpenDirectoryObject returned %08x\n", Status);
-        return;
-    }
-    
-    odisize = sizeof(OBJECT_DIRECTORY_INFORMATION) * 16;
-    odi = ExAllocatePoolWithTag(PagedPool, odisize, ALLOC_TAG);
-    if (!odi) {
-        ERR("out of memory\n");
-        ZwClose(h);
-        return;
-    }
-    
-    restart = TRUE;
-    do {
-        Status = ZwQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL/*&retlen*/);
-        restart = FALSE;
-        
-        if (!NT_SUCCESS(Status)) {
-            if (Status != STATUS_NO_MORE_ENTRIES)
-                ERR("ZwQueryDirectoryObject returned %08x\n", Status);
-        } else {
-            OBJECT_DIRECTORY_INFORMATION* odi2 = odi;
-            
-            while (odi2->Name.Buffer) {
-                if (odi2->TypeName.Length == wcslen(directory) * sizeof(WCHAR) &&
-                    RtlCompareMemory(odi2->TypeName.Buffer, directory, odi2->TypeName.Length) == odi2->TypeName.Length &&
-                    odi2->Name.Length > wcslen(harddisk) * sizeof(WCHAR) &&
-                    RtlCompareMemory(odi2->Name.Buffer, harddisk, wcslen(harddisk) * sizeof(WCHAR)) == wcslen(harddisk) * sizeof(WCHAR)) {
-                        look_in_harddisk_dir(DriverObject, mountmgr, &odi2->Name, volumes);
-                }
-                
-                odi2 = &odi2[1];
-            }
-        }
-    } while (NT_SUCCESS(Status));
-    
-    ExFreePool(odi);
-    ZwClose(h);
     
     le = volumes->Flink;
     while (le != volumes) {
@@ -664,6 +476,120 @@ void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes) {
         
         le = le->Flink;
     }
+}
+
+static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+    PFILE_OBJECT FileObject, FileObject2;
+    PDEVICE_OBJECT devobj, mountmgr;
+    NTSTATUS Status;
+    STORAGE_DEVICE_NUMBER sdn;
+    ULONG dlisize;
+    DRIVE_LAYOUT_INFORMATION_EX* dli;
+    IO_STATUS_BLOCK iosb;
+    int i, num_parts = 0;
+    UNICODE_STRING devname, num, bspus, mmdevpath;
+    WCHAR devnamew[255], numw[20];
+    USHORT preflen;
     
+    static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
+    static WCHAR bs_partition[] = L"\\Partition";
+    
+    // FIXME - work with CD-ROMs and floppies(?)
+        
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return;
+    }
+    
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject2, &mountmgr);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ObDereferenceObject(FileObject);
+        return;
+    }
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                       &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, &iosb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        goto end;
+    }
+    
+    dlisize = 0;
+    
+    do {
+        dlisize += 1024;
+        dli = ExAllocatePoolWithTag(PagedPool, dlisize, ALLOC_TAG);
+    
+        Status = dev_ioctl(devobj, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0,
+                           dli, dlisize, TRUE, &iosb);
+    } while (Status == STATUS_BUFFER_TOO_SMALL);
+    
+    if (!NT_SUCCESS(Status)) {
+        ExFreePool(dli);
+        goto no_parts;
+    }
+    
+    wcscpy(devnamew, device_harddisk);
+    devname.Buffer = devnamew;
+    devname.MaximumLength = sizeof(devnamew);
+    devname.Length = wcslen(device_harddisk) * sizeof(WCHAR);
+
+    num.Buffer = numw;
+    num.MaximumLength = sizeof(numw);
+    RtlIntegerToUnicodeString(sdn.DeviceNumber, 10, &num);
+    RtlAppendUnicodeStringToString(&devname, &num);
+    
+    bspus.Buffer = bs_partition;
+    bspus.Length = bspus.MaximumLength = wcslen(bs_partition) * sizeof(WCHAR);
+    RtlAppendUnicodeStringToString(&devname, &bspus);
+    
+    preflen = devname.Length;
+    
+    for (i = 0; i < dli->PartitionCount; i++) {
+        if (dli->PartitionEntry[i].PartitionLength.QuadPart != 0 && dli->PartitionEntry[i].PartitionNumber != 0) {
+            devname.Length = preflen;
+            RtlIntegerToUnicodeString(dli->PartitionEntry[i].PartitionNumber, 10, &num);
+            RtlAppendUnicodeStringToString(&devname, &num);
+            
+            test_vol(DriverObject, mountmgr, &devname, FALSE, &volumes);
+            
+            num_parts++;
+        }
+    }
+    
+    ExFreePool(dli);
+    
+no_parts:
+    if (num_parts == 0) {
+        devname.Length = preflen;
+        devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
+        devname.Length += sizeof(WCHAR);
+        
+        test_vol(DriverObject, mountmgr, &devname, TRUE, &volumes);
+    }
+    
+end:
+    refresh_mountmgr(mountmgr, &volumes);
+
     ObDereferenceObject(FileObject);
+    ObDereferenceObject(FileObject2);
+}
+
+static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+    // FIXME
+}
+
+NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
+    DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
+    PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
+    
+    if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
+        disk_arrival(DriverObject, dicn->SymbolicLinkName);
+    else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
+        disk_removal(DriverObject, dicn->SymbolicLinkName);
+    
+    return STATUS_SUCCESS;
 }

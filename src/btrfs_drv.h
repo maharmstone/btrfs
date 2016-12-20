@@ -911,9 +911,9 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 #define do_load_tree(Vcb, th, r, t, td, loaded, Irp) _do_load_tree(Vcb, th, r, t, td, loaded, Irp, funcname, __FILE__, __LINE__)  
 
 // in search.c
-void STDCALL look_for_vols(PDRIVER_OBJECT DriverObject, LIST_ENTRY* volumes);
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v);
 void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us);
+NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 
 // in cache.c
 NTSTATUS STDCALL init_cache();

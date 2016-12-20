@@ -63,6 +63,7 @@ tCcCopyReadEx CcCopyReadEx;
 tCcCopyWriteEx CcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 BOOL diskacc = FALSE;
+void* notification_entry = NULL;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -295,6 +296,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (registry_path.Buffer)
         ExFreePool(registry_path.Buffer);
+    
+    if (notification_entry)
+        IoUnregisterPlugPlayNotificationEx(notification_entry);
 }
 
 static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
@@ -4643,10 +4647,14 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     }
 
     InitializeListHead(&volumes);
-    look_for_vols(DriverObject, &volumes);
     
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);
+    
+    Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
+                                            (PVOID)&GUID_DEVINTERFACE_DISK, DriverObject, pnp_notification, DriverObject, &notification_entry);
+    if (!NT_SUCCESS(Status))
+        ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
     
     IoRegisterFileSystem(DeviceObject);
 
