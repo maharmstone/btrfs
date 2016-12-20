@@ -5680,8 +5680,9 @@ void STDCALL flush_thread(void* context) {
 
         if (!(devobj->Vpb->Flags & VPB_MOUNTED) || Vcb->removing)
             break;
-            
-        do_flush(Vcb);
+        
+        if (!Vcb->locked)
+            do_flush(Vcb);
         
         KeSetTimer(&Vcb->flush_thread_timer, due_time, NULL);
     }
