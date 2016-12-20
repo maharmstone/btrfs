@@ -1984,6 +1984,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY rollback;
     KIRQL irql;
+    BOOL lock_paused_balance = FALSE;
     
     TRACE("FSCTL_LOCK_VOLUME\n");
     
@@ -2002,11 +2003,17 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
         goto end;
     }
     
-    Vcb->locked = TRUE;
-    
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
     InitializeListHead(&rollback);
+    
+    if (Vcb->balance.thread && KeReadStateEvent(&Vcb->balance.event)) {
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        KeClearEvent(&Vcb->balance.event);
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        
+        lock_paused_balance = TRUE;
+    }
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
@@ -2025,10 +2032,16 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
 
     if (!(Vcb->Vpb->Flags & VPB_LOCKED)) { 
         Vcb->Vpb->Flags |= VPB_LOCKED;
+        Vcb->locked = TRUE;
         Vcb->locked_fileobj = IrpSp->FileObject;
+        Vcb->lock_paused_balance = TRUE;
     } else {
         Status = STATUS_ACCESS_DENIED;
         IoReleaseVpbSpinLock(irql);
+        
+        if (lock_paused_balance)
+            KeSetEvent(&Vcb->balance.event, 0, FALSE);
+        
         goto end;
     }
 
@@ -2053,6 +2066,9 @@ void do_unlock_volume(device_extension* Vcb) {
     Vcb->locked_fileobj = NULL;
 
     IoReleaseVpbSpinLock(irql);
+    
+    if (Vcb->lock_paused_balance)
+        KeSetEvent(&Vcb->balance.event, 0, FALSE);
 }
 
 static NTSTATUS unlock_volume(device_extension* Vcb, PIRP Irp) {
