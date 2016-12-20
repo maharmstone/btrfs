@@ -2430,7 +2430,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         
             // re-add entry to mountmgr
 
-            if (!first_dev && !v->part0) {
+            if (!first_dev && v->part_num != 0) {
                 RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
                 Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
                 if (!NT_SUCCESS(Status))
@@ -2441,7 +2441,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
                 }
             }
             
-            part0 = v->part0;
+            part0 = v->part_num == 0 ? TRUE : FALSE;
         
             if (v->devpath.Buffer)
                 ExFreePool(v->devpath.Buffer);

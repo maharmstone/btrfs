@@ -178,7 +178,7 @@ void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ExFreePool(mmdlt);
 }
 
-static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, BOOL part0, LIST_ENTRY* volumes) {
+static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, LIST_ENTRY* volumes) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -270,7 +270,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
             goto deref;
         }
         
-        if (part0) {
+        if (part_num == 0) {
             UNICODE_STRING us3;
             
             Status = create_part0(DriverObject, DeviceObject, devpath, &us3, &sb->dev_item.device_uuid);
@@ -303,7 +303,8 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         v->gen1 = sb->generation;
         v->gen2 = 0;
         v->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
-        v->part0 = TRUE;
+        v->disk_num = disk_num;
+        v->part_num = part_num;
         InsertTailList(volumes, &v->list_entry);
         
         i = 1;
@@ -555,7 +556,7 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             RtlIntegerToUnicodeString(dli->PartitionEntry[i].PartitionNumber, 10, &num);
             RtlAppendUnicodeStringToString(&devname, &num);
             
-            test_vol(DriverObject, mountmgr, &devname, FALSE, &volumes);
+            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber, &volumes);
             
             num_parts++;
         }
@@ -569,7 +570,7 @@ no_parts:
         devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
         devname.Length += sizeof(WCHAR);
         
-        test_vol(DriverObject, mountmgr, &devname, TRUE, &volumes);
+        test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, 0, &volumes);
     }
     
 end:
