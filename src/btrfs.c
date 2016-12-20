@@ -2421,10 +2421,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
     unsigned int i, to_read;
     UINT8 valid_superblocks;
     
-    to_read = sector_align(sizeof(superblock), device->SectorSize);
-    
-    if (to_read < sizeof(superblock))
-        return STATUS_DEVICE_NOT_READY;
+    to_read = device->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), device->SectorSize);
     
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
