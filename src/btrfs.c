@@ -44,6 +44,7 @@ BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
 LIST_ENTRY volumes;
+LIST_ENTRY pnp_disks;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
@@ -277,6 +278,7 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     }
     
     // FIXME - free volumes and their devpaths
+    // FIXME - free pnp_disks and their devpaths
     
 #ifdef _DEBUG
     if (comfo)
@@ -4644,6 +4646,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     }
 
     InitializeListHead(&volumes);
+    InitializeListHead(&pnp_disks);
     
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);

@@ -26,18 +26,8 @@
 #include <winioctl.h>
 #include <wdmguid.h>
 
-typedef struct _OBJECT_DIRECTORY_INFORMATION {
-    UNICODE_STRING Name;
-    UNICODE_STRING TypeName;
-} OBJECT_DIRECTORY_INFORMATION, *POBJECT_DIRECTORY_INFORMATION;
-
-#ifndef _GNU_NTIFS_
-NTSTATUS WINAPI ZwQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
-                                       BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan, PULONG Context,
-                                       PULONG  ReturnLength);
-#endif
-
 extern LIST_ENTRY volumes;
+extern LIST_ENTRY pnp_disks;
 
 static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              PUNICODE_STRING nameus, BTRFS_UUID* uuid) {
@@ -480,6 +470,43 @@ static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
     }
 }
 
+static void add_pnp_disk(ULONG disk_num, PUNICODE_STRING devpath) {
+    LIST_ENTRY* le;
+    pnp_disk* disk;
+    
+    le = pnp_disks.Flink;
+    while (le != &pnp_disks) {
+        disk = CONTAINING_RECORD(le, pnp_disk, list_entry);
+        
+        if (disk->devpath.Length == devpath->Length &&
+            RtlCompareMemory(disk->devpath.Buffer, devpath->Buffer, devpath->Length) == devpath->Length)
+            return;
+        
+        le = le->Flink;
+    }
+    
+    disk = ExAllocatePoolWithTag(PagedPool, sizeof(pnp_disk), ALLOC_TAG);
+    if (!disk) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    disk->devpath.Length = disk->devpath.MaximumLength = devpath->Length;
+    disk->devpath.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
+    
+    if (!disk->devpath.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(disk);
+        return;
+    }
+    
+    RtlCopyMemory(disk->devpath.Buffer, devpath->Buffer, devpath->Length);
+    
+    disk->disk_num = disk_num;
+    
+    InsertTailList(&pnp_disks, &disk->list_entry);
+}
+
 static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     PFILE_OBJECT FileObject, FileObject2;
     PDEVICE_OBJECT devobj, mountmgr;
@@ -518,6 +545,8 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
         goto end;
     }
+    
+    add_pnp_disk(sdn.DeviceNumber, devpath);
     
     dlisize = 0;
     
@@ -581,7 +610,50 @@ end:
 }
 
 static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
-    // FIXME
+    LIST_ENTRY* le;
+    pnp_disk* disk = NULL;
+    
+    // FIXME - remove Partition0Btrfs devices and unlink from mountmgr
+    // FIXME - emergency unmount of RAIDed volumes
+    
+    le = pnp_disks.Flink;
+    while (le != &pnp_disks) {
+        pnp_disk* disk2 = CONTAINING_RECORD(le, pnp_disk, list_entry);
+        
+        if (disk2->devpath.Length == devpath->Length &&
+            RtlCompareMemory(disk2->devpath.Buffer, devpath->Buffer, devpath->Length) == devpath->Length) {
+            disk = disk2;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!disk)
+        return;
+    
+    le = volumes.Flink;
+    while (le != &volumes) {
+        volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        LIST_ENTRY* le2 = le->Flink;
+        
+        if (v->disk_num == disk->disk_num) {
+            if (v->devpath.Buffer)
+                ExFreePool(v->devpath.Buffer);
+            
+            RemoveEntryList(&v->list_entry);
+            
+            ExFreePool(v);
+        }
+        
+        le = le2;
+    }
+    
+    ExFreePool(disk->devpath.Buffer);
+    
+    RemoveEntryList(&disk->list_entry);
+    
+    ExFreePool(disk);
 }
 
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
