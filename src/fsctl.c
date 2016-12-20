@@ -2034,7 +2034,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
         Vcb->Vpb->Flags |= VPB_LOCKED;
         Vcb->locked = TRUE;
         Vcb->locked_fileobj = IrpSp->FileObject;
-        Vcb->lock_paused_balance = TRUE;
+        Vcb->lock_paused_balance = lock_paused_balance;
     } else {
         Status = STATUS_ACCESS_DENIED;
         IoReleaseVpbSpinLock(irql);
