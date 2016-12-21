@@ -44,6 +44,7 @@ BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
 LIST_ENTRY volumes;
+ERESOURCE volumes_lock;
 LIST_ENTRY pnp_disks;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
@@ -261,6 +262,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     free_cache();
     
     IoUnregisterFileSystem(DriverObject->DeviceObject);
+    
+    if (notification_entry)
+        IoUnregisterPlugPlayNotificationEx(notification_entry);
    
     dosdevice_nameW.Buffer = dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = (USHORT)wcslen(dosdevice_name) * sizeof(WCHAR);
@@ -290,6 +294,8 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     ExDeleteResourceLite(&global_loading_lock);
     
+    ExDeleteResourceLite(&volumes_lock);
+    
     if (log_device.Buffer)
         ExFreePool(log_device.Buffer);
     
@@ -298,9 +304,6 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (registry_path.Buffer)
         ExFreePool(registry_path.Buffer);
-    
-    if (notification_entry)
-        IoUnregisterPlugPlayNotificationEx(notification_entry);
 }
 
 static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
@@ -2793,6 +2796,8 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
         le = le->Flink;
     }
     
+    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+    
     if (Vcb->devices_loaded < Vcb->superblock.num_devices && !IsListEmpty(&volumes)) {
         LIST_ENTRY* le = volumes.Flink;
         
@@ -2809,6 +2814,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 
                 Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
                 if (!NT_SUCCESS(Status)) {
+                    ExReleaseResourceLite(&volumes_lock);
                     ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
                     return NULL;
                 }
@@ -2820,6 +2826,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 
                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                 if (!dev) {
+                    ExReleaseResourceLite(&volumes_lock);
                     ERR("out of memory\n");
                     ObDereferenceObject(DeviceObject);
                     return NULL;
@@ -2835,12 +2842,16 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 Vcb->devices_loaded++;
                 InsertTailList(&Vcb->devices, &dev->list_entry);
                 
+                ExReleaseResourceLite(&volumes_lock);
+                
                 return dev;
             }
             
             le = le->Flink;
         }
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
     
     WARN("could not find device with uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
          uuid->uuid[0], uuid->uuid[1], uuid->uuid[2], uuid->uuid[3], uuid->uuid[4], uuid->uuid[5], uuid->uuid[6], uuid->uuid[7],
@@ -3008,6 +3019,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 }
                 
                 if (!done) {
+                    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+                    
                     if (!IsListEmpty(&volumes) && Vcb->devices_loaded < Vcb->superblock.num_devices) {
                         LIST_ENTRY* le = volumes.Flink;
                         
@@ -3021,6 +3034,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 
                                 Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_DATA | FILE_WRITE_DATA, &FileObject, &DeviceObject);
                                 if (!NT_SUCCESS(Status)) {
+                                    ExReleaseResourceLite(&volumes_lock);
                                     ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
                                     return Status;
                                 }
@@ -3032,6 +3046,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                                 if (!dev) {
+                                    ExReleaseResourceLite(&volumes_lock);
                                     ERR("out of memory\n");
                                     ObDereferenceObject(DeviceObject);
                                     return STATUS_INSUFFICIENT_RESOURCES;
@@ -3062,6 +3077,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                         }
                     } else
                         ERR("unexpected device %llx found\n", tp.item->key.offset);
+                    
+                    ExReleaseResourceLite(&volumes_lock);
                 }
             }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
@@ -3573,8 +3590,12 @@ static BOOL raid_generations_okay(device_extension* Vcb) {
     
     le2 = Vcb->devices.Flink;
     while (le2 != &Vcb->devices) {
-        LIST_ENTRY* le = volumes.Flink;
+        LIST_ENTRY* le;
         device* dev = CONTAINING_RECORD(le2, device, list_entry);
+        
+        ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+        
+        le = volumes.Flink;
         
         while (le != &volumes) {
             volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -3584,12 +3605,15 @@ static BOOL raid_generations_okay(device_extension* Vcb) {
             ) {
                 if (v->gen1 != Vcb->superblock.generation - 1) {
                     WARN("device %llu had generation %llx, expected %llx\n", dev->devitem.dev_id, v->gen1, Vcb->superblock.generation - 1);
+                    ExReleaseResourceLite(&volumes_lock);
                     return FALSE;
                 } else
                     break;
             }
             le = le->Flink;
         }
+        
+        ExReleaseResourceLite(&volumes_lock);
         
         le2 = le2->Flink;
     }
@@ -3684,18 +3708,23 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
+    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+    
     le = volumes.Flink;
     while (le != &volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
         
         if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && v->devnum < Vcb->superblock.dev_item.dev_id) {
             // skipping over device in RAID which isn't the first one
+            ExReleaseResourceLite(&volumes_lock);
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit;
         }
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
     
     Vcb->readonly = FALSE;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
@@ -4650,6 +4679,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);
+    ExInitializeResourceLite(&volumes_lock);
     
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_DISK, DriverObject, pnp_notification, DriverObject, &notification_entry);

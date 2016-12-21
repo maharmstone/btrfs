@@ -27,6 +27,7 @@
 #include <wdmguid.h>
 
 extern LIST_ENTRY volumes;
+extern ERESOURCE volumes_lock;
 extern LIST_ENTRY pnp_disks;
 
 static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
@@ -295,7 +296,10 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         v->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
         v->disk_num = disk_num;
         v->part_num = part_num;
+        
+        ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
         InsertTailList(volumes, &v->list_entry);
+        ExReleaseResourceLite(&volumes_lock);
         
         i = 1;
         while (superblock_addrs[i] != 0 && superblock_addrs[i] + toread <= v->length) {
@@ -439,6 +443,8 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
 static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
     LIST_ENTRY* le;
     
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    
     le = volumes->Flink;
     while (le != volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -468,6 +474,8 @@ static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
 }
 
 static void add_pnp_disk(ULONG disk_num, PUNICODE_STRING devpath) {
@@ -546,7 +554,9 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         goto end;
     }
     
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
     add_pnp_disk(sdn.DeviceNumber, devpath);
+    ExReleaseResourceLite(&volumes_lock);
     
     dlisize = 0;
     
@@ -616,6 +626,8 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     // FIXME - remove Partition0Btrfs devices and unlink from mountmgr
     // FIXME - emergency unmount of RAIDed volumes
     
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    
     le = pnp_disks.Flink;
     while (le != &pnp_disks) {
         pnp_disk* disk2 = CONTAINING_RECORD(le, pnp_disk, list_entry);
@@ -629,9 +641,11 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         le = le->Flink;
     }
     
-    if (!disk)
+    if (!disk) {
+        ExReleaseResourceLite(&volumes_lock);
         return;
-    
+    }
+
     le = volumes.Flink;
     while (le != &volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -648,6 +662,8 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         
         le = le2;
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
     
     ExFreePool(disk->devpath.Buffer);
     

@@ -30,6 +30,7 @@
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern LIST_ENTRY volumes;
+extern ERESOURCE volumes_lock;
 
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
@@ -2268,7 +2269,11 @@ static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
 }
 
 static void update_volumes(device_extension* Vcb) {
-    LIST_ENTRY* le = volumes.Flink;
+    LIST_ENTRY* le;
+    
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    
+    le = volumes.Flink;
         
     while (le != &volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -2291,6 +2296,8 @@ static void update_volumes(device_extension* Vcb) {
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
 }
 
 static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
@@ -2699,7 +2706,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     v->gen1 = v->gen2 = Vcb->superblock.generation;
     v->seeding = FALSE;
     v->processed = TRUE;
+    
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
     InsertTailList(&volumes, &v->list_entry);
+    ExReleaseResourceLite(&volumes_lock);
+    
     volname.Buffer = NULL;
     
     Status = dev_ioctl(fileobj->DeviceObject, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,

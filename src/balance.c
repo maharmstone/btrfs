@@ -65,6 +65,7 @@ typedef struct {
 } data_reloc_ref;
 
 extern LIST_ENTRY volumes;
+extern ERESOURCE volumes_lock;
 
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
@@ -2416,6 +2417,8 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     // remove entry in volume list
     
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    
     le = volumes.Flink;
     while (le != &volumes) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
@@ -2452,6 +2455,8 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&volumes_lock);
     
     if (first_dev) {
         PDEVICE_OBJECT DeviceObject, olddev;
