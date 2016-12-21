@@ -3673,10 +3673,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializeResourceLite(&Vcb->checksum_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
 
-    ExAcquireResourceExclusiveLite(&global_loading_lock, TRUE);
-    InsertTailList(&VcbList, &Vcb->list_entry);
-    ExReleaseResourceLite(&global_loading_lock);
-
     ExInitializeResourceLite(&Vcb->load_lock);
     ExAcquireResourceExclusiveLite(&Vcb->load_lock, TRUE);
 
@@ -4077,14 +4073,17 @@ exit:
                     ExFreePool(dev);
                 }
             }
-
-            RemoveEntryList(&Vcb->list_entry);
         }
 
         if (NewDeviceObject)
             IoDeleteDevice(NewDeviceObject);
-    } else
+    } else {
+        ExAcquireResourceExclusiveLite(&global_loading_lock, TRUE);
+        InsertTailList(&VcbList, &Vcb->list_entry);
+        ExReleaseResourceLite(&global_loading_lock);
+        
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_MOUNT);
+    }
 
     TRACE("mount_vol done (status: %lx)\n", Status);
 
