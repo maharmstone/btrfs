@@ -18,6 +18,8 @@
 #define FSCTL_BTRFS_ADD_DEVICE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x835, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_REMOVE_DEVICE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x836, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 
+#define IOCTL_BTRFS_QUERY_FILESYSTEMS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x837, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+
 typedef struct {
     UINT64 subvol;
     UINT64 inode;
@@ -125,5 +127,18 @@ typedef struct {
 typedef struct {
     btrfs_balance_opts opts[3];
 } btrfs_start_balance;
+
+typedef struct {
+    UINT8 uuid[16];
+    USHORT name_length;
+    WCHAR name[1];
+} btrfs_filesystem_device;
+
+typedef struct {
+    UINT32 next_entry;
+    UINT8 uuid[16];
+    UINT32 num_devices;
+    btrfs_filesystem_device device;
+} btrfs_filesystem;
 
 #endif
