@@ -27,6 +27,7 @@
 #include <ntdddisk.h>
 #include <ntddscsi.h>
 #include <ata.h>
+#include <mountmgr.h>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 
@@ -1016,6 +1017,53 @@ end:
     return ret;
 }
 
+static void add_drive_letter(HANDLE h) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    MOUNTDEV_NAME mdn, *mdn2;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES attr;
+    HANDLE mountmgr;
+    MOUNTMGR_DRIVE_LETTER_INFORMATION mdli;
+    
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(mdn));
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+        return;
+    
+    mdn2 = malloc(offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength);
+    
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength);
+    if (!NT_SUCCESS(Status))
+        goto end;
+    
+    RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
+    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+    
+    if (!NT_SUCCESS(Status))
+        goto end;
+    
+    // MOUNTDEV_NAME is identical to MOUNTMGR_TARGET_NAME
+    Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION,
+                                   mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, NULL, 0);
+    if (!NT_SUCCESS(Status))
+        goto end2;
+    
+    // MOUNTDEV_NAME is identical to MOUNTMGR_DRIVE_LETTER_TARGET
+    Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER,
+                                   mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, &mdli, sizeof(mdli));
+    if (!NT_SUCCESS(Status))
+        goto end2;
+
+end2:    
+    NtClose(mountmgr);
+    
+end:
+    free(mdn2);
+}
+
 NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                         BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
@@ -1070,6 +1118,9 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     
 end:
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
+    
+    if (NT_SUCCESS(Status))
+        add_drive_letter(h);
     
     NtClose(h);
     
