@@ -43,7 +43,8 @@ typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID 
 
 void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum) {
     TVINSERTSTRUCTW tis;
-    WCHAR t[255], u[255], *v, *vn;
+    WCHAR t[255], u[255], *v;
+    device_info di;
     
     if (!LoadStringW(module, partnum != 0 ? IDS_PARTITION : IDS_WHOLE_DISK, t, sizeof(t) / sizeof(WCHAR))) {
         ShowError(GetParent(tree), GetLastError());
@@ -58,17 +59,17 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     } else
         v = t;
     
-    vn = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
-    memcpy(vn, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
+    di.path = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
+    memcpy(di.path, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
+    
+    devpaths.push_back(di);
     
     tis.hParent = parent;
     tis.hInsertAfter = TVI_LAST;
     tis.itemex.mask = TVIF_TEXT | TVIF_PARAM;
     tis.itemex.pszText = v;
     tis.itemex.cchTextMax = wcslen(v);
-    tis.itemex.lParam = (LPARAM)vn;
-    
-    devpaths.push_back(vn);
+    tis.itemex.lParam = (LPARAM)devpaths.size();
     
     SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
 }
@@ -300,8 +301,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         return;
     }
     
-    vn.Length = vn.MaximumLength = wcslen(sel) * sizeof(WCHAR);
-    vn.Buffer = sel;
+    vn.Length = vn.MaximumLength = wcslen(sel->path) * sizeof(WCHAR);
+    vn.Buffer = sel->path;
 
     InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -380,7 +381,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     tvi.mask = TVIF_PARAM | TVIF_HANDLE;
                     
                     if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel = (WCHAR*)tvi.lParam;
+                        sel = tvi.lParam == NULL ? NULL : &devpaths[tvi.lParam - 1];
                     else
                         sel = NULL;
                     

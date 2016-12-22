@@ -20,14 +20,20 @@
 #include <shlobj.h>
 #include <vector>
 
+typedef struct {
+    WCHAR* path;
+} device_info;
+
 class BtrfsDeviceAdd {
 public:
     ~BtrfsDeviceAdd() {
         unsigned int i;
         
         for (i = 0; i < devpaths.size(); i++) {
-            free(devpaths[i]);
+            free(devpaths[i].path);
         }
+        
+        devpaths.clear();
     }
     
     INT_PTR CALLBACK DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -43,6 +49,6 @@ private:
     HINSTANCE hinst;
     HWND hwnd;
     WCHAR* cmdline;
-    WCHAR* sel;
-    std::vector<WCHAR*> devpaths;
+    device_info* sel;
+    std::vector<device_info> devpaths;
 };
