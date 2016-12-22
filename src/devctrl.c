@@ -162,6 +162,17 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
     
     ExAcquireResourceSharedLite(&global_loading_lock, TRUE);
     
+    if (IsListEmpty(&VcbList)) {
+        if (length < sizeof(btrfs_filesystem)) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        } else {
+            RtlZeroMemory(data, sizeof(btrfs_filesystem));
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+    }
+
     le = VcbList.Flink;
     
     while (le != &VcbList) {
