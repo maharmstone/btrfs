@@ -26,6 +26,7 @@
 #include <uxtheme.h>
 #include <stdio.h>
 #include <strsafe.h>
+#include <mountmgr.h>
 #include <algorithm>
 
 typedef struct _OBJECT_DIRECTORY_INFORMATION {
@@ -41,10 +42,17 @@ typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS
 typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
                                                   BOOLEAN RestartScan, PULONG Context, PULONG ReturnLength);
 
-void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum) {
+void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum, HANDLE mountmgr) {
     TVINSERTSTRUCTW tis;
     WCHAR t[255], u[255], *v;
     device_info di;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    ULONG mmpsize;
+    MOUNTMGR_MOUNT_POINT* mmp;
+    MOUNTMGR_MOUNT_POINTS mmps;
+    
+    static WCHAR dosdevices[] = L"\\DosDevices\\";
     
     if (!LoadStringW(module, partnum != 0 ? IDS_PARTITION : IDS_WHOLE_DISK, t, sizeof(t) / sizeof(WCHAR))) {
         ShowError(GetParent(tree), GetLastError());
@@ -62,6 +70,55 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     di.path = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     memcpy(di.path, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     
+    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + (wcslen(s) * sizeof(WCHAR));
+    
+    mmp = (MOUNTMGR_MOUNT_POINT*)malloc(mmpsize);
+    if (!mmp)
+        return;
+
+    RtlZeroMemory(mmp, sizeof(MOUNTMGR_MOUNT_POINT));
+    mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
+    mmp->DeviceNameLength = wcslen(s) * sizeof(WCHAR);
+    RtlCopyMemory(&mmp[1], s, wcslen(s) * sizeof(WCHAR));
+    
+    Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                                   mmp, mmpsize, &mmps, sizeof(MOUNTMGR_MOUNT_POINTS));
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
+        MOUNTMGR_MOUNT_POINTS* mmps2;
+        
+        mmps2 = (MOUNTMGR_MOUNT_POINTS*)malloc(mmps.Size);
+        
+        Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                                       mmp, mmpsize, mmps2, mmps.Size);
+        
+        if (NT_SUCCESS(Status)) {
+            ULONG i;
+            
+            for (i = 0; i < mmps2->NumberOfMountPoints; i++) {
+                WCHAR* symlink = (WCHAR*)((UINT8*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset);
+                
+                if (mmps2->MountPoints[i].SymbolicLinkNameLength == 0x1c &&
+                    RtlCompareMemory(symlink, dosdevices, wcslen(dosdevices) * sizeof(WCHAR)) == wcslen(dosdevices) * sizeof(WCHAR) &&
+                    symlink[13] == ':'
+                ) {
+                    WCHAR drive[3];
+                    
+                    drive[0] = symlink[12];
+                    drive[1] = ':';
+                    drive[2] = 0;
+                    
+                    wcscat(v, L" (");
+                    wcscat(v, drive);
+                    wcscat(v, L")");
+                }
+            }
+        }
+        
+        free(mmps2);
+    }
+
+    free(mmp);
+    
     devpaths.push_back(di);
     
     tis.hParent = parent;
@@ -74,7 +131,7 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
 }
 
-void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us) {
+void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mountmgr) {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES attr;
     HANDLE h;
@@ -188,21 +245,22 @@ void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us) {
         memcpy((UINT8*)s + us->Length + sizeof(WCHAR), n, wcslen(n) * sizeof(WCHAR));
         s[len / sizeof(WCHAR)] = 0;
     
-        add_partition_to_tree(tree, item, s, parts[i]);
+        add_partition_to_tree(tree, item, s, parts[i], mountmgr);
         
         free(s);
     }
 }
 
 void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
-    UNICODE_STRING us;
+    UNICODE_STRING us, us2;
     OBJECT_ATTRIBUTES attr;
     NTSTATUS Status;
-    HANDLE h;
+    HANDLE h, mountmgr;
     ULONG odisize, context;
     OBJECT_DIRECTORY_INFORMATION* odi;
     BOOL restart;
     HMODULE ntdll;
+    IO_STATUS_BLOCK iosb;
     
     pNtOpenDirectoryObject NtOpenDirectoryObject;
     pNtQueryDirectoryObject NtQueryDirectoryObject;
@@ -242,6 +300,16 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         return;
     }
     
+    RtlInitUnicodeString(&us2, MOUNTMGR_DEVICE_NAME);
+    InitializeObjectAttributes(&attr, &us2, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+    if (!NT_SUCCESS(Status)) {
+        MessageBoxA(GetParent(tree), "Could not get handle to mount manager.\n", "Error", MB_ICONERROR);
+        return;
+    }
+    
     restart = TRUE;
     do {
         Status = NtQueryDirectoryObject(h, odi, odisize, FALSE, restart, &context, NULL);
@@ -265,7 +333,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                         memcpy((UINT8*)us2.Buffer + us.Length + sizeof(WCHAR), odi2->Name.Buffer, odi2->Name.Length);
                         us2.Buffer[us2.Length / sizeof(WCHAR)] = 0;
                     
-                        add_device_to_tree(tree, &us2);
+                        add_device_to_tree(tree, &us2, mountmgr);
                         
                         free(us2.Buffer);
                 }
@@ -277,6 +345,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     
     free(odi);
     NtClose(h);
+    NtClose(mountmgr);
 }
 
 void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {

@@ -56,7 +56,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared"
+				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared;C:\WinDDK\Include\km"
 				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUG;_USRDLL;_X86_"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -149,7 +149,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared"
+				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared;C:\WinDDK\Include\km"
 				PreprocessorDefinitions="WIN32;_WINDOWS;_DEBUG;_USRDLL;_AMD64_"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -242,6 +242,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
+				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared;C:\WinDDK\Include\km"
 				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;_USRDLL"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
@@ -333,7 +334,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared"
+				AdditionalIncludeDirectories="C:\WinDDK\Include\um;C:\WinDDK\Include\shared;C:\WinDDK\Include\km"
 				PreprocessorDefinitions="WIN32;_WINDOWS;NDEBUG;_USRDLL;_AMD64_"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
