@@ -831,9 +831,9 @@ static BOOL is_ssd(HANDLE h) {
     return FALSE;
 }
 
-static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
+static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size) {
     NTSTATUS Status;
-    UINT32 sector_size, node_size;
+    UINT32 node_size;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
@@ -855,8 +855,6 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     add_root(&roots, BTRFS_ROOT_CHECKSUM);
     fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
     reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
-    
-    sector_size = 0x1000; // FIXME - allow this to be set?
     
     init_device(&dev, 1, size, &fsuuid, sector_size);
     
@@ -915,10 +913,10 @@ static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
     return FALSE;
 }
 
-static BOOL is_mounted_multi_device(HANDLE h) {
+static BOOL is_mounted_multi_device(HANDLE h, UINT32 sector_size) {
     NTSTATUS Status;
     superblock* sb;
-    ULONG sector_size, sblen;
+    ULONG sblen;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
     BTRFS_UUID fsuuid, devuuid;
@@ -931,8 +929,6 @@ static BOOL is_mounted_multi_device(HANDLE h) {
     BOOL ret = FALSE;
     
     static WCHAR btrfs[] = L"\\Btrfs";
-    
-    sector_size = 0x1000; // FIXME - find this
     
     sblen = sizeof(sb);
     if (sblen & (sector_size - 1))
@@ -992,21 +988,23 @@ static BOOL is_mounted_multi_device(HANDLE h) {
     if (!NT_SUCCESS(Status))
         goto end;
     
-    bfs2 = bfs;
-    while (TRUE) {
-        if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            if (bfs2->num_devices == 1)
-                ret = FALSE;
-            else
-                ret = look_for_device(bfs2, &devuuid);
+    if (bfs->num_devices != 0) {
+        bfs2 = bfs;
+        while (TRUE) {
+            if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                if (bfs2->num_devices == 1)
+                    ret = FALSE;
+                else
+                    ret = look_for_device(bfs2, &devuuid);
+                
+                goto end;
+            }
             
-            goto end;
+            if (bfs2->next_entry == 0)
+                break;
+            else
+                bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
         }
-        
-        if (bfs2->next_entry == 0)
-            break;
-        else
-            bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
     }
     
 end:
@@ -1026,6 +1024,8 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     OBJECT_ATTRIBUTES attr;
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
+    DISK_GEOMETRY_EX dgex;
+    UINT32 sector_size;
     
     InitializeObjectAttributes(&attr, DriveRoot, 0, NULL, NULL);
     
@@ -1034,13 +1034,23 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     
     if (!NT_SUCCESS(Status))
         return Status;
-
-    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli));
     
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli));
     if (!NT_SUCCESS(Status)) {
         NtClose(h);
         return Status;
     }
+
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &dgex, sizeof(dgex));
+    if (!NT_SUCCESS(Status)) {
+        NtClose(h);
+        return Status;
+    }
+    
+    sector_size = dgex.Geometry.BytesPerSector;
+    
+    if (sector_size == 0x200 || sector_size == 0)
+        sector_size = 0x1000;
     
     if (Callback) {
         ULONG pc = 0;
@@ -1049,12 +1059,12 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
     
-    if (is_mounted_multi_device(h)) {
+    if (is_mounted_multi_device(h, sector_size)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
     
-    Status = write_btrfs(h, gli.Length.QuadPart, Label);
+    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size);
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
     
