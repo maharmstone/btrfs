@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <stdlib.h>
+#include <stddef.h>
 #include <time.h>
 #include <ntstatus.h>
 #define WIN32_NO_STATUS
@@ -27,6 +28,7 @@
 #include <ntddscsi.h>
 #include <ata.h>
 #include "../btrfs.h"
+#include "../btrfsioctl.h"
 
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -39,6 +41,9 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 
 NTSTATUS NTAPI NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                            ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+
+NTSTATUS NTAPI NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                          ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
 
 NTSYSAPI NTSTATUS NTAPI RtlUnicodeToUTF8N(PCHAR UTF8StringDestination, ULONG UTF8StringMaxByteCount, PULONG UTF8StringActualByteCount,
                                           PCWCH UnicodeStringSource, ULONG  UnicodeStringByteCount);
@@ -86,7 +91,7 @@ typedef struct {
 typedef struct {
     DEV_ITEM dev_item;
     UINT64 last_alloc;
-} btrfs_device;
+} btrfs_dev;
 
 #define keycmp(key1, key2)\
     ((key1.obj_id < key2.obj_id) ? -1 :\
@@ -307,7 +312,7 @@ static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset
     InsertTailList(&r->items, &item->list_entry);
 }
 
-static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
+static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
     UINT64 off;
     DEV_EXTENT de;
     
@@ -327,7 +332,7 @@ static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_device* dev, b
     return off;
 }
 
-static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_device* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, UINT32 sector_size) {
+static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, UINT32 sector_size) {
     UINT64 off, size;
     UINT16 stripes, i;
     btrfs_chunk* c;
@@ -582,7 +587,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
+static void init_device(btrfs_dev* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
     dev->dev_item.dev_id = id;
     dev->dev_item.num_bytes = size;
     dev->dev_item.bytes_used = 0;
@@ -601,7 +606,7 @@ static void init_device(btrfs_device* dev, UINT64 id, UINT64 size, BTRFS_UUID* f
     dev->last_alloc = 0x100000; // skip first megabyte
 }
 
-static NTSTATUS write_superblocks(HANDLE h, btrfs_device* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
+static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
                                   btrfs_chunk* sys_chunk, UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -832,7 +837,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
-    btrfs_device dev;
+    btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
     BOOL ssd;
     
@@ -893,6 +898,126 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label) {
     return STATUS_SUCCESS;
 }
 
+static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
+    UINT32 i;
+    btrfs_filesystem_device* dev;
+    
+    for (i = 0; i < bfs->num_devices; i++) {
+        if (i == 0)
+            dev = &bfs->device;
+        else
+            dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+        
+        if (RtlCompareMemory(&dev->uuid, devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
+            return TRUE;
+    }
+    
+    return FALSE;
+}
+
+static BOOL is_mounted_multi_device(HANDLE h) {
+    NTSTATUS Status;
+    superblock* sb;
+    ULONG sector_size, sblen;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER off;
+    BTRFS_UUID fsuuid, devuuid;
+    UINT32 crc32;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES atts;
+    HANDLE h2;
+    btrfs_filesystem *bfs = NULL, *bfs2;
+    ULONG bfssize;
+    BOOL ret = FALSE;
+    
+    static WCHAR btrfs[] = L"\\Btrfs";
+    
+    sector_size = 0x1000; // FIXME - find this
+    
+    sblen = sizeof(sb);
+    if (sblen & (sector_size - 1))
+        sblen = (sblen & sector_size) + sector_size;
+    
+    sb = malloc(sblen);
+    
+    off.QuadPart = superblock_addrs[0];
+    
+    Status = NtReadFile(h, NULL, NULL, NULL, &iosb, sb, sblen, &off, NULL);
+    if (!NT_SUCCESS(Status)) {
+        free(sb);
+        return FALSE;
+    }
+    
+    if (sb->magic != BTRFS_MAGIC) {
+        free(sb);
+        return FALSE;
+    }
+    
+    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    if (crc32 != *((UINT32*)sb)) {
+        free(sb);
+        return FALSE;
+    }
+    
+    fsuuid = sb->uuid;
+    devuuid = sb->dev_item.device_uuid;
+    
+    free(sb);
+    
+    us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+    us.Buffer = btrfs;
+    
+    InitializeObjectAttributes(&atts, &us, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&h2, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &atts, &iosb,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (!NT_SUCCESS(Status)) // not a problem, it usually just means the driver isn't loaded
+        return FALSE;
+    
+    bfssize = 0;
+    
+    do {
+        bfssize += 1024;
+        
+        if (bfs) free(bfs);
+        bfs = malloc(bfssize);
+        
+        Status = NtDeviceIoControlFile(h2, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, NULL, 0, bfs, bfssize);
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+            NtClose(h2);
+            return FALSE;
+        }
+    } while (Status == STATUS_BUFFER_OVERFLOW);
+    
+    if (!NT_SUCCESS(Status))
+        goto end;
+    
+    bfs2 = bfs;
+    while (TRUE) {
+        if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (bfs2->num_devices == 1)
+                ret = FALSE;
+            else
+                ret = look_for_device(bfs2, &devuuid);
+            
+            goto end;
+        }
+        
+        if (bfs2->next_entry == 0)
+            break;
+        else
+            bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+    }
+    
+end:
+    NtClose(h2);
+    
+    if (bfs)
+        free(bfs);
+    
+    return ret;
+}
+
 NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                         BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
@@ -924,10 +1049,16 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
     
+    if (is_mounted_multi_device(h)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
     Status = write_btrfs(h, gli.Length.QuadPart, Label);
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
     
+end:
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
     
     NtClose(h);
