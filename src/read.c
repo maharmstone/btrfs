@@ -3610,7 +3610,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         IoSkipCurrentIrpStackLocation(Irp);
     
-        Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+        Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
         
         goto exit2;
     }

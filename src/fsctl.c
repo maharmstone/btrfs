@@ -1277,13 +1277,17 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
         ULONG structlen;
         
-        if (length < sizeof(btrfs_device) - sizeof(WCHAR))
-            return STATUS_BUFFER_OVERFLOW;
+        if (length < sizeof(btrfs_device) - sizeof(WCHAR)) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        }
         
         if (!dev)
             dev = data;
@@ -1296,7 +1300,7 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         
         Status = dev_ioctl(dev2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
         if (!NT_SUCCESS(Status))
-            return Status;
+            goto end;
         
         dev->next_entry = 0;
         dev->dev_id = dev2->devitem.dev_id;
@@ -1307,8 +1311,11 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         
         le = le->Flink;
     }
-      
-    return STATUS_SUCCESS;
+
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
 }
 
 static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length) {
@@ -1452,6 +1459,8 @@ static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     BOOL verify = FALSE;
     LIST_ENTRY* le;
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -1472,6 +1481,7 @@ static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
             
             if (!NT_SUCCESS(Status) || verify) {
                 IoSetHardErrorOrVerifyDevice(Irp, dev->devobj);
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 
                 return verify ? STATUS_VERIFY_REQUIRED : Status;
             }
@@ -1479,6 +1489,8 @@ static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return STATUS_SUCCESS;
 }
@@ -2271,6 +2283,7 @@ static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
 static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
     
     le = volumes.Flink;
@@ -2298,6 +2311,7 @@ static void update_volumes(device_extension* Vcb) {
     }
     
     ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&Vcb->tree_lock);
 }
 
 static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
@@ -2398,7 +2412,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
         if (RtlCompareMemory(&Vcb->superblock.uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
             LIST_ENTRY* le2;
             
-            // FIXME - device lock?
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
             
             if (Vcb->superblock.num_devices > 1) {
                 le2 = Vcb->devices.Flink;
@@ -2406,6 +2420,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
                     device* dev = CONTAINING_RECORD(le2, device, list_entry);
                     
                     if (RtlCompareMemory(&dev->devitem.device_uuid, &devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                        ExReleaseResourceLite(&Vcb->tree_lock);
                         ExReleaseResourceLite(&global_loading_lock);
                         return STATUS_DEVICE_NOT_READY;
                     }
@@ -2414,6 +2429,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
                 }
             }
             
+            ExReleaseResourceLite(&Vcb->tree_lock);
             ExReleaseResourceLite(&global_loading_lock);
             return STATUS_SUCCESS;
         }

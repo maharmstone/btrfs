@@ -60,6 +60,8 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
     RtlZeroMemory(context, sizeof(pnp_context));
     KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
     
@@ -69,7 +71,8 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
     if (!context->stripes) {
         ERR("out of memory\n");
         ExFreePool(context);
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end2;
     }
     
     RtlZeroMemory(context->stripes, sizeof(pnp_stripe) * num_devices);
@@ -99,7 +102,8 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
                 ExFreePool(context->stripes);
                 ExFreePool(context);
                 
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end2;
             }
             
             IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
@@ -150,6 +154,9 @@ end:
 
     ExFreePool(context->stripes);
     ExFreePool(context);
+    
+end2:
+    ExReleaseResourceLite(&Vcb->tree_lock);
 
     return Status;
 }
@@ -305,7 +312,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             TRACE("passing minor function 0x%x on\n", IrpSp->MinorFunction);
             
             IoSkipCurrentIrpStackLocation(Irp);
-            Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+            Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
             goto end;
     }
 

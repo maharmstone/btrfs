@@ -131,7 +131,7 @@ static NTSTATUS get_partition_info_ex(device_extension* Vcb, PIRP Irp) {
     
     TRACE("IOCTL_DISK_GET_PARTITION_INFO_EX\n");
     
-    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
+    Status = dev_ioctl(Vcb->Vpb->RealDevice, IOCTL_DISK_GET_PARTITION_INFO_EX, NULL, 0,
                        Irp->UserBuffer, IrpSp->Parameters.DeviceIoControl.OutputBufferLength, TRUE, &Irp->IoStatus);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -193,10 +193,11 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
         itemsize = offsetof(btrfs_filesystem, device);
         length -= offsetof(btrfs_filesystem, device);
         
-        // FIXME - devices lock
-        
         bfs->next_entry = 0;
         RtlCopyMemory(&bfs->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID));
+        
+        ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+        
         bfs->num_devices = Vcb->superblock.num_devices;
         
         bfd = NULL;
@@ -212,6 +213,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
                 bfd = &bfs->device;
             
             if (length < offsetof(btrfs_filesystem_device, name[0])) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 Status = STATUS_BUFFER_OVERFLOW;
                 goto end;
             }
@@ -223,17 +225,20 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
             
             Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
             if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                 goto end;
             }
             
             if (mdn.NameLength > length) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 Status = STATUS_BUFFER_OVERFLOW;
                 goto end;
             }
             
             Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &bfd->name_length, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, TRUE, NULL);
             if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                 goto end;
             }
@@ -243,6 +248,8 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
             
             le2 = le2->Flink;
         }
+        
+        ExReleaseResourceLite(&Vcb->tree_lock);
         
         le = le->Flink;
     }
@@ -323,7 +330,7 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     IoSkipCurrentIrpStackLocation(Irp);
     
-    Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+    Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
     
     goto end2;
     

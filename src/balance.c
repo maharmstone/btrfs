@@ -2352,8 +2352,6 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     InitializeListHead(&rollback);
     
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-
     if (Vcb->need_write)
         do_write(Vcb, NULL, &rollback);
     
@@ -2500,8 +2498,6 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     }
     
     ExFreePool(dev);
-    
-    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return STATUS_SUCCESS;
 }
@@ -2655,6 +2651,8 @@ end:
         } else {
             device* dev = NULL;
             
+            ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+            
             le = Vcb->devices.Flink;
             while (le != &Vcb->devices) {
                 device* dev2 = CONTAINING_RECORD(le, device, list_entry);
@@ -2678,6 +2676,8 @@ end:
                 } else
                     dev->reloc = FALSE;
             }
+            
+            ExReleaseResourceLite(&Vcb->tree_lock);
         }
     }
     
@@ -2940,8 +2940,12 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
     
     devid = *(UINT64*)data;
     
-    if (Vcb->readonly)
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
+    if (Vcb->readonly) {
+        ExReleaseResourceLite(&Vcb->tree_lock);
         return STATUS_MEDIA_WRITE_PROTECTED;
+    }
     
     num_rw_devices = 0;
     
@@ -2959,12 +2963,14 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
     }
     
     if (!dev) {
+        ExReleaseResourceLite(&Vcb->tree_lock);
         WARN("device %llx not found\n", devid);
         return STATUS_NOT_FOUND;
     }
     
     if (!dev->readonly) {
         if (num_rw_devices == 1) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
             WARN("not removing last non-readonly device\n");
             return STATUS_INVALID_PARAMETER;
         }
@@ -2973,11 +2979,13 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
             ((Vcb->data_flags & BLOCK_FLAG_RAID10 || Vcb->metadata_flags & BLOCK_FLAG_RAID10 || Vcb->system_flags & BLOCK_FLAG_RAID10) ||
              (Vcb->data_flags & BLOCK_FLAG_RAID6 || Vcb->metadata_flags & BLOCK_FLAG_RAID6 || Vcb->system_flags & BLOCK_FLAG_RAID6))
         ) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("would not be enough devices to satisfy RAID requirement (RAID6/10)\n");
             return STATUS_CANNOT_DELETE;
         }
         
         if (num_rw_devices == 3 && (Vcb->data_flags & BLOCK_FLAG_RAID5 || Vcb->metadata_flags & BLOCK_FLAG_RAID5 || Vcb->system_flags & BLOCK_FLAG_RAID5)) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("would not be enough devices to satisfy RAID requirement (RAID5)\n");
             return STATUS_CANNOT_DELETE;
         }
@@ -2986,10 +2994,13 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
             ((Vcb->data_flags & BLOCK_FLAG_RAID0 || Vcb->metadata_flags & BLOCK_FLAG_RAID0 || Vcb->system_flags & BLOCK_FLAG_RAID0) ||
              (Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->metadata_flags & BLOCK_FLAG_RAID1 || Vcb->system_flags & BLOCK_FLAG_RAID1))
         ) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("would not be enough devices to satisfy RAID requirement (RAID0/1)\n");
             return STATUS_CANNOT_DELETE;
         }
     }
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (Vcb->balance.thread) {
         WARN("balance already running\n");

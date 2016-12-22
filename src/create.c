@@ -3741,14 +3741,16 @@ exit2:
 }
 
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
+    
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
         if (dev->removable) {
-            NTSTATUS Status;
             ULONG cc;
             IO_STATUS_BLOCK iosb;
             
@@ -3756,12 +3758,13 @@ NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
             
             if (!NT_SUCCESS(Status)) {
                 ERR("dev_ioctl returned %08x\n", Status);
-                return Status;
+                goto end;
             }
             
             if (iosb.Information < sizeof(ULONG)) {
                 ERR("iosb.Information was too short\n");
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
             }
             
             if (cc != dev->change_count) {
@@ -3782,14 +3785,20 @@ NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
                 if (devobj)
                     IoVerifyVolume(devobj, FALSE);
                 
-                return STATUS_VERIFY_REQUIRED;
+                Status = STATUS_VERIFY_REQUIRED;
+                goto end;
             }
         }
         
         le = le->Flink;
     }
     
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
 }
 
 static BOOL has_manage_volume_privilege(ACCESS_STATE* access_state, KPROCESSOR_MODE processor_mode) {

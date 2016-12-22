@@ -4535,7 +4535,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         
         IoSkipCurrentIrpStackLocation(Irp);
     
-        Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
+        Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
         goto exit;
     }
     

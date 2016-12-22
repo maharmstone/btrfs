@@ -605,7 +605,10 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             TRACE("FileFsDeviceInformation\n");
             
             ffdi->DeviceType = FILE_DEVICE_DISK;
+            
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
             ffdi->Characteristics = first_device(Vcb)->devobj->Characteristics;
+            ExReleaseResourceLite(&Vcb->tree_lock);
             
             if (Vcb->readonly)
                 ffdi->Characteristics |= FILE_READ_ONLY_DEVICE;
@@ -4147,6 +4150,8 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
     
     ExFreePool(sb);
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -4159,11 +4164,13 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
             Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
             
             if (!NT_SUCCESS(Status)) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 ERR("dev_ioctl returned %08x\n", Status);
                 return Status;
             }
             
             if (iosb.Information < sizeof(ULONG)) {
+                ExReleaseResourceLite(&Vcb->tree_lock);
                 ERR("iosb.Information was too short\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -4175,6 +4182,8 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
         
         le = le->Flink;
     }
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     Vcb->Vpb->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
     
