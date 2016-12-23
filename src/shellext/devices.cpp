@@ -21,13 +21,14 @@
 #include "shellext.h"
 #include "devices.h"
 #include "resource.h"
-#include "../btrfsioctl.h"
 #include "balance.h"
 #include <uxtheme.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <strsafe.h>
 #include <mountmgr.h>
 #include <algorithm>
+#include "../btrfs.h"
 
 typedef struct _OBJECT_DIRECTORY_INFORMATION {
     UNICODE_STRING Name;
@@ -42,7 +43,7 @@ typedef NTSTATUS (NTAPI *pNtOpenDirectoryObject)(PHANDLE DirectoryHandle, ACCESS
 typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length, BOOLEAN ReturnSingleEntry, 
                                                   BOOLEAN RestartScan, PULONG Context, PULONG ReturnLength);
 
-void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum, HANDLE mountmgr) {
+void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum, HANDLE mountmgr, btrfs_filesystem* bfs) {
     TVINSERTSTRUCTW tis;
     WCHAR t[255], u[255], *v, size[100];
     device_info di;
@@ -51,7 +52,7 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     ULONG mmpsize;
     MOUNTMGR_MOUNT_POINT* mmp;
     MOUNTMGR_MOUNT_POINTS mmps;
-    UNICODE_STRING vn;
+    UNICODE_STRING vn, mountname;
     OBJECT_ATTRIBUTES attr;
     HANDLE h;
     char drive_letter = 0;
@@ -76,7 +77,83 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     di.path = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     memcpy(di.path, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     
-    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + (wcslen(s) * sizeof(WCHAR));
+    mountname.Buffer = s;
+    mountname.Length = mountname.MaximumLength = wcslen(s) * sizeof(WCHAR);
+    
+    vn.Length = vn.MaximumLength = wcslen(s) * sizeof(WCHAR);
+    vn.Buffer = s;
+    
+    gli.Length.QuadPart = 0;
+
+    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = NtOpenFile(&h, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (NT_SUCCESS(Status)) {
+        ULONG i;
+        char sb[4096];
+        LARGE_INTEGER off;
+        
+        NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO,
+                                       NULL, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
+        if (!NT_SUCCESS(Status))
+            gli.Length.QuadPart = 0;
+        
+        i = 0;
+        while (fs_ident[i].name) {
+            if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
+                off.QuadPart = fs_ident[i].kboff * 1024;
+                Status = NtReadFile(h, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
+            }
+            
+            if (NT_SUCCESS(Status)) {
+                if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
+                    fstype = fs_ident[i].name;
+                    
+                    if (bfs && !wcscmp(fstype, L"Btrfs")) {
+                        superblock* bsb = (superblock*)sb;
+                        btrfs_filesystem* bfs2 = bfs;
+                        
+                        while (TRUE) {
+                            if (RtlCompareMemory(&bfs2->uuid, &bsb->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                                if (bfs2->num_devices > 1) {
+                                    ULONG j;
+                                    btrfs_filesystem_device* dev;
+                                    
+                                    for (j = 0; j < bfs2->num_devices; j++) {
+                                        if (j == 0)
+                                            dev = &bfs2->device;
+                                        else
+                                            dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+                                        
+                                        if (RtlCompareMemory(&dev->uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                                            mountname.Buffer = bfs2->device.name;
+                                            mountname.Length = mountname.MaximumLength = bfs2->device.name_length;
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                break;
+                            }
+                            
+                            if (bfs2->next_entry == 0)
+                                break;
+                            else
+                                bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+                        }
+                    }
+                    
+                    break;
+                }
+            }
+            
+            i++;
+        }
+        
+        NtClose(h);
+    }
+    
+    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + mountname.Length;
     
     mmp = (MOUNTMGR_MOUNT_POINT*)malloc(mmpsize);
     if (!mmp)
@@ -84,8 +161,8 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
 
     RtlZeroMemory(mmp, sizeof(MOUNTMGR_MOUNT_POINT));
     mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
-    mmp->DeviceNameLength = wcslen(s) * sizeof(WCHAR);
-    RtlCopyMemory(&mmp[1], s, wcslen(s) * sizeof(WCHAR));
+    mmp->DeviceNameLength = mountname.Length;
+    RtlCopyMemory(&mmp[1], mountname.Buffer, mountname.Length);
     
     Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
                                    mmp, mmpsize, &mmps, sizeof(MOUNTMGR_MOUNT_POINTS));
@@ -117,44 +194,6 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     }
 
     free(mmp);
-    
-    gli.Length.QuadPart = 0;
-    
-    vn.Length = vn.MaximumLength = wcslen(s) * sizeof(WCHAR);
-    vn.Buffer = s;
-
-    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-    
-    Status = NtOpenFile(&h, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
-    if (NT_SUCCESS(Status)) {
-        ULONG i;
-        char sb[4096];
-        LARGE_INTEGER off;
-        
-        NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO,
-                                       NULL, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
-        if (!NT_SUCCESS(Status))
-            gli.Length.QuadPart = 0;
-        
-        i = 0;
-        while (fs_ident[i].name) {
-            if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
-                off.QuadPart = fs_ident[i].kboff * 1024;
-                Status = NtReadFile(h, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
-            }
-            
-            if (NT_SUCCESS(Status)) {
-                if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
-                    fstype = fs_ident[i].name;
-                    break;
-                }
-            }
-            
-            i++;
-        }
-        
-        NtClose(h);
-    }
     
     wcscat(v, L" (");
     
@@ -190,7 +229,7 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
 }
 
-void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mountmgr) {
+void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mountmgr, btrfs_filesystem* bfs) {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES attr;
     HANDLE h;
@@ -286,7 +325,7 @@ void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mo
     tis.itemex.stateMask = TVIS_EXPANDED;
     tis.itemex.pszText = desc;
     tis.itemex.cchTextMax = wcslen(desc);
-    tis.itemex.lParam = NULL;
+    tis.itemex.lParam = 0;
     
     item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
     if (!item) {
@@ -371,7 +410,7 @@ void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mo
         memcpy((UINT8*)s + us->Length + sizeof(WCHAR), n, wcslen(n) * sizeof(WCHAR));
         s[len / sizeof(WCHAR)] = 0;
     
-        add_partition_to_tree(tree, item, s, parts[i], mountmgr);
+        add_partition_to_tree(tree, item, s, parts[i], mountmgr, bfs);
         
         free(s);
     }
@@ -381,12 +420,13 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     UNICODE_STRING us, us2;
     OBJECT_ATTRIBUTES attr;
     NTSTATUS Status;
-    HANDLE h, mountmgr;
+    HANDLE h, mountmgr, btrfsh;
     ULONG odisize, context;
     OBJECT_DIRECTORY_INFORMATION* odi;
     BOOL restart;
     HMODULE ntdll;
     IO_STATUS_BLOCK iosb;
+    btrfs_filesystem* bfs = NULL;
     
     pNtOpenDirectoryObject NtOpenDirectoryObject;
     pNtQueryDirectoryObject NtQueryDirectoryObject;
@@ -394,10 +434,43 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     static const WCHAR device[] = L"\\Device";
     static const WCHAR directory[] = L"Directory";
     static const WCHAR harddisk[] = L"Harddisk";
+    static WCHAR btrfs[] = L"\\Btrfs";
     
     ntdll = GetModuleHandleW(L"ntdll.dll");
     NtOpenDirectoryObject = (pNtOpenDirectoryObject)GetProcAddress(ntdll, "NtOpenDirectoryObject");
     NtQueryDirectoryObject = (pNtQueryDirectoryObject)GetProcAddress(ntdll, "NtQueryDirectoryObject");
+    
+    us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+    us.Buffer = btrfs;
+    
+    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&btrfsh, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &iosb,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (NT_SUCCESS(Status)) {
+        ULONG bfssize = 0;
+        
+        do {
+            bfssize += 1024;
+            
+            if (bfs) free(bfs);
+            bfs = (btrfs_filesystem*)malloc(bfssize);
+            
+            Status = NtDeviceIoControlFile(btrfsh, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, NULL, 0, bfs, bfssize);
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                free(bfs);
+                bfs = NULL;
+                break;
+            }
+        } while (Status == STATUS_BUFFER_OVERFLOW);
+        
+        if (bfs && bfs->num_devices == 0) { // no mounted filesystems found
+            free(bfs);
+            bfs = NULL;
+        }
+        
+        NtClose(btrfsh);
+    }
     
     us.Buffer = (WCHAR*)device;
     us.Length = us.MaximumLength = wcslen(us.Buffer) * sizeof(WCHAR);
@@ -459,7 +532,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                         memcpy((UINT8*)us2.Buffer + us.Length + sizeof(WCHAR), odi2->Name.Buffer, odi2->Name.Length);
                         us2.Buffer[us2.Length / sizeof(WCHAR)] = 0;
                     
-                        add_device_to_tree(tree, &us2, mountmgr);
+                        add_device_to_tree(tree, &us2, mountmgr, bfs);
                         
                         free(us2.Buffer);
                 }
@@ -472,6 +545,8 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     free(odi);
     NtClose(h);
     NtClose(mountmgr);
+    
+    if (bfs) free(bfs);
 }
 
 void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
@@ -576,7 +651,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     tvi.mask = TVIF_PARAM | TVIF_HANDLE;
                     
                     if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel = tvi.lParam == NULL ? NULL : &devpaths[tvi.lParam - 1];
+                        sel = tvi.lParam == 0 ? NULL : &devpaths[tvi.lParam - 1];
                     else
                         sel = NULL;
                     
