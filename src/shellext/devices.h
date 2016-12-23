@@ -24,6 +24,7 @@
 typedef struct {
     WCHAR* path;
     BOOL multi_device;
+    const WCHAR* fstype;
 } device_info;
 
 typedef struct {

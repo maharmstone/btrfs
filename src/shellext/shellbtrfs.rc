@@ -455,6 +455,10 @@ BEGIN
     IDS_REMOVE_DEVICE_CONFIRMATION 
                             "Are you sure that you want to remove device %s, %s?"
     IDS_CONFIRMATION_TITLE  "Confirmation"
+    IDS_ADD_DEVICE_CONFIRMATION 
+                            "Are you sure that you want to add this device?"
+    IDS_ADD_DEVICE_CONFIRMATION_FS 
+                            "Are you sure that you want to add this device? It already appears to contain a filesystem (%s)."
 END
 
 #endif    // English (U.K.) resources

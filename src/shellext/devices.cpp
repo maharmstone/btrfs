@@ -156,6 +156,8 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
         NtClose(h);
     }
     
+    di.fstype = fstype;
+    
     mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + mountname.Length;
     
     mmp = (MOUNTMGR_MOUNT_POINT*)malloc(mmpsize);
@@ -553,6 +555,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
 }
 
 void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
+    WCHAR mess[255], title[255];
     NTSTATUS Status;
     UNICODE_STRING vn;
     OBJECT_ATTRIBUTES attr;
@@ -564,7 +567,30 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         return;
     }
     
-    // FIXME - ask for confirmation
+    if (sel->fstype) {
+        WCHAR s[255];
+        
+        if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(mess, sizeof(mess) / sizeof(WCHAR), s, sel->fstype) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    } else {
+        if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+    }
+        
+    if (!LoadStringW(module, IDS_CONFIRMATION_TITLE, title, sizeof(title) / sizeof(WCHAR))) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    if (MessageBoxW(hwndDlg, mess, title, MB_YESNO) != IDYES)
+        return;
     
     h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
