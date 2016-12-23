@@ -77,6 +77,8 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     di.path = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     memcpy(di.path, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     
+    di.multi_device = FALSE;
+    
     mountname.Buffer = s;
     mountname.Length = mountname.MaximumLength = wcslen(s) * sizeof(WCHAR);
     
@@ -128,6 +130,7 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
                                         if (RtlCompareMemory(&dev->uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                                             mountname.Buffer = bfs2->device.name;
                                             mountname.Length = mountname.MaximumLength = bfs2->device.name_length;
+                                            di.multi_device = TRUE;
                                             break;
                                         }
                                     }
@@ -645,6 +648,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 {
                     NMTREEVIEWW* nmtv = (NMTREEVIEWW*)lParam;
                     TVITEMW tvi;
+                    BOOL enable = FALSE;
                     
                     RtlZeroMemory(&tvi, sizeof(TVITEMW));
                     tvi.hItem = nmtv->itemNew.hItem;
@@ -655,7 +659,10 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     else
                         sel = NULL;
                     
-                    EnableWindow(GetDlgItem(hwndDlg, IDOK), sel ? TRUE : FALSE);
+                    if (sel)
+                        enable = !sel->multi_device;
+                    
+                    EnableWindow(GetDlgItem(hwndDlg, IDOK), enable);
                     break;
                 }
             }

@@ -23,6 +23,7 @@
 
 typedef struct {
     WCHAR* path;
+    BOOL multi_device;
 } device_info;
 
 typedef struct {
