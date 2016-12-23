@@ -572,6 +572,9 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_ACCESS_DENIED;
     }
     
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+        return STATUS_ACCESS_DENIED;
+    
     nameus.Buffer = bcs->name;
     nameus.Length = nameus.MaximumLength = bcs->namelen;
     
