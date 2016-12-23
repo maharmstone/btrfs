@@ -36,6 +36,20 @@ static const GUID CLSID_ShellBtrfsVolPropSheet = { 0x2690b74f, 0xf353, 0x422d, {
 HMODULE module;
 LONG objs_loaded = 0;
 
+void ShowError(HWND hwnd, ULONG err) {
+    WCHAR* buf;
+    
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
+        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
+    
+    LocalFree(buf);
+}
+
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
     WCHAR nb[255], nb2[255], t[255], bytes[255];
     WCHAR kb[255];

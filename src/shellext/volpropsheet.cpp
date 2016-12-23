@@ -124,20 +124,6 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     return S_OK;
 }
 
-void ShowError(HWND hwnd, ULONG err) {
-    WCHAR* buf;
-    
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
-        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
-        return;
-    }
-    
-    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
-    
-    LocalFree(buf);
-}
-
 typedef struct {
     UINT64 dev_id;
     ULONG namelen;
