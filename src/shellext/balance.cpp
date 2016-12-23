@@ -302,22 +302,6 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
 }
 
-void ShowStringError(HWND hwndDlg, int num) {
-    WCHAR title[255], s[255];
-    
-    if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
-    
-    if (!LoadStringW(module, num, s, sizeof(s) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
-    
-    MessageBoxW(hwndDlg, s, title, MB_ICONERROR);
-}
-
 void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
     btrfs_balance_opts* opts;
     
