@@ -3202,6 +3202,11 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
     if (Vcb->system_flags == 0)
         Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID1 : BLOCK_FLAG_DUPLICATE);
     
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
+        Vcb->metadata_flags |= BLOCK_FLAG_DATA;
+        Vcb->data_flags = Vcb->metadata_flags;
+    }
+    
     return STATUS_SUCCESS;
 }
 
