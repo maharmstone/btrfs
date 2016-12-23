@@ -44,7 +44,7 @@ typedef NTSTATUS (NTAPI *pNtQueryDirectoryObject)(HANDLE DirectoryHandle, PVOID 
 
 void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum, HANDLE mountmgr) {
     TVINSERTSTRUCTW tis;
-    WCHAR t[255], u[255], *v;
+    WCHAR t[255], u[255], *v, size[100];
     device_info di;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -56,6 +56,7 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     HANDLE h;
     char drive_letter = 0;
     const WCHAR* fstype = NULL;
+    GET_LENGTH_INFORMATION gli;
     
     static WCHAR dosdevices[] = L"\\DosDevices\\";
     
@@ -117,6 +118,8 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
 
     free(mmp);
     
+    gli.Length.QuadPart = 0;
+    
     vn.Length = vn.MaximumLength = wcslen(s) * sizeof(WCHAR);
     vn.Buffer = s;
 
@@ -127,6 +130,11 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
         ULONG i;
         char sb[4096];
         LARGE_INTEGER off;
+        
+        NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO,
+                                       NULL, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
+        if (!NT_SUCCESS(Status))
+            gli.Length.QuadPart = 0;
         
         i = 0;
         while (fs_ident[i].name) {
@@ -148,27 +156,27 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
         NtClose(h);
     }
     
-    if (drive_letter != 0 || fstype) {
-        wcscat(v, L" (");
+    wcscat(v, L" (");
+    
+    if (drive_letter != 0) {
+        WCHAR drive[3];
+        drive[0] = drive_letter;
+        drive[1] = ':';
+        drive[2] = 0;
         
-        if (drive_letter != 0) {
-            WCHAR drive[3];
-            drive[0] = drive_letter;
-            drive[1] = ':';
-            drive[2] = 0;
-            
-            wcscat(v, drive);
-        }
-        
-        if (fstype) {
-            if (drive_letter != 0)
-                wcscat(v, L", ");
-            
-            wcscat(v, fstype);
-        }
-        
-        wcscat(v, L")");
+        wcscat(v, drive);
+        wcscat(v, L", ");
     }
+    
+    if (fstype) {
+        wcscat(v, fstype);
+        wcscat(v, L", ");
+    }
+    
+    format_size(gli.Length.QuadPart, size, sizeof(size) / sizeof(WCHAR), FALSE);
+    wcscat(v, size);
+
+    wcscat(v, L")");
     
     devpaths.push_back(di);
     
