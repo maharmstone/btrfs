@@ -52,11 +52,6 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         goto end;
     }
     
-    // FIXME - what if FCB is volume or root?
-    // FIXME - what about subvol roots?
-    
-    // FIXME - link FILE_ATTRIBUTE_READONLY to st_mode
-    
     if (fbi->CreationTime.QuadPart == -1)
         ccb->user_set_creation_time = TRUE;
     else if (fbi->CreationTime.QuadPart != 0) {
@@ -127,6 +122,13 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         
         fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
+        
+        if (fcb->inode == SUBVOL_ROOT_INODE) {
+            if (fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)
+                fcb->subvol->root_item.flags |= BTRFS_SUBVOL_READONLY;
+            else
+                fcb->subvol->root_item.flags &= ~BTRFS_SUBVOL_READONLY;
+        }
         
         inode_item_changed = TRUE;
         
