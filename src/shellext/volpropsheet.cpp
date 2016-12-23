@@ -821,8 +821,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     
     SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
     
-    // FIXME - disable both buttons if volume is readonly
-    
+    EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_ADD), num_rw_devices > 1);
     EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_REMOVE), num_rw_devices > 1);
 }
 
