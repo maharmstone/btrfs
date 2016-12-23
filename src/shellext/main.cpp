@@ -33,6 +33,8 @@ static const GUID CLSID_ShellBtrfsVolPropSheet = { 0x2690b74f, 0xf353, 0x422d, {
 #define COM_DESCRIPTION_VOL_PROP_SHEET L"WinBtrfs shell extension (volume property sheet)"
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
+typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
+
 HMODULE module;
 LONG objs_loaded = 0;
 
@@ -48,6 +50,28 @@ void ShowError(HWND hwnd, ULONG err) {
     MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
     
     LocalFree(buf);
+}
+
+void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
+    _RtlNtStatusToDosError RtlNtStatusToDosError;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+    
+    if (!ntdll) {
+        MessageBoxW(hwnd, L"Error loading ntdll.dll", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+    
+    if (!ntdll) {
+        MessageBoxW(hwnd, L"Error loading RtlNtStatusToDosError in ntdll.dll", L"Error", MB_ICONERROR);
+        FreeLibrary(ntdll);
+        return;
+    }
+    
+    ShowError(hwnd, RtlNtStatusToDosError(Status));
+    
+    FreeLibrary(ntdll);
 }
 
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {

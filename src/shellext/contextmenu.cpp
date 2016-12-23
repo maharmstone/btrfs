@@ -39,8 +39,6 @@ typedef struct _KEY_NAME_INFORMATION {
     WCHAR Name[1];
 } KEY_NAME_INFORMATION;
 
-typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
-
 // FIXME - don't assume subvol's top inode is 0x100
 
 HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
@@ -181,28 +179,6 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         return E_FAIL;
 
     return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
-}
-
-void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
-    _RtlNtStatusToDosError RtlNtStatusToDosError;
-    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
-    
-    if (!ntdll) {
-        MessageBoxW(hwnd, L"Error loading ntdll.dll", L"Error", MB_ICONERROR);
-        return;
-    }
-    
-    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
-    
-    if (!ntdll) {
-        MessageBoxW(hwnd, L"Error loading RtlNtStatusToDosError in ntdll.dll", L"Error", MB_ICONERROR);
-        FreeLibrary(ntdll);
-        return;
-    }
-    
-    ShowError(hwnd, RtlNtStatusToDosError(Status));
-    
-    FreeLibrary(ntdll);
 }
 
 static void create_snapshot(HWND hwnd, WCHAR* fn) {
