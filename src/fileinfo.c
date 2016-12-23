@@ -52,6 +52,12 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         goto end;
     }
     
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY &&
+        (fbi->FileAttributes == 0 || fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+    
     if (fbi->CreationTime.QuadPart == -1)
         ccb->user_set_creation_time = TRUE;
     else if (fbi->CreationTime.QuadPart != 0) {
@@ -2461,7 +2467,8 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto end;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation) {
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
+        (fcb->inode != SUBVOL_ROOT_INODE || IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
