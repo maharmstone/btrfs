@@ -30,8 +30,6 @@
 #include "propsheet.h"
 #include "resource.h"
 
-void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
-
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this); 
@@ -846,120 +844,6 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
     }
     
     return FALSE;
-}
-
-void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
-    WCHAR nb[255], nb2[255], t[255], bytes[255];
-    WCHAR kb[255];
-    ULONG sr;
-    float f;
-    NUMBERFMTW fmt;
-    WCHAR thou[4], grouping[64], *c;
-    
-    _i64tow(size, nb, 10);
-    
-    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
-    
-    fmt.NumDigits = 0;
-    fmt.LeadingZero = 1;
-    fmt.lpDecimalSep = L"."; // not used
-    fmt.lpThousandSep = thou;
-    fmt.NegativeOrder = 0;
-    
-    // Grouping code copied from dlls/shlwapi/string.c in Wine - thank you
-    
-    fmt.Grouping = 0;
-    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SGROUPING, grouping, sizeof(grouping) / sizeof(WCHAR));
-    
-    c = grouping;
-    while (*c) {
-        if (*c >= '0' && *c < '9') {
-            fmt.Grouping *= 10;
-            fmt.Grouping += *c - '0';
-        }
-        
-        c++;
-    }
-
-    if (fmt.Grouping % 10 == 0)
-        fmt.Grouping /= 10;
-    else
-        fmt.Grouping *= 10;
-    
-    GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb, &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
-    
-    if (size < 1024) {
-        if (!LoadStringW(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
-            return;
-        }
-        
-        if (StringCchPrintfW(s, len, t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            return;
-        }
-        
-        return;
-    }
-    
-    if (show_bytes) {
-        if (!LoadStringW(module, IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
-            return;
-        }
-        
-        if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            return;
-        }
-    }
-    
-    if (size >= 1152921504606846976) {
-        sr = IDS_SIZE_EB;
-        f = (float)size / 1152921504606846976.0f;
-    } else if (size >= 1125899906842624) {
-        sr = IDS_SIZE_PB;
-        f = (float)size / 1125899906842624.0f;
-    } else if (size >= 1099511627776) {
-        sr = IDS_SIZE_TB;
-        f = (float)size / 1099511627776.0f;
-    } else if (size >= 1073741824) {
-        sr = IDS_SIZE_GB;
-        f = (float)size / 1073741824.0f;
-    } else if (size >= 1048576) {
-        sr = IDS_SIZE_MB;
-        f = (float)size / 1048576.0f;
-    } else {
-        sr = IDS_SIZE_KB;
-        f = (float)size / 1024.0f;
-    }
-    
-    if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
-        ShowError(NULL, GetLastError());
-        return;
-    }
-    
-    if (show_bytes) {
-        if (StringCchPrintfW(kb, sizeof(kb) / sizeof(WCHAR), t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            return;
-        }
-        
-        if (!LoadStringW(module, IDS_SIZE_LARGE, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
-            return;
-        }
-        
-        if (StringCchPrintfW(s, len, t, kb, bytes) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            return;
-        }
-    } else {
-        if (StringCchPrintfW(s, len, t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
-            return;
-        }
-    }
 }
 
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {

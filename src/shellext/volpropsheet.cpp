@@ -30,8 +30,6 @@
 #include "volpropsheet.h"
 #include "resource.h"
 
-extern void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
-
 HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this); 

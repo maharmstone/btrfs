@@ -62,3 +62,4 @@ extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 void ShowStringError(HWND hwndDlg, int num);
+void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
