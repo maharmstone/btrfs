@@ -2290,6 +2290,13 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
             else if (type == BTRFS_TYPE_SYMLINK)
                 dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
             
+            if (inode == SUBVOL_ROOT_INODE) {
+                if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+                    dosnum |= FILE_ATTRIBUTE_READONLY;
+                else
+                    dosnum &= ~FILE_ATTRIBUTE_READONLY;
+            }
+            
             return dosnum;
         }
         
@@ -2315,6 +2322,13 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
     }
     
     att |= FILE_ATTRIBUTE_ARCHIVE;
+    
+    if (inode == SUBVOL_ROOT_INODE) {
+        if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+            att |= FILE_ATTRIBUTE_READONLY;
+        else
+            att &= ~FILE_ATTRIBUTE_READONLY;
+    }
     
     // FIXME - get READONLY from ii->st_mode
     // FIXME - return SYSTEM for block/char devices?
