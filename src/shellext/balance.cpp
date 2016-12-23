@@ -236,8 +236,8 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             
             SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
             
-            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                         IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
+            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
+                         IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED) ? TRUE: FALSE); 
             
             balance_status = bqb.status;
             cancelling = FALSE;
@@ -842,22 +842,22 @@ INT_PTR CALLBACK BtrfsBalance::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wP
                         case IDC_DATA:
                             EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ? TRUE : FALSE);
                             
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE); 
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
+                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED) ? TRUE: FALSE); 
                         return TRUE;
                         
                         case IDC_METADATA:
                             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
                             
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
+                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED) ? TRUE: FALSE); 
                         return TRUE;
                         
                         case IDC_SYSTEM:
                             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
                             
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
-                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE: FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
+                            IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED) ? TRUE: FALSE); 
                         return TRUE;
                         
                         case IDC_DATA_OPTIONS:
