@@ -134,7 +134,7 @@ void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     
     ExFreePool(tn);
     
-    mmdltsize = sizeof(MOUNTMGR_DRIVE_LETTER_TARGET) - 1 + us->Length;
+    mmdltsize = offsetof(MOUNTMGR_DRIVE_LETTER_TARGET, DeviceName[0]) + us->Length;
     
     mmdlt = ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
     if (!mmdlt) {
