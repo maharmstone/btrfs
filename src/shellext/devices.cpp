@@ -51,6 +51,11 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     ULONG mmpsize;
     MOUNTMGR_MOUNT_POINT* mmp;
     MOUNTMGR_MOUNT_POINTS mmps;
+    UNICODE_STRING vn;
+    OBJECT_ATTRIBUTES attr;
+    HANDLE h;
+    char drive_letter = 0;
+    const WCHAR* fstype = NULL;
     
     static WCHAR dosdevices[] = L"\\DosDevices\\";
     
@@ -101,15 +106,8 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
                     RtlCompareMemory(symlink, dosdevices, wcslen(dosdevices) * sizeof(WCHAR)) == wcslen(dosdevices) * sizeof(WCHAR) &&
                     symlink[13] == ':'
                 ) {
-                    WCHAR drive[3];
-                    
-                    drive[0] = symlink[12];
-                    drive[1] = ':';
-                    drive[2] = 0;
-                    
-                    wcscat(v, L" (");
-                    wcscat(v, drive);
-                    wcscat(v, L")");
+                    drive_letter = symlink[12];
+                    break;
                 }
             }
         }
@@ -118,6 +116,59 @@ void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s
     }
 
     free(mmp);
+    
+    vn.Length = vn.MaximumLength = wcslen(s) * sizeof(WCHAR);
+    vn.Buffer = s;
+
+    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = NtOpenFile(&h, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (NT_SUCCESS(Status)) {
+        ULONG i;
+        char sb[4096];
+        LARGE_INTEGER off;
+        
+        i = 0;
+        while (fs_ident[i].name) {
+            if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
+                off.QuadPart = fs_ident[i].kboff * 1024;
+                Status = NtReadFile(h, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
+            }
+            
+            if (NT_SUCCESS(Status)) {
+                if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
+                    fstype = fs_ident[i].name;
+                    break;
+                }
+            }
+            
+            i++;
+        }
+        
+        NtClose(h);
+    }
+    
+    if (drive_letter != 0 || fstype) {
+        wcscat(v, L" (");
+        
+        if (drive_letter != 0) {
+            WCHAR drive[3];
+            drive[0] = drive_letter;
+            drive[1] = ':';
+            drive[2] = 0;
+            
+            wcscat(v, drive);
+        }
+        
+        if (fstype) {
+            if (drive_letter != 0)
+                wcscat(v, L", ");
+            
+            wcscat(v, fstype);
+        }
+        
+        wcscat(v, L")");
+    }
     
     devpaths.push_back(di);
     
