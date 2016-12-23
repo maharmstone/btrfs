@@ -761,6 +761,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         return STATUS_ACCESS_DENIED;
     }
     
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+        return STATUS_ACCESS_DENIED;
+    
     nameus.Length = nameus.MaximumLength = length;
     nameus.Buffer = name;
     
