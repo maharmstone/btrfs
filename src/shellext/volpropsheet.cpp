@@ -271,19 +271,21 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     
     // data ratio
     
-    if (!LoadStringW(module, IDS_USAGE_DATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        goto end;
-    }
-    
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)data_alloc / (float)data_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    if (data_alloc > 0) {
+        if (!LoadStringW(module, IDS_USAGE_DATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)data_alloc / (float)data_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-    
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+        if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+    }
     
     // metadata ratio
     
