@@ -202,6 +202,9 @@ void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mo
     HMODULE ntdll;
     std::vector<int> parts;
     unsigned int i;
+    IO_STATUS_BLOCK iosb;
+    WCHAR drpathw[MAX_PATH], desc[1024];
+    UNICODE_STRING drpath;
     
     pNtOpenDirectoryObject NtOpenDirectoryObject;
     pNtQueryDirectoryObject NtQueryDirectoryObject;
@@ -212,13 +215,77 @@ void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mo
     NtOpenDirectoryObject = (pNtOpenDirectoryObject)GetProcAddress(ntdll, "NtOpenDirectoryObject");
     NtQueryDirectoryObject = (pNtQueryDirectoryObject)GetProcAddress(ntdll, "NtQueryDirectoryObject");
     
+    memcpy(desc, us->Buffer, us->Length);
+    desc[us->Length / sizeof(WCHAR)] = 0;
+    
+    memcpy(drpathw, us->Buffer, us->Length);
+    drpathw[us->Length / sizeof(WCHAR)] = '\\';
+    drpathw[(us->Length / sizeof(WCHAR)) + 1] = 'D';
+    drpathw[(us->Length / sizeof(WCHAR)) + 2] = 'R';
+    memcpy(&drpathw[(us->Length / sizeof(WCHAR)) + 3], &us->Buffer[16], us->Length - (16 * sizeof(WCHAR)));
+    
+    drpath.Buffer = drpathw;
+    drpath.MaximumLength = sizeof(drpathw);
+    drpath.Length = (us->Length * 2) - (13 * sizeof(WCHAR));
+
+    InitializeObjectAttributes(&attr, &drpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    Status = NtOpenFile(&h, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (NT_SUCCESS(Status)) {
+        STORAGE_PROPERTY_QUERY spq;
+        STORAGE_DEVICE_DESCRIPTOR sdd, *sdd2;
+        
+        spq.PropertyId = StorageDeviceProperty;
+        spq.QueryType = PropertyStandardQuery;
+        spq.AdditionalParameters[0] = 0;
+        
+        Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
+                                       &spq, sizeof(STORAGE_PROPERTY_QUERY), &sdd, sizeof(STORAGE_DEVICE_DESCRIPTOR));
+        
+        if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
+            sdd2 = (STORAGE_DEVICE_DESCRIPTOR*)malloc(sdd.Size);
+            
+            Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
+                                           &spq, sizeof(STORAGE_PROPERTY_QUERY), sdd2, sdd.Size);
+            if (NT_SUCCESS(Status)) {
+                char desc2[1024];
+                
+                desc2[0] = 0;
+                
+                if (sdd2->VendorIdOffset != 0)
+                    strcat(desc2, (char*)((UINT8*)sdd2 + sdd2->VendorIdOffset));
+                
+                if (sdd2->ProductIdOffset != 0) {
+                    if (sdd2->VendorIdOffset != 0 && strlen(desc2) != 0 && desc2[strlen(desc2) - 1] != ' ')
+                        strcat(desc2, " ");
+                    
+                    strcat(desc2, (char*)((UINT8*)sdd2 + sdd2->ProductIdOffset));
+                }
+                
+                if (sdd2->VendorIdOffset != 0 || sdd2->ProductIdOffset != 0) {
+                    WCHAR desc3[1024];
+                    
+                    if (MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, desc2, -1, desc3, sizeof(desc3) / sizeof(WCHAR))) {
+                        wcscat(desc, L" (");
+                        wcscat(desc, desc3);
+                        wcscat(desc, L")");
+                    }
+                }
+            }
+            
+            free(sdd2);
+        }
+        
+        NtClose(h);
+    }
+    
     tis.hParent = TVI_ROOT;
     tis.hInsertAfter = TVI_LAST;
     tis.itemex.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
     tis.itemex.state = TVIS_EXPANDED;
     tis.itemex.stateMask = TVIS_EXPANDED;
-    tis.itemex.pszText = us->Buffer;
-    tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
+    tis.itemex.pszText = desc;
+    tis.itemex.cchTextMax = wcslen(desc);
     tis.itemex.lParam = NULL;
     
     item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
