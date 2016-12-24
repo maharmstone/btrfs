@@ -2999,7 +2999,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        Status = read_file(fcb, *data, 0, size, &bytes_read, NULL);
+        Status = read_file(fcb, *data, 0, size, &bytes_read, NULL, TRUE);
         if (!NT_SUCCESS(Status)) {
             ERR("read_file_fcb returned %08x\n", Status);
             ExFreePool(*data);

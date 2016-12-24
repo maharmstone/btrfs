@@ -1007,8 +1007,9 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp);
-NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp);
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
+                           PIRP Irp, BOOL check_nocsum_parity);
+NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
 NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** pcsum, PIRP Irp);
 NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);

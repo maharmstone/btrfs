@@ -52,6 +52,7 @@ typedef struct {
     UINT16 firstoff, startoffstripe, sectors_per_stripe, stripes_cancel;
     UINT32* csum;
     BOOL tree;
+    BOOL check_nocsum_parity;
     read_data_stripe* stripes;
     KSPIN_LOCK spin_lock;
 } read_data_context;
@@ -107,7 +108,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID5) {
             stripe->status = ReadDataStatus_Success;
             
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree || !context->check_nocsum_parity)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -119,7 +120,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID6) {
             stripe->status = ReadDataStatus_Success;
 
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree || !context->check_nocsum_parity)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -1914,8 +1915,8 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                                CHUNK_ITEM* ci, device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize) {
+static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
+                                device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize, BOOL check_nocsum_parity) {
     UINT32 pos, skip;
     NTSTATUS Status;
     int num_errors = 0;
@@ -2136,7 +2137,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
     }
     
-    if (!context->tree && !context->csum) {
+    if (check_nocsum_parity && !context->tree && !context->csum) {
         UINT32* parity_buf;
         
         // We are reading a nodatacsum extent. Even though there's no checksum, we
@@ -2169,8 +2170,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                                CHUNK_ITEM* ci, device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize) {
+static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
+                                device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize, BOOL check_nocsum_parity) {
     NTSTATUS Status;
     UINT32 pos, skip;
     int num_errors = 0;
@@ -2244,7 +2245,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         off = origoff;
     }
     
-    if (!context->tree && !context->csum) {
+    if (check_nocsum_parity && !context->tree && !context->csum) {
         UINT8* scratch;
         
         scratch = ExAllocatePoolWithTag(NonPagedPool, ci->stripe_length, ALLOC_TAG);
@@ -2454,7 +2455,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc, PIRP Irp) {
+NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
+                           PIRP Irp, BOOL check_nocsum_parity) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -2582,6 +2584,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context->csum = csum;
     context->tree = is_tree;
     context->type = type;
+    context->check_nocsum_parity = check_nocsum_parity;
     
     stripestart = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
     if (!stripestart) {
@@ -2915,13 +2918,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize);
+        Status = read_data_raid5(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID6) {
-        Status = read_data_raid6(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize);
+        Status = read_data_raid6(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08x\n", Status);
             goto exit;
@@ -3135,7 +3138,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
+NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     UINT64 bytes_read = 0;
@@ -3279,7 +3282,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     }
                     
-                    Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE, buf, c, NULL, Irp);
+                    Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE,
+                                       buf, c, NULL, Irp, check_nocsum_parity);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
@@ -3524,7 +3528,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
-            Status = read_file(fcb, data, start, length, bytes_read, Irp);
+            Status = read_file(fcb, data, start, length, bytes_read, Irp, TRUE);
         
         *bytes_read += addon;
         TRACE("read %u bytes\n", *bytes_read);
