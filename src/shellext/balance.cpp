@@ -196,7 +196,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     if (cancelling)
         bqb.status = BTRFS_BALANCE_STOPPED;
     
-    balancing = bqb.status != BTRFS_BALANCE_STOPPED;
+    balancing = bqb.status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED);
     
     if (!balancing) {
         if (first || balance_status != BTRFS_BALANCE_STOPPED) {
@@ -210,7 +210,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), TRUE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM), TRUE);
             
-            if (balance_status != BTRFS_BALANCE_STOPPED) {
+            if (balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED)) {
                 CheckDlgButton(hwndDlg, IDC_DATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_METADATA, BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_SYSTEM, BST_UNCHECKED);
@@ -222,19 +222,31 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
             
-            if (cancelling)
-                resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : IDS_BALANCE_CANCELLED;
-            else if (balance_status != BTRFS_BALANCE_STOPPED)
-                resid = removing ? IDS_BALANCE_COMPLETE_REMOVAL : IDS_BALANCE_COMPLETE;
-            else
-                resid = IDS_NO_BALANCE;
+            if (bqb.status & BTRFS_BALANCE_ERROR) {
+                if (!LoadStringW(module, balance_status & BTRFS_BALANCE_REMOVAL ? IDS_BALANCE_FAILED_REMOVAL : IDS_BALANCE_FAILED, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return;
+                }
+                
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.error) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return;
+                
+                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
+            } else {
+                if (cancelling)
+                    resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : IDS_BALANCE_CANCELLED;
+                else if (balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED))
+                    resid = removing ? IDS_BALANCE_COMPLETE_REMOVAL : IDS_BALANCE_COMPLETE;
+                else
+                    resid = IDS_NO_BALANCE;
             
-            if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
-                ShowError(hwndDlg, GetLastError());
-                return;
+                if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return;
+                }
+                
+                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
             }
-            
-            SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
             
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
                          IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED || IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED) ? TRUE: FALSE); 
@@ -246,7 +258,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
         return;
     }
     
-    if (first || balance_status == BTRFS_BALANCE_STOPPED) {
+    if (first || !(balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED))) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), TRUE);
@@ -482,7 +494,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
             int i, num_devices = 0, num_writeable_devices = 0;
             WCHAR s[255], u[255];
-            BOOL balance_started = balance_status != BTRFS_BALANCE_STOPPED;
+            BOOL balance_started = balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED);
             
             switch (opts_type) {
                 case 1:
@@ -687,7 +699,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
-                            if (balance_status != BTRFS_BALANCE_STOPPED)
+                            if (balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED))
                                 EndDialog(hwndDlg, 0);
                             else
                                 SaveBalanceOpts(hwndDlg);

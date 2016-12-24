@@ -90,6 +90,8 @@
 #define IDS_CONFIRMATION_TITLE          178
 #define IDS_ADD_DEVICE_CONFIRMATION     179
 #define IDS_ADD_DEVICE_CONFIRMATION_FS  180
+#define IDS_BALANCE_FAILED              181
+#define IDS_BALANCE_FAILED_REMOVAL      182
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
