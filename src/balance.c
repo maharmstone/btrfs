@@ -2613,7 +2613,12 @@ static void balance_thread(void* context) {
             do {
                 changed = FALSE;
                 
+                FsRtlEnterFileSystem();
+                
                 Status = balance_data_chunk(Vcb, c, &changed);
+                
+                FsRtlExitFileSystem();
+                
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_data_chunk returned %08x\n", Status);
                     Vcb->balance.status = Status;
@@ -2663,7 +2668,12 @@ static void balance_thread(void* context) {
         
         if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
             do {
+                FsRtlEnterFileSystem();
+                
                 Status = balance_metadata_chunk(Vcb, c, &changed);
+                
+                FsRtlExitFileSystem();
+                
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_metadata_chunk returned %08x\n", Status);
                     Vcb->balance.status = Status;
@@ -2699,7 +2709,10 @@ static void balance_thread(void* context) {
 end:
     if (!Vcb->readonly) {
         if (!Vcb->balance.removing) {
+            FsRtlEnterFileSystem();
             Status = remove_balance_item(Vcb);
+            FsRtlExitFileSystem();
+            
             if (!NT_SUCCESS(Status)) {
                 ERR("remove_balance_item returned %08x\n", Status);
                 goto end;
@@ -2707,6 +2720,7 @@ end:
         } else {
             device* dev = NULL;
             
+            FsRtlEnterFileSystem();
             ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
             
             le = Vcb->devices.Flink;
@@ -2734,6 +2748,7 @@ end:
             }
             
             ExReleaseResourceLite(&Vcb->tree_lock);
+            FsRtlExitFileSystem();
         }
     }
     
