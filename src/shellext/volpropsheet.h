@@ -17,6 +17,7 @@
 
 #include <shlobj.h>
 #include "../btrfsioctl.h"
+#include "balance.h"
 
 extern LONG objs_loaded;
 
@@ -27,9 +28,10 @@ public:
         ignore = TRUE;
         stgm_set = FALSE;
         devices = NULL;
-        removing = FALSE;
         
         InterlockedIncrement(&objs_loaded);
+        
+        balance = NULL;
     }
 
     virtual ~BtrfsVolPropSheet() {
@@ -42,6 +44,9 @@ public:
             free(devices);
         
         InterlockedDecrement(&objs_loaded);
+        
+        if (balance)
+            delete balance;
     }
 
     // IUnknown
@@ -74,21 +79,13 @@ public:
     void RefreshUsage(HWND hwndDlg);
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void StartBalance(HWND hwndDlg);
-    INT_PTR CALLBACK BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void ShowBalance(HWND hwndDlg);
-    void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
-    void ShowBalanceOptions(HWND hwndDlg, UINT8 type);
-    INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void SaveBalanceOpts(HWND hwndDlg);
-    void PauseBalance(HWND hwndDlg);
-    void StopBalance(HWND hwndDlg);
     void RefreshDevList(HWND devlist);
     INT_PTR CALLBACK DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDevices(HWND hwndDlg);
     
     btrfs_device* devices;
     BOOL readonly;
+    BtrfsBalance* balance;
     
 private:
     LONG refcount;
@@ -96,10 +93,4 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     WCHAR fn[MAX_PATH];
-    UINT32 balance_status;
-    btrfs_balance_opts data_opts, metadata_opts, system_opts;
-    UINT8 opts_type;
-    btrfs_query_balance bqb;
-    BOOL cancelling;
-    BOOL removing;
 };

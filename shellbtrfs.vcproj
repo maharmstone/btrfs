@@ -397,6 +397,10 @@
 			Name="Header Files"
 			>
 			<File
+				RelativePath=".\src\shellext\balance.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\contextmenu.h"
 				>
 			</File>
@@ -428,6 +432,10 @@
 		<Filter
 			Name="Source Files"
 			>
+			<File
+				RelativePath=".\src\shellext\balance.cpp"
+				>
+			</File>
 			<File
 				RelativePath=".\src\shellext\contextmenu.cpp"
 				>
