@@ -780,6 +780,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     NTSTATUS Status;
     UINT64 num_entries, new_cache_size, i;
     UINT32 num_sectors;
+    BOOL realloc_extents = FALSE;
     
     // FIXME - also do bitmaps
     // FIXME - make sure this works when sector_size is not 4096
@@ -827,6 +828,33 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
     
     TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache ? c->cache->inode_item.st_size : 0, new_cache_size);
+    
+    if (c->cache) {
+        if (new_cache_size > c->cache->inode_item.st_size)
+            realloc_extents = TRUE;
+        else {
+            le = c->cache->extents.Flink;
+            
+            while (le != &c->cache->extents) {
+                extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+                
+                if (!ext->ignore && (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->data->data[0];
+                    
+                    if (ed2->size != 0) {
+                        chunk* c2 = get_chunk_from_address(Vcb, ed2->address);
+                        
+                        if (c2 && (c2->readonly || c2->reloc)) {
+                            realloc_extents = TRUE;
+                            break;
+                        }
+                    }
+                }
+                
+                le = le->Flink;
+            }
+        }
+    }
     
     if (!c->cache) {
         FREE_SPACE_ITEM* fsi;
@@ -914,15 +942,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
         
         *changed = TRUE;
-    } else if (new_cache_size > c->cache->inode_item.st_size) {
+    } else if (realloc_extents) {
         KEY searchkey;
         traverse_ptr tp;
         
-        ERR("extending existing inode\n");
+        TRACE("reallocating extents\n");
         
-        // FIXME - try to extend existing extent first of all
-        // Or ditch all existing extents and replace with one new one?
-
         // add free_space entry to tree cache
         
         searchkey.obj_id = FREE_SPACE_CACHE_ID;
@@ -947,9 +972,19 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         
         tp.tree->write = TRUE;
 
+        // remove existing extents
+        
+        if (c->cache->inode_item.st_size > 0) {
+            Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("excise_extents returned %08x\n", Status);
+                return Status;
+            }
+        }
+        
         // add new extent
         
-        Status = insert_cache_extent(c->cache, c->cache->inode_item.st_size, new_cache_size - c->cache->inode_item.st_size, rollback);
+        Status = insert_cache_extent(c->cache, 0, new_cache_size, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_cache_extent returned %08x\n", Status);
             return Status;
