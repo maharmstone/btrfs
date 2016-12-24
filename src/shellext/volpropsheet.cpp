@@ -316,7 +316,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                     || bue->type & duptypes[j])) {
                     WCHAR typestring[255], dupstring[255], sizestring[255], usedstring[255];
                 
-                    if ((bue->type & BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA) && (types[i] == BLOCK_FLAG_DATA || types[i] == BLOCK_FLAG_METADATA))
+                    if ((bue->type & (BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA)) && (types[i] == BLOCK_FLAG_DATA || types[i] == BLOCK_FLAG_METADATA))
                         break;
 
                     if (!LoadStringW(module, typestrings[i], typestring, sizeof(typestring) / sizeof(WCHAR))) {
