@@ -112,6 +112,9 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                 return E_FAIL;
             }
             
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_UUID, NULL, 0, &uuid, sizeof(BTRFS_UUID));
+            uuid_set = NT_SUCCESS(Status);
+            
             ignore = FALSE;
             balance = new BtrfsBalance(fn);
 
@@ -1033,6 +1036,21 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 else
                     break;
             }
+            
+            if (bps->uuid_set) {
+                WCHAR s[255], t[255];
+                
+                GetDlgItemTextW(hwndDlg, IDC_UUID, s, sizeof(s) / sizeof(WCHAR));
+                
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s,
+                    bps->uuid.uuid[0], bps->uuid.uuid[1], bps->uuid.uuid[2], bps->uuid.uuid[3], bps->uuid.uuid[4], bps->uuid.uuid[5], bps->uuid.uuid[6], bps->uuid.uuid[7], 
+                    bps->uuid.uuid[8], bps->uuid.uuid[9], bps->uuid.uuid[10], bps->uuid.uuid[11], bps->uuid.uuid[121], bps->uuid.uuid[13], bps->uuid.uuid[14], bps->uuid.uuid[15]
+                    ) != STRSAFE_E_INSUFFICIENT_BUFFER)
+                    SetDlgItemTextW(hwndDlg, IDC_UUID, t);
+                else
+                    SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
+            } else
+                SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
 
             return FALSE;
         }

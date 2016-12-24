@@ -172,6 +172,7 @@
 #define IDC_STRIPES_END_SPINNER         1053
 #define IDC_DEVICE_TREE                 1053
 #define IDC_STRIPES_END                 1054
+#define IDC_UUID                        1054
 #define IDC_CONVERT                     1055
 #define IDC_CONVERT_COMBO               1056
 #define IDC_SOFT                        1057
@@ -182,7 +183,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        168
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1054
+#define _APS_NEXT_CONTROL_VALUE         1055
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

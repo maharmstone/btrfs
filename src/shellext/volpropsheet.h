@@ -17,6 +17,7 @@
 
 #include <shlobj.h>
 #include "../btrfsioctl.h"
+#include "../btrfs.h"
 #include "balance.h"
 
 extern LONG objs_loaded;
@@ -86,6 +87,8 @@ public:
     btrfs_device* devices;
     BOOL readonly;
     BtrfsBalance* balance;
+    BTRFS_UUID uuid;
+    BOOL uuid_set;
     
 private:
     LONG refcount;
