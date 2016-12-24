@@ -550,6 +550,9 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             }
             
             convcb = GetDlgItem(hwndDlg, IDC_CONVERT_COMBO);
+            
+            if (num_writeable_devices == 0)
+                num_writeable_devices = num_devices;
                         
             i = 0;
             while (convtypes[i] != 0) {
