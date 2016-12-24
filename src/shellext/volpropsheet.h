@@ -27,6 +27,7 @@ public:
         ignore = TRUE;
         stgm_set = FALSE;
         devices = NULL;
+        removing = FALSE;
         
         InterlockedIncrement(&objs_loaded);
     }
@@ -100,4 +101,5 @@ private:
     UINT8 opts_type;
     btrfs_query_balance bqb;
     BOOL cancelling;
+    BOOL removing;
 };

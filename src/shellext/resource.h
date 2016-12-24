@@ -79,6 +79,10 @@
 #define IDD_DEVICE_ADD                  167
 #define IDS_DEVLIST_ALLOC               168
 #define IDS_DEVLIST_ALLOC_PC            169
+#define IDS_BALANCE_RUNNING_REMOVAL     170
+#define IDS_BALANCE_PAUSED_REMOVAL      171
+#define IDS_BALANCE_CANCELLED_REMOVAL   172
+#define IDS_BALANCE_COMPLETE_REMOVAL    173
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -143,7 +147,6 @@
 #define IDC_VRANGE_END                  1046
 #define IDC_BUTTON3                     1046
 #define IDC_SYSTEM_OPTIONS              1046
-#define IDC_DEVICE_ADD2                 1046
 #define IDC_DEVICE_REMOVE               1046
 #define IDC_VRANGE_START                1047
 #define IDC_BALANCE_STATUS              1047

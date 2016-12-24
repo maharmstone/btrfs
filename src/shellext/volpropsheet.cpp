@@ -724,6 +724,7 @@ void BtrfsVolPropSheet::StartBalance(HWND hwndDlg) {
     }
     
     cancelling = FALSE;
+    removing = FALSE;
     
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
@@ -817,6 +818,8 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     
     if (!balancing) {
         if (first || balance_status != BTRFS_BALANCE_STOPPED) {
+            int resid;
+            
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
             SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETSTATE, PBST_NORMAL, 0);
@@ -837,8 +840,14 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_METADATA) == BST_CHECKED ? TRUE : FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
             
-            if (!LoadStringW(module, cancelling ? IDS_BALANCE_CANCELLED : (balance_status != BTRFS_BALANCE_STOPPED ? IDS_BALANCE_COMPLETE : IDS_NO_BALANCE),
-                             s, sizeof(s) / sizeof(WCHAR))) {
+            if (cancelling)
+                resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : IDS_BALANCE_CANCELLED;
+            else if (balance_status != BTRFS_BALANCE_STOPPED)
+                resid = removing ? IDS_BALANCE_COMPLETE_REMOVAL : IDS_BALANCE_COMPLETE;
+            else
+                resid = IDS_NO_BALANCE;
+            
+            if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
@@ -875,24 +884,38 @@ void BtrfsVolPropSheet::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     }
     
     SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqb.total_chunks);
+    SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETPOS, (WPARAM)(bqb.total_chunks - bqb.chunks_left), 0);
     
-    if (bqb.status == BTRFS_BALANCE_PAUSED && balance_status != bqb.status)
+    if (bqb.status & BTRFS_BALANCE_PAUSED && balance_status != bqb.status)
         SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETSTATE, PBST_PAUSED, 0);
-    else if (bqb.status != BTRFS_BALANCE_PAUSED && balance_status == BTRFS_BALANCE_PAUSED)
+    else if (!(bqb.status & BTRFS_BALANCE_PAUSED) && balance_status & BTRFS_BALANCE_PAUSED)
         SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETSTATE, PBST_NORMAL, 0);
     
     balance_status = bqb.status;
     
-    if (!LoadStringW(module, balance_status == BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        return;
+    if (bqb.status & BTRFS_BALANCE_REMOVAL) {
+        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_REMOVAL : IDS_BALANCE_RUNNING_REMOVAL, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left,
+            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+        
+        removing = TRUE;
+    } else {
+        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.total_chunks - bqb.chunks_left,
+            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+        
+        removing = FALSE;
     }
-    
-    SendMessageW(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), PBM_SETPOS, (WPARAM)(bqb.total_chunks - bqb.chunks_left), 0);
-    
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.total_chunks - bqb.chunks_left,
-        bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        return;
     
     SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
 }
@@ -2142,9 +2165,9 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             return;
         }
         
-        if (bqb2.status == BTRFS_BALANCE_PAUSED)
+        if (bqb2.status & BTRFS_BALANCE_PAUSED)
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_BALANCE, NULL, 0, NULL, 0);
-        else if (bqb2.status == BTRFS_BALANCE_RUNNING)
+        else if (bqb2.status & BTRFS_BALANCE_RUNNING)
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, NULL, 0, NULL, 0);
         else {
             CloseHandle(h);
@@ -2203,7 +2226,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             return;
         }
 
-        if (bqb2.status == BTRFS_BALANCE_PAUSED || bqb2.status == BTRFS_BALANCE_RUNNING)
+        if (bqb2.status & BTRFS_BALANCE_PAUSED || bqb2.status & BTRFS_BALANCE_RUNNING)
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_STOP_BALANCE, NULL, 0, NULL, 0);
         else {
             CloseHandle(h);
