@@ -2521,6 +2521,13 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
             else
                 ds = sizeof(internal_node);
             
+            if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(tree_header)) {
+                ERR("(%llx,%x,%llx) in tree %llx is too large (%x > %x)\n",
+                    td->key.obj_id, td->key.obj_type, td->key.offset, t->root->id,
+                    ds, Vcb->superblock.node_size - sizeof(tree_header));
+                int3;
+            }
+            
             // FIXME - move back if previous item was deleted item with same key
             if (size + ds > Vcb->superblock.node_size - sizeof(tree_header))
                 return split_tree_at(Vcb, t, td, numitems, size);
