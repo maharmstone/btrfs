@@ -83,6 +83,8 @@
 #define IDS_BALANCE_PAUSED_REMOVAL      171
 #define IDS_BALANCE_CANCELLED_REMOVAL   172
 #define IDS_BALANCE_COMPLETE_REMOVAL    173
+#define IDS_PARTITION                   174
+#define IDS_WHOLE_DISK                  175
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

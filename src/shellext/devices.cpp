@@ -15,15 +15,16 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#define ISOLATION_AWARE_ENABLED 1
+#define STRSAFE_NO_DEPRECATE
+
 #include "devices.h"
 #include "resource.h"
 #include "../btrfsioctl.h"
 #include "balance.h"
-#include <shlobj.h>
 #include <uxtheme.h>
 #include <stdio.h>
-#include <winternl.h>
-#include <vector>
+#include <strsafe.h>
 #include <algorithm>
 
 typedef struct _OBJECT_DIRECTORY_INFORMATION {
@@ -52,19 +53,41 @@ extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 
-static void add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s) {
+void BtrfsDeviceAdd::add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum) {
     TVINSERTSTRUCTW tis;
+    WCHAR t[255], u[255], *v, *vn;
+    
+    // FIXME - can we fetch actual GPT partition numbers?
+    
+    if (!LoadStringW(module, partnum != 0 ? IDS_PARTITION : IDS_WHOLE_DISK, t, sizeof(t) / sizeof(WCHAR))) {
+        ShowError(GetParent(tree), GetLastError());
+        return;
+    }
+    
+    if (partnum != 0) {
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, partnum) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+        
+        v = u;
+    } else
+        v = t;
+    
+    vn = (WCHAR*)malloc((sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
+    memcpy(vn, s, (sizeof(WCHAR) * wcslen(s)) + sizeof(WCHAR));
     
     tis.hParent = parent;
     tis.hInsertAfter = TVI_LAST;
-    tis.itemex.mask = TVIF_TEXT;
-    tis.itemex.pszText = s;
-    tis.itemex.cchTextMax = wcslen(s);
+    tis.itemex.mask = TVIF_TEXT | TVIF_PARAM;
+    tis.itemex.pszText = v;
+    tis.itemex.cchTextMax = wcslen(v);
+    tis.itemex.lParam = (LPARAM)vn;
+    
+    devpaths.push_back(vn);
     
     SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
 }
 
-static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
+void BtrfsDeviceAdd::add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES attr;
     HANDLE h;
@@ -88,11 +111,12 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     
     tis.hParent = TVI_ROOT;
     tis.hInsertAfter = TVI_LAST;
-    tis.itemex.mask = TVIF_TEXT | TVIF_STATE;
+    tis.itemex.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
     tis.itemex.state = TVIS_EXPANDED;
     tis.itemex.stateMask = TVIS_EXPANDED;
     tis.itemex.pszText = us->Buffer;
     tis.itemex.cchTextMax = us->Length / sizeof(WCHAR);
+    tis.itemex.lParam = NULL;
     
     item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
     if (!item) {
@@ -157,6 +181,9 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
     free(odi);
     NtClose(h);
     
+    if (parts.size() == 0)
+        parts.push_back(0);
+    
     std::sort(parts.begin(), parts.end());
     
     for (i = 0; i < parts.size(); i++) {
@@ -174,13 +201,13 @@ static void add_device_to_tree(HWND tree, UNICODE_STRING* us) {
         memcpy((UINT8*)s + us->Length + sizeof(WCHAR), n, wcslen(n) * sizeof(WCHAR));
         s[len / sizeof(WCHAR)] = 0;
     
-        add_partition_to_tree(tree, item, s);
+        add_partition_to_tree(tree, item, s, parts[i]);
         
         free(s);
     }
 }
 
-static void populate_device_tree(HWND tree) {
+void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES attr;
     NTSTATUS Status;
@@ -272,7 +299,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     IO_STATUS_BLOCK iosb;
     HANDLE h, h2;
     
-    if (sel[0] == 0) {
+    if (!sel) {
         EndDialog(hwndDlg, 0);
         return;
     }
@@ -335,6 +362,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
         {
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
+            EnableWindow(GetDlgItem(hwndDlg, IDOK), FALSE);
             break;
         }
         
@@ -363,18 +391,18 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     
                     RtlZeroMemory(&tvi, sizeof(TVITEMW));
                     tvi.hItem = nmtv->itemNew.hItem;
-                    tvi.mask = TVIF_TEXT | TVIF_HANDLE;
-                    tvi.pszText = sel;
-                    tvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                    tvi.mask = TVIF_PARAM | TVIF_HANDLE;
                     
-                    if (!SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel[0] = 0;
-
+                    if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
+                        sel = (WCHAR*)tvi.lParam;
+                    else
+                        sel = NULL;
+                    
+                    EnableWindow(GetDlgItem(hwndDlg, IDOK), sel ? TRUE : FALSE);
                     break;
                 }
             }
         break;
-                            
     }
     
     return FALSE;
@@ -405,7 +433,7 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
     this->hwnd = hwnd;
     this->cmdline = cmdline;
     
-    sel[0] = 0;
+    sel = NULL;
 }
 
 #ifdef __cplusplus

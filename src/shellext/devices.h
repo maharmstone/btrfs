@@ -16,17 +16,33 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <windows.h>
+#include <winternl.h>
+#include <shlobj.h>
+#include <vector>
 
 class BtrfsDeviceAdd {
 public:
+    ~BtrfsDeviceAdd() {
+        unsigned int i;
+        
+        for (i = 0; i < devpaths.size(); i++) {
+            free(devpaths[i]);
+        }
+    }
+    
     INT_PTR CALLBACK DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDialog();
     void AddDevice(HWND hwndDlg);
     BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline);
     
 private:
+    void populate_device_tree(HWND tree);
+    void add_device_to_tree(HWND tree, UNICODE_STRING* us);
+    void add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum);
+    
     HINSTANCE hinst;
     HWND hwnd;
     WCHAR* cmdline;
-    WCHAR sel[255];
+    WCHAR* sel;
+    std::vector<WCHAR*> devpaths;
 };

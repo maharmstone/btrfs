@@ -445,6 +445,8 @@ BEGIN
                             "Removal of device %llu paused (%llu out of %llu chunks processed, %1.1f%%)"
     IDS_BALANCE_CANCELLED_REMOVAL "Device removal cancelled."
     IDS_BALANCE_COMPLETE_REMOVAL "Device removal completed successfully."
+    IDS_PARTITION           "Partition %u"
+    IDS_WHOLE_DISK          "Whole disk"
 END
 
 #endif    // English (U.K.) resources
