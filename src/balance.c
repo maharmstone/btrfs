@@ -644,7 +644,14 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 BOOL done = FALSE;
                 LIST_ENTRY* le2;
                 tree_write* tw;
-                UINT64 flags = mr->system ? Vcb->system_flags : Vcb->metadata_flags;
+                UINT64 flags;
+                
+                if (mr->system)
+                    flags = Vcb->system_flags;
+                else if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
+                    flags = Vcb->data_flags;
+                else
+                    flags = Vcb->metadata_flags;
                 
                 if (newchunk) {
                     ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
@@ -2509,8 +2516,6 @@ static void balance_thread(void* context) {
     UINT64 num_chunks[3];
     NTSTATUS Status;
     
-    // FIXME - handle converting mixed blocks
-    
     Vcb->balance.stopping = FALSE;
     Vcb->balance.cancelling = FALSE;
     KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, FALSE);
@@ -2523,6 +2528,13 @@ static void balance_thread(void* context) {
     
     if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT)
         Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
+    
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
+        if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED)
+            RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
+        else if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED)
+            RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_DATA], &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
+    }
     
     // FIXME - what are we supposed to do with limit_start?
     
@@ -2588,8 +2600,59 @@ static void balance_thread(void* context) {
     
     Vcb->balance.chunks_left = Vcb->balance.total_chunks;
     
-    // FIXME - do data chunks before metadata
+    // do data chunks before metadata
+    le = chunks.Flink;
+    while (le != &chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_balance);
+        LIST_ENTRY* le2 = le->Flink;
+        
+        if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+            NTSTATUS Status;
+            BOOL changed;
+            
+            do {
+                changed = FALSE;
+                
+                Status = balance_data_chunk(Vcb, c, &changed);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("balance_data_chunk returned %08x\n", Status);
+                    // FIXME - store failure status, so we can show this on propsheet
+                    break;
+                }
+                
+                KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
+                
+                if (Vcb->balance.stopping)
+                    break;
+            } while (changed);
+        
+            if (!c->list_entry_changed.Flink)
+                InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+        }
+            
+        if (Vcb->balance.stopping) {
+            while (le != &chunks) {
+                c = CONTAINING_RECORD(le, chunk, list_entry_balance);
+                c->reloc = FALSE;
+                
+                le = le->Flink;
+                c->list_entry_balance.Flink = NULL;
+            }
+            break;
+        }
+        
+        if (c->chunk_item->type & BLOCK_FLAG_DATA &&
+            (!(Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) || !(c->chunk_item->type & BLOCK_FLAG_METADATA))) {
+            RemoveEntryList(&c->list_entry_balance);
+            c->list_entry_balance.Flink = NULL;
+            
+            Vcb->balance.chunks_left--;
+        }
+        
+        le = le2;
+    }
     
+    // do metadata chunks
     while (!IsListEmpty(&chunks)) {
         chunk* c;
         NTSTATUS Status;
@@ -2598,31 +2661,24 @@ static void balance_thread(void* context) {
         le = RemoveHeadList(&chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         
-        do {
-            if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
+        if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
+            do {
                 Status = balance_metadata_chunk(Vcb, c, &changed);
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_metadata_chunk returned %08x\n", Status);
                     // FIXME - store failure status, so we can show this on propsheet
                     break;
                 }
-            } else if (c->chunk_item->type & BLOCK_FLAG_DATA) {
-                Status = balance_data_chunk(Vcb, c, &changed);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("balance_data_chunk returned %08x\n", Status);
-                    // FIXME - store failure status, so we can show this on propsheet
+                
+                KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
+                
+                if (Vcb->balance.stopping)
                     break;
-                }
-            }
+            } while (changed);
             
-            KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
-            
-            if (Vcb->balance.stopping)
-                break;
-        } while (changed);
-        
-        if (!c->list_entry_changed.Flink)
-            InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+            if (!c->list_entry_changed.Flink)
+                InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+        }
         
         if (Vcb->balance.stopping) {
             while (le != &chunks) {
