@@ -2807,6 +2807,15 @@ static NTSTATUS allow_extended_dasd_io(device_extension* Vcb, PFILE_OBJECT FileO
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS query_uuid(device_extension* Vcb, void* data, ULONG length) {
+    if (length < sizeof(BTRFS_UUID))
+        return STATUS_BUFFER_OVERFLOW;
+    
+    RtlCopyMemory(data, &Vcb->superblock.uuid, sizeof(BTRFS_UUID));
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -3328,6 +3337,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             
         case FSCTL_BTRFS_REMOVE_DEVICE:
             Status = remove_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+        break;
+        
+        case FSCTL_BTRFS_GET_UUID:
+            Status = query_uuid(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
         break;
 
         default:
