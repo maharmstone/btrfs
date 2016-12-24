@@ -824,7 +824,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     
     SendMessageW(devlist, LVM_SORTITEMS, 0, (LPARAM)lv_sort);
     
-    EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_ADD), num_rw_devices > 1);
+    EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_ADD), num_rw_devices > 0);
     EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_REMOVE), num_rw_devices > 1);
 }
 
