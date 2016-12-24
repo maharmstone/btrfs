@@ -1924,19 +1924,35 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
         if (Status == STATUS_NOT_FOUND) { // tree is completely empty
             if (!cs->deleted) {
-                checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * cs->length, ALLOC_TAG);
-                if (!checksums) {
-                    ERR("out of memory\n");
-                    goto exit;
-                }
+                ULONG length = cs->length;
+                UINT64 off = cs->ol.key;
+                UINT32* data = cs->checksums;
                 
-                RtlCopyMemory(checksums, cs->checksums, sizeof(UINT32) * cs->length);
-                
-                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, cs->ol.key, checksums, sizeof(UINT32) * cs->length, NULL, Irp, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    ExFreePool(checksums);
-                    goto exit;
-                }
+                do {
+                    ULONG il = min(length, MAX_CSUM_SIZE / sizeof(UINT32));
+                    
+                    checksums = ExAllocatePoolWithTag(PagedPool, il * sizeof(UINT32), ALLOC_TAG);
+                    if (!checksums) {
+                        ERR("out of memory\n");
+                        goto exit;
+                    }
+                    
+                    RtlCopyMemory(checksums, data, il * sizeof(UINT32));
+                    
+                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
+                                          il * sizeof(UINT32), NULL, Irp, rollback)) {
+                        ERR("insert_tree_item failed\n");
+                        ExFreePool(checksums);
+                        goto exit;
+                    }
+                    
+                    length -= il;
+                    
+                    if (length > 0) {
+                        off += il * Vcb->superblock.sector_size;
+                        data += il;
+                    }
+                } while (length > 0);
             }
         } else if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
