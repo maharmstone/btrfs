@@ -1409,6 +1409,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPAR
                 EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), FALSE);
             }
             
+            SendMessageW(GetDlgItem(hwndDlg, IDC_START_BALANCE), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), BCM_SETSHIELD, 0, TRUE);
+            
             SetTimer(hwndDlg, 1, 1000, NULL);
             
             break;
