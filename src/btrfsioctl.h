@@ -114,11 +114,13 @@ typedef struct {
 #define BTRFS_BALANCE_RUNNING   1
 #define BTRFS_BALANCE_PAUSED    2
 #define BTRFS_BALANCE_REMOVAL   4
+#define BTRFS_BALANCE_ERROR     8
 
 typedef struct {
     UINT32 status;
     UINT64 chunks_left;
     UINT64 total_chunks;
+    NTSTATUS error;
     btrfs_balance_opts data_opts;
     btrfs_balance_opts metadata_opts;
     btrfs_balance_opts system_opts;

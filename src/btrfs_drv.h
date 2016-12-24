@@ -543,6 +543,7 @@ typedef struct {
     BOOL cancelling;
     BOOL removing;
     BOOL dev_readonly;
+    NTSTATUS status;
     KEVENT event;
     KEVENT finished;
 } balance_info;

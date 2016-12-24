@@ -2616,8 +2616,8 @@ static void balance_thread(void* context) {
                 Status = balance_data_chunk(Vcb, c, &changed);
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_data_chunk returned %08x\n", Status);
-                    // FIXME - store failure status, so we can show this on propsheet
-                    break;
+                    Vcb->balance.status = Status;
+                    goto end;
                 }
                 
                 KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
@@ -2666,8 +2666,8 @@ static void balance_thread(void* context) {
                 Status = balance_metadata_chunk(Vcb, c, &changed);
                 if (!NT_SUCCESS(Status)) {
                     ERR("balance_metadata_chunk returned %08x\n", Status);
-                    // FIXME - store failure status, so we can show this on propsheet
-                    break;
+                    Vcb->balance.status = Status;
+                    goto end;
                 }
                 
                 KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
@@ -2832,6 +2832,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     
     Vcb->balance.paused = FALSE;
     Vcb->balance.removing = FALSE;
+    Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
@@ -2892,6 +2893,7 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
         Vcb->balance.paused = FALSE;
     
     Vcb->balance.removing = FALSE;
+    Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
     
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
@@ -2911,6 +2913,12 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
     
     if (!Vcb->balance.thread) {
         bqb->status = BTRFS_BALANCE_STOPPED;
+        
+        if (!NT_SUCCESS(Vcb->balance.status)) {
+            bqb->status |= BTRFS_BALANCE_ERROR;
+            bqb->error = Vcb->balance.status;
+        }
+        
         return STATUS_SUCCESS;
     }
     
@@ -2919,8 +2927,12 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
     if (Vcb->balance.removing)
         bqb->status |= BTRFS_BALANCE_REMOVAL;
     
+    if (!NT_SUCCESS(Vcb->balance.status))
+        bqb->status |= BTRFS_BALANCE_ERROR;
+    
     bqb->chunks_left = Vcb->balance.chunks_left;
     bqb->total_chunks = Vcb->balance.total_chunks;
+    bqb->error = Vcb->balance.status;
     RtlCopyMemory(&bqb->data_opts, &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->metadata_opts, &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bqb->system_opts, &Vcb->balance.opts[BALANCE_OPTS_SYSTEM], sizeof(btrfs_balance_opts));
@@ -2973,6 +2985,7 @@ NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     Vcb->balance.paused = FALSE;
     Vcb->balance.stopping = TRUE;
     Vcb->balance.cancelling = TRUE;
+    Vcb->balance.status = STATUS_SUCCESS;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
     
     return STATUS_SUCCESS;
