@@ -20,9 +20,10 @@
 
 class BtrfsBalance {
 public:
-    BtrfsBalance(WCHAR* drive) {
+    BtrfsBalance(WCHAR* drive, BOOL RemoveDevice = FALSE) {
         removing = FALSE;
         devices = NULL;
+        called_from_RemoveDevice = RemoveDevice;
         wcscpy(fn, drive);
     }
     
@@ -47,4 +48,5 @@ private:
     WCHAR fn[MAX_PATH];
     btrfs_device* devices;
     BOOL readonly;
+    BOOL called_from_RemoveDevice;
 };

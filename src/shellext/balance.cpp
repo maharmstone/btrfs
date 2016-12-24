@@ -823,7 +823,8 @@ INT_PTR CALLBACK BtrfsBalance::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wP
             RtlZeroMemory(&metadata_opts, sizeof(btrfs_balance_opts));
             RtlZeroMemory(&system_opts, sizeof(btrfs_balance_opts));
             
-            balance_status = BTRFS_BALANCE_STOPPED;
+            balance_status = called_from_RemoveDevice ? BTRFS_BALANCE_RUNNING : BTRFS_BALANCE_STOPPED;
+            removing = called_from_RemoveDevice;
             cancelling = FALSE;
             RefreshBalanceDlg(hwndDlg, TRUE);
             

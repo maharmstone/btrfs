@@ -827,7 +827,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     
     CloseHandle(h);
     
-    bb = new BtrfsBalance(vol);
+    bb = new BtrfsBalance(vol, TRUE);
     
     bb->ShowBalance(hwnd);
     
