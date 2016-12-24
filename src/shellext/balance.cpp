@@ -107,6 +107,7 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
     
     cancelling = FALSE;
     removing = FALSE;
+    balance_status = BTRFS_BALANCE_RUNNING;
     
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
