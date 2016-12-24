@@ -33,7 +33,14 @@ static const GUID CLSID_ShellBtrfsVolPropSheet = { 0x2690b74f, 0xf353, 0x422d, {
 #define COM_DESCRIPTION_VOL_PROP_SHEET L"WinBtrfs shell extension (volume property sheet)"
 #define ICON_OVERLAY_NAME L"WinBtrfs"
 
+typedef enum _PROCESS_DPI_AWARENESS { 
+    PROCESS_DPI_UNAWARE,
+    PROCESS_SYSTEM_DPI_AWARE,
+    PROCESS_PER_MONITOR_DPI_AWARE
+} PROCESS_DPI_AWARENESS;
+
 typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
+typedef HRESULT (WINAPI *_SetProcessDpiAwareness)(PROCESS_DPI_AWARENESS value);
 
 HMODULE module;
 LONG objs_loaded = 0;
@@ -88,6 +95,21 @@ void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
     ShowError(hwnd, RtlNtStatusToDosError(Status));
     
     FreeLibrary(ntdll);
+}
+
+void set_dpi_aware() {
+    _SetProcessDpiAwareness SetProcessDpiAwareness;
+    HMODULE shcore = LoadLibraryW(L"shcore.dll");
+    
+    if (!shcore)
+        return;
+    
+    SetProcessDpiAwareness = (_SetProcessDpiAwareness)GetProcAddress(shcore, "SetProcessDpiAwareness");
+    
+    if (!SetProcessDpiAwareness)
+        return;
+    
+    SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 }
 
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {

@@ -736,6 +736,8 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     LUID luid;
     BtrfsDeviceAdd* bda;
     
+    set_dpi_aware();
+    
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
         ShowError(hwnd, GetLastError());
         return;
@@ -769,6 +771,8 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     BtrfsBalance* bb;
+    
+    set_dpi_aware();
     
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
         ShowError(hwnd, GetLastError());
