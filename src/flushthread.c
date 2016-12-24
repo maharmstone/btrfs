@@ -2947,20 +2947,9 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                     }
 
                     if (t->parent) {
-                        LIST_ENTRY* le2;
-                        KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
-                        
                         done_deletions = TRUE;
             
-                        le2 = t->itemlist.Flink;
-                        while (le2 != &t->itemlist) {
-                            tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
-                            firstitem = td->key;
-                            break;
-                        }
-                        
-                        TRACE("deleting tree in root %llx (first item was %llx,%x,%llx)\n",
-                              t->root->id, firstitem.obj_id, firstitem.obj_type, firstitem.offset);
+                        TRACE("deleting tree in root %llx\n", t->root->id);
                         
                         t->root->root_item.bytes_used -= Vcb->superblock.node_size;
                         
