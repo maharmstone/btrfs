@@ -1912,7 +1912,7 @@ static void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG leng
     
     Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
     if (Status == STATUS_NOT_FOUND) { // tree is completely empty
-        if (!csum) { // deleted
+        if (csum) { // not deleted
             ULONG length2 = length;
             UINT64 off = address;
             UINT32* data = csum;
@@ -2076,35 +2076,6 @@ static void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG leng
     }
 }
 
-static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le = Vcb->sector_checksums.Flink;
-    changed_sector* cs;
-    
-    if (!Vcb->checksum_root) {
-        ERR("no checksum root\n");
-        goto exit;
-    }
-    
-    while (le != &Vcb->sector_checksums) {
-        cs = (changed_sector*)le;
-        
-        add_checksum_entry(Vcb, cs->ol.key, cs->length, cs->deleted ? NULL : cs->checksums, Irp, rollback);
-        
-        le = le->Flink;
-    }
-    
-exit:
-    while (!IsListEmpty(&Vcb->sector_checksums)) {
-        le = RemoveHeadList(&Vcb->sector_checksums);
-        cs = (changed_sector*)le;
-        
-        if (cs->checksums)
-            ExFreePool(cs->checksums);
-        
-        ExFreePool(cs);
-    }
-}
-
 static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
@@ -2112,7 +2083,6 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
     traverse_ptr tp;
     BLOCK_GROUP_ITEM* bgi;
     NTSTATUS Status;
-    BOOL flushed_extents = FALSE;
     
     TRACE("(%p)\n", Vcb);
     
@@ -2134,8 +2104,6 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 ExReleaseResourceLite(&c->lock);
                 goto end;
             }
-            
-            flushed_extents = TRUE;
             
             le2 = le3;
         }
@@ -2213,14 +2181,6 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
         ExReleaseResourceLite(&c->lock);
         
         le = le->Flink;
-    }
-    
-    if (flushed_extents) {
-        ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
-        if (!IsListEmpty(&Vcb->sector_checksums)) {
-            update_checksum_tree(Vcb, Irp, rollback);
-        }
-        ExReleaseResourceLite(&Vcb->checksum_lock);
     }
     
     Status = STATUS_SUCCESS;
@@ -4118,6 +4078,24 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             le = le2;
         }
         
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            
+            if (ext->inserted && ext->csum && ext->data->type == EXTENT_TYPE_REGULAR) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                
+                if (ed2->size > 0) { // not sparse
+                    if (ext->data->compression == BTRFS_COMPRESSION_NONE)
+                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
+                    else
+                        add_checksum_entry(fcb->Vcb, ed2->address, ed2->size / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
         if (!IsListEmpty(&fcb->extents)) {
             rationalize_extents(fcb, Irp);
             
@@ -5442,12 +5420,6 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     ERR("flushed %llu fcbs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
 #endif
 
-    ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
-    if (!IsListEmpty(&Vcb->sector_checksums)) {
-        update_checksum_tree(Vcb, Irp, rollback);
-    }
-    ExReleaseResourceLite(&Vcb->checksum_lock);
-    
     if (!IsListEmpty(&Vcb->drop_roots)) {
         Status = drop_roots(Vcb, Irp, rollback);
         
