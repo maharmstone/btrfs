@@ -1220,7 +1220,7 @@ end:
     return deleted;
 }
 
-NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
+NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -1640,10 +1640,10 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                Status = load_csum_from_disk(Vcb, ext->csum, ed2->address + (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
+                Status = load_csum(Vcb, ext->csum, ed2->address + (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
                 
                 if (!NT_SUCCESS(Status)) {
-                    ERR("load_csum_from_disk returned %08x\n", Status);
+                    ERR("load_csum returned %08x\n", Status);
                     ExFreePool(ext);
                     free_fcb(fcb);
                     return Status;
