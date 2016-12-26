@@ -1892,7 +1892,7 @@ end:
     return STATUS_SUCCESS;
 }
 
-static void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp, LIST_ENTRY* rollback) {
+void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp, LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     UINT32* data;

@@ -939,6 +939,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
                     if (ei->refcount == edr->count) {
                         delete_tree_item(Vcb, &tp, rollback);
+                        add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
                         return STATUS_SUCCESS;
                     }
                     
@@ -991,6 +992,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 if (sectsdr->offset == sdr->offset) {
                     if (ei->refcount == sectsdr->count) {
                         delete_tree_item(Vcb, &tp, rollback);
+                        add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
                         return STATUS_SUCCESS;
                     }
                     
@@ -1151,6 +1153,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             if (ei->refcount == edr->count) {
                 delete_tree_item(Vcb, &tp, rollback);
                 delete_tree_item(Vcb, &tp2, rollback);
+                add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
                 return STATUS_SUCCESS;
             }
             
@@ -1210,6 +1213,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             if (ei->refcount == sdr->count) {
                 delete_tree_item(Vcb, &tp, rollback);
                 delete_tree_item(Vcb, &tp2, rollback);
+                add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
                 return STATUS_SUCCESS;
             }
             
@@ -1339,6 +1343,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         if (ei->refcount == erv0->count) {
             delete_tree_item(Vcb, &tp, rollback);
             delete_tree_item(Vcb, &tp2, rollback);
+            add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
             return STATUS_SUCCESS;
         }
         
