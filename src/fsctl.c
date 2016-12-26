@@ -1834,12 +1834,6 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     Status = STATUS_SUCCESS;
     
-    if (!nocsum) {
-        ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
-        commit_checksum_changes(Vcb, &changed_sector_list);
-        ExReleaseResourceLite(&Vcb->checksum_lock);
-    }
-    
 end:
     if (!NT_SUCCESS(Status))
         do_rollback(Vcb, &rollback);

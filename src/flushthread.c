@@ -1875,10 +1875,6 @@ end:
             
             InitializeListHead(&changed_sector_list);
             insert_into_ordered_list(&changed_sector_list, &sc->ol);
-            
-            ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
-            commit_checksum_changes(Vcb, &changed_sector_list);
-            ExReleaseResourceLite(&Vcb->checksum_lock);
         }
         
         decrease_chunk_usage(c, ce->size);
@@ -3843,8 +3839,6 @@ cont:
                     
                     InitializeListHead(&changed_sector_list);
                     insert_into_ordered_list(&changed_sector_list, &sc->ol);
-                    
-                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
                 }
                 
                 decrease_chunk_usage(er->chunk, er->skip_start);
@@ -3901,8 +3895,6 @@ cont:
                     
                     InitializeListHead(&changed_sector_list);
                     insert_into_ordered_list(&changed_sector_list, &sc->ol);
-                    
-                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
                 }
                 
                 decrease_chunk_usage(er->chunk, er->skip_end);

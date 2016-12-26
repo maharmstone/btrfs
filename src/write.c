@@ -2909,13 +2909,6 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
     return STATUS_DISK_FULL;
 }
 
-void commit_checksum_changes(device_extension* Vcb, LIST_ENTRY* changed_sector_list) {
-    while (!IsListEmpty(changed_sector_list)) {
-        LIST_ENTRY* le = RemoveHeadList(changed_sector_list);
-        InsertTailList(&Vcb->sector_checksums, le);
-    }
-}
-
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     
@@ -3034,12 +3027,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 oldalloc = ext->offset + length;
                 
                 ExFreePool(data);
-                
-                if (!nocsum) {
-                    ExAcquireResourceExclusiveLite(&fcb->Vcb->checksum_lock, TRUE);
-                    commit_checksum_changes(fcb->Vcb, &changed_sector_list);
-                    ExReleaseResourceLite(&fcb->Vcb->checksum_lock);
-                }
             }
             
             if (cur_inline) {
@@ -4271,12 +4258,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             fileref->parent->fcb->inode_item_changed = TRUE;
         
         mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
-    }
-    
-    if (!nocsum) {
-        ExAcquireResourceExclusiveLite(&Vcb->checksum_lock, TRUE);
-        commit_checksum_changes(Vcb, &changed_sector_list);
-        ExReleaseResourceLite(&Vcb->checksum_lock);
     }
     
     if (changed_length) {
