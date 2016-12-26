@@ -2794,6 +2794,25 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static void add_device_to_list(device_extension* Vcb, device* dev) {
+    LIST_ENTRY* le;
+    
+    le = Vcb->devices.Flink;
+    
+    while (le != &Vcb->devices) {
+        device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev2->devitem.dev_id > dev->devitem.dev_id) {
+            InsertHeadList(le->Blink, &dev->list_entry);
+            return;
+        }
+        
+        le = le->Flink;
+    }
+    
+    InsertTailList(&Vcb->devices, &dev->list_entry);
+}
+
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
     LIST_ENTRY* le;
     
@@ -2852,14 +2871,15 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 RtlZeroMemory(dev, sizeof(device));
                 dev->devobj = DeviceObject;
                 dev->devitem.device_uuid = *uuid;
+                dev->devitem.dev_id = v->devnum;
                 dev->seeding = v->seeding;
                 dev->readonly = dev->seeding;
                 dev->reloc = FALSE;
                 dev->removable = FALSE;
                 dev->disk_num = v->disk_num;
                 dev->part_num = v->part_num;
+                add_device_to_list(Vcb, dev);
                 Vcb->devices_loaded++;
-                InsertTailList(&Vcb->devices, &dev->list_entry);
                 
                 ExReleaseResourceLite(&volumes_lock);
                 
@@ -3098,7 +3118,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->length = v->length;
                                 dev->disk_num = v->disk_num;
                                 dev->part_num = v->part_num;
-                                InsertTailList(&Vcb->devices, &dev->list_entry);
+                                add_device_to_list(Vcb, dev);
                                 Vcb->devices_loaded++;
 
                                 done = TRUE;
