@@ -644,13 +644,6 @@ typedef struct {
     UINT64 key;
 } ordered_list;
 
-typedef struct {
-    ordered_list ol;
-    ULONG length;
-    UINT32* checksums;
-    BOOL deleted;
-} changed_sector;
-
 enum write_data_status {
     WriteDataStatus_Pending,
     WriteDataStatus_Success,
