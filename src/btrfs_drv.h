@@ -992,6 +992,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
 void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock);
 NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp);
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp);
+NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
@@ -1013,7 +1014,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                            PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
-NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
 
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);

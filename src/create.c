@@ -1220,6 +1220,60 @@ end:
     return deleted;
 }
 
+NTSTATUS load_csum_from_disk(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    UINT64 i, j;
+    BOOL b;
+    
+    searchkey.obj_id = EXTENT_CSUM_ID;
+    searchkey.obj_type = TYPE_EXTENT_CSUM;
+    searchkey.offset = start;
+    
+    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    i = 0;
+    do {
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            ULONG readlen;
+            
+            if (start < tp.item->key.offset)
+                j = 0;
+            else
+                j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
+            
+            if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
+                TRACE("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            readlen = min((tp.item->size / sizeof(UINT32)) - j, length - i);
+            RtlCopyMemory(&csum[i], tp.item->data + (j * sizeof(UINT32)), readlen * sizeof(UINT32));
+            i += readlen;
+            
+            if (i == length)
+                break;
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
+        
+        if (b)
+            tp = next_tp;
+    } while (b);
+    
+    if (i < length) {
+        ERR("could not read checksums: offset %llx, length %llx sectors\n", start, length);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
