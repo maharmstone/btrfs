@@ -367,6 +367,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             
             ext2->unique = FALSE;
             ext2->ignore = FALSE;
+            ext2->inserted = TRUE;
             
             if (ext->csum) {
                 ULONG len;

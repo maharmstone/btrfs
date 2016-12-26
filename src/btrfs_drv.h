@@ -126,6 +126,7 @@ typedef struct {
     ULONG datalen;
     BOOL unique;
     BOOL ignore;
+    BOOL inserted;
     UINT32* csum;
     
     LIST_ENTRY list_entry;

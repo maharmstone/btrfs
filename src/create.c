@@ -1570,6 +1570,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             ext->datalen = tp.item->size;
             ext->unique = unique;
             ext->ignore = FALSE;
+            ext->inserted = FALSE;
             
             if (ed->type == EXTENT_TYPE_REGULAR && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];

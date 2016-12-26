@@ -1951,6 +1951,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
+                        newext->inserted = TRUE;
                         newext->csum = NULL;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
@@ -1994,6 +1995,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
+                        newext->inserted = TRUE;
                         newext->csum = NULL;
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
                         
@@ -2037,6 +2039,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
+                        newext1->inserted = TRUE;
                         newext1->csum = NULL;
                         
                         size = ext->offset + len - end_data;
@@ -2074,6 +2077,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + size;
                         newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
+                        newext2->inserted = TRUE;
                         newext2->csum = NULL;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
@@ -2150,6 +2154,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
+                        newext->inserted = TRUE;
                         
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
@@ -2225,6 +2230,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext->unique = ext->unique;
                         newext->ignore = FALSE;
+                        newext->inserted = TRUE;
                         
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
@@ -2346,12 +2352,14 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext1->unique = ext->unique;
                         newext1->ignore = FALSE;
+                        newext1->inserted = TRUE;
                         
                         newext2->offset = end_data;
                         newext2->data = nedb;
                         newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                         newext2->unique = ext->unique;
                         newext2->ignore = FALSE;
+                        newext2->inserted = TRUE;
                         
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
@@ -2464,6 +2472,7 @@ static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG ed
     ext->datalen = edsize;
     ext->unique = unique;
     ext->ignore = FALSE;
+    ext->inserted = TRUE;
     ext->csum = csum;
     
     le = fcb->extents.Flink;
@@ -3273,6 +3282,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->datalen = ext->datalen;
         newext->unique = ext->unique;
         newext->ignore = FALSE;
+        newext->inserted = TRUE;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
         add_insert_extent_rollback(rollback, fcb, newext);
@@ -3375,6 +3385,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
+        newext1->inserted = TRUE;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext1);
@@ -3384,6 +3395,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
+        newext2->inserted = TRUE;
         newext2->csum = NULL;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
@@ -3503,6 +3515,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
+        newext1->inserted = TRUE;
         newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
@@ -3513,6 +3526,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
+        newext2->inserted = TRUE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3663,6 +3677,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext1->datalen = ext->datalen;
         newext1->unique = ext->unique;
         newext1->ignore = FALSE;
+        newext1->inserted = TRUE;
         newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
         
@@ -3673,6 +3688,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
+        newext2->inserted = TRUE;
         InsertHeadList(&newext1->list_entry, &newext2->list_entry);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
@@ -3682,6 +3698,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->datalen = ext->datalen;
         newext3->unique = ext->unique;
         newext3->ignore = FALSE;
+        newext3->inserted = TRUE;
         newext3->csum = NULL;
         InsertHeadList(&newext2->list_entry, &newext3->list_entry);
         
