@@ -2856,6 +2856,8 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->readonly = dev->seeding;
                 dev->reloc = FALSE;
                 dev->removable = FALSE;
+                dev->disk_num = v->disk_num;
+                dev->part_num = v->part_num;
                 Vcb->devices_loaded++;
                 InsertTailList(&Vcb->devices, &dev->list_entry);
                 
@@ -2911,9 +2913,8 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
-void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
+void init_device(device_extension* Vcb, device* dev, BOOL get_length, BOOL get_nums) {
     NTSTATUS Status;
-    GET_LENGTH_INFORMATION gli;
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
     IDENTIFY_DEVICE_DATA* idd;
@@ -2922,13 +2923,31 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_length) {
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
     
     if (get_length) {
+        GET_LENGTH_INFORMATION gli;
+        
         Status = dev_ioctl(dev->devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-                        &gli, sizeof(gli), TRUE, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error reading length information: %08x\n", Status);
-        }
+                           &gli, sizeof(GET_LENGTH_INFORMATION), TRUE, NULL);
+        
+        if (!NT_SUCCESS(Status))
+            ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
         
         dev->length = gli.Length.QuadPart;
+    }
+    
+    if (get_nums) {
+        STORAGE_DEVICE_NUMBER sdn;
+        
+        Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                           &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            WARN("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+            dev->disk_num = 0;
+            dev->part_num = 0;
+        } else {
+            dev->disk_num = sdn.DeviceNumber;
+            dev->part_num = sdn.PartitionNumber;
+        }
     }
     
     dev->ssd = FALSE;
@@ -3026,7 +3045,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                         RtlCopyMemory(&dev->devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
                         
                         if (le != Vcb->devices.Flink)
-                            init_device(Vcb, dev, TRUE);
+                            init_device(Vcb, dev, TRUE, TRUE);
                         
                         done = TRUE;
                         break;
@@ -3074,9 +3093,11 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->devobj = DeviceObject;
                                 RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 dev->seeding = v->seeding;
-                                init_device(Vcb, dev, FALSE);
+                                init_device(Vcb, dev, FALSE, FALSE);
 
                                 dev->length = v->length;
+                                dev->disk_num = v->disk_num;
+                                dev->part_num = v->part_num;
                                 InsertTailList(&Vcb->devices, &dev->list_entry);
                                 Vcb->devices_loaded++;
 
@@ -3769,7 +3790,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
-    init_device(Vcb, dev, FALSE);
+    init_device(Vcb, dev, FALSE, TRUE);
     dev->length = gli.Length.QuadPart;
     
     InsertTailList(&Vcb->devices, &dev->list_entry);

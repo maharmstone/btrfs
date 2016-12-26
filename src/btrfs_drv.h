@@ -400,6 +400,8 @@ typedef struct {
     BOOL trim;
     ULONG change_count;
     UINT64 length;
+    ULONG disk_num;
+    ULONG part_num;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
 } device;
@@ -786,7 +788,7 @@ void mark_fileref_dirty(file_ref* fileref);
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);
 void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
-void init_device(device_extension* Vcb, device* dev, BOOL get_length);
+void init_device(device_extension* Vcb, device* dev, BOOL get_length, BOOL get_nums);
 void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
 
