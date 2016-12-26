@@ -639,11 +639,6 @@ typedef struct {
     UINT32 uid;
 } uid_map;
 
-typedef struct {
-    LIST_ENTRY list_entry;
-    UINT64 key;
-} ordered_list;
-
 enum write_data_status {
     WriteDataStatus_Pending,
     WriteDataStatus_Success,
@@ -700,27 +695,6 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
     
     out->seconds = l / 10000000;
     out->nanoseconds = (l % 10000000) * 100;
-}
-
-static __inline void insert_into_ordered_list(LIST_ENTRY* list, ordered_list* ins) {
-    LIST_ENTRY* le = list->Flink;
-    ordered_list* ol;
-    
-    while (le != list) {
-        ol = (ordered_list*)le;
-        
-        if (ol->key > ins->key) {
-            le->Blink->Flink = &ins->list_entry;
-            ins->list_entry.Blink = le->Blink;
-            le->Blink = &ins->list_entry;
-            ins->list_entry.Flink = le;
-            return;
-        }
-        
-        le = le->Flink;
-    }
-    
-    InsertTailList(list, &ins->list_entry);
 }
 
 static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 num_stripes, UINT64* stripeoff, UINT16* stripe) {
