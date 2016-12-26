@@ -1892,13 +1892,193 @@ end:
     return STATUS_SUCCESS;
 }
 
+static void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp, LIST_ENTRY* rollback) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    UINT32* data;
+    NTSTATUS Status;
+    UINT64 startaddr, endaddr;
+    ULONG len;
+    UINT32* checksums;
+    RTL_BITMAP bmp;
+    ULONG* bmparr;
+    ULONG runlength, index;
+    
+    searchkey.obj_id = EXTENT_CSUM_ID;
+    searchkey.obj_type = TYPE_EXTENT_CSUM;
+    searchkey.offset = address;
+    
+    // FIXME - create checksum_root if it doesn't exist at all
+    
+    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
+    if (Status == STATUS_NOT_FOUND) { // tree is completely empty
+        if (!csum) { // deleted
+            ULONG length2 = length;
+            UINT64 off = address;
+            UINT32* data = csum;
+            
+            do {
+                ULONG il = min(length2, MAX_CSUM_SIZE / sizeof(UINT32));
+                
+                checksums = ExAllocatePoolWithTag(PagedPool, il * sizeof(UINT32), ALLOC_TAG);
+                if (!checksums) {
+                    ERR("out of memory\n");
+                    return;
+                }
+                
+                RtlCopyMemory(checksums, data, il * sizeof(UINT32));
+                
+                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
+                                        il * sizeof(UINT32), NULL, Irp, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    ExFreePool(checksums);
+                    return;
+                }
+                
+                length2 -= il;
+                
+                if (length2 > 0) {
+                    off += il * Vcb->superblock.sector_size;
+                    data += il;
+                }
+            } while (length2 > 0);
+        }
+    } else if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return;
+    } else {
+        UINT32 tplen;
+        
+        // FIXME - check entry is TYPE_EXTENT_CSUM?
+        
+        if (tp.item->key.offset < address && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= address)
+            startaddr = tp.item->key.offset;
+        else
+            startaddr = address;
+        
+        searchkey.obj_id = EXTENT_CSUM_ID;
+        searchkey.obj_type = TYPE_EXTENT_CSUM;
+        searchkey.offset = address + (length * Vcb->superblock.sector_size);
+        
+        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return;
+        }
+        
+        tplen = tp.item->size / sizeof(UINT32);
+        
+        if (tp.item->key.offset + (tplen * Vcb->superblock.sector_size) >= address + (length * Vcb->superblock.sector_size))
+            endaddr = tp.item->key.offset + (tplen * Vcb->superblock.sector_size);
+        else
+            endaddr = address + (length * Vcb->superblock.sector_size);
+        
+        TRACE("cs starts at %llx (%x sectors)\n", address, length);
+        TRACE("startaddr = %llx\n", startaddr);
+        TRACE("endaddr = %llx\n", endaddr);
+        
+        len = (endaddr - startaddr) / Vcb->superblock.sector_size;
+        
+        checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * len, ALLOC_TAG);
+        if (!checksums) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        bmparr = ExAllocatePoolWithTag(PagedPool, sizeof(ULONG) * ((len/8)+1), ALLOC_TAG);
+        if (!bmparr) {
+            ERR("out of memory\n");
+            ExFreePool(checksums);
+            return;
+        }
+            
+        RtlInitializeBitMap(&bmp, bmparr, len);
+        RtlSetAllBits(&bmp);
+        
+        searchkey.obj_id = EXTENT_CSUM_ID;
+        searchkey.obj_type = TYPE_EXTENT_CSUM;
+        searchkey.offset = address;
+        
+        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return;
+        }
+        
+        // set bit = free space, cleared bit = allocated sector
+        
+        while (tp.item->key.offset < endaddr) {
+            if (tp.item->key.offset >= startaddr) {
+                if (tp.item->size > 0) {
+                    ULONG itemlen = min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(UINT32), tp.item->size);
+                    
+                    RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, itemlen);
+                    RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
+                }
+                
+                delete_tree_item(Vcb, &tp, rollback);
+            }
+            
+            if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
+                tp = next_tp;
+            } else
+                break;
+        }
+        
+        if (!csum) { // deleted
+            RtlSetBits(&bmp, (address - startaddr) / Vcb->superblock.sector_size, length);
+        } else {
+            RtlCopyMemory(&checksums[(address - startaddr) / Vcb->superblock.sector_size], csum, length * sizeof(UINT32));
+            RtlClearBits(&bmp, (address - startaddr) / Vcb->superblock.sector_size, length);
+        }
+        
+        runlength = RtlFindFirstRunClear(&bmp, &index);
+        
+        while (runlength != 0) {
+            do {
+                ULONG rl;
+                UINT64 off;
+                
+                if (runlength * sizeof(UINT32) > MAX_CSUM_SIZE)
+                    rl = MAX_CSUM_SIZE / sizeof(UINT32);
+                else
+                    rl = runlength;
+                
+                data = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * rl, ALLOC_TAG);
+                if (!data) {
+                    ERR("out of memory\n");
+                    ExFreePool(bmparr);
+                    ExFreePool(checksums);
+                    return;
+                }
+                
+                RtlCopyMemory(data, &checksums[index], sizeof(UINT32) * rl);
+                
+                off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
+                
+                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
+                    ERR("insert_tree_item failed\n");
+                    ExFreePool(data);
+                    ExFreePool(bmparr);
+                    ExFreePool(checksums);
+                    return;
+                }
+                
+                runlength -= rl;
+                index += rl;
+            } while (runlength > 0);
+            
+            runlength = RtlFindNextForwardRunClear(&bmp, index, &index);
+        }
+        
+        ExFreePool(bmparr);
+        ExFreePool(checksums);
+    }
+}
+
 static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le = Vcb->sector_checksums.Flink;
     changed_sector* cs;
-    traverse_ptr tp, next_tp;
-    KEY searchkey;
-    UINT32* data;
-    NTSTATUS Status;
     
     if (!Vcb->checksum_root) {
         ERR("no checksum root\n");
@@ -1906,188 +2086,9 @@ static void update_checksum_tree(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     }
     
     while (le != &Vcb->sector_checksums) {
-        UINT64 startaddr, endaddr;
-        ULONG len;
-        UINT32* checksums;
-        RTL_BITMAP bmp;
-        ULONG* bmparr;
-        ULONG runlength, index;
-        
         cs = (changed_sector*)le;
         
-        searchkey.obj_id = EXTENT_CSUM_ID;
-        searchkey.obj_type = TYPE_EXTENT_CSUM;
-        searchkey.offset = cs->ol.key;
-        
-        // FIXME - create checksum_root if it doesn't exist at all
-        
-        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
-        if (Status == STATUS_NOT_FOUND) { // tree is completely empty
-            if (!cs->deleted) {
-                ULONG length = cs->length;
-                UINT64 off = cs->ol.key;
-                UINT32* data = cs->checksums;
-                
-                do {
-                    ULONG il = min(length, MAX_CSUM_SIZE / sizeof(UINT32));
-                    
-                    checksums = ExAllocatePoolWithTag(PagedPool, il * sizeof(UINT32), ALLOC_TAG);
-                    if (!checksums) {
-                        ERR("out of memory\n");
-                        goto exit;
-                    }
-                    
-                    RtlCopyMemory(checksums, data, il * sizeof(UINT32));
-                    
-                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
-                                          il * sizeof(UINT32), NULL, Irp, rollback)) {
-                        ERR("insert_tree_item failed\n");
-                        ExFreePool(checksums);
-                        goto exit;
-                    }
-                    
-                    length -= il;
-                    
-                    if (length > 0) {
-                        off += il * Vcb->superblock.sector_size;
-                        data += il;
-                    }
-                } while (length > 0);
-            }
-        } else if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
-            goto exit;
-        } else {
-            UINT32 tplen;
-            
-            // FIXME - check entry is TYPE_EXTENT_CSUM?
-            
-            if (tp.item->key.offset < cs->ol.key && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= cs->ol.key)
-                startaddr = tp.item->key.offset;
-            else
-                startaddr = cs->ol.key;
-            
-            searchkey.obj_id = EXTENT_CSUM_ID;
-            searchkey.obj_type = TYPE_EXTENT_CSUM;
-            searchkey.offset = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
-            
-            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                goto exit;
-            }
-            
-            tplen = tp.item->size / sizeof(UINT32);
-            
-            if (tp.item->key.offset + (tplen * Vcb->superblock.sector_size) >= cs->ol.key + (cs->length * Vcb->superblock.sector_size))
-                endaddr = tp.item->key.offset + (tplen * Vcb->superblock.sector_size);
-            else
-                endaddr = cs->ol.key + (cs->length * Vcb->superblock.sector_size);
-            
-            TRACE("cs starts at %llx (%x sectors)\n", cs->ol.key, cs->length);
-            TRACE("startaddr = %llx\n", startaddr);
-            TRACE("endaddr = %llx\n", endaddr);
-            
-            len = (endaddr - startaddr) / Vcb->superblock.sector_size;
-            
-            checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * len, ALLOC_TAG);
-            if (!checksums) {
-                ERR("out of memory\n");
-                goto exit;
-            }
-            
-            bmparr = ExAllocatePoolWithTag(PagedPool, sizeof(ULONG) * ((len/8)+1), ALLOC_TAG);
-            if (!bmparr) {
-                ERR("out of memory\n");
-                ExFreePool(checksums);
-                goto exit;
-            }
-                
-            RtlInitializeBitMap(&bmp, bmparr, len);
-            RtlSetAllBits(&bmp);
-            
-            searchkey.obj_id = EXTENT_CSUM_ID;
-            searchkey.obj_type = TYPE_EXTENT_CSUM;
-            searchkey.offset = cs->ol.key;
-            
-            Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                goto exit;
-            }
-            
-            // set bit = free space, cleared bit = allocated sector
-            
-    //         ERR("start loop\n");
-            while (tp.item->key.offset < endaddr) {
-    //             ERR("%llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                if (tp.item->key.offset >= startaddr) {
-                    if (tp.item->size > 0) {
-                        ULONG itemlen = min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(UINT32), tp.item->size);
-                        
-                        RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, itemlen);
-                        RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
-                    }
-                    
-                    delete_tree_item(Vcb, &tp, rollback);
-                }
-                
-                if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
-                    tp = next_tp;
-                } else
-                    break;
-            }
-    //         ERR("end loop\n");
-            
-            if (cs->deleted) {
-                RtlSetBits(&bmp, (cs->ol.key - startaddr) / Vcb->superblock.sector_size, cs->length);
-            } else {
-                RtlCopyMemory(&checksums[(cs->ol.key - startaddr) / Vcb->superblock.sector_size], cs->checksums, cs->length * sizeof(UINT32));
-                RtlClearBits(&bmp, (cs->ol.key - startaddr) / Vcb->superblock.sector_size, cs->length);
-            }
-            
-            runlength = RtlFindFirstRunClear(&bmp, &index);
-            
-            while (runlength != 0) {
-                do {
-                    ULONG rl;
-                    UINT64 off;
-                    
-                    if (runlength * sizeof(UINT32) > MAX_CSUM_SIZE)
-                        rl = MAX_CSUM_SIZE / sizeof(UINT32);
-                    else
-                        rl = runlength;
-                    
-                    data = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * rl, ALLOC_TAG);
-                    if (!data) {
-                        ERR("out of memory\n");
-                        ExFreePool(bmparr);
-                        ExFreePool(checksums);
-                        goto exit;
-                    }
-                    
-                    RtlCopyMemory(data, &checksums[index], sizeof(UINT32) * rl);
-                    
-                    off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
-                    
-                    if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
-                        ERR("insert_tree_item failed\n");
-                        ExFreePool(data);
-                        ExFreePool(bmparr);
-                        ExFreePool(checksums);
-                        goto exit;
-                    }
-                    
-                    runlength -= rl;
-                    index += rl;
-                } while (runlength > 0);
-                
-                runlength = RtlFindNextForwardRunClear(&bmp, index, &index);
-            }
-            
-            ExFreePool(bmparr);
-            ExFreePool(checksums);
-        }
+        add_checksum_entry(Vcb, cs->ol.key, cs->length, cs->deleted ? NULL : cs->checksums, Irp, rollback);
         
         le = le->Flink;
     }
