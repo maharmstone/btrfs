@@ -62,6 +62,8 @@ typedef struct {
     UINT64 dev_id;
     UINT64 size;
     BOOL readonly;
+    ULONG device_number;
+    ULONG partition_number;
     USHORT namelen;
     WCHAR name[1];
 } btrfs_device;

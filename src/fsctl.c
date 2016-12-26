@@ -1312,6 +1312,8 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         dev->dev_id = dev2->devitem.dev_id;
         dev->size = dev2->length;
         dev->readonly = (Vcb->readonly || dev2->readonly) ? TRUE : FALSE;
+        dev->device_number = dev2->disk_num;
+        dev->partition_number = dev2->part_num;
         
         length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
         
