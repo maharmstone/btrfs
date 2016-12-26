@@ -2546,7 +2546,7 @@ static NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UI
 }
 
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
-                         LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size) {
+                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
@@ -2558,7 +2558,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 //     KEY searchkey;
 // #endif
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, changed_sector_list, rollback);
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
     
     if (!find_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
@@ -2597,7 +2597,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->offset = 0;
     ed2->num_bytes = decoded_size;
     
-    if (!prealloc && data && changed_sector_list) {
+    if (!prealloc && data && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
         ULONG sl = length / Vcb->superblock.sector_size;
         
         csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
@@ -2646,7 +2646,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 }
 
 static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            LIST_ENTRY* changed_sector_list, PIRP Irp, UINT64* written, LIST_ENTRY* rollback) {
+                            PIRP Irp, UINT64* written, LIST_ENTRY* rollback) {
     BOOL success = FALSE;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -2714,7 +2714,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         if (s->address == ed2->address + ed2->size) {
             UINT64 newlen = min(min(s->size, length), MAX_EXTENT_SIZE);
             
-            success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen);
+            success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen);
             
             if (success)
                 *written += newlen;
@@ -2756,7 +2756,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen)) {
                         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                         goto cont;
                     }
@@ -2778,7 +2778,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen))
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen))
                     goto cont;
             }
             
@@ -2810,15 +2810,15 @@ end:
 //     }
 // }
 
-NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
     UINT64 flags, orig_length = length, written = 0;
     
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data, changed_sector_list);
+    TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data);
     
     if (start_data > 0) {
-        try_extend_data(Vcb, fcb, start_data, length, data, changed_sector_list, Irp, &written, rollback);
+        try_extend_data(Vcb, fcb, start_data, length, data, Irp, &written, rollback);
         
         if (written == length)
             return STATUS_SUCCESS;
@@ -2848,7 +2848,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
-                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
+                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
                     written += newlen;
                     
                     if (written == orig_length) {
@@ -2882,7 +2882,7 @@ NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT6
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
-                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, changed_sector_list, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
+                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen)) {
                 written += newlen;
                 
                 if (written == orig_length)
@@ -2974,8 +2974,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
             cur_inline = ed->type == EXTENT_TYPE_INLINE;
         
             if (cur_inline && end > fcb->Vcb->options.max_inline) {
-                LIST_ENTRY changed_sector_list;
-                BOOL nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
                 UINT64 origlength, length;
                 UINT8* data;
                 UINT64 offset = ext->offset;
@@ -2985,9 +2983,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 origlength = ed->decoded_size;
                 
                 cur_inline = FALSE;
-                
-                if (!nocsum)
-                    InitializeListHead(&changed_sector_list);
                 
                 length = sector_align(origlength, fcb->Vcb->superblock.sector_size);
                 
@@ -3009,14 +3004,14 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 remove_fcb_extent(fcb, ext, rollback);
                 
                 if (write_fcb_compressed(fcb)) {
-                    Status = write_compressed(fcb, offset, offset + length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+                    Status = write_compressed(fcb, offset, offset + length, data, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_compressed returned %08x\n", Status);
                         ExFreePool(data);
                         return Status;
                     }
                 } else {
-                    Status = insert_extent(fcb->Vcb, fcb, offset, length, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+                    Status = insert_extent(fcb->Vcb, fcb, offset, length, data, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_extent returned %08x\n", Status);
                         ExFreePool(data);
@@ -3164,7 +3159,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
 }
 
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data, UINT64 end_data, void* data, UINT64* written,
-                                       LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+                                       PIRP Irp, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed = ext->data;
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
     NTSTATUS Status;
@@ -3197,7 +3192,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (changed_sector_list) {
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = ed2->num_bytes / fcb->Vcb->superblock.sector_size;
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
             
@@ -3285,7 +3280,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (changed_sector_list) {
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = (end_data - ext->offset) / fcb->Vcb->superblock.sector_size;
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
             
@@ -3404,7 +3399,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (changed_sector_list) {
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = ned2->num_bytes / fcb->Vcb->superblock.sector_size;
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
             
@@ -3549,7 +3544,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             return Status;
         }
         
-        if (changed_sector_list) {
+        if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
             
@@ -3635,7 +3630,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, *le2;
     UINT64 written = 0, length = end_data - start;
@@ -3675,7 +3670,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                         return Status;
                     }
                     
-                    Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, data, changed_sector_list, Irp, rollback);
+                    Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, data, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_extent returned %08x\n", Status);
                         return Status;
@@ -3701,32 +3696,11 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                     }
                     
                     // This shouldn't ever get called - nocow files should always also be nosum.
-                    if (changed_sector_list) {
-                        unsigned int i;
-                        changed_sector* sc;
+                    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                        calc_csum(fcb->Vcb, (UINT8*)data + written, write_len / fcb->Vcb->superblock.sector_size,
+                                  &ext->csum[(start + written - ext->offset) / fcb->Vcb->superblock.sector_size]);
                         
-                        sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                        if (!sc) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        sc->ol.key = writeaddr;
-                        sc->length = write_len / fcb->Vcb->superblock.sector_size;
-                        sc->deleted = FALSE;
-                        
-                        sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-                        if (!sc->checksums) {
-                            ERR("out of memory\n");
-                            ExFreePool(sc);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                        
-                        for (i = 0; i < sc->length; i++) {
-                            sc->checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + written + (i * fcb->Vcb->superblock.sector_size), fcb->Vcb->superblock.sector_size);
-                        }
-    
-                        insert_into_ordered_list(changed_sector_list, &sc->ol);
+                        ext->inserted = TRUE;
                     }
                     
                     written += write_len;
@@ -3738,7 +3712,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, LIST
                     UINT64 write_len;
                     
                     Status = do_write_file_prealloc(fcb, ext, start + written, end_data, (UINT8*)data + written, &write_len,
-                                                    changed_sector_list, Irp, rollback);
+                                                    Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_file_prealloc returned %08x\n", Status);
                         return Status;
@@ -3768,7 +3742,7 @@ nextitem:
             return Status;
         }
         
-        Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, data, changed_sector_list, Irp, rollback);
+        Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, data, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_extent returned %08x\n", Status);
             return Status;
@@ -3804,7 +3778,7 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT64 i;
     
@@ -3815,7 +3789,7 @@ NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* da
         s2 = start_data + (i * COMPRESSED_EXTENT_SIZE);
         e2 = min(s2 + COMPRESSED_EXTENT_SIZE, end_data);
         
-        Status = write_compressed_bit(fcb, s2, e2, (UINT8*)data + (i * COMPRESSED_EXTENT_SIZE), &compressed, changed_sector_list, Irp, rollback);
+        Status = write_compressed_bit(fcb, s2, e2, (UINT8*)data + (i * COMPRESSED_EXTENT_SIZE), &compressed, Irp, rollback);
         
         if (!NT_SUCCESS(Status)) {
             ERR("write_compressed_bit returned %08x\n", Status);
@@ -3831,7 +3805,7 @@ NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* da
             
             // write subsequent data non-compressed
             if (e2 < end_data) {
-                Status = do_write_file(fcb, e2, end_data, (UINT8*)data + e2, changed_sector_list, Irp, rollback);
+                Status = do_write_file(fcb, e2, end_data, (UINT8*)data + e2, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_write_file returned %08x\n", Status);
@@ -3855,9 +3829,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     UINT32 bufhead;
     BOOL make_inline;
     UINT8* data;
-    LIST_ENTRY changed_sector_list;
     INODE_ITEM* origii;
-    BOOL changed_length = FALSE, nocsum/*, lazy_writer = FALSE, write_eof = FALSE*/;
+    BOOL changed_length = FALSE/*, lazy_writer = FALSE, write_eof = FALSE*/;
     NTSTATUS Status;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -3952,8 +3925,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 fcb_lock = TRUE;
         }
     }
-    
-    nocsum = fcb->ads ? TRUE : fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
     
     newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.st_size;
     
@@ -4153,9 +4124,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         
         RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
         
-        if (!nocsum)
-            InitializeListHead(&changed_sector_list);
-
         if (make_inline) {
             Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -4181,7 +4149,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             fcb->inode_item.st_blocks += newlength;
         } else if (compress) {
-            Status = write_compressed(fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+            Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("write_compressed returned %08x\n", Status);
@@ -4191,7 +4159,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             ExFreePool(data);
         } else {
-            Status = do_write_file(fcb, start_data, end_data, data, nocsum ? NULL : &changed_sector_list, Irp, rollback);
+            Status = do_write_file(fcb, start_data, end_data, data, Irp, rollback);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08x\n", Status);

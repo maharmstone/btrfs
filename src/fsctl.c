@@ -1604,7 +1604,7 @@ end:
     return Status;
 }
 
-static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* changed_sector_list, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     BOOL compress = write_fcb_compressed(fcb);
     UINT64 start_data, end_data;
@@ -1640,7 +1640,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     RtlZeroMemory(data + start - start_data, length);
     
     if (compress) {
-        Status = write_compressed(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+        Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
         
         ExFreePool(data);
         
@@ -1649,7 +1649,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
             return Status;
         }
     } else {
-        Status = do_write_file(fcb, start_data, end_data, data, changed_sector_list, Irp, rollback);
+        Status = do_write_file(fcb, start_data, end_data, data, Irp, rollback);
         
         ExFreePool(data);
         
@@ -1668,12 +1668,11 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    LIST_ENTRY rollback, changed_sector_list, *le;
+    LIST_ENTRY rollback, *le;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     UINT64 start, end;
     extent* ext;
-    BOOL nocsum;
     IO_STATUS_BLOCK iosb;
     
     if (!data || length < sizeof(FILE_ZERO_DATA_INFORMATION))
@@ -1757,13 +1756,8 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
-    nocsum = fcb->inode_item.flags & BTRFS_INODE_NODATASUM;
-    
-    if (!nocsum)
-        InitializeListHead(&changed_sector_list);
-    
     if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
-        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
+        Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08x\n", Status);
             goto end;
@@ -1777,14 +1771,14 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
         
         if (end <= start) {
-            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
+            Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, Irp, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("zero_data returned %08x\n", Status);
                 goto end;
             }
         } else {
             if (start > fzdi->FileOffset.QuadPart) {
-                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
+                Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
@@ -1792,7 +1786,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             }
             
             if (end < fzdi->BeyondFinalZero.QuadPart) {
-                Status = zero_data(Vcb, fcb, end, fzdi->BeyondFinalZero.QuadPart - end, nocsum ? NULL : &changed_sector_list, Irp, &rollback);
+                Status = zero_data(Vcb, fcb, end, fzdi->BeyondFinalZero.QuadPart - end, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
                     goto end;
