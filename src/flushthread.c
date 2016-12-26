@@ -4204,6 +4204,8 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
             EXTENT_DATA* ed;
             
+            ext->inserted = FALSE;
+            
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
                 Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
