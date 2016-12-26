@@ -2865,6 +2865,7 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
     traverse_ptr tp;
     NTSTATUS Status;
     BALANCE_ITEM* bi;
+    int i;
     
     InitializeListHead(&rollback);
     
@@ -2900,7 +2901,27 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
     if (bi->flags & BALANCE_FLAGS_SYSTEM)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
     
-    // FIXME - do the heuristics that Linux driver does
+    // do the heuristics that Linux driver does
+    
+    for (i = 0; i < 3; i++) {
+        if (Vcb->balance.opts[i].flags & BTRFS_BALANCE_OPTS_ENABLED) {
+            // if converting, don't redo chunks already done
+            
+            if (Vcb->balance.opts[i].flags & BTRFS_BALANCE_OPTS_CONVERT)
+                Vcb->balance.opts[i].flags |= BTRFS_BALANCE_OPTS_SOFT;
+            
+            // don't balance chunks more than 90% filled - presumably these
+            // have already been done
+            
+            if (!(Vcb->balance.opts[i].flags & BTRFS_BALANCE_OPTS_USAGE) &&
+                !(Vcb->balance.opts[i].flags & BTRFS_BALANCE_OPTS_CONVERT)
+            ) {
+                Vcb->balance.opts[i].flags |= BTRFS_BALANCE_OPTS_USAGE;
+                Vcb->balance.opts[i].usage_start = 0;
+                Vcb->balance.opts[i].usage_end = 90;
+            }
+        }
+    }
     
     if (Vcb->readonly || Vcb->options.skip_balance)
         Vcb->balance.paused = TRUE;
