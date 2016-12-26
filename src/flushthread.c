@@ -3669,7 +3669,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_range;
 
-static void rationalize_extents(fcb* fcb, PIRP Irp) {
+static void rationalize_extents(fcb* fcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     LIST_ENTRY extent_ranges;
     extent_range* er;
@@ -3797,24 +3797,8 @@ cont:
                     le2 = le2->Flink;
                 }
                 
-                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                    LIST_ENTRY changed_sector_list;
-                    
-                    changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                    if (!sc) {
-                        ERR("out of memory\n");
-                        goto end;
-                    }
-                    
-                    sc->ol.key = er->address;
-                    sc->checksums = NULL;
-                    sc->length = er->skip_start / fcb->Vcb->superblock.sector_size;
-
-                    sc->deleted = TRUE;
-                    
-                    InitializeListHead(&changed_sector_list);
-                    insert_into_ordered_list(&changed_sector_list, &sc->ol);
-                }
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
+                    add_checksum_entry(fcb->Vcb, er->address, er->skip_start / fcb->Vcb->superblock.sector_size, NULL, NULL, rollback);
                 
                 decrease_chunk_usage(er->chunk, er->skip_start);
                 
@@ -3853,24 +3837,8 @@ cont:
                     le2 = le2->Flink;
                 }
                 
-                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                    LIST_ENTRY changed_sector_list;
-                    
-                    changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-                    if (!sc) {
-                        ERR("out of memory\n");
-                        goto end;
-                    }
-                    
-                    sc->ol.key = er->address + er->length - er->skip_end;
-                    sc->checksums = NULL;
-                    sc->length = er->skip_end / fcb->Vcb->superblock.sector_size;
-
-                    sc->deleted = TRUE;
-                    
-                    InitializeListHead(&changed_sector_list);
-                    insert_into_ordered_list(&changed_sector_list, &sc->ol);
-                }
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
+                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, er->skip_end / fcb->Vcb->superblock.sector_size, NULL, NULL, rollback);
                 
                 decrease_chunk_usage(er->chunk, er->skip_end);
                 
@@ -4064,7 +4032,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         }
         
         if (!IsListEmpty(&fcb->extents)) {
-            rationalize_extents(fcb, Irp);
+            rationalize_extents(fcb, Irp, rollback);
             
             // merge together adjacent EXTENT_DATAs pointing to same extent
             
