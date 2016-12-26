@@ -2470,12 +2470,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     LARGE_INTEGER time1, time2;
 #endif
     
-    Status = verify_vcb(Vcb, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("verify_vcb returned %08x\n", Status);
-        return Status;
-    }
-    
     if (Vcb->log_to_phys_loaded) {
         if (!c) {
             c = get_chunk_from_address(Vcb, addr);
