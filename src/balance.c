@@ -443,6 +443,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                             if (sdrrc > 0) {
                                 NTSTATUS Status;
                                 SHARED_DATA_REF sdr;
+                                chunk* c;
                                 
                                 sdr.offset = mr->new_address;
                                 sdr.count = sdrrc;
@@ -463,7 +464,53 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                                     return Status;
                                 }
                                 
-                                // FIXME - check changed_extent_ref
+                                c = get_chunk_from_address(Vcb, ed2->address);
+                                
+                                if (c) {
+                                    // check changed_extents
+                                    
+                                    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, TRUE);
+                                    
+                                    le = c->changed_extents.Flink;
+                                    
+                                    while (le != &c->changed_extents) {
+                                        changed_extent* ce = CONTAINING_RECORD(le, changed_extent, list_entry);
+                                        
+                                        if (ce->address == ed2->address) {
+                                            LIST_ENTRY* le2;
+                                            
+                                            le2 = ce->refs.Flink;
+                                            while (le2 != &ce->refs) {
+                                                changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                                
+                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == mr->address) {
+                                                    cer->sdr.offset = mr->new_address;
+                                                    break;
+                                                }
+                                                
+                                                le2 = le2->Flink;
+                                            }
+                                            
+                                            le2 = ce->old_refs.Flink;
+                                            while (le2 != &ce->old_refs) {
+                                                changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                                                
+                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == mr->address) {
+                                                    cer->sdr.offset = mr->new_address;
+                                                    break;
+                                                }
+                                                
+                                                le2 = le2->Flink;
+                                            }
+                                            
+                                            break;
+                                        }
+                                        
+                                        le = le->Flink;
+                                    }
+                                    
+                                    ExReleaseResourceLite(&c->changed_extents_lock);
+                                }
                             }
                         }
                     }
