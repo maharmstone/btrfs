@@ -525,10 +525,25 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             
             bd = devices;
             while (TRUE) {
-                WCHAR t[255];
+                WCHAR t[255], v[255];
                 
-                RtlCopyMemory(s, bd->name, bd->namelen);
-                s[bd->namelen / sizeof(WCHAR)] = 0;
+                if (bd->partition_number == 0) {
+                    if (!LoadStringW(module, IDS_DISK_NUM, v, sizeof(v) / sizeof(WCHAR))) {
+                        ShowError(hwndDlg, GetLastError());
+                        return TRUE;
+                    }
+                    
+                    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), v, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        break;
+                } else {
+                    if (!LoadStringW(module, IDS_DISK_PART_NUM, v, sizeof(v) / sizeof(WCHAR))) {
+                        ShowError(hwndDlg, GetLastError());
+                        return TRUE;
+                    }
+                    
+                    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), v, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        break;
+                }
                 
                 if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->dev_id, s) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     break;
