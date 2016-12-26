@@ -109,6 +109,18 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
     removing = FALSE;
     balance_status = BTRFS_BALANCE_RUNNING;
     
+    EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), TRUE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_BALANCE), TRUE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_BALANCE_PROGRESS), TRUE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_DATA), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_DATA_OPTIONS), data_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_METADATA_OPTIONS), metadata_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), system_opts.flags & BTRFS_BALANCE_OPTS_ENABLED ? TRUE : FALSE);
+    
+    EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), FALSE);
+    
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
 }
