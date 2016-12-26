@@ -608,7 +608,6 @@ typedef struct _device_extension {
     LIST_ENTRY dirty_filerefs;
     KSPIN_LOCK dirty_filerefs_lock;
     ERESOURCE chunk_lock;
-    LIST_ENTRY sector_checksums;
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;
     KEVENT flush_thread_finished;

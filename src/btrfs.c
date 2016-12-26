@@ -1948,13 +1948,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     
     // FIXME - free any open fcbs?
     
-    while (!IsListEmpty(&Vcb->sector_checksums)) {
-        LIST_ENTRY* le = RemoveHeadList(&Vcb->sector_checksums);
-        changed_sector* cs = (changed_sector*)le;
-        
-        ExFreePool(cs);
-    }
-    
     while (!IsListEmpty(&Vcb->devices)) {
         LIST_ENTRY* le = RemoveHeadList(&Vcb->devices);
         device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -3850,7 +3843,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
-    InitializeListHead(&Vcb->sector_checksums);
     
     KeInitializeSpinLock(&Vcb->dirty_fcbs_lock);
     KeInitializeSpinLock(&Vcb->dirty_filerefs_lock);
