@@ -440,7 +440,7 @@ BEGIN
     IDS_BALANCE_PAUSED      "Balance is currently paused (%llu out of %llu chunks processed, %1.1f%%)"
     IDS_BALANCE_CANCELLED   "Balance cancelled."
     IDS_DEVLIST_ID          "ID"
-    IDS_DEVLIST_NAME        "Name"
+    IDS_DEVLIST_DESC        "Description"
     IDS_DEVLIST_READONLY    "Read-only"
     IDS_DEVLIST_SIZE        "Size"
     IDS_DEVLIST_READONLY_YES "Yes"

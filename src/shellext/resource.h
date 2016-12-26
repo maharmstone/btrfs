@@ -71,7 +71,7 @@
 #define IDS_BALANCE_PAUSED              160
 #define IDS_BALANCE_CANCELLED           161
 #define IDS_DEVLIST_ID                  162
-#define IDS_DEVLIST_NAME                163
+#define IDS_DEVLIST_DESC                163
 #define IDS_DEVLIST_READONLY            164
 #define IDS_DEVLIST_SIZE                165
 #define IDS_DEVLIST_READONLY_YES        166

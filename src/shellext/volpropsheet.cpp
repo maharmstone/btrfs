@@ -774,8 +774,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     i = 0;
     while (TRUE) {
         LVITEMW lvi;
-        WCHAR s[255];
-        ULONG namelen;
+        WCHAR s[255], u[255];
         UINT64 alloc;
         
         // ID
@@ -790,18 +789,29 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 
         SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
         
-        // name
-        
+        // description
+
         lvi.mask = LVIF_TEXT;
         lvi.iSubItem = 1;
         
-        namelen = bd->namelen / sizeof(WCHAR);
-        
-        if (namelen > 254)
-            namelen = 254;
-        
-        memcpy(s, bd->name, namelen * sizeof(WCHAR));
-        s[namelen] = 0;
+        if (bd->partition_number == 0) {
+            if (!LoadStringW(module, IDS_DISK_NUM, u, sizeof(u) / sizeof(WCHAR))) {
+                ShowError(GetParent(devlist), GetLastError());
+                break;
+            }
+            
+            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), u, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                break;
+        } else {
+            if (!LoadStringW(module, IDS_DISK_PART_NUM, u, sizeof(u) / sizeof(WCHAR))) {
+                ShowError(GetParent(devlist), GetLastError());
+                break;
+            }
+            
+            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), u, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                break;
+        }
+
         lvi.pszText = s;
         
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
@@ -874,7 +884,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             add_lv_column(devlist, IDS_DEVLIST_ALLOC, w * 6 / 44);
             add_lv_column(devlist, IDS_DEVLIST_SIZE, w * 6 / 44);
             add_lv_column(devlist, IDS_DEVLIST_READONLY, w * 7 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_NAME, w * 16 / 44);
+            add_lv_column(devlist, IDS_DEVLIST_DESC, w * 16 / 44);
             add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
             
             SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, TRUE);
