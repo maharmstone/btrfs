@@ -607,7 +607,6 @@ typedef struct _device_extension {
     KSPIN_LOCK dirty_fcbs_lock;
     LIST_ENTRY dirty_filerefs;
     KSPIN_LOCK dirty_filerefs_lock;
-    ERESOURCE checksum_lock;
     ERESOURCE chunk_lock;
     LIST_ENTRY sector_checksums;
     HANDLE flush_thread_handle;

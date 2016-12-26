@@ -3075,8 +3075,6 @@ NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** 
         goto end;
     }
     
-    ExAcquireResourceSharedLite(&Vcb->checksum_lock, TRUE);
-    
     end = start + (length * Vcb->superblock.sector_size);
     
     le = Vcb->sector_checksums.Flink;
@@ -3109,8 +3107,6 @@ NTSTATUS load_csum(device_extension* Vcb, UINT64 start, UINT64 length, UINT32** 
         
         le = le->Flink;
     }
-    
-    ExReleaseResourceLite(&Vcb->checksum_lock);
     
     runlength = RtlFindFirstRunClear(&bmp, &index);
             

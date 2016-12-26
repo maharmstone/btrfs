@@ -1972,7 +1972,6 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->fcb_lock);
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
-    ExDeleteResourceLite(&Vcb->checksum_lock);
     ExDeleteResourceLite(&Vcb->chunk_lock);
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
@@ -3733,7 +3732,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->need_write = FALSE;
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
-    ExInitializeResourceLite(&Vcb->checksum_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
 
     ExInitializeResourceLite(&Vcb->load_lock);
@@ -4125,7 +4123,6 @@ exit:
             ExDeleteResourceLite(&Vcb->tree_lock);
             ExDeleteResourceLite(&Vcb->load_lock);
             ExDeleteResourceLite(&Vcb->fcb_lock);
-            ExDeleteResourceLite(&Vcb->checksum_lock);
             ExDeleteResourceLite(&Vcb->chunk_lock);
 
             if (Vcb->devices.Flink) {
