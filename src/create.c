@@ -1632,7 +1632,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 
                 len = (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
                 
-                ext->csum = ExAllocatePoolWithTag(NonPagedPool, len, ALLOC_TAG);
+                ext->csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
                 if (!ext->csum) {
                     ERR("out of memory\n");
                     ExFreePool(ext);
