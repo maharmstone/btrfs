@@ -2546,7 +2546,15 @@ static void balance_thread(void* context) {
                 goto end;
             }
         } else {
-            // FIXME - flush
+            if (Vcb->need_write) {
+                LIST_ENTRY rollback;
+                
+                InitializeListHead(&rollback);
+                do_write(Vcb, NULL, &rollback);
+                free_trees(Vcb);
+                
+                clear_rollback(Vcb, &rollback);
+            }
         }
     }
     
