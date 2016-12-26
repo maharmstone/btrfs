@@ -1857,6 +1857,11 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
 #endif
     
 end:
+    if (ce->count == 0 && !ce->superseded) {
+        decrease_chunk_usage(c, ce->size);
+        space_list_add(Vcb, c, TRUE, ce->address, ce->size, rollback);
+    }
+
     RemoveEntryList(&ce->list_entry);
     ExFreePool(ce);
     
