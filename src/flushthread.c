@@ -1857,31 +1857,6 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
 #endif
     
 end:
-    if (ce->count == 0 && !ce->superseded) {
-        if (!ce->no_csum) {
-            LIST_ENTRY changed_sector_list;
-            
-            changed_sector* sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-            if (!sc) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            sc->ol.key = ce->address;
-            sc->checksums = NULL;
-            sc->length = ce->size / Vcb->superblock.sector_size;
-
-            sc->deleted = TRUE;
-            
-            InitializeListHead(&changed_sector_list);
-            insert_into_ordered_list(&changed_sector_list, &sc->ol);
-        }
-        
-        decrease_chunk_usage(c, ce->size);
-        
-        space_list_add(Vcb, c, TRUE, ce->address, ce->size, rollback);
-    }
-
     RemoveEntryList(&ce->list_entry);
     ExFreePool(ce);
     
