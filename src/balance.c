@@ -2895,10 +2895,10 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
     
     if (bi->flags & BALANCE_FLAGS_METADATA)
-        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->data);
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->metadata);
     
     if (bi->flags & BALANCE_FLAGS_SYSTEM)
-        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->data);
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
     
     // FIXME - do the heuristics that Linux driver does
     
