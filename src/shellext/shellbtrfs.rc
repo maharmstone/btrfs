@@ -469,6 +469,8 @@ BEGIN
                             "Are you sure that you want to add this device? It already appears to contain a filesystem (%s)."
     IDS_BALANCE_FAILED      "Balance failed (error %08x)"
     IDS_BALANCE_FAILED_REMOVAL "Device removal failed (error %08x)"
+    IDS_DISK_NUM            "Disk %u"
+    IDS_DISK_PART_NUM       "Disk %u, partition %u"
 END
 
 #endif    // English (U.K.) resources
