@@ -1574,14 +1574,22 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             
             if (ed->type == EXTENT_TYPE_REGULAR && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
+                UINT64 len;
                 
-                if (ed->compression == BTRFS_COMPRESSION_NONE)
-                    Status = load_csum(Vcb, ed2->address + ed2->offset, ed2->num_bytes / Vcb->superblock.sector_size, &ext->csum, Irp);
-                else
-                    Status = load_csum(Vcb, ed2->address, ed2->size / Vcb->superblock.sector_size, &ext->csum, Irp);
+                len = (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
+                
+                ext->csum = ExAllocatePoolWithTag(NonPagedPool, len, ALLOC_TAG);
+                if (!ext->csum) {
+                    ERR("out of memory\n");
+                    ExFreePool(ext);
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                Status = load_csum_from_disk(Vcb, ext->csum, ed2->address + (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
                 
                 if (!NT_SUCCESS(Status)) {
-                    ERR("load_csum returned %08x\n", Status);
+                    ERR("load_csum_from_disk returned %08x\n", Status);
                     ExFreePool(ext);
                     free_fcb(fcb);
                     return Status;
