@@ -1347,7 +1347,13 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                         tree_header* th = (tree_header*)context->stripes[i].buf;
                         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                         
-                        WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                        if (crc32 != *((UINT32*)th->csum)) {
+                            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                            return STATUS_CRC_ERROR;
+                        } else if (addr != th->address) {
+                            WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+                            return STATUS_CRC_ERROR;
+                        }
                     }
                 }
             }
