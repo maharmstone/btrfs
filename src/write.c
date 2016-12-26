@@ -2516,32 +2516,6 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-static NTSTATUS add_checksum_entry2(UINT64 address, UINT64 sectors, UINT32* csum, LIST_ENTRY* changed_sector_list) {
-    changed_sector* sc;
-    
-    sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
-    if (!sc) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    sc->ol.key = address;
-    sc->length = sectors;
-    sc->deleted = FALSE;
-    
-    sc->checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * sc->length, ALLOC_TAG);
-    if (!sc->checksums) {
-        ERR("out of memory\n");
-        ExFreePool(sc);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(sc->checksums, csum, sizeof(UINT32) * sc->length);
-    insert_into_ordered_list(changed_sector_list, &sc->ol);
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
     NTSTATUS Status;
     calc_job* cj;
@@ -2666,12 +2640,6 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
         Status = write_data_complete(Vcb, address, data, length, Irp, NULL);
         if (!NT_SUCCESS(Status))
             ERR("write_data_complete returned %08x\n", Status);
-
-        if (csum) {
-            Status = add_checksum_entry2(address, length / Vcb->superblock.sector_size, csum, changed_sector_list);
-            if (!NT_SUCCESS(Status))
-                ERR("add_checksum_entry2 returned %08x\n", Status);
-        }
     }
 
     return TRUE;
@@ -3262,15 +3230,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                 return Status;
             }
             
-            Status = add_checksum_entry2(ed2->address + ed2->offset, sl, csum, changed_sector_list);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry2 returned %08x\n", Status);
-                ExFreePool(csum);
-                ExFreePool(ned);
-                ExFreePool(newext);
-                return Status;
-            }
-            
             newext->csum = csum;
         } else
             newext->csum = NULL;
@@ -3355,17 +3314,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             Status = calc_csum(fcb->Vcb, (UINT8*)data + ext->offset - start_data, sl, csum);
             if (!NT_SUCCESS(Status)) {
                 ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(ned);
-                ExFreePool(nedb);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(csum);
-                return Status;
-            }
-            
-            Status = add_checksum_entry2(ed2->address + ed2->offset, sl, csum, changed_sector_list);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(newext1);
@@ -3485,17 +3433,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             Status = calc_csum(fcb->Vcb, data, sl, csum);
             if (!NT_SUCCESS(Status)) {
                 ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(ned);
-                ExFreePool(nedb);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(csum);
-                return Status;
-            }
-            
-            Status = add_checksum_entry2(ed2->address + ned2->offset, sl, csum, changed_sector_list);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(newext1);
@@ -3643,19 +3580,6 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
             Status = calc_csum(fcb->Vcb, data, sl, csum);
             if (!NT_SUCCESS(Status)) {
                 ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(ned);
-                ExFreePool(nedb);
-                ExFreePool(nedc);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(newext3);
-                ExFreePool(csum);
-                return Status;
-            }
-            
-            Status = add_checksum_entry2(ed2->address + ned2->offset, sl, csum, changed_sector_list);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(nedc);
