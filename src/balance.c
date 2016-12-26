@@ -645,6 +645,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 LIST_ENTRY* le2;
                 tree_write* tw;
                 UINT64 flags;
+                tree* t3;
                 
                 if (mr->system)
                     flags = Vcb->system_flags;
@@ -822,19 +823,30 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 
                 mr->data->address = mr->new_address;
                 
-                if (mr->t) {
+                t3 = mr->t;
+
+                while (t3) {
                     UINT8 h;
                     BOOL inserted;
+                    tree* t4 = NULL;
                     
-                    mr->t->header.address = mr->new_address;
+                    // check if tree loaded more than once
+                    if (t3->list_entry.Flink != &Vcb->trees_hash) {
+                        tree* nt = CONTAINING_RECORD(t3->list_entry_hash.Flink, tree, list_entry_hash);
+                        
+                        if (nt->header.address == t3->header.address)
+                            t4 = nt;
+                    }
                     
-                    h = mr->t->hash >> 24;
+                    t3->header.address = mr->new_address;
                     
-                    if (Vcb->trees_ptrs[h] == &mr->t->list_entry_hash) {
-                        if (mr->t->list_entry_hash.Flink == &Vcb->trees_hash)
+                    h = t3->hash >> 24;
+                    
+                    if (Vcb->trees_ptrs[h] == &t3->list_entry_hash) {
+                        if (t3->list_entry_hash.Flink == &Vcb->trees_hash)
                             Vcb->trees_ptrs[h] = NULL;
                         else {
-                            tree* t2 = CONTAINING_RECORD(mr->t->list_entry_hash.Flink, tree, list_entry_hash);
+                            tree* t2 = CONTAINING_RECORD(t3->list_entry_hash.Flink, tree, list_entry_hash);
                             
                             if (t2->hash >> 24 == h)
                                 Vcb->trees_ptrs[h] = &t2->list_entry_hash;
@@ -843,10 +855,10 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                         }
                     }
                         
-                    RemoveEntryList(&mr->t->list_entry_hash);
+                    RemoveEntryList(&t3->list_entry_hash);
                     
-                    mr->t->hash = calc_crc32c(0xffffffff, (UINT8*)&mr->t->header.address, sizeof(UINT64));
-                    h = mr->t->hash >> 24;
+                    t3->hash = calc_crc32c(0xffffffff, (UINT8*)&t3->header.address, sizeof(UINT64));
+                    h = t3->hash >> 24;
                     
                     if (!Vcb->trees_ptrs[h]) {
                         UINT8 h2 = h;
@@ -871,8 +883,8 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                     while (le2 != &Vcb->trees_hash) {
                         tree* t2 = CONTAINING_RECORD(le2, tree, list_entry_hash);
                         
-                        if (t2->hash >= mr->t->hash) {
-                            InsertHeadList(le2->Blink, &mr->t->list_entry_hash);
+                        if (t2->hash >= t3->hash) {
+                            InsertHeadList(le2->Blink, &t3->list_entry_hash);
                             inserted = TRUE;
                             break;
                         }
@@ -881,19 +893,19 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                     }
 
                     if (!inserted)
-                        InsertTailList(&Vcb->trees_hash, &mr->t->list_entry_hash);
+                        InsertTailList(&Vcb->trees_hash, &t3->list_entry_hash);
 
-                    if (!Vcb->trees_ptrs[h] || mr->t->list_entry_hash.Flink == Vcb->trees_ptrs[h])
-                        Vcb->trees_ptrs[h] = &mr->t->list_entry_hash;
+                    if (!Vcb->trees_ptrs[h] || t3->list_entry_hash.Flink == Vcb->trees_ptrs[h])
+                        Vcb->trees_ptrs[h] = &t3->list_entry_hash;
                     
                     if (data_items && level == 0) {
                         le2 = data_items->Flink;
                         
                         while (le2 != data_items) {
                             data_reloc* dr = CONTAINING_RECORD(le2, data_reloc, list_entry);
-                            LIST_ENTRY* le3 = mr->t->itemlist.Flink;
+                            LIST_ENTRY* le3 = t3->itemlist.Flink;
                             
-                            while (le3 != &mr->t->itemlist) {
+                            while (le3 != &t3->itemlist) {
                                 tree_data* td = CONTAINING_RECORD(le3, tree_data, list_entry);
                                 
                                 if (!td->inserted && td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
@@ -914,7 +926,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                         }
                     }
                     
-                    // FIXME - check if tree loaded more than once
+                    t3 = t4;
                 }
 
                 *((UINT32*)mr->data) = ~calc_crc32c(0xffffffff, (UINT8*)&mr->data->fs_uuid, Vcb->superblock.node_size - sizeof(mr->data->csum));
