@@ -2516,7 +2516,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-static NTSTATUS add_checksum_entry(UINT64 address, UINT64 sectors, UINT32* csum, LIST_ENTRY* changed_sector_list) {
+static NTSTATUS add_checksum_entry2(UINT64 address, UINT64 sectors, UINT32* csum, LIST_ENTRY* changed_sector_list) {
     changed_sector* sc;
     
     sc = ExAllocatePoolWithTag(PagedPool, sizeof(changed_sector), ALLOC_TAG);
@@ -2668,9 +2668,9 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
             ERR("write_data_complete returned %08x\n", Status);
 
         if (csum) {
-            Status = add_checksum_entry(address, length / Vcb->superblock.sector_size, csum, changed_sector_list);
+            Status = add_checksum_entry2(address, length / Vcb->superblock.sector_size, csum, changed_sector_list);
             if (!NT_SUCCESS(Status))
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("add_checksum_entry2 returned %08x\n", Status);
         }
     }
 
@@ -3262,9 +3262,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                 return Status;
             }
             
-            Status = add_checksum_entry(ed2->address + ed2->offset, sl, csum, changed_sector_list);
+            Status = add_checksum_entry2(ed2->address + ed2->offset, sl, csum, changed_sector_list);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(csum);
                 ExFreePool(ned);
                 ExFreePool(newext);
@@ -3363,9 +3363,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                 return Status;
             }
             
-            Status = add_checksum_entry(ed2->address + ed2->offset, sl, csum, changed_sector_list);
+            Status = add_checksum_entry2(ed2->address + ed2->offset, sl, csum, changed_sector_list);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(newext1);
@@ -3493,9 +3493,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                 return Status;
             }
             
-            Status = add_checksum_entry(ed2->address + ned2->offset, sl, csum, changed_sector_list);
+            Status = add_checksum_entry2(ed2->address + ned2->offset, sl, csum, changed_sector_list);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(newext1);
@@ -3653,9 +3653,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                 return Status;
             }
             
-            Status = add_checksum_entry(ed2->address + ned2->offset, sl, csum, changed_sector_list);
+            Status = add_checksum_entry2(ed2->address + ned2->offset, sl, csum, changed_sector_list);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_checksum_entry returned %08x\n", Status);
+                ERR("add_checksum_entry2 returned %08x\n", Status);
                 ExFreePool(ned);
                 ExFreePool(nedb);
                 ExFreePool(nedc);
