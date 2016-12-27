@@ -434,6 +434,8 @@ typedef struct {
     BOOL created;
     BOOL readonly;
     BOOL reloc;
+    BOOL last_alloc_set;
+    UINT64 last_alloc;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

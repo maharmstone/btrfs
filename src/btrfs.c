@@ -3210,6 +3210,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 InitializeListHead(&c->range_locks);
                 KeInitializeSpinLock(&c->range_locks_spinlock);
                 KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
+                
+                c->last_alloc_set = FALSE;
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 

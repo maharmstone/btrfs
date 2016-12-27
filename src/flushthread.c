@@ -327,12 +327,39 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* add
     if (IsListEmpty(&c->space_size))
         return FALSE;
     
+    if (!c->last_alloc_set) {
+        s = CONTAINING_RECORD(c->space.Blink, space, list_entry);
+        
+        c->last_alloc = s->address;
+        c->last_alloc_set = TRUE;
+        
+        if (s->size >= Vcb->superblock.node_size) {
+            *address = s->address;
+            c->last_alloc += Vcb->superblock.node_size;
+            return TRUE;
+        }
+    }
+    
+    le = c->space.Flink;
+    while (le != &c->space) {
+        s = CONTAINING_RECORD(le, space, list_entry);
+        
+        if (s->address <= c->last_alloc && s->address + s->size >= c->last_alloc + Vcb->superblock.node_size) {
+            *address = c->last_alloc;
+            c->last_alloc += Vcb->superblock.node_size;
+            return TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
     le = c->space_size.Flink;
     while (le != &c->space_size) {
         s = CONTAINING_RECORD(le, space, list_entry_size);
         
         if (s->size == Vcb->superblock.node_size) {
             *address = s->address;
+            c->last_alloc = s->address + Vcb->superblock.node_size;
             return TRUE;
         } else if (s->size < Vcb->superblock.node_size) {
             if (le == c->space_size.Flink)
@@ -341,6 +368,8 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* add
             s = CONTAINING_RECORD(le->Blink, space, list_entry_size);
             
             *address = s->address;
+            c->last_alloc = s->address + Vcb->superblock.node_size;
+            
             return TRUE;
         }
         
@@ -351,6 +380,7 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* add
     
     if (s->size > Vcb->superblock.node_size) {
         *address = s->address;
+        c->last_alloc = s->address + Vcb->superblock.node_size;
         return TRUE;
     }
     
