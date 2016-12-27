@@ -1248,7 +1248,7 @@ NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 len
                 j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
             
             if (j * sizeof(UINT32) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
-                TRACE("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
+                ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
                 return STATUS_INTERNAL_ERROR;
             }
             
