@@ -5115,7 +5115,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
         
         di->m = 0;
-        di->n = (UINT16)fileref->utf8.Length;
+        di->n = name->Length;
         RtlCopyMemory(di->name, name->Buffer, name->Length);
         
         // delete DIR_ITEM (0x54)
