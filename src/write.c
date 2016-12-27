@@ -48,7 +48,7 @@ extern tPsUpdateDiskCounters PsUpdateDiskCounters;
 extern tCcCopyWriteEx CcCopyWriteEx;
 extern BOOL diskacc;
 
-BOOL find_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
+BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
     LIST_ENTRY* le;
     space* s;
     
@@ -2560,7 +2560,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     
     TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
     
-    if (!find_address_in_chunk(Vcb, c, length, &address))
+    if (!find_data_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
     
 // #ifdef DEBUG_PARANOID

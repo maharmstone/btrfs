@@ -318,6 +318,45 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
     return TRUE;
 }
 
+BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address) {
+    LIST_ENTRY* le;
+    space* s;
+    
+    TRACE("(%p, %llx, %p)\n", Vcb, c->offset, address);
+    
+    if (IsListEmpty(&c->space_size))
+        return FALSE;
+    
+    le = c->space_size.Flink;
+    while (le != &c->space_size) {
+        s = CONTAINING_RECORD(le, space, list_entry_size);
+        
+        if (s->size == Vcb->superblock.node_size) {
+            *address = s->address;
+            return TRUE;
+        } else if (s->size < Vcb->superblock.node_size) {
+            if (le == c->space_size.Flink)
+                return FALSE;
+            
+            s = CONTAINING_RECORD(le->Blink, space, list_entry_size);
+            
+            *address = s->address;
+            return TRUE;
+        }
+        
+        le = le->Flink;
+    }
+    
+    s = CONTAINING_RECORD(c->space_size.Blink, space, list_entry_size);
+    
+    if (s->size > Vcb->superblock.node_size) {
+        *address = s->address;
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
 static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_id, chunk* c, UINT64* new_address, PIRP Irp, LIST_ENTRY* rollback) {
     UINT64 address;
     EXTENT_ITEM_TREE2* eit2;
@@ -325,7 +364,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
     
     TRACE("(%p, %x, %llx, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, rollback);
     
-    if (!find_address_in_chunk(Vcb, c, Vcb->superblock.node_size, &address))
+    if (!find_metadata_address_in_chunk(Vcb, c, &address))
         return FALSE;
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {

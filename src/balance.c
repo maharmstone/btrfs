@@ -704,7 +704,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 if (newchunk) {
                     ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                     
-                    if (newchunk->chunk_item->type == flags && find_address_in_chunk(Vcb, newchunk, Vcb->superblock.node_size, &mr->new_address)) {
+                    if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                         increase_chunk_usage(newchunk, Vcb->superblock.node_size);
                         space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                         done = TRUE;
@@ -724,7 +724,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                             ExAcquireResourceExclusiveLite(&c2->lock, TRUE);
                             
                             if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
-                                if (find_address_in_chunk(Vcb, c2, Vcb->superblock.node_size, &mr->new_address)) {
+                                if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     increase_chunk_usage(c2, Vcb->superblock.node_size);
                                     space_list_subtract(Vcb, c2, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                                     ExReleaseResourceLite(&c2->lock);
@@ -753,7 +753,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                         
                         ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                         
-                        if (!find_address_in_chunk(Vcb, newchunk, Vcb->superblock.node_size, &mr->new_address)) {
+                        if (!find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                             ExReleaseResourceLite(&newchunk->lock);
                             ERR("could not find address in new chunk\n");
                             Status = STATUS_DISK_FULL;
@@ -1617,7 +1617,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         if (newchunk) {
             ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
             
-            if (find_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
+            if (find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                 increase_chunk_usage(newchunk, dr->size);
                 space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
                 done = TRUE;
@@ -1637,7 +1637,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     ExAcquireResourceExclusiveLite(&c2->lock, TRUE);
                     
                     if ((c2->chunk_item->size - c2->used) >= dr->size) {
-                        if (find_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
+                        if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             increase_chunk_usage(c2, dr->size);
                             space_list_subtract(Vcb, c2, FALSE, dr->new_address, dr->size, &rollback);
                             ExReleaseResourceLite(&c2->lock);
@@ -1666,7 +1666,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                 
                 ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                 
-                if (!find_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
+                if (!find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                     ExReleaseResourceLite(&newchunk->lock);
                     ERR("could not find address in new chunk\n");
                     Status = STATUS_DISK_FULL;
