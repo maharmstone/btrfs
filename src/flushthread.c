@@ -4126,10 +4126,32 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                             nextext->offset == ext->offset + ed2->num_bytes && ned2->offset == ed2->offset + ed2->num_bytes) {
                             chunk* c;
                         
+                            if (ext->data->compression == BTRFS_COMPRESSION_NONE && ext->csum) {
+                                ULONG len = (ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size;
+                                UINT32* csum;
+                                
+                                csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
+                                if (!csum) {
+                                    ERR("out of memory\n");
+                                    goto end;
+                                }
+                                
+                                RtlCopyMemory(csum, ext->csum, ed2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size);
+                                RtlCopyMemory(&csum[ed2->num_bytes / fcb->Vcb->superblock.sector_size], nextext->csum,
+                                              ned2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size);
+                                
+                                ExFreePool(ext->csum);
+                                ext->csum = csum;
+                            }
+                            
                             ext->data->generation = fcb->Vcb->superblock.generation;
                             ed2->num_bytes += ned2->num_bytes;
                         
                             RemoveEntryList(&nextext->list_entry);
+                        
+                            if (nextext->csum)
+                                ExFreePool(nextext->csum);
+                        
                             ExFreePool(nextext->data);
                             ExFreePool(nextext);
                         
