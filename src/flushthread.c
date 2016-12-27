@@ -790,7 +790,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     sdr.count = 1;
                                     
                                     Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                      t->header.address, Irp, rollback);
+                                                                      t->header.address, ce->superseded, Irp, rollback);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("decrease_extent_refcount returned %08x\n", Status);
                                         return Status;
@@ -870,7 +870,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                             sbr.offset = t->header.address;
                             
                             Status = decrease_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                              t->header.address, Irp, rollback);
+                                                              t->header.address, FALSE, Irp, rollback);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("decrease_extent_refcount returned %08x\n", Status);
                                 return Status;
@@ -894,7 +894,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 sbr.offset = t->parent->header.address;
                 
                 Status = decrease_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                  t->parent->header.address, Irp, rollback);
+                                                  t->parent->header.address, FALSE, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("decrease_extent_refcount returned %08x\n", Status);
                     return Status;
@@ -1850,7 +1850,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 }
             } else if (cer->edr.count < old_count) {
                 Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
-                                                    old_count - cer->edr.count, Irp, rollback);
+                                                       old_count - cer->edr.count, ce->superseded, Irp, rollback);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("decrease_extent_refcount_data returned %08x\n", Status);

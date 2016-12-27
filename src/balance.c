@@ -419,7 +419,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                     sbr.offset = mr->address;
                     
                     Status = decrease_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                      sbr.offset, NULL, rollback);
+                                                      sbr.offset, FALSE, NULL, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("decrease_extent_refcount returned %08x\n", Status);
                         return Status;
@@ -458,7 +458,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                                 sdr.offset = mr->address;
                                 
                                 Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                  sdr.offset, NULL, rollback);
+                                                                  sdr.offset, FALSE, NULL, rollback);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("decrease_extent_refcount returned %08x\n", Status);
                                     return Status;
