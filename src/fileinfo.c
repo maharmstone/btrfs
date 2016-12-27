@@ -1199,7 +1199,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         if (le == move_list.Flink) // first item
             me->fileref->filepart.Length = me->fileref->filepart.MaximumLength = fnus->Length;
         else
-            me->fileref->filepart.MaximumLength = me->fileref->filepart.MaximumLength;
+            me->fileref->filepart.Length = me->fileref->filepart.MaximumLength;
         
         me->fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart.MaximumLength, ALLOC_TAG);
         
