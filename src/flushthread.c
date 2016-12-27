@@ -4080,6 +4080,10 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             
             if (ext->ignore) {
                 RemoveEntryList(&ext->list_entry);
+                
+                if (ext->csum)
+                    ExFreePool(ext->csum);
+                
                 ExFreePool(ext->data);
                 ExFreePool(ext);
             }
