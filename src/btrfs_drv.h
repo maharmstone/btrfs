@@ -156,9 +156,13 @@ typedef struct {
     KEY key;
     UINT64 index;
     UINT8 type;
+    UINT32 hash;
     UNICODE_STRING name;
+    UINT32 hash_uc;
     UNICODE_STRING name_uc;
     LIST_ENTRY list_entry_index;
+    LIST_ENTRY list_entry_hash;
+    LIST_ENTRY list_entry_hash_uc;
 } dir_child;
 
 struct _file_ref;
@@ -193,6 +197,8 @@ typedef struct _fcb {
     LIST_ENTRY index_list;
     
     LIST_ENTRY dir_children_index;
+    LIST_ENTRY dir_children_hash;
+    LIST_ENTRY dir_children_hash_uc;
     
     BOOL dirty;
     BOOL sd_dirty;

@@ -763,6 +763,8 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     InitializeListHead(&fcb->hardlinks);
     
     InitializeListHead(&fcb->dir_children_index);
+    InitializeListHead(&fcb->dir_children_hash);
+    InitializeListHead(&fcb->dir_children_hash_uc);
     
     return fcb;
 }
@@ -1303,6 +1305,8 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
         dir_child* dc;
         ULONG utf16len;
+        LIST_ENTRY* le;
+        BOOL inserted = FALSE;
         
         if (tp.item->size < sizeof(DIR_ITEM)) {
             WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
@@ -1354,7 +1358,46 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
             goto cont;
         }
         
+        dc->hash = calc_crc32c(0xffffffff, (UINT8*)dc->name.Buffer, dc->name.Length);
+        dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)dc->name_uc.Buffer, dc->name_uc.Length);
+        
         InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+        
+        inserted = FALSE;
+        
+        le = fcb->dir_children_hash.Flink;
+        while (le != &fcb->dir_children_hash) {
+            dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+            
+            if (dc2->hash > dc->hash) {
+                InsertHeadList(le->Blink, &dc->list_entry_hash);
+                inserted = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!inserted)
+            InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
+        
+        inserted = FALSE;
+        
+        le = fcb->dir_children_hash_uc.Flink;
+        while (le != &fcb->dir_children_hash_uc) {
+            dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+            
+            if (dc2->hash_uc > dc->hash_uc) {
+                InsertHeadList(le->Blink, &dc->list_entry_hash_uc);
+                inserted = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!inserted)
+            InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
         
 cont:
         if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp))
@@ -2315,6 +2358,8 @@ end:
 
 static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type) {
     dir_child* dc;
+    BOOL inserted;
+    LIST_ENTRY* le;
     
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
@@ -2349,9 +2394,45 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STR
     dc->name_uc.Length = dc->name_uc.MaximumLength = name_uc->Length;
     RtlCopyMemory(dc->name_uc.Buffer, name_uc->Buffer, name_uc->Length);
     
+    dc->hash = calc_crc32c(0xffffffff, (UINT8*)dc->name.Buffer, dc->name.Length);
+    dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)dc->name_uc.Buffer, dc->name_uc.Length);
+    
     ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, TRUE);
     
     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+    
+    inserted = FALSE;
+    
+    le = fcb->dir_children_hash.Flink;
+    while (le != &fcb->dir_children_hash) {
+        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+        
+        if (dc2->hash > dc->hash) {
+            InsertHeadList(le->Blink, &dc->list_entry_hash);
+            inserted = TRUE;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!inserted)
+        InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
+    
+    inserted = FALSE;
+    
+    le = fcb->dir_children_hash_uc.Flink;
+    while (le != &fcb->dir_children_hash_uc) {
+        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+        
+        if (dc2->hash_uc > dc->hash_uc) {
+            InsertHeadList(le->Blink, &dc->list_entry_hash_uc);
+            inserted = TRUE;
+            break;
+        }
+        
+        le = le->Flink;
+    }
     
     ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
