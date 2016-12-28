@@ -4025,22 +4025,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     BOOL extents_changed;
 #endif
     
-    while (!IsListEmpty(&fcb->index_list)) {
-        LIST_ENTRY* le = RemoveHeadList(&fcb->index_list);
-        index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
-
-        if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-        if (ie->filepart_uc.Buffer) ExFreePool(ie->filepart_uc.Buffer);
-        ExFreePool(ie);
-    }
-    
-    if (fcb->index_ptrs) {
-        ExFreePool(fcb->index_ptrs);
-        fcb->index_ptrs = NULL;
-    }
-    
-    fcb->index_loaded = FALSE;
-    
     if (fcb->ads) {
         if (fcb->deleted)
             delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp, rollback);

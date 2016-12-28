@@ -68,7 +68,6 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     
     InitializeListHead(&fcb->extents);
-    InitializeListHead(&fcb->index_list);
     InitializeListHead(&fcb->hardlinks);
     
     InitializeListHead(&fcb->dir_children_index);

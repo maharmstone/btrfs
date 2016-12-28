@@ -1664,18 +1664,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(ext);
     }
     
-    while (!IsListEmpty(&fcb->index_list)) {
-        LIST_ENTRY* le = RemoveHeadList(&fcb->index_list);
-        index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
-
-        if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-        if (ie->filepart_uc.Buffer) ExFreePool(ie->filepart_uc.Buffer);
-        ExFreePool(ie);
-    }
-    
-    if (fcb->index_ptrs)
-        ExFreePool(fcb->index_ptrs);
-    
     while (!IsListEmpty(&fcb->hardlinks)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->hardlinks);
         hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);

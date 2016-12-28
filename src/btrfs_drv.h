@@ -134,17 +134,6 @@ typedef struct {
 } extent;
 
 typedef struct {
-    UINT32 hash;
-    KEY key;
-    UINT8 type;
-    UINT64 index;
-    ANSI_STRING utf8;
-    UNICODE_STRING filepart_uc;
-
-    LIST_ENTRY list_entry;
-} index_entry;
-
-typedef struct {
     UINT64 parent;
     UINT64 index;
     UNICODE_STRING name;
@@ -192,10 +181,6 @@ typedef struct _fcb {
     LIST_ENTRY hardlinks;
     struct _file_ref* fileref;
     BOOL inode_item_changed;
-    
-    BOOL index_loaded;
-    LIST_ENTRY** index_ptrs;
-    LIST_ENTRY index_list;
     
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
