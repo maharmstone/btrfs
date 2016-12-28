@@ -257,6 +257,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     ccb* ccb = parent->FsContext2;
     LIST_ENTRY* le;
     file_ref *fileref, *fr;
+    dir_child* dc = NULL;
     
     if (!ccb) {
         ERR("error - ccb was NULL\n");
@@ -465,6 +466,12 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     }
     
     fr->parent = fileref;
+    
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
+    if (!NT_SUCCESS(Status))
+        WARN("add_dir_child returned %08x\n", Status);
+    
+    fr->dc = dc;
     
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);
