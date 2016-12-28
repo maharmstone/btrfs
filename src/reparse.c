@@ -177,6 +177,9 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
     
     fileref->fcb->inode_item.st_mode |= __S_IFLNK;
     
+    if (fileref->dc)
+        fileref->dc->type = fileref->fcb->type;
+    
     if (write) {
         Status = truncate_file(fileref->fcb, 0, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
