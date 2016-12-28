@@ -761,6 +761,8 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     InitializeListHead(&fcb->index_list);
     InitializeListHead(&fcb->hardlinks);
     
+    InitializeListHead(&fcb->dir_children_index);
+    
     return fcb;
 }
 
@@ -1274,6 +1276,94 @@ NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 len
     return STATUS_SUCCESS;
 }
 
+NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+    
+    searchkey.obj_id = fcb->inode;
+    searchkey.obj_type = TYPE_DIR_INDEX;
+    searchkey.offset = 2;
+    
+    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (keycmp(tp.item->key, searchkey) == -1) {
+        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp)) {
+            tp = next_tp;
+            TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        }
+    }
+    
+    while (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+        dir_child* dc;
+        ULONG utf16len;
+        
+        if (tp.item->size < sizeof(DIR_ITEM)) {
+            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            goto cont;
+        }
+        
+        if (di->n == 0) {
+            WARN("(%llx,%x,%llx): DIR_ITEM name length is zero\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            goto cont;
+        }
+        
+        Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, di->name, di->n);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+            goto cont;
+        }
+
+        dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+        if (!dc) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        dc->key = di->key;
+        dc->index = tp.item->key.offset;
+        
+        dc->name.MaximumLength = dc->name.Length = utf16len;
+        dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
+        if (!dc->name.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(dc);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc);
+            goto cont;
+        }
+        
+        Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc);
+            goto cont;
+        }
+        
+        InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+        
+cont:
+        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp))
+            tp = next_tp;
+        else
+            break;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -1652,6 +1742,15 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 ext->csum = NULL;
             
             InsertTailList(&fcb->extents, &ext->list_entry);
+        }
+    }
+    
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
+        Status = load_dir_children(fcb, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_dir_children returned %08x\n", Status);
+            free_fcb(fcb);
+            return Status;
         }
     }
     

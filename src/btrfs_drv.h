@@ -151,6 +151,14 @@ typedef struct {
     LIST_ENTRY list_entry;
 } hardlink;
 
+typedef struct {
+    KEY key;
+    UINT64 index;
+    UNICODE_STRING name;
+    UNICODE_STRING name_uc;
+    LIST_ENTRY list_entry_index;
+} dir_child;
+
 struct _file_ref;
 
 typedef struct _fcb {
@@ -181,6 +189,8 @@ typedef struct _fcb {
     BOOL index_loaded;
     LIST_ENTRY** index_ptrs;
     LIST_ENTRY index_list;
+    
+    LIST_ENTRY dir_children_index;
     
     BOOL dirty;
     BOOL sd_dirty;
@@ -961,6 +971,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock);
 NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp);
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp);
 NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
+NTSTATUS load_dir_children(fcb* fcb, PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);

@@ -1688,6 +1688,15 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(hl);
     }
     
+    while (!IsListEmpty(&fcb->dir_children_index)) {
+        LIST_ENTRY* le = RemoveHeadList(&fcb->dir_children_index);
+        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc->name_uc.Buffer);
+        ExFreePool(dc);
+    }
+    
     FsRtlUninitializeFileLock(&fcb->lock);
     
     ExFreePool(fcb);
@@ -3979,6 +3988,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (!root_fcb->subvol) {
         ERR("could not find top subvol\n");
         Status = STATUS_INTERNAL_ERROR;
+        goto exit;
+    }
+    
+    Status = load_dir_children(root_fcb, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("load_dir_children returned %08x\n", Status);
         goto exit;
     }
     
