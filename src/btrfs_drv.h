@@ -154,6 +154,7 @@ typedef struct {
 typedef struct {
     KEY key;
     UINT64 index;
+    UINT8 type;
     UNICODE_STRING name;
     UNICODE_STRING name_uc;
     LIST_ENTRY list_entry_index;

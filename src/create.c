@@ -1327,6 +1327,7 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         
         dc->key = di->key;
         dc->index = tp.item->key.offset;
+        dc->type = di->type;
         
         dc->name.MaximumLength = dc->name.Length = utf16len;
         dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
