@@ -488,6 +488,9 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         fileref->fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
+        if (fileref->dc)
+            fileref->dc->type = fileref->fcb->type;
+        
         mark_fileref_dirty(fileref);
         
         fileref->fcb->inode_item_changed = TRUE;
