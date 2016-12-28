@@ -115,7 +115,6 @@ typedef struct _fcb_nonpaged {
     SECTION_OBJECT_POINTERS segment_object;
     ERESOURCE resource;
     ERESOURCE paging_resource;
-    ERESOURCE index_lock;
     ERESOURCE dir_children_lock;
 } fcb_nonpaged;
 

@@ -62,7 +62,6 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     ExInitializeResourceLite(&fcb->nonpaged->resource);
     fcb->Header.Resource = &fcb->nonpaged->resource;
     
-    ExInitializeResourceLite(&fcb->nonpaged->index_lock);
     ExInitializeResourceLite(&fcb->nonpaged->dir_children_lock);
     
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);

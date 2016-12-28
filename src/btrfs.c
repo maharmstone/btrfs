@@ -1631,7 +1631,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
    
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
-    ExDeleteResourceLite(&fcb->nonpaged->index_lock);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
     ExFreePool(fcb->nonpaged);
     
