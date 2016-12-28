@@ -1764,7 +1764,7 @@ end:
     return Status;
 }
 
-static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type) {
+static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
     dir_child* dc;
     BOOL inserted;
     LIST_ENTRY* le;
@@ -1856,6 +1856,8 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING
     
     ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
+    *pdc = dc;
+    
     return STATUS_SUCCESS;
 }
 
@@ -1873,6 +1875,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ULONG defda;
     file_ref* fileref;
+    dir_child* dc;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2122,9 +2125,11 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     insert_fileref_child(parfileref, fileref, TRUE);
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
+    
+    fileref->dc = dc;
     
     increase_fileref_refcount(parfileref);
  
