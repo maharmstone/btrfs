@@ -800,9 +800,9 @@ file_ref* create_fileref() {
     return fr;
 }
 
-NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
-                                  root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8,
-                                  BOOL case_sensitive, PIRP Irp) {
+static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
+                                         root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8,
+                                         BOOL case_sensitive, PIRP Irp) {
     char* fn;
     UINT32 crc32;
     ULONG utf8len;
