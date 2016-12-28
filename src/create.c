@@ -2313,6 +2313,51 @@ end:
     return Status;
 }
 
+static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type) {
+    dir_child* dc;
+    
+    dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+    if (!dc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, name->Length, ALLOC_TAG);
+    if (!dc->name.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, name_uc->Length, ALLOC_TAG);
+    if (!dc->name_uc.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    dc->key.obj_id = inode;
+    dc->key.obj_type = TYPE_INODE_ITEM;
+    dc->key.offset = 0;
+    dc->index = index;
+    dc->type = type;
+    
+    dc->name.Length = dc->name.MaximumLength = name->Length;
+    RtlCopyMemory(dc->name.Buffer, name->Buffer, name->Length);
+    
+    dc->name_uc.Length = dc->name_uc.MaximumLength = name_uc->Length;
+    RtlCopyMemory(dc->name_uc.Buffer, name_uc->Buffer, name_uc->Length);
+    
+    ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, TRUE);
+    
+    InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+    
+    ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options,
                                      FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -2552,7 +2597,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         free_fileref(fileref);
         return Status;
     }
-        
+
     if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
         
@@ -2575,6 +2620,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->parent = parfileref;
 
     insert_fileref_child(parfileref, fileref, TRUE);
+    
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->filepart, &fileref->filepart_uc, fcb->type);
+    if (!NT_SUCCESS(Status))
+        WARN("add_dir_child returned %08x\n", Status);
     
     increase_fileref_refcount(parfileref);
  
