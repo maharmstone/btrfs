@@ -3745,6 +3745,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     fcb* fcb;
     hardlink* hl;
     file_ref *parfr, *fr;
+    dir_child* dc = NULL;
     
     Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -3959,6 +3960,13 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     }
     
     fr->parent = parfr;
+    
+    Status = add_dir_child(parfr->fcb, fr->fcb->inode == SUBVOL_ROOT_INODE ? fr->fcb->subvol->id : fr->fcb->inode, fr->fcb->inode == SUBVOL_ROOT_INODE,
+                           fr->index, &fr->utf8, &fr->filepart, &fr->filepart_uc, fr->fcb->type, &dc);
+    if (!NT_SUCCESS(Status))
+        WARN("add_dir_child returned %08x\n", Status);
+    
+    fr->dc = dc;
     
     insert_fileref_child(parfr, fr, TRUE);
 
