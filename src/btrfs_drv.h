@@ -156,6 +156,7 @@ typedef struct {
     KEY key;
     UINT64 index;
     UINT8 type;
+    ANSI_STRING utf8;
     UINT32 hash;
     UNICODE_STRING name;
     UINT32 hash_uc;

@@ -1693,6 +1693,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         LIST_ENTRY* le = RemoveHeadList(&fcb->dir_children_index);
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
         
+        ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);
         ExFreePool(dc->name_uc.Buffer);
         ExFreePool(dc);

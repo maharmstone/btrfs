@@ -1334,10 +1334,21 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         dc->index = tp.item->key.offset;
         dc->type = di->type;
         
+        dc->utf8.MaximumLength = dc->utf8.Length = di->n;
+        dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, di->n, ALLOC_TAG);
+        if (!dc->utf8.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(dc);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(dc->utf8.Buffer, di->name, di->n);
+        
         dc->name.MaximumLength = dc->name.Length = utf16len;
         dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
         if (!dc->name.Buffer) {
             ERR("out of memory\n");
+            ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -1345,6 +1356,7 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
         if (!NT_SUCCESS(Status)) {
             ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+            ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc->name.Buffer);
             ExFreePool(dc);
             goto cont;
@@ -1353,6 +1365,7 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, TRUE);
         if (!NT_SUCCESS(Status)) {
             ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc->name.Buffer);
             ExFreePool(dc);
             goto cont;
@@ -2356,7 +2369,7 @@ end:
     return Status;
 }
 
-static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type) {
+static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type) {
     dir_child* dc;
     BOOL inserted;
     LIST_ENTRY* le;
@@ -2367,9 +2380,17 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STR
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
+    dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
+    if (!dc->utf8.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
     dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, name->Length, ALLOC_TAG);
     if (!dc->name.Buffer) {
         ERR("out of memory\n");
+        ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -2377,6 +2398,7 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STR
     dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, name_uc->Length, ALLOC_TAG);
     if (!dc->name_uc.Buffer) {
         ERR("out of memory\n");
+        ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);
         ExFreePool(dc);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2387,6 +2409,9 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PUNICODE_STR
     dc->key.offset = 0;
     dc->index = index;
     dc->type = type;
+    
+    dc->utf8.Length = dc->utf8.MaximumLength = utf8->Length;
+    RtlCopyMemory(dc->utf8.Buffer, utf8->Buffer, utf8->Length);
     
     dc->name.Length = dc->name.MaximumLength = name->Length;
     RtlCopyMemory(dc->name.Buffer, name->Buffer, name->Length);
@@ -2702,7 +2727,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     insert_fileref_child(parfileref, fileref, TRUE);
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->filepart, &fileref->filepart_uc, fcb->type);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
