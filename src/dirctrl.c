@@ -472,7 +472,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
 }
 
 static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, PIRP Irp) {
-    NTSTATUS Status;
     LIST_ENTRY* le;
     dir_child* dc;
     
@@ -507,8 +506,6 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     if (*offset < 2)
         *offset = 2;
     
-//     ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
-    
     dc = NULL;
     le = fileref->fcb->dir_children_index.Flink;
     
@@ -524,10 +521,8 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
         le = le->Flink;
     }
     
-    if (!dc) {
-        Status = STATUS_NO_MORE_FILES;
-        goto end;
-    }
+    if (!dc)
+        return STATUS_NO_MORE_FILES;
     
     de->key = dc->key;
     de->name = dc->name;
@@ -536,12 +531,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     
     *offset = dc->index + 1;
     
-    Status = STATUS_SUCCESS;
-
-end:
-//     ExReleaseResourceLite(&fileref->nonpaged->children_lock);
-    
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -648,7 +638,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             if (!ccb->query_string.Buffer) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
+                goto end2;
             }
             
             ccb->query_string.Length = ccb->query_string.MaximumLength = IrpSp->Parameters.QueryDirectory.FileName->Length;
@@ -666,7 +656,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             if (specific_file) {
                 Status = STATUS_NO_MORE_FILES;
-                goto end;
+                goto end2;
             }
         }
     }
@@ -676,6 +666,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     newoffset = ccb->query_dir_offset;
+    
+    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
+    
     Status = next_dir_entry(fileref, &newoffset, &de, Irp);
     
     if (!NT_SUCCESS(Status)) {
@@ -711,8 +704,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             }
         }
         
-//         ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
-        
         // FIXME - use hash lists for this
         le = fileref->fcb->dir_children_index.Flink;
         while (le != &fileref->fcb->dir_children_index) {
@@ -735,8 +726,6 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
             le = le->Flink;
         }
-        
-//         ExReleaseResourceLite(&fileref->nonpaged->children_lock);
         
         if (us.Buffer)
             ExFreePool(us.Buffer);
@@ -822,6 +811,9 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Irp->IoStatus.Information = IrpSp->Parameters.QueryDirectory.Length - length;
     
 end:
+    ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
+    
+end2:
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     TRACE("returning %08x\n", Status);
