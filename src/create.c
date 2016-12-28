@@ -110,8 +110,7 @@ file_ref* create_fileref() {
 }
 
 static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, fcb* fcb,
-                                         root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8,
-                                         BOOL case_sensitive, PIRP Irp) {
+                                         root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive, PIRP Irp) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
     UINT32 hash;
@@ -163,20 +162,8 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
                         *inode = dc->key.obj_id;
                     }
                     
-                    *type = dc->type;
-                    *index = dc->index;
-                    
-                    utf8->MaximumLength = dc->utf8.Length;
-                    utf8->Length = utf8->MaximumLength;
-                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
-                    if (!utf8->Buffer) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    RtlCopyMemory(utf8->Buffer, dc->utf8.Buffer, dc->utf8.Length);
-                    
+                    *pdc = dc;
+
                     Status = STATUS_SUCCESS;
                     goto end;
                 }
@@ -217,19 +204,7 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
                         *inode = dc->key.obj_id;
                     }
                     
-                    *type = dc->type;
-                    *index = dc->index;
-                    
-                    utf8->MaximumLength = dc->utf8.Length;
-                    utf8->Length = utf8->MaximumLength;
-                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
-                    if (!utf8->Buffer) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    RtlCopyMemory(utf8->Buffer, dc->utf8.Buffer, dc->utf8.Length);
+                    *pdc = dc;
                     
                     Status = STATUS_SUCCESS;
                     goto end;
@@ -1622,11 +1597,10 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 }
             } else {
                 root* subvol;
-                UINT64 inode, index;
-                UINT8 type;
-                ANSI_STRING utf8;
+                UINT64 inode;
+                dir_child* dc;
                 
-                Status = find_file_in_dir(Vcb, &parts[i], sf->fcb, &subvol, &inode, &type, &index, &utf8, case_sensitive, Irp);
+                Status = find_file_in_dir(Vcb, &parts[i], sf->fcb, &subvol, &inode, &dc, case_sensitive, Irp);
                 if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
@@ -1637,15 +1611,14 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     goto end;
                 } else {
                     fcb* fcb;
-                    ULONG strlen;
                     
-                    Status = open_fcb(Vcb, subvol, inode, type, &utf8, sf->fcb, &fcb, pooltype, Irp);
+                    Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("open_fcb returned %08x\n", Status);
                         goto end;
                     }
                     
-                    if (type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                    if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
                         WARN("passed path including file as subdirectory\n");
                         free_fcb(fcb);
                         Status = STATUS_OBJECT_PATH_NOT_FOUND;
@@ -1662,21 +1635,21 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->fcb = fcb;
                     
-                    if (type == BTRFS_TYPE_DIRECTORY)
+                    if (dc->type == BTRFS_TYPE_DIRECTORY)
                         fcb->fileref = sf2;
                     
-                    sf2->index = index;
-                    sf2->utf8 = utf8;
+                    sf2->index = dc->index;
+                    sf2->dc = dc;
                     
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &strlen, utf8.Buffer, utf8.Length);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
+                    if (!sf2->utf8.Buffer) {
+                        ERR("out of memory\n");
                         free_fileref(sf2);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto end;
                     }
                     
-                    sf2->filepart.MaximumLength = sf2->filepart.Length = strlen;
-                    sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
+                    sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
                     if (!sf2->filepart.Buffer) {
                         ERR("out of memory\n");
                         free_fileref(sf2);
@@ -1684,19 +1657,22 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                         goto end;
                     }
                     
-                    Status = RtlUTF8ToUnicodeN(sf2->filepart.Buffer, strlen, &strlen, utf8.Buffer, utf8.Length);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                    sf2->filepart_uc.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name_uc.Length, ALLOC_TAG);
+                    if (!sf2->filepart_uc.Buffer) {
+                        ERR("out of memory\n");
                         free_fileref(sf2);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto end;
                     }
                     
-                    Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                        free_fileref(sf2);
-                        goto end;
-                    }
+                    sf2->utf8.Length = sf2->utf8.MaximumLength = dc->utf8.Length;
+                    RtlCopyMemory(sf2->utf8.Buffer, dc->utf8.Buffer, dc->utf8.Length);
+                    
+                    sf2->filepart.Length = sf2->filepart.MaximumLength = dc->name.Length;
+                    RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
+                    
+                    sf2->filepart_uc.Length = sf2->filepart_uc.MaximumLength = dc->name_uc.Length;
+                    RtlCopyMemory(sf2->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
                     
                     sf2->parent = (struct _file_ref*)sf;
                     

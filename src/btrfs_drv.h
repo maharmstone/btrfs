@@ -244,6 +244,7 @@ typedef struct _file_ref {
     LONG open_count;
     struct _file_ref* parent;
     WCHAR* debug_desc;
+    dir_child* dc;
     
     BOOL dirty;
     
