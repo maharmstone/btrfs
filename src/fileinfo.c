@@ -2438,7 +2438,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
       
     insert_fileref_child(related, fr2, TRUE);
     
-    Status = add_dir_child(related->fcb, fcb->inode, index, &utf8, &fr2->filepart, &fr2->filepart_uc, fcb->type, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fr2->filepart, &fr2->filepart_uc, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

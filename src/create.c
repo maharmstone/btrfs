@@ -1763,7 +1763,7 @@ end:
     return Status;
 }
 
-NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
     dir_child* dc;
     BOOL inserted;
     LIST_ENTRY* le;
@@ -1799,7 +1799,7 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, 
     }
     
     dc->key.obj_id = inode;
-    dc->key.obj_type = TYPE_INODE_ITEM;
+    dc->key.obj_type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
     dc->key.offset = 0;
     dc->index = index;
     dc->type = type;
@@ -2127,7 +2127,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     insert_fileref_child(parfileref, fileref, TRUE);
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

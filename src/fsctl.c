@@ -729,6 +729,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     BOOLEAN defaulted;
     UINT64* root_num;
     file_ref *fr = NULL, *fr2;
+    dir_child* dc = NULL;
     
     fcb = FileObject->FsContext;
     if (!fcb) {
@@ -1028,6 +1029,12 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     }
     
     fr->parent = fileref;
+    
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
+    if (!NT_SUCCESS(Status))
+        WARN("add_dir_child returned %08x\n", Status);
+    
+    fr->dc = dc;
     
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);
