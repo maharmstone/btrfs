@@ -1765,6 +1765,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->deleted = TRUE;
     fr2->created = fileref->created;
     fr2->parent = fileref->parent;
+    fr2->dc = NULL;
     
     if (fr2->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr2->fcb->fileref = fr2;
@@ -1807,6 +1808,62 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
+    
+    if (fileref->dc) {
+        // remove from old parent
+        ExAcquireResourceExclusiveLite(&fr2->parent->fcb->nonpaged->dir_children_lock, TRUE);
+        RemoveEntryList(&fileref->dc->list_entry_index);
+        RemoveEntryList(&fileref->dc->list_entry_hash);
+        RemoveEntryList(&fileref->dc->list_entry_hash_uc);
+        ExReleaseResourceLite(&fr2->parent->fcb->nonpaged->dir_children_lock);
+        
+        if (fileref->utf8.Length != fr2->utf8.Length || RtlCompareMemory(fileref->utf8.Buffer, fr2->utf8.Buffer, fr2->utf8.Length) != fr2->utf8.Length) {
+            // handle changed name
+            
+            ExFreePool(fileref->dc->utf8.Buffer);
+            ExFreePool(fileref->dc->name.Buffer);
+            ExFreePool(fileref->dc->name_uc.Buffer);
+            
+            fileref->dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.Length, ALLOC_TAG);
+            if (!fileref->dc->utf8.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
+            if (!fileref->dc->name.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart_uc.Length, ALLOC_TAG);
+            if (!fileref->dc->name_uc.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
+            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
+            
+            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fileref->filepart.Length;
+            RtlCopyMemory(fileref->dc->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
+            
+            fileref->dc->name_uc.Length = fileref->dc->name_uc.MaximumLength = fileref->filepart_uc.Length;
+            RtlCopyMemory(fileref->dc->name_uc.Buffer, fileref->filepart_uc.Buffer, fileref->filepart_uc.Length);
+            
+            fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
+            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
+        }
+        
+        // add to new parent
+        ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
+        InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
+        insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
+        ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
+    }
     
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
