@@ -1396,6 +1396,47 @@ end:
     return Status;
 }
 
+static void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
+    BOOL inserted;
+    LIST_ENTRY* le;
+    
+    inserted = FALSE;
+    
+    le = fcb->dir_children_hash.Flink;
+    while (le != &fcb->dir_children_hash) {
+        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+        
+        if (dc2->hash > dc->hash) {
+            InsertHeadList(le->Blink, &dc->list_entry_hash);
+            inserted = TRUE;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!inserted)
+        InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
+    
+    inserted = FALSE;
+    
+    le = fcb->dir_children_hash_uc.Flink;
+    while (le != &fcb->dir_children_hash_uc) {
+        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+        
+        if (dc2->hash_uc > dc->hash_uc) {
+            InsertHeadList(le->Blink, &dc->list_entry_hash_uc);
+            inserted = TRUE;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!inserted)
+        InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+}
+
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
@@ -1617,6 +1658,57 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         mark_fileref_dirty(fileref);
+        
+        if (fileref->dc) {
+            ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
+            
+            ExFreePool(fileref->dc->utf8.Buffer);
+            ExFreePool(fileref->dc->name.Buffer);
+            ExFreePool(fileref->dc->name_uc.Buffer);
+            
+            fileref->dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.Length, ALLOC_TAG);
+            if (!fileref->dc->utf8.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                goto end;
+            }
+            
+            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
+            if (!fileref->dc->name.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                goto end;
+            }
+            
+            fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart_uc.Length, ALLOC_TAG);
+            if (!fileref->dc->name_uc.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                goto end;
+            }
+            
+            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
+            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
+            
+            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fileref->filepart.Length;
+            RtlCopyMemory(fileref->dc->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
+            
+            fileref->dc->name_uc.Length = fileref->dc->name_uc.MaximumLength = fileref->filepart_uc.Length;
+            RtlCopyMemory(fileref->dc->name_uc.Buffer, fileref->filepart_uc.Buffer, fileref->filepart_uc.Length);
+            
+            fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
+            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
+            
+            RemoveEntryList(&fileref->dc->list_entry_hash);
+            RemoveEntryList(&fileref->dc->list_entry_hash_uc);
+            
+            insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
+            
+            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+        }
         
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
