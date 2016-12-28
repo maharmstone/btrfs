@@ -23,6 +23,7 @@
 #endif
 
 static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us, PIRP Irp);
+static void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
@@ -795,6 +796,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         ULONG stringlen;
                         root* subvol;
                         UINT64 inode;
+                        dir_child* dc = NULL;
                         
                         utf8.Length = utf8.MaximumLength = di->n;
                         utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
@@ -914,6 +916,13 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
 
                         fr->index = tp.item->key.offset;
                         increase_fileref_refcount(me->fileref);
+                        
+                        Status = add_dir_child(me->fileref->fcb, di->key.obj_type == TYPE_ROOT_ITEM ? subvol->id : fr->fcb->inode,
+                                               di->key.obj_type == TYPE_ROOT_ITEM ? TRUE : FALSE, fr->index, &utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
+                        if (!NT_SUCCESS(Status))
+                            WARN("add_dir_child returned %08x\n", Status);
+                        
+                        fr->dc = dc;
                         
                         insert_fileref_child(fr->parent, fr, FALSE);
                         
@@ -1177,6 +1186,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     le = move_list.Flink;
     while (le != &move_list) {
         hardlink* hl;
+        BOOL name_changed = FALSE;
         
         me = CONTAINING_RECORD(le, move_entry, list_entry);
         
@@ -1220,9 +1230,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         me->dummyfileref->utf8 = me->fileref->utf8;
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
         
-        if (le == move_list.Flink)
+        if (le == move_list.Flink) {
+            if (me->fileref->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length)
+                name_changed = TRUE;
+            
             me->fileref->utf8.Length = me->fileref->utf8.MaximumLength = utf8->Length;
-        else
+        } else
             me->fileref->utf8.MaximumLength = me->fileref->utf8.Length;
         
         if (me->fileref->utf8.MaximumLength > 0) {
@@ -1262,15 +1275,69 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
             free_fileref(me->fileref->parent);
             ExReleaseResourceLite(&me->fileref->fcb->Vcb->fcb_lock);
             
-            me->fileref->parent = destdir;
-            
             increase_fileref_refcount(destdir);
             
-            Status = fcb_get_last_dir_index(me->fileref->parent->fcb, &me->fileref->index, Irp);
+            Status = fcb_get_last_dir_index(destdir->fcb, &me->fileref->index, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("fcb_get_last_dir_index returned %08x\n", Status);
                 goto end;
             }
+            
+            if (me->fileref->dc) {
+                // remove from old parent
+                ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
+                RemoveEntryList(&me->fileref->dc->list_entry_index);
+                RemoveEntryList(&me->fileref->dc->list_entry_hash);
+                RemoveEntryList(&me->fileref->dc->list_entry_hash_uc);
+                ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
+                
+                if (name_changed) {
+                    ExFreePool(me->fileref->dc->utf8.Buffer);
+                    ExFreePool(me->fileref->dc->name.Buffer);
+                    ExFreePool(me->fileref->dc->name_uc.Buffer);
+                    
+                    me->fileref->dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
+                    if (!me->fileref->dc->utf8.Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    me->fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart.Length, ALLOC_TAG);
+                    if (!me->fileref->dc->name.Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    me->fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart_uc.Length, ALLOC_TAG);
+                    if (!me->fileref->dc->name_uc.Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    me->fileref->dc->utf8.Length = me->fileref->dc->utf8.MaximumLength = utf8->Length;
+                    RtlCopyMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length);
+                    
+                    me->fileref->dc->name.Length = me->fileref->dc->name.MaximumLength = me->fileref->filepart.Length;
+                    RtlCopyMemory(me->fileref->dc->name.Buffer, me->fileref->filepart.Buffer, me->fileref->filepart.Length);
+                    
+                    me->fileref->dc->name_uc.Length = me->fileref->dc->name_uc.MaximumLength = me->fileref->filepart_uc.Length;
+                    RtlCopyMemory(me->fileref->dc->name_uc.Buffer, me->fileref->filepart_uc.Buffer, me->fileref->filepart_uc.Length);
+                    
+                    me->fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
+                    me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
+                }
+                
+                // add to new parent
+                ExAcquireResourceExclusiveLite(&destdir->fcb->nonpaged->dir_children_lock, TRUE);
+                InsertTailList(&destdir->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                insert_dir_child_into_hash_lists(destdir->fcb, me->fileref->dc);
+                ExReleaseResourceLite(&destdir->fcb->nonpaged->dir_children_lock);
+            }
+            
+            me->fileref->parent = destdir;
             
             insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
             
