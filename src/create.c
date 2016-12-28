@@ -23,697 +23,6 @@ extern PDEVICE_OBJECT devobj;
 
 static WCHAR datastring[] = L"::$DATA";
 
-static NTSTATUS find_file_dir_index(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    UINT64 index;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_REF;
-    searchkey.offset = parinode;
-    
-    Status = find_item(Vcb, r, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(tp.item->key, searchkey)) {
-        INODE_REF* ir;
-        ULONG len;
-        
-        index = 0;
-        
-        ir = (INODE_REF*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            ULONG itemlen;
-            
-            if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
-                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                break;
-            }
-            
-            itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
-            
-            if (ir->n == utf8->Length && RtlCompareMemory(ir->name, utf8->Buffer, ir->n) == ir->n) {
-                index = ir->index;
-                break;
-            }
-            
-            if (len > itemlen) {
-                len -= itemlen;
-                ir = (INODE_REF*)&ir->name[ir->n];
-            } else
-                break;
-        } while (len > 0);
-        
-        if (index == 0)
-            return STATUS_NOT_FOUND;
-        
-        *pindex = index;
-        
-        return STATUS_SUCCESS;
-    } else
-        return STATUS_NOT_FOUND;
-}
-
-static NTSTATUS find_file_dir_index_extref(device_extension* Vcb, root* r, UINT64 inode, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    UINT64 index;
-    
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_EXTREF;
-    searchkey.offset = calc_crc32c((UINT32)parinode, (UINT8*)utf8->Buffer, utf8->Length);
-    
-    Status = find_item(Vcb, r, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (!keycmp(tp.item->key, searchkey)) {
-        INODE_EXTREF* ier;
-        ULONG len;
-        
-        index = 0;
-        
-        ier = (INODE_EXTREF*)tp.item->data;
-        len = tp.item->size;
-        
-        do {
-            ULONG itemlen;
-            
-            if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
-                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                break;
-            }
-            
-            itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
-            
-            if (ier->n == utf8->Length && RtlCompareMemory(ier->name, utf8->Buffer, ier->n) == ier->n) {
-                index = ier->index;
-                break;
-            }
-            
-            if (len > itemlen) {
-                len -= itemlen;
-                ier = (INODE_EXTREF*)&ier->name[ier->n];
-            } else
-                break;
-        } while (len > 0);
-        
-        if (index == 0)
-            return STATUS_NOT_FOUND;
-        
-        *pindex = index;
-        
-        return STATUS_SUCCESS;
-    } else
-        return STATUS_NOT_FOUND;
-}
-
-static NTSTATUS find_subvol_dir_index(device_extension* Vcb, root* r, UINT64 subvolid, UINT64 parinode, PANSI_STRING utf8, UINT64* pindex, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    ROOT_REF* rr;
-    
-    searchkey.obj_id = r->id;
-    searchkey.obj_type = TYPE_ROOT_REF;
-    searchkey.offset = subvolid;
-    
-    Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    if (keycmp(tp.item->key, searchkey)) {
-        ERR("couldn't find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (tp.item->size < sizeof(ROOT_REF)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-            tp.item->size, sizeof(ROOT_REF));
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    rr = (ROOT_REF*)tp.item->data;
-    
-    if (tp.item->size < sizeof(ROOT_REF) - 1 + rr->n) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-            tp.item->size, sizeof(ROOT_REF) - 1 + rr->n);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(utf8->Buffer, rr->name, rr->n) == rr->n) {
-        *pindex = rr->index;
-        return STATUS_SUCCESS;
-    } else
-        return STATUS_NOT_FOUND;
-}
-
-static NTSTATUS load_index_list(fcb* fcb, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    NTSTATUS Status;
-    BOOL b;
-    
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
-    searchkey.offset = 2;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-
-    if (keycmp(tp.item->key, searchkey) == -1) {
-        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp)) {
-            tp = next_tp;
-            
-            TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        }
-    }
-    
-    if (tp.item->key.obj_id != fcb->inode || tp.item->key.obj_type != TYPE_DIR_INDEX) {
-        Status = STATUS_SUCCESS;
-        goto end;
-    }
-    
-    if (!fcb->index_ptrs) {
-        fcb->index_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->index_ptrs) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlZeroMemory(fcb->index_ptrs, sizeof(LIST_ENTRY*) * 256);
-    }
-    
-    do {
-        DIR_ITEM* di;
-        
-        TRACE("key: %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        di = (DIR_ITEM*)tp.item->data;
-        
-        if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < (sizeof(DIR_ITEM) - 1 + di->m + di->n)) {
-            WARN("(%llx,%x,%llx) is truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-        } else {
-            index_entry* ie;
-            ULONG stringlen;
-            UNICODE_STRING us;
-            LIST_ENTRY* le;
-            BOOL inserted;
-            UINT8 h;
-            
-            ie = ExAllocatePoolWithTag(PagedPool, sizeof(index_entry), ALLOC_TAG);
-            if (!ie) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            ie->utf8.Length = ie->utf8.MaximumLength = di->n;
-            
-            if (di->n > 0) {
-                ie->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, ie->utf8.MaximumLength, ALLOC_TAG);
-                if (!ie->utf8.Buffer) {
-                    ERR("out of memory\n");
-                    ExFreePool(ie);
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                RtlCopyMemory(ie->utf8.Buffer, di->name, di->n);
-            } else
-                ie->utf8.Buffer = NULL;
-            
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, di->name, di->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-                ExFreePool(ie);
-                goto nextitem;
-            }
-            
-            if (stringlen == 0) {
-                ERR("UTF8 length was 0\n");
-                if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-                ExFreePool(ie);
-                goto nextitem;
-            }
-            
-            us.Length = us.MaximumLength = stringlen;
-            us.Buffer = ExAllocatePoolWithTag(PagedPool, us.MaximumLength, ALLOC_TAG);
-            
-            if (!us.Buffer) {
-                ERR("out of memory\n");
-                if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-                ExFreePool(ie);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            Status = RtlUTF8ToUnicodeN(us.Buffer, stringlen, &stringlen, di->name, di->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                ExFreePool(us.Buffer);
-                if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-                ExFreePool(ie);
-                goto nextitem;
-            }
-            
-            Status = RtlUpcaseUnicodeString(&ie->filepart_uc, &us, TRUE);
-            if (!NT_SUCCESS(Status)) {
-                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                ExFreePool(us.Buffer);
-                if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-                ExFreePool(ie);
-                goto nextitem;
-            }
-            
-            ie->key = di->key;
-            ie->type = di->type;
-            ie->index = tp.item->key.offset;
-            
-            ie->hash = calc_crc32c(0xfffffffe, (UINT8*)ie->filepart_uc.Buffer, (ULONG)ie->filepart_uc.Length);
-            inserted = FALSE;
-            
-            h = (ie->hash & 0xff000000) >> 24;
-            
-            if (!fcb->index_ptrs[h]) {
-                UINT8 c = h;
-                
-                le = fcb->index_list.Flink;
-                
-                if (c > 0) {
-                    c--;
-                    do {
-                        if (fcb->index_ptrs[c]) {
-                            le = fcb->index_ptrs[c];
-                            break;
-                        }
-                            
-                        c--;
-                    } while (c > 0);
-                }
-            } else
-                le = fcb->index_ptrs[h];
-            
-            while (le != &fcb->index_list) {
-                index_entry* ie2 = CONTAINING_RECORD(le, index_entry, list_entry);
-                
-                if (ie2->hash >= ie->hash) {
-                    InsertHeadList(le->Blink, &ie->list_entry);
-                    inserted = TRUE;
-                    break;
-                }
-                
-                le = le->Flink;
-            }
-        
-            if (!inserted)
-                InsertTailList(&fcb->index_list, &ie->list_entry);
-            
-            if (!fcb->index_ptrs[h] || ie->list_entry.Flink == fcb->index_ptrs[h])
-                fcb->index_ptrs[h] = &ie->list_entry;
-        }
-        
-nextitem:
-        b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
-         
-        if (b) {
-            tp = next_tp;
-            
-            b = tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type == TYPE_DIR_INDEX;
-        }
-    } while (b);
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    if (!NT_SUCCESS(Status)) {
-        while (!IsListEmpty(&fcb->index_list)) {
-            LIST_ENTRY* le = RemoveHeadList(&fcb->index_list);
-            index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
-
-            if (ie->utf8.Buffer) ExFreePool(ie->utf8.Buffer);
-            if (ie->filepart_uc.Buffer) ExFreePool(ie->filepart_uc.Buffer);
-            ExFreePool(ie);
-        }
-        
-        if (fcb->index_ptrs) {
-            ExFreePool(fcb->index_ptrs);
-            fcb->index_ptrs = NULL;
-        }
-    } else
-        mark_fcb_dirty(fcb); // It's not necessarily dirty, but this is an easy way of making sure
-                             // the list remains in memory until the next flush.
-    
-    return Status;
-}
-
-static NTSTATUS STDCALL find_file_in_dir_index(file_ref* fr, PUNICODE_STRING filename, root** subvol, UINT64* inode, UINT8* type,
-                                               UINT64* pindex, PANSI_STRING utf8, PIRP Irp) {
-    LIST_ENTRY* le;
-    NTSTATUS Status;
-    UNICODE_STRING us;
-    UINT32 hash;
-        
-    Status = RtlUpcaseUnicodeString(&us, filename, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        return Status;
-    }
-    
-    hash = calc_crc32c(0xfffffffe, (UINT8*)us.Buffer, (ULONG)us.Length);
-    
-    ExAcquireResourceExclusiveLite(&fr->fcb->nonpaged->index_lock, TRUE);
-    
-    if (!fr->fcb->index_loaded) {
-        Status = load_index_list(fr->fcb, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("load_index_list returned %08x\n", Status);
-            goto end;
-        }
-        
-        fr->fcb->index_loaded = TRUE;
-    }
-    
-    ExConvertExclusiveToSharedLite(&fr->fcb->nonpaged->index_lock);
-    
-    if (fr->fcb->index_ptrs && fr->fcb->index_ptrs[(hash & 0xff000000) >> 24]) {
-        le = fr->fcb->index_ptrs[(hash & 0xff000000) >> 24];
-        
-        while (le != &fr->fcb->index_list) {
-            index_entry* ie = CONTAINING_RECORD(le, index_entry, list_entry);
-            
-            if (ie->hash == hash && ie->filepart_uc.Length == us.Length && RtlCompareMemory(ie->filepart_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-                LIST_ENTRY* le;
-                BOOL ignore_entry = FALSE;
-                
-                ExAcquireResourceSharedLite(&fr->nonpaged->children_lock, TRUE);
-
-                le = fr->children.Flink;
-                while (le != &fr->children) {
-                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
-                    
-                    if (fr2->index == ie->index) {
-                        if (fr2->deleted || fr2->filepart_uc.Length != us.Length ||
-                            RtlCompareMemory(fr2->filepart_uc.Buffer, us.Buffer, us.Length) != us.Length) {
-                            ignore_entry = TRUE;
-                            break;
-                        }
-                        break;
-                    } else if (fr2->index > ie->index)
-                        break;
-                    
-                    le = le->Flink;
-                }
-                
-                ExReleaseResourceLite(&fr->nonpaged->children_lock);
-                
-                if (ignore_entry)
-                    goto nextitem;
-                
-                if (ie->key.obj_type == TYPE_ROOT_ITEM) {
-                    if (subvol) {
-                        *subvol = NULL;
-                        
-                        le = fr->fcb->Vcb->roots.Flink;
-                        while (le != &fr->fcb->Vcb->roots) {
-                            root* r2 = CONTAINING_RECORD(le, root, list_entry);
-                            
-                            if (r2->id == ie->key.obj_id) {
-                                *subvol = r2;
-                                break;
-                            }
-                            
-                            le = le->Flink;
-                        }
-                    }
-                    
-                    if (inode)
-                        *inode = SUBVOL_ROOT_INODE;
-                    
-                    if (type)
-                        *type = BTRFS_TYPE_DIRECTORY;
-                } else {
-                    if (subvol)
-                        *subvol = fr->fcb->subvol;
-                    
-                    if (inode)
-                        *inode = ie->key.obj_id;
-                    
-                    if (type)
-                        *type = ie->type;
-                }
-                
-                if (utf8) {
-                    utf8->MaximumLength = utf8->Length = ie->utf8.Length;
-                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
-                    if (!utf8->Buffer) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    RtlCopyMemory(utf8->Buffer, ie->utf8.Buffer, ie->utf8.Length);
-                }
-                
-                if (pindex)
-                    *pindex = ie->index;
-                
-                Status = STATUS_SUCCESS;
-                goto end;
-            } else if ((!(hash & 0x80000000) && ie->hash > hash) || ((hash & 0x80000000) && ie->hash < hash)) {
-                Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                goto end;
-            }
-            
-nextitem:
-            if (hash & 0x80000000)
-                le = le->Blink;
-            else
-                le = le->Flink;
-        }
-    }
-    
-    Status = STATUS_OBJECT_NAME_NOT_FOUND;
-    
-end:
-    ExReleaseResourceLite(&fr->fcb->nonpaged->index_lock);
-    
-    ExFreePool(us.Buffer);
-    
-    return Status;
-}
-
-static NTSTATUS STDCALL find_file_in_dir_with_crc32(device_extension* Vcb, PUNICODE_STRING filename, UINT32 crc32, file_ref* fr,
-                                                    root** subvol, UINT64* inode, UINT8* type, UINT64* pindex, PANSI_STRING utf8,
-                                                    BOOL case_sensitive, PIRP Irp) {
-    DIR_ITEM* di;
-    KEY searchkey;
-    traverse_ptr tp;
-    NTSTATUS Status;
-    ULONG stringlen;
-    
-    TRACE("(%p, %.*S, %08x, (%llx, %llx), %p, %p, %p)\n", Vcb, filename->Length / sizeof(WCHAR), filename->Buffer, crc32,
-                                                          fr->fcb->subvol->id, fr->fcb->inode, subvol, inode, type);
-    
-    searchkey.obj_id = fr->fcb->inode;
-    searchkey.obj_type = TYPE_DIR_ITEM;
-    searchkey.offset = crc32;
-    
-    Status = find_item(Vcb, fr->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return Status;
-    }
-    
-    TRACE("found item %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-    
-    if (!keycmp(searchkey, tp.item->key)) {
-        UINT32 size = tp.item->size;
-        
-        // found by hash
-        
-        if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%llx;%llx,%x,%llx) was %u bytes, expected at least %u\n", fr->fcb->subvol->id, tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                             tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-        } else {
-            di = (DIR_ITEM*)tp.item->data;
-            
-            while (size > 0) {
-                if (size < sizeof(DIR_ITEM) || size < (sizeof(DIR_ITEM) - 1 + di->m + di->n)) {
-                    WARN("(%llx,%x,%llx) is truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    break;
-                }
-                
-                size -= sizeof(DIR_ITEM) - sizeof(char);
-                size -= di->n;
-                size -= di->m;
-                
-                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, di->name, di->n);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                } else {
-                    WCHAR* utf16 = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                    UNICODE_STRING us;
-                    
-                    if (!utf16) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    
-                    Status = RtlUTF8ToUnicodeN(utf16, stringlen, &stringlen, di->name, di->n);
-
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                    } else {
-                        ANSI_STRING nutf8;
-                        
-                        us.Buffer = utf16;
-                        us.Length = us.MaximumLength = (USHORT)stringlen;
-                        
-                        if (FsRtlAreNamesEqual(filename, &us, !case_sensitive, NULL)) {
-                            UINT64 index;
-                            
-                            if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                LIST_ENTRY* le = Vcb->roots.Flink;
-                                
-                                if (subvol) {
-                                    *subvol = NULL;
-                                    
-                                    while (le != &Vcb->roots) {
-                                        root* r2 = CONTAINING_RECORD(le, root, list_entry);
-                                        
-                                        if (r2->id == di->key.obj_id) {
-                                            *subvol = r2;
-                                            break;
-                                        }
-                                        
-                                        le = le->Flink;
-                                    }
-                                }
-
-                                if (inode)
-                                    *inode = SUBVOL_ROOT_INODE;
-                                
-                                if (type)
-                                    *type = BTRFS_TYPE_DIRECTORY;
-                            } else {
-                                if (subvol)
-                                    *subvol = fr->fcb->subvol;
-                                
-                                if (inode)
-                                    *inode = di->key.obj_id;
-                                
-                                if (type)
-                                    *type = di->type;
-                            }
-                            
-                            if (utf8) {
-                                utf8->MaximumLength = di->n;
-                                utf8->Length = utf8->MaximumLength;
-                                utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
-                                if (!utf8->Buffer) {
-                                    ERR("out of memory\n");
-                                    ExFreePool(utf16);
-                                    return STATUS_INSUFFICIENT_RESOURCES;
-                                }
-                                
-                                RtlCopyMemory(utf8->Buffer, di->name, di->n);
-                            }
-                            
-                            ExFreePool(utf16);
-                            
-                            index = 0;
-                                
-                            if (fr->fcb->subvol != Vcb->root_root) {
-                                nutf8.Buffer = di->name;
-                                nutf8.Length = nutf8.MaximumLength = di->n;
-                                
-                                if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                                    Status = find_subvol_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
-                                    if (!NT_SUCCESS(Status)) {
-                                        ERR("find_subvol_dir_index returned %08x\n", Status);
-                                        return Status;
-                                    }
-                                } else {
-                                    Status = find_file_dir_index(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
-                                    if (!NT_SUCCESS(Status)) {
-                                        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                                            Status = find_file_dir_index_extref(Vcb, fr->fcb->subvol, di->key.obj_id, fr->fcb->inode, &nutf8, &index, Irp);
-                                            
-                                            if (!NT_SUCCESS(Status)) {
-                                                ERR("find_file_dir_index_extref returned %08x\n", Status);
-                                                return Status;
-                                            }
-                                        } else {
-                                            ERR("find_file_dir_index returned %08x\n", Status);
-                                            return Status;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (index != 0) {
-                                LIST_ENTRY* le = fr->children.Flink;
-                                
-                                while (le != &fr->children) {
-                                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
-                                    
-                                    if (fr2->index == index) {
-                                        if (fr2->deleted || !FsRtlAreNamesEqual(&fr2->filepart, filename, !case_sensitive, NULL)) {
-                                            goto byindex;
-                                        }
-                                        break;
-                                    } else if (fr2->index > index)
-                                        break;
-                                    
-                                    le = le->Flink;
-                                }
-                            }
-                            
-//                             TRACE("found %.*S by hash at (%llx,%llx)\n", filename->Length / sizeof(WCHAR), filename->Buffer, (*subvol)->id, *inode);
-
-                            if (pindex)
-                                *pindex = index;
-                            
-                            return STATUS_SUCCESS;
-                        }
-                    }
-                    
-                    ExFreePool(utf16);
-                }
-                
-                di = (DIR_ITEM*)&di->name[di->n + di->m];
-            }
-        }
-    }
-    
-byindex:
-    if (case_sensitive)
-        return STATUS_OBJECT_NAME_NOT_FOUND;
-    
-    Status = find_file_in_dir_index(fr, filename, subvol, inode, type, pindex, utf8, Irp);
-    if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
-        ERR("find_file_in_dir_index returned %08x\n", Status);
-        return Status;
-    }
-    
-    return Status;
-}
-
 fcb* create_fcb(POOL_TYPE pool_type) {
     fcb* fcb;
     
@@ -800,39 +109,149 @@ file_ref* create_fileref() {
     return fr;
 }
 
-static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, file_ref* fr,
+static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, fcb* fcb,
                                          root** subvol, UINT64* inode, UINT8* type, UINT64* index, PANSI_STRING utf8,
                                          BOOL case_sensitive, PIRP Irp) {
-    char* fn;
-    UINT32 crc32;
-    ULONG utf8len;
     NTSTATUS Status;
+    UNICODE_STRING fnus;
+    UINT32 hash;
+    LIST_ENTRY* le;
     
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, filename->Buffer, filename->Length);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
-        return Status;
+    if (!case_sensitive) {
+        Status = RtlUpcaseUnicodeString(&fnus, filename, TRUE);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            return Status;
+        }
+    } else
+        fnus = *filename;
+    
+    hash = calc_crc32c(0xffffffff, (UINT8*)fnus.Buffer, fnus.Length);
+    
+    ExAcquireResourceSharedLite(&fcb->nonpaged->dir_children_lock, TRUE);
+    
+    // FIXME - use hash tables
+    
+    if (case_sensitive) {
+        le = fcb->dir_children_hash.Flink;
+        while (le != &fcb->dir_children_hash) {
+            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+            
+            if (dc->hash == hash) {
+                if (dc->name.Length == fnus.Length && RtlCompareMemory(dc->name.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
+                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
+                        LIST_ENTRY* le2;
+                        
+                        *subvol = NULL;
+                        
+                        le2 = fcb->Vcb->roots.Flink;
+                        while (le2 != &fcb->Vcb->roots) {
+                            root* r2 = CONTAINING_RECORD(le2, root, list_entry);
+                            
+                            if (r2->id == dc->key.obj_id) {
+                                *subvol = r2;
+                                break;
+                            }
+                            
+                            le2 = le2->Flink;
+                        }
+                        
+                        *inode = SUBVOL_ROOT_INODE;
+                    } else {
+                        *subvol = fcb->subvol;
+                        *inode = dc->key.obj_id;
+                    }
+                    
+                    *type = dc->type;
+                    *index = dc->index;
+                    
+                    utf8->MaximumLength = dc->utf8.Length;
+                    utf8->Length = utf8->MaximumLength;
+                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
+                    if (!utf8->Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    RtlCopyMemory(utf8->Buffer, dc->utf8.Buffer, dc->utf8.Length);
+                    
+                    Status = STATUS_SUCCESS;
+                    goto end;
+                }
+            } else if (dc->hash > hash) {
+                Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                goto end;
+            }
+            
+            le = le->Flink;
+        }
+    } else {
+        le = fcb->dir_children_hash_uc.Flink;
+        while (le != &fcb->dir_children_hash_uc) {
+            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+            
+            if (dc->hash_uc == hash) {
+                if (dc->name_uc.Length == fnus.Length && RtlCompareMemory(dc->name_uc.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
+                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
+                        LIST_ENTRY* le2;
+                        
+                        *subvol = NULL;
+                        
+                        le2 = fcb->Vcb->roots.Flink;
+                        while (le2 != &fcb->Vcb->roots) {
+                            root* r2 = CONTAINING_RECORD(le2, root, list_entry);
+                            
+                            if (r2->id == dc->key.obj_id) {
+                                *subvol = r2;
+                                break;
+                            }
+                            
+                            le2 = le2->Flink;
+                        }
+                        
+                        *inode = SUBVOL_ROOT_INODE;
+                    } else {
+                        *subvol = fcb->subvol;
+                        *inode = dc->key.obj_id;
+                    }
+                    
+                    *type = dc->type;
+                    *index = dc->index;
+                    
+                    utf8->MaximumLength = dc->utf8.Length;
+                    utf8->Length = utf8->MaximumLength;
+                    utf8->Buffer = ExAllocatePoolWithTag(PagedPool, utf8->MaximumLength, ALLOC_TAG);
+                    if (!utf8->Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    RtlCopyMemory(utf8->Buffer, dc->utf8.Buffer, dc->utf8.Length);
+                    
+                    Status = STATUS_SUCCESS;
+                    goto end;
+                }
+            } else if (dc->hash_uc > hash) {
+                Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                goto end;
+            }
+            
+            le = le->Flink;
+        }
     }
     
-    fn = ExAllocatePoolWithTag(PagedPool, utf8len, ALLOC_TAG);
-    if (!fn) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    Status = STATUS_OBJECT_NAME_NOT_FOUND;
+
+end:
+    ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
-    Status = RtlUnicodeToUTF8N(fn, utf8len, &utf8len, filename->Buffer, filename->Length);
-    if (!NT_SUCCESS(Status)) {
-        ExFreePool(fn);
-        ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
-        return Status;
-    }
+    if (!case_sensitive)
+        ExFreePool(fnus.Buffer);
     
-    TRACE("%.*s\n", utf8len, fn);
-    
-    crc32 = calc_crc32c(0xfffffffe, (UINT8*)fn, (ULONG)utf8len);
-    TRACE("crc32c(%.*s) = %08x\n", utf8len, fn, crc32);
-    
-    return find_file_in_dir_with_crc32(Vcb, filename, crc32, fr, subvol, inode, type, index, utf8, case_sensitive, Irp);
+    return Status;
 }
 
 static BOOL find_stream(device_extension* Vcb, fcb* fcb, PUNICODE_STRING stream, PUNICODE_STRING newstreamname, UINT32* hash, PANSI_STRING xattr, PIRP Irp) {
@@ -2207,7 +1626,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 UINT8 type;
                 ANSI_STRING utf8;
                 
-                Status = find_file_in_dir(Vcb, &parts[i], sf, &subvol, &inode, &type, &index, &utf8, case_sensitive, Irp);
+                Status = find_file_in_dir(Vcb, &parts[i], sf->fcb, &subvol, &inode, &type, &index, &utf8, case_sensitive, Irp);
                 if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
                     TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
 
