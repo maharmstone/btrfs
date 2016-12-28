@@ -1763,7 +1763,7 @@ end:
     return Status;
 }
 
-static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
     dir_child* dc;
     BOOL inserted;
     LIST_ENTRY* le;

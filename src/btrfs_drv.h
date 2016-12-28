@@ -965,6 +965,7 @@ NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp);
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp);
 NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
 NTSTATUS load_dir_children(fcb* fcb, PIRP Irp);
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
