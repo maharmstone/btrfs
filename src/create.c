@@ -1854,6 +1854,9 @@ static NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, UINT64 index, PANSI_STRING
         le = le->Flink;
     }
     
+    if (!inserted)
+        InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+    
     ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
     *pdc = dc;
