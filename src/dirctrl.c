@@ -48,14 +48,11 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
     if (!(atts & FILE_ATTRIBUTE_REPARSE_POINT))
         return 0;
     
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
         return 0;
     }
-    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
@@ -78,9 +75,7 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     free_fcb(fcb);
-    ExReleaseResourceLite(&Vcb->fcb_lock);
     
     return tag;
 }
@@ -166,7 +161,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                 LIST_ENTRY* le;
                 BOOL found = FALSE;
                 
-                ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
                 if (!IsListEmpty(&r->fcbs)) {
                     le = r->fcbs.Flink;
                     while (le != &r->fcbs) {
@@ -184,7 +178,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                         le = le->Flink;
                     }
                 }
-                ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                 
                 if (!found) {
                     KEY searchkey;
@@ -593,6 +586,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
     
     TRACE("%S\n", file_desc(IrpSp->FileObject));
     
@@ -862,6 +856,7 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
     
 end2:
+    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
     
     TRACE("returning %08x\n", Status);
