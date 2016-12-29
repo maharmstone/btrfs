@@ -185,6 +185,8 @@ typedef struct _fcb {
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
     LIST_ENTRY dir_children_hash_uc;
+    LIST_ENTRY** hash_ptrs;
+    LIST_ENTRY** hash_ptrs_uc;
     
     BOOL dirty;
     BOOL sd_dirty;

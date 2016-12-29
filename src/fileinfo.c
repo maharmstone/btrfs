@@ -878,7 +878,40 @@ end:
 }
 
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
+    UINT8 c;
+    
+    c = dc->hash >> 24;
+    
+    if (fcb->hash_ptrs[c] == &dc->list_entry_hash) {
+        if (dc->list_entry_hash.Flink == &fcb->dir_children_hash)
+            fcb->hash_ptrs[c] = NULL;
+        else {
+            dir_child* dc2 = CONTAINING_RECORD(dc->list_entry_hash.Flink, dir_child, list_entry_hash);
+            
+            if (dc2->hash >> 24 == c)
+                fcb->hash_ptrs[c] = &dc2->list_entry_hash;
+            else
+                fcb->hash_ptrs[c] = NULL;
+        }
+    }
+    
     RemoveEntryList(&dc->list_entry_hash);
+    
+    c = dc->hash_uc >> 24;
+    
+    if (fcb->hash_ptrs_uc[c] == &dc->list_entry_hash_uc) {
+        if (dc->list_entry_hash_uc.Flink == &fcb->dir_children_hash_uc)
+            fcb->hash_ptrs_uc[c] = NULL;
+        else {
+            dir_child* dc2 = CONTAINING_RECORD(dc->list_entry_hash_uc.Flink, dir_child, list_entry_hash_uc);
+            
+            if (dc2->hash_uc >> 24 == c)
+                fcb->hash_ptrs_uc[c] = &dc2->list_entry_hash_uc;
+            else
+                fcb->hash_ptrs_uc[c] = NULL;
+        }
+    }
+    
     RemoveEntryList(&dc->list_entry_hash_uc);
 }
 
@@ -1361,10 +1394,25 @@ end:
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     BOOL inserted;
     LIST_ENTRY* le;
+    UINT8 c, d;
+    
+    c = dc->hash >> 24;
     
     inserted = FALSE;
     
-    le = fcb->dir_children_hash.Flink;
+    d = c;
+    do {
+        le = fcb->hash_ptrs[d];
+        
+        if (d == 0)
+            break;
+        
+        d--;
+    } while (!le);
+    
+    if (!le)
+        le = fcb->dir_children_hash.Flink;
+    
     while (le != &fcb->dir_children_hash) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
         
@@ -1380,9 +1428,32 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     if (!inserted)
         InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
     
+    if (!fcb->hash_ptrs[c])
+        fcb->hash_ptrs[c] = &dc->list_entry_hash;
+    else {
+        dir_child* dc2 = CONTAINING_RECORD(fcb->hash_ptrs[c], dir_child, list_entry_hash);
+        
+        if (dc2->hash > dc->hash)
+            fcb->hash_ptrs[c] = &dc->list_entry_hash;
+    }
+    
+    c = dc->hash_uc >> 24;
+    
     inserted = FALSE;
     
-    le = fcb->dir_children_hash_uc.Flink;
+    d = c;
+    do {
+        le = fcb->hash_ptrs_uc[d];
+        
+        if (d == 0)
+            break;
+        
+        d--;
+    } while (!le);
+    
+    if (!le)
+        le = fcb->dir_children_hash_uc.Flink;
+    
     while (le != &fcb->dir_children_hash_uc) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
         
@@ -1397,6 +1468,15 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     
     if (!inserted)
         InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+    
+    if (!fcb->hash_ptrs_uc[c])
+        fcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
+    else {
+        dir_child* dc2 = CONTAINING_RECORD(fcb->hash_ptrs_uc[c], dir_child, list_entry_hash_uc);
+        
+        if (dc2->hash_uc > dc->hash_uc)
+            fcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
+    }
 }
 
 static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {

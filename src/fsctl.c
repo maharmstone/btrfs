@@ -1045,6 +1045,30 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fr->dc = dc;
     dc->fileref = fr;
     
+    fr->fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fr->fcb->hash_ptrs) {
+        ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fileref(fr);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(fr->fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+    
+    fr->fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fcb->hash_ptrs_uc) {
+        ERR("out of memory\n");
+        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        free_fileref(fr);
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(fr->fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);
     

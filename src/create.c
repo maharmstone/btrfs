@@ -676,6 +676,22 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     
+    fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fcb->hash_ptrs) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+    
+    fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fcb->hash_ptrs_uc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
@@ -2081,6 +2097,26 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     dc->fileref = fileref;
     
     increase_fileref_refcount(parfileref);
+    
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs) {
+            ERR("out of memory\n");
+            free_fileref(fileref);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+        
+        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs_uc) {
+            ERR("out of memory\n");
+            free_fileref(fileref);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    }
  
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);

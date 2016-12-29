@@ -1686,6 +1686,12 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         ExFreePool(dc);
     }
     
+    if (fcb->hash_ptrs)
+        ExFreePool(fcb->hash_ptrs);
+    
+    if (fcb->hash_ptrs_uc)
+        ExFreePool(fcb->hash_ptrs_uc);
+    
     FsRtlUninitializeFileLock(&fcb->lock);
     
     ExFreePool(fcb);
