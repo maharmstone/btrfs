@@ -878,6 +878,11 @@ end:
     return Status;
 }
 
+void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
+    RemoveEntryList(&dc->list_entry_hash);
+    RemoveEntryList(&dc->list_entry_hash_uc);
+}
+
 static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
@@ -1190,8 +1195,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                 // remove from old parent
                 ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
-                RemoveEntryList(&me->fileref->dc->list_entry_hash);
-                RemoveEntryList(&me->fileref->dc->list_entry_hash_uc);
+                remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
                 
                 if (name_changed) {
@@ -1653,11 +1657,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             fileref->dc->name_uc.Length = fileref->dc->name_uc.MaximumLength = fileref->filepart_uc.Length;
             RtlCopyMemory(fileref->dc->name_uc.Buffer, fileref->filepart_uc.Buffer, fileref->filepart_uc.Length);
             
+            remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+            
             fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
-            
-            RemoveEntryList(&fileref->dc->list_entry_hash);
-            RemoveEntryList(&fileref->dc->list_entry_hash_uc);
             
             insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
             
@@ -1767,8 +1770,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         // remove from old parent
         ExAcquireResourceExclusiveLite(&fr2->parent->fcb->nonpaged->dir_children_lock, TRUE);
         RemoveEntryList(&fileref->dc->list_entry_index);
-        RemoveEntryList(&fileref->dc->list_entry_hash);
-        RemoveEntryList(&fileref->dc->list_entry_hash_uc);
+        remove_dir_child_from_hash_lists(fr2->parent->fcb, fileref->dc);
         ExReleaseResourceLite(&fr2->parent->fcb->nonpaged->dir_children_lock);
         
         if (fileref->utf8.Length != fr2->utf8.Length || RtlCompareMemory(fileref->utf8.Buffer, fr2->utf8.Buffer, fr2->utf8.Length) != fr2->utf8.Length) {
