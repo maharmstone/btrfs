@@ -113,6 +113,7 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
     UNICODE_STRING fnus;
     UINT32 hash;
     LIST_ENTRY* le;
+    UINT8 c;
     
     if (!case_sensitive) {
         Status = RtlUpcaseUnicodeString(&fnus, filename, TRUE);
@@ -126,12 +127,17 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
     
     hash = calc_crc32c(0xffffffff, (UINT8*)fnus.Buffer, fnus.Length);
     
+    c = hash >> 24;
+    
     ExAcquireResourceSharedLite(&fcb->nonpaged->dir_children_lock, TRUE);
     
-    // FIXME - use hash tables
-    
     if (case_sensitive) {
-        le = fcb->dir_children_hash.Flink;
+        if (!fcb->hash_ptrs[c]) {
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
+            goto end;
+        }
+        
+        le = fcb->hash_ptrs[c];
         while (le != &fcb->dir_children_hash) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
             
@@ -173,7 +179,12 @@ static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING 
             le = le->Flink;
         }
     } else {
-        le = fcb->dir_children_hash_uc.Flink;
+        if (!fcb->hash_ptrs_uc[c]) {
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
+            goto end;
+        }
+        
+        le = fcb->hash_ptrs_uc[c];
         while (le != &fcb->dir_children_hash_uc) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
             
