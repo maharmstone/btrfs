@@ -1746,8 +1746,6 @@ end:
 
 NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
     dir_child* dc;
-    BOOL inserted;
-    LIST_ENTRY* le;
     
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
@@ -1802,41 +1800,7 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
     
     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
     
-    inserted = FALSE;
-    
-    le = fcb->dir_children_hash.Flink;
-    while (le != &fcb->dir_children_hash) {
-        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
-        
-        if (dc2->hash > dc->hash) {
-            InsertHeadList(le->Blink, &dc->list_entry_hash);
-            inserted = TRUE;
-            break;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!inserted)
-        InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
-    
-    inserted = FALSE;
-    
-    le = fcb->dir_children_hash_uc.Flink;
-    while (le != &fcb->dir_children_hash_uc) {
-        dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
-        
-        if (dc2->hash_uc > dc->hash_uc) {
-            InsertHeadList(le->Blink, &dc->list_entry_hash_uc);
-            inserted = TRUE;
-            break;
-        }
-        
-        le = le->Flink;
-    }
-    
-    if (!inserted)
-        InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+    insert_dir_child_into_hash_lists(fcb, dc);
     
     ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
