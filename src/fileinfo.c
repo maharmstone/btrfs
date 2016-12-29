@@ -2307,6 +2307,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
@@ -2349,9 +2350,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         increase_fileref_refcount(related);
     }
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive, Irp);
-    ExReleaseResourceLite(&Vcb->fcb_lock);
 
     if (NT_SUCCESS(Status)) {
         if (!oldfileref->deleted) {
@@ -2375,17 +2374,13 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
                 goto end;
             }
         } else {
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(oldfileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
             oldfileref = NULL;
         }
     }
     
     if (!related) {
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         Status = open_fileref(Vcb, &related, &fnus, NULL, TRUE, NULL, NULL, PagedPool, ccb->case_sensitive, Irp);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08x\n", Status);
@@ -2582,23 +2577,14 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     Status = STATUS_SUCCESS;
     
 end:
-    if (oldfileref) {
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    if (oldfileref)
         free_fileref(oldfileref);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-    }
     
-    if (!NT_SUCCESS(Status) && related) {
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    if (!NT_SUCCESS(Status) && related)
         free_fileref(related);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-    }
     
-    if (!NT_SUCCESS(Status) && fr2) {
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    if (!NT_SUCCESS(Status) && fr2)
         free_fileref(fr2);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-    }
     
     if (NT_SUCCESS(Status))
         clear_rollback(Vcb, &rollback);
@@ -2606,6 +2592,7 @@ end:
         do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;
