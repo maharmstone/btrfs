@@ -471,9 +471,20 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, PIRP Irp) {
+static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc, PIRP Irp) {
     LIST_ENTRY* le;
     dir_child* dc;
+    
+    if (*pdc) {
+        dir_child* dc2 = *pdc;
+        
+        if (dc2->list_entry_index.Flink != &fileref->fcb->dir_children_index)
+            dc = CONTAINING_RECORD(dc2->list_entry_index.Flink, dir_child, list_entry_index);
+        else
+            dc = NULL;
+        
+        goto next;
+    }
     
     if (fileref->parent) { // don't return . and .. if root directory
         if (*offset == 0) {
@@ -486,6 +497,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             de->type = BTRFS_TYPE_DIRECTORY;
             
             *offset = 1;
+            *pdc = NULL;
             
             return STATUS_SUCCESS;
         } else if (*offset == 1) {
@@ -498,6 +510,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
             de->type = BTRFS_TYPE_DIRECTORY;
             
             *offset = 2;
+            *pdc = NULL;
             
             return STATUS_SUCCESS;
         }
@@ -521,6 +534,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
         le = le->Flink;
     }
     
+next:
     if (!dc)
         return STATUS_NO_MORE_FILES;
     
@@ -530,6 +544,7 @@ static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_en
     de->dir_entry_type = DirEntryType_File;
     
     *offset = dc->index + 1;
+    *pdc = dc;
     
     return STATUS_SUCCESS;
 }
@@ -549,6 +564,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     dir_entry de;
     UINT64 newoffset;
     ANSI_STRING utf8;
+    dir_child* dc = NULL;
     
     TRACE("query directory\n");
     
@@ -669,7 +685,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
     
-    Status = next_dir_entry(fileref, &newoffset, &de, Irp);
+    Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
     
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_NO_MORE_FILES && initial)
@@ -713,20 +729,20 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (ccb->case_sensitive) {
             le = fileref->fcb->dir_children_hash.Flink;
             while (le != &fileref->fcb->dir_children_hash) {
-                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+                dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
                 
-                if (dc->hash == hash) {
-                    if (dc->name.Length == ccb->query_string.Length && RtlCompareMemory(dc->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
+                if (dc2->hash == hash) {
+                    if (dc2->name.Length == ccb->query_string.Length && RtlCompareMemory(dc2->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
                         found = TRUE;
                         
-                        de.key = dc->key;
-                        de.name = dc->name;
-                        de.type = dc->type;
+                        de.key = dc2->key;
+                        de.name = dc2->name;
+                        de.type = dc2->type;
                         de.dir_entry_type = DirEntryType_File;
                         
                         break;
                     }
-                } else if (dc->hash > hash)
+                } else if (dc2->hash > hash)
                     break;
                 
                 le = le->Flink;
@@ -734,20 +750,20 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         } else {
             le = fileref->fcb->dir_children_hash_uc.Flink;
             while (le != &fileref->fcb->dir_children_hash_uc) {
-                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+                dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
                 
-                if (dc->hash_uc == hash) {
-                    if (dc->name_uc.Length == us.Length && RtlCompareMemory(dc->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+                if (dc2->hash_uc == hash) {
+                    if (dc2->name_uc.Length == us.Length && RtlCompareMemory(dc2->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
                         found = TRUE;
                         
-                        de.key = dc->key;
-                        de.name = dc->name;
-                        de.type = dc->type;
+                        de.key = dc2->key;
+                        de.name = dc2->name;
+                        de.type = dc2->type;
                         de.dir_entry_type = DirEntryType_File;
                         
                         break;
                     }
-                } else if (dc->hash_uc > hash)
+                } else if (dc2->hash_uc > hash)
                     break;
                 
                 le = le->Flink;
@@ -764,7 +780,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else if (has_wildcard) {
         while (!FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
             newoffset = ccb->query_dir_offset;
-            Status = next_dir_entry(fileref, &newoffset, &de, Irp);
+            Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
             
             if (NT_SUCCESS(Status))
                 ccb->query_dir_offset = newoffset;
@@ -807,7 +823,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             if (length > 0) {
                 newoffset = ccb->query_dir_offset;
-                Status = next_dir_entry(fileref, &newoffset, &de, Irp);
+                Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
                 if (NT_SUCCESS(Status)) {
                     if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
                         curitem = (UINT8*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
