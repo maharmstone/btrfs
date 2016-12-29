@@ -183,12 +183,64 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
         le = le->Flink;
     }
     
-    if (!devdh1)
-        return FALSE;
+    if (!devdh1) {
+        UINT64 size = 0;
+        
+        // Can't find hole of at least max_stripe_size; look for the largest one we can find
+        
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+            
+            if (!dev->readonly && !dev->reloc) {
+                if (!IsListEmpty(&dev->space)) {
+                    LIST_ENTRY* le2;
+                    space *dh1 = NULL, *dh2 = NULL;
+                    
+                    le2 = dev->space.Flink;
+                    while (le2 != &dev->space) {
+                        space* dh = CONTAINING_RECORD(le2, space, list_entry);
+                        
+                        if (!dh1 || !dh2 || dh->size < dh1->size) {
+                            dh2 = dh1;
+                            dh1 = dh;
+                        }
+
+                        le2 = le2->Flink;
+                    }
+                    
+                    if (dh1) {
+                        UINT64 devsize;
+                        
+                        if (dh2)
+                            devsize = max(dh1->size / 2, min(dh1->size, dh2->size));
+                        else
+                            devsize = min(dh1->size, dh2->size);
+                        
+                        if (devsize > size) {
+                            dev2 = dev;
+                            devdh1 = dh1;
+                            
+                            if (dh2 && min(dh1->size, dh2->size) > dh1->size / 2)
+                                devdh2 = dh2;
+                            else
+                                devdh2 = dh1;
+                            
+                            size = devsize;
+                        }
+                    }
+                }
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!devdh1)
+            return FALSE;
+    }
     
-    stripes[0].device = dev2;
+    stripes[0].device = stripes[1].device = dev2;
     stripes[0].dh = devdh1;
-    stripes[1].device = stripes[0].device;
     stripes[1].dh = devdh2;
     
     return TRUE;
@@ -433,10 +485,14 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     
     stripe_length = 0x10000; // FIXME? BTRFS_STRIPE_LEN in kernel
     
-    stripe_size = max_stripe_size;
-    for (i = 0; i < num_stripes; i++) {
-        if (stripes[i].dh->size < stripe_size)
-            stripe_size = stripes[i].dh->size;
+    if (type == BLOCK_FLAG_DUPLICATE && stripes[1].dh == stripes[0].dh)
+        stripe_size = min(stripes[0].dh->size / 2, max_stripe_size);
+    else {
+        stripe_size = max_stripe_size;
+        for (i = 0; i < num_stripes; i++) {
+            if (stripes[i].dh->size < stripe_size)
+                stripe_size = stripes[i].dh->size;
+        }
     }
     
     if (type == 0 || type == BLOCK_FLAG_DUPLICATE || type == BLOCK_FLAG_RAID1)
