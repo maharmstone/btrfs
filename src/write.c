@@ -155,19 +155,19 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
             // favour devices which have been used the least
             if (usage < devusage) {
                 if (!IsListEmpty(&dev->space)) {
-                    LIST_ENTRY* le;
+                    LIST_ENTRY* le2;
                     space *dh1 = NULL, *dh2 = NULL;
                     
-                    le = dev->space.Flink;
-                    while (le != &dev->space) {
-                        space* dh = CONTAINING_RECORD(le, space, list_entry);
+                    le2 = dev->space.Flink;
+                    while (le2 != &dev->space) {
+                        space* dh = CONTAINING_RECORD(le2, space, list_entry);
                         
                         if (dh->size >= max_stripe_size && (!dh1 || !dh2 || dh->size < dh1->size)) {
                             dh2 = dh1;
                             dh1 = dh;
                         }
 
-                        le = le->Flink;
+                        le2 = le2->Flink;
                     }
                     
                     if (dh1 && (dh2 || dh1->size >= 2 * max_stripe_size)) {
