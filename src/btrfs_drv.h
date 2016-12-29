@@ -500,7 +500,7 @@ typedef struct {
 typedef struct {
     ULONG num_threads;
     LIST_ENTRY job_list;
-    KSPIN_LOCK spin_lock;
+    ERESOURCE lock;
     drv_calc_thread* threads;
     KEVENT event;
 } drv_calc_threads;
