@@ -697,8 +697,6 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
         dir_child* dc;
         ULONG utf16len;
-        LIST_ENTRY* le;
-        BOOL inserted = FALSE;
         
         if (tp.item->size < sizeof(DIR_ITEM)) {
             WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
@@ -769,41 +767,7 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
         
         InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
         
-        inserted = FALSE;
-        
-        le = fcb->dir_children_hash.Flink;
-        while (le != &fcb->dir_children_hash) {
-            dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
-            
-            if (dc2->hash > dc->hash) {
-                InsertHeadList(le->Blink, &dc->list_entry_hash);
-                inserted = TRUE;
-                break;
-            }
-            
-            le = le->Flink;
-        }
-        
-        if (!inserted)
-            InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
-        
-        inserted = FALSE;
-        
-        le = fcb->dir_children_hash_uc.Flink;
-        while (le != &fcb->dir_children_hash_uc) {
-            dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
-            
-            if (dc2->hash_uc > dc->hash_uc) {
-                InsertHeadList(le->Blink, &dc->list_entry_hash_uc);
-                inserted = TRUE;
-                break;
-            }
-            
-            le = le->Flink;
-        }
-        
-        if (!inserted)
-            InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+        insert_dir_child_into_hash_lists(fcb, dc);
         
 cont:
         if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp))

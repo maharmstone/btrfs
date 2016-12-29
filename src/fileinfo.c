@@ -23,7 +23,6 @@
 #endif
 
 static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us, PIRP Irp);
-static void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
@@ -1359,7 +1358,7 @@ end:
     return Status;
 }
 
-static void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
+void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     BOOL inserted;
     LIST_ENTRY* le;
     
