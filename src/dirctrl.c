@@ -704,6 +704,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         UNICODE_STRING us;
         LIST_ENTRY* le;
         UINT32 hash;
+        UINT8 c;
         
         us.Buffer = NULL;
         
@@ -718,49 +719,53 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         } else
             hash = calc_crc32c(0xffffffff, (UINT8*)ccb->query_string.Buffer, ccb->query_string.Length);
         
-        // FIXME - use hash tables for this
-
+        c = hash >> 24;
+        
         if (ccb->case_sensitive) {
-            le = fileref->fcb->dir_children_hash.Flink;
-            while (le != &fileref->fcb->dir_children_hash) {
-                dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
-                
-                if (dc2->hash == hash) {
-                    if (dc2->name.Length == ccb->query_string.Length && RtlCompareMemory(dc2->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
-                        found = TRUE;
-                        
-                        de.key = dc2->key;
-                        de.name = dc2->name;
-                        de.type = dc2->type;
-                        de.dir_entry_type = DirEntryType_File;
-                        
+            if (fileref->fcb->hash_ptrs[c]) {
+                le = fileref->fcb->hash_ptrs[c];
+                while (le != &fileref->fcb->dir_children_hash) {
+                    dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+                    
+                    if (dc2->hash == hash) {
+                        if (dc2->name.Length == ccb->query_string.Length && RtlCompareMemory(dc2->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
+                            found = TRUE;
+                            
+                            de.key = dc2->key;
+                            de.name = dc2->name;
+                            de.type = dc2->type;
+                            de.dir_entry_type = DirEntryType_File;
+                            
+                            break;
+                        }
+                    } else if (dc2->hash > hash)
                         break;
-                    }
-                } else if (dc2->hash > hash)
-                    break;
-                
-                le = le->Flink;
+                    
+                    le = le->Flink;
+                }
             }
         } else {
-            le = fileref->fcb->dir_children_hash_uc.Flink;
-            while (le != &fileref->fcb->dir_children_hash_uc) {
-                dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
-                
-                if (dc2->hash_uc == hash) {
-                    if (dc2->name_uc.Length == us.Length && RtlCompareMemory(dc2->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-                        found = TRUE;
-                        
-                        de.key = dc2->key;
-                        de.name = dc2->name;
-                        de.type = dc2->type;
-                        de.dir_entry_type = DirEntryType_File;
-                        
+            if (fileref->fcb->hash_ptrs_uc[c]) {
+                le = fileref->fcb->hash_ptrs_uc[c];
+                while (le != &fileref->fcb->dir_children_hash_uc) {
+                    dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+                    
+                    if (dc2->hash_uc == hash) {
+                        if (dc2->name_uc.Length == us.Length && RtlCompareMemory(dc2->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+                            found = TRUE;
+                            
+                            de.key = dc2->key;
+                            de.name = dc2->name;
+                            de.type = dc2->type;
+                            de.dir_entry_type = DirEntryType_File;
+                            
+                            break;
+                        }
+                    } else if (dc2->hash_uc > hash)
                         break;
-                    }
-                } else if (dc2->hash_uc > hash)
-                    break;
-                
-                le = le->Flink;
+                    
+                    le = le->Flink;
+                }
             }
         }
         
