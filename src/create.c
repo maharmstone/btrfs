@@ -1388,6 +1388,184 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
+static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
+                                   POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
+    NTSTATUS Status;
+    file_ref* sf2;
+    
+    sf2 = search_fileref_children(sf, name, case_sensitive);
+        
+    if (sf2 && sf2->fcb->type != BTRFS_TYPE_DIRECTORY && !lastpart) {
+        WARN("passed path including file as subdirectory\n");
+        free_fileref(sf2);
+        
+        return STATUS_OBJECT_PATH_NOT_FOUND;
+    }
+    
+    if (sf2 && sf2->deleted) {
+        TRACE("element in path has been deleted\n");
+        free_fileref(sf2);
+        return lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
+    }
+    
+    if (!sf2) {
+        if (streampart) {
+            UNICODE_STRING streamname;
+            ANSI_STRING xattr;
+            UINT32 streamhash;
+            
+            streamname.Buffer = NULL;
+            streamname.Length = streamname.MaximumLength = 0;
+            xattr.Buffer = NULL;
+            xattr.Length = xattr.MaximumLength = 0;
+            
+            // FIXME - check if already opened
+            
+            if (!find_stream(Vcb, sf->fcb, name, &streamname, &streamhash, &xattr, Irp)) {
+                TRACE("could not find stream %.*S\n", name->Length / sizeof(WCHAR), name->Buffer);
+                
+                return STATUS_OBJECT_NAME_NOT_FOUND;
+            } else {
+                fcb* fcb;
+
+                if (streamhash == EA_DOSATTRIB_HASH && xattr.Length == strlen(EA_DOSATTRIB) &&
+                    RtlCompareMemory(xattr.Buffer, EA_DOSATTRIB, xattr.Length) == xattr.Length) {
+                    WARN("not allowing user.DOSATTRIB to be opened as stream\n");
+                
+                    return STATUS_OBJECT_NAME_NOT_FOUND;
+                }
+                
+                Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamhash, sf->fcb, &fcb, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("open_fcb_stream returned %08x\n", Status);
+                    return Status;
+                }
+                
+                sf2 = create_fileref();
+                if (!sf2) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sf2->fcb = fcb;
+    
+                if (streamname.Buffer) // case has changed
+                    sf2->filepart = streamname;
+                else {
+                    sf2->filepart.MaximumLength = sf2->filepart.Length = name->Length;
+                    sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
+                    if (!sf2->filepart.Buffer) {
+                        ERR("out of memory\n");
+                        free_fileref(sf2);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }   
+                    
+                    RtlCopyMemory(sf2->filepart.Buffer, name->Buffer, name->Length);
+                }
+                
+                Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                    free_fileref(sf2);
+                    return Status;
+                }
+                
+                // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
+
+                sf2->parent = (struct _file_ref*)sf;
+                insert_fileref_child(sf, sf2, TRUE);
+                
+                increase_fileref_refcount(sf);
+            }
+        } else {
+            root* subvol;
+            UINT64 inode;
+            dir_child* dc;
+            
+            Status = find_file_in_dir(Vcb, name, sf->fcb, &subvol, &inode, &dc, case_sensitive, Irp);
+            if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+                TRACE("could not find %.*S\n", name->Length / sizeof(WCHAR), name->Buffer);
+
+                return lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
+            } else if (!NT_SUCCESS(Status)) {
+                ERR("find_file_in_dir returned %08x\n", Status);
+                return Status;
+            } else {
+                fcb* fcb;
+                
+                Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("open_fcb returned %08x\n", Status);
+                    return Status;
+                }
+                
+                if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                    WARN("passed path including file as subdirectory\n");
+                    free_fcb(fcb);
+                    return STATUS_OBJECT_PATH_NOT_FOUND;
+                }
+
+                sf2 = create_fileref();
+                if (!sf2) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sf2->fcb = fcb;
+                
+                if (dc->type == BTRFS_TYPE_DIRECTORY)
+                    fcb->fileref = sf2;
+                
+                sf2->index = dc->index;
+                sf2->dc = dc;
+                dc->fileref = sf2;
+                
+                sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
+                if (!sf2->utf8.Buffer) {
+                    ERR("out of memory\n");
+                    free_fileref(sf2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
+                if (!sf2->filepart.Buffer) {
+                    ERR("out of memory\n");
+                    free_fileref(sf2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sf2->filepart_uc.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name_uc.Length, ALLOC_TAG);
+                if (!sf2->filepart_uc.Buffer) {
+                    ERR("out of memory\n");
+                    free_fileref(sf2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                sf2->utf8.Length = sf2->utf8.MaximumLength = dc->utf8.Length;
+                RtlCopyMemory(sf2->utf8.Buffer, dc->utf8.Buffer, dc->utf8.Length);
+                
+                sf2->filepart.Length = sf2->filepart.MaximumLength = dc->name.Length;
+                RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
+                
+                sf2->filepart_uc.Length = sf2->filepart_uc.MaximumLength = dc->name_uc.Length;
+                RtlCopyMemory(sf2->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
+                
+                sf2->parent = (struct _file_ref*)sf;
+                
+                insert_fileref_child(sf, sf2, TRUE);
+                
+                increase_fileref_refcount(sf);
+            }
+        }
+    }
+    
+    *psf2 = sf2;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
@@ -1502,184 +1680,14 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     for (i = 0; i < num_parts; i++) {
         BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
         
-        sf2 = search_fileref_children(sf, &parts[i], case_sensitive);
-        
-        if (sf2 && sf2->fcb->type != BTRFS_TYPE_DIRECTORY && !lastpart) {
-            WARN("passed path including file as subdirectory\n");
-            free_fileref(sf2);
+        Status = open_fileref_child(Vcb, sf, &parts[i], case_sensitive, lastpart, has_stream && i == num_parts - 1, pooltype, &sf2, Irp);
+        if (!NT_SUCCESS(Status)) {
+            if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                TRACE("open_fileref_child returned %08x\n", Status);
+            else
+                ERR("open_fileref_child returned %08x\n", Status);
             
-            Status = STATUS_OBJECT_PATH_NOT_FOUND;
             goto end;
-        }
-        
-        if (sf2 && sf2->deleted) {
-            TRACE("element in path has been deleted\n");
-            free_fileref(sf2);
-            Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
-            goto end;
-        }
-        
-        if (!sf2) {
-            if (has_stream && i == num_parts - 1) {
-                UNICODE_STRING streamname;
-                ANSI_STRING xattr;
-                UINT32 streamhash;
-                
-                streamname.Buffer = NULL;
-                streamname.Length = streamname.MaximumLength = 0;
-                xattr.Buffer = NULL;
-                xattr.Length = xattr.MaximumLength = 0;
-                
-                // FIXME - check if already opened
-                
-                if (!find_stream(Vcb, sf->fcb, &parts[i], &streamname, &streamhash, &xattr, Irp)) {
-                    TRACE("could not find stream %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
-                    
-                    Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                    goto end;
-                } else {
-                    fcb* fcb;
-
-                    if (streamhash == EA_DOSATTRIB_HASH && xattr.Length == strlen(EA_DOSATTRIB) &&
-                        RtlCompareMemory(xattr.Buffer, EA_DOSATTRIB, xattr.Length) == xattr.Length) {
-                        WARN("not allowing user.DOSATTRIB to be opened as stream\n");
-                    
-                        Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                        goto end;
-                    }
-                    
-                    Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, &xattr, streamhash, sf->fcb, &fcb, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("open_fcb_stream returned %08x\n", Status);
-                        goto end;
-                    }
-                    
-                    sf2 = create_fileref();
-                    if (!sf2) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->fcb = fcb;
-        
-                    if (streamname.Buffer) // case has changed
-                        sf2->filepart = streamname;
-                    else {
-                        sf2->filepart.MaximumLength = sf2->filepart.Length = parts[i].Length;
-                        sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
-                        if (!sf2->filepart.Buffer) {
-                            ERR("out of memory\n");
-                            free_fileref(sf2);
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }   
-                        
-                        RtlCopyMemory(sf2->filepart.Buffer, parts[i].Buffer, parts[i].Length);
-                    }
-                    
-                    Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                        free_fileref(sf2);
-                        goto end;
-                    }
-                    
-                    // FIXME - make sure all functions know that ADS FCBs won't have a valid SD or INODE_ITEM
-
-                    sf2->parent = (struct _file_ref*)sf;
-                    insert_fileref_child(sf, sf2, TRUE);
-                    
-                    increase_fileref_refcount(sf);
-                }
-            } else {
-                root* subvol;
-                UINT64 inode;
-                dir_child* dc;
-                
-                Status = find_file_in_dir(Vcb, &parts[i], sf->fcb, &subvol, &inode, &dc, case_sensitive, Irp);
-                if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-                    TRACE("could not find %.*S\n", parts[i].Length / sizeof(WCHAR), parts[i].Buffer);
-
-                    Status = lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
-                    goto end;
-                } else if (!NT_SUCCESS(Status)) {
-                    ERR("find_file_in_dir returned %08x\n", Status);
-                    goto end;
-                } else {
-                    fcb* fcb;
-                    
-                    Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("open_fcb returned %08x\n", Status);
-                        goto end;
-                    }
-                    
-                    if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
-                        WARN("passed path including file as subdirectory\n");
-                        free_fcb(fcb);
-                        Status = STATUS_OBJECT_PATH_NOT_FOUND;
-                        goto end;
-                    }
-
-                    sf2 = create_fileref();
-                    if (!sf2) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->fcb = fcb;
-                    
-                    if (dc->type == BTRFS_TYPE_DIRECTORY)
-                        fcb->fileref = sf2;
-                    
-                    sf2->index = dc->index;
-                    sf2->dc = dc;
-                    dc->fileref = sf2;
-                    
-                    sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
-                    if (!sf2->utf8.Buffer) {
-                        ERR("out of memory\n");
-                        free_fileref(sf2);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
-                    if (!sf2->filepart.Buffer) {
-                        ERR("out of memory\n");
-                        free_fileref(sf2);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->filepart_uc.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name_uc.Length, ALLOC_TAG);
-                    if (!sf2->filepart_uc.Buffer) {
-                        ERR("out of memory\n");
-                        free_fileref(sf2);
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    sf2->utf8.Length = sf2->utf8.MaximumLength = dc->utf8.Length;
-                    RtlCopyMemory(sf2->utf8.Buffer, dc->utf8.Buffer, dc->utf8.Length);
-                    
-                    sf2->filepart.Length = sf2->filepart.MaximumLength = dc->name.Length;
-                    RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
-                    
-                    sf2->filepart_uc.Length = sf2->filepart_uc.MaximumLength = dc->name_uc.Length;
-                    RtlCopyMemory(sf2->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
-                    
-                    sf2->parent = (struct _file_ref*)sf;
-                    
-                    insert_fileref_child(sf, sf2, TRUE);
-                    
-                    increase_fileref_refcount(sf);
-                }
-            }
         }
         
         if (i == num_parts - 1) {
