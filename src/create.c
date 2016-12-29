@@ -682,7 +682,7 @@ NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 len
     return STATUS_SUCCESS;
 }
 
-NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
+NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -702,6 +702,9 @@ NTSTATUS load_dir_children(fcb* fcb, PIRP Irp) {
     }
     
     RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    
+    if (!ignore_size && fcb->inode_item.st_size == 0)
+        return STATUS_SUCCESS;
     
     searchkey.obj_id = fcb->inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
@@ -1187,8 +1190,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-        Status = load_dir_children(fcb, Irp);
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        Status = load_dir_children(fcb, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_dir_children returned %08x\n", Status);
             free_fcb(fcb);

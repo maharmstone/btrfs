@@ -4006,7 +4006,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    Status = load_dir_children(root_fcb, Irp);
+    Status = load_dir_children(root_fcb, TRUE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("load_dir_children returned %08x\n", Status);
         goto exit;
