@@ -265,7 +265,7 @@ static NTSTATUS STDCALL fast_io_release_for_ccflush(PFILE_OBJECT FileObject, PDE
     return STATUS_SUCCESS;
 }
 
-#ifdef DEBUG
+#ifdef _DEBUG
 static BOOLEAN STDCALL fast_io_read(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait, ULONG LockKey, PVOID Buffer, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
     TRACE("(%p, %p, %x, %x, %x, %p, %p, %p)\n", FileObject, FileOffset, Length, Wait, LockKey, Buffer, IoStatus, DeviceObject);
 
@@ -284,7 +284,7 @@ static BOOLEAN STDCALL fast_io_mdl_read(PFILE_OBJECT FileObject, PLARGE_INTEGER 
     return FsRtlMdlReadDev(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject);
 }
 
-static BOOLEAN STDCALL fast_io_mdl_read_complete(PFILE_OBJECT FileObject, PMDL* MdlChain, PDEVICE_OBJECT DeviceObject) {
+static BOOLEAN STDCALL fast_io_mdl_read_complete(PFILE_OBJECT FileObject, PMDL MdlChain, PDEVICE_OBJECT DeviceObject) {
     TRACE("(%p, %p, %p)\n", FileObject, MdlChain, DeviceObject);
 
     return FsRtlMdlReadCompleteDev(FileObject, MdlChain, DeviceObject);
@@ -296,7 +296,7 @@ static BOOLEAN STDCALL fast_io_prepare_mdl_write(PFILE_OBJECT FileObject, PLARGE
     return FsRtlPrepareMdlWriteDev(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject);
 }
 
-static BOOLEAN STDCALL fast_io_mdl_write_complete(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PMDL* MdlChain, PDEVICE_OBJECT DeviceObject) {
+static BOOLEAN STDCALL fast_io_mdl_write_complete(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PMDL MdlChain, PDEVICE_OBJECT DeviceObject) {
     TRACE("(%p, %p, %p, %p)\n", FileObject, FileOffset, MdlChain, DeviceObject);
 
     return FsRtlMdlWriteCompleteDev(FileObject, FileOffset, MdlChain, DeviceObject);
@@ -330,7 +330,7 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
     FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
     
-#ifdef DEBUG
+#ifdef _DEBUG
     FastIoDispatch.FastIoRead = fast_io_read;
     FastIoDispatch.FastIoWrite = fast_io_write;
     FastIoDispatch.MdlRead = fast_io_mdl_read;
