@@ -693,6 +693,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         BOOL found = FALSE;
         UNICODE_STRING us;
         LIST_ENTRY* le;
+        UINT32 hash;
         
         us.Buffer = NULL;
         
@@ -702,33 +703,64 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                 goto end;
             }
-        }
-        
-        // FIXME - use hash lists for this
-        le = fileref->fcb->dir_children_index.Flink;
-        while (le != &fileref->fcb->dir_children_index) {
-            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
             
-            if (!ccb->case_sensitive && dc->name_uc.Length == us.Length &&
-                RtlCompareMemory(dc->name_uc.Buffer, us.Buffer, us.Length) == us.Length)
-                found = TRUE;
-            else if (ccb->case_sensitive && dc->name.Length == ccb->query_string.Length &&
-                RtlCompareMemory(dc->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length)
-                found = TRUE;
-                
-            if (found) {
-                de.key = dc->key;
-                de.name = dc->name;
-                de.type = dc->type;
-                de.dir_entry_type = DirEntryType_File;
-                break;
-            }
+            hash = calc_crc32c(0xffffffff, (UINT8*)us.Buffer, us.Length);
+        } else
+            hash = calc_crc32c(0xffffffff, (UINT8*)ccb->query_string.Buffer, ccb->query_string.Length);
+        
+        // FIXME - use hash tables for this
 
-            le = le->Flink;
+        if (ccb->case_sensitive) {
+            le = fileref->fcb->dir_children_hash.Flink;
+            while (le != &fileref->fcb->dir_children_hash) {
+                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+                
+                if (dc->hash == hash) {
+                    if (dc->name.Length == ccb->query_string.Length && RtlCompareMemory(dc->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
+                        found = TRUE;
+                        
+                        de.key = dc->key;
+                        de.name = dc->name;
+                        de.type = dc->type;
+                        de.dir_entry_type = DirEntryType_File;
+                        
+                        break;
+                    }
+                } else if (dc->hash > hash)
+                    break;
+                
+                le = le->Flink;
+            }
+        } else {
+            le = fileref->fcb->dir_children_hash_uc.Flink;
+            while (le != &fileref->fcb->dir_children_hash_uc) {
+                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+                
+                if (dc->hash_uc == hash) {
+                    if (dc->name_uc.Length == us.Length && RtlCompareMemory(dc->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
+                        found = TRUE;
+                        
+                        de.key = dc->key;
+                        de.name = dc->name;
+                        de.type = dc->type;
+                        de.dir_entry_type = DirEntryType_File;
+                        
+                        break;
+                    }
+                } else if (dc->hash_uc > hash)
+                    break;
+                
+                le = le->Flink;
+            }
         }
         
         if (us.Buffer)
             ExFreePool(us.Buffer);
+        
+        if (!found) {
+            Status = STATUS_NO_SUCH_FILE;
+            goto end;
+        }
     } else if (has_wildcard) {
         while (!FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
             newoffset = ccb->query_dir_offset;
