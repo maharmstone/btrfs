@@ -1756,6 +1756,9 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     if (fr->fcb->fileref == fr)
         fr->fcb->fileref = NULL;
     
+    if (fr->dc)
+        fr->dc->fileref = NULL;
+
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
     

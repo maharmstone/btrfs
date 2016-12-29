@@ -472,6 +472,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         WARN("add_dir_child returned %08x\n", Status);
     
     fr->dc = dc;
+    dc->fileref = fr;
     
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);
@@ -1042,6 +1043,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         WARN("add_dir_child returned %08x\n", Status);
     
     fr->dc = dc;
+    dc->fileref = fr;
     
     insert_fileref_child(fileref, fr, TRUE);
     increase_fileref_refcount(fileref);

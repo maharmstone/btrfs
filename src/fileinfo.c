@@ -831,6 +831,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                             WARN("add_dir_child returned %08x\n", Status);
                         
                         fr->dc = dc;
+                        dc->fileref = fr;
                         
                         insert_fileref_child(fr->parent, fr, FALSE);
                         
@@ -2386,6 +2387,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         WARN("add_dir_child returned %08x\n", Status);
     
     fr2->dc = dc;
+    dc->fileref = fr2;
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {
@@ -3843,6 +3845,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         WARN("add_dir_child returned %08x\n", Status);
     
     fr->dc = dc;
+    dc->fileref = fr;
     
     insert_fileref_child(parfr, fr, TRUE);
 

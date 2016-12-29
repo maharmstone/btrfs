@@ -1638,6 +1638,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                     
                     sf2->index = dc->index;
                     sf2->dc = dc;
+                    dc->fileref = sf2;
                     
                     sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
                     if (!sf2->utf8.Buffer) {
@@ -2131,6 +2132,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         WARN("add_dir_child returned %08x\n", Status);
     
     fileref->dc = dc;
+    dc->fileref = fileref;
     
     increase_fileref_refcount(parfileref);
  

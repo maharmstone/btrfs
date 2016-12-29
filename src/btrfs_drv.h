@@ -140,6 +140,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } hardlink;
 
+struct _file_ref;
+
 typedef struct {
     KEY key;
     UINT64 index;
@@ -149,12 +151,11 @@ typedef struct {
     UNICODE_STRING name;
     UINT32 hash_uc;
     UNICODE_STRING name_uc;
+    struct _file_ref* fileref;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;
 } dir_child;
-
-struct _file_ref;
 
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
