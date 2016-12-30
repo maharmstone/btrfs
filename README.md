@@ -1,4 +1,4 @@
-WinBtrfs v0.7
+WinBtrfs v0.8
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -56,13 +56,16 @@ Features
 * LZO compression (incompat flag `compress_lzo`)
 * Misc incompat flags: `mixed_groups`, `no_holes`
 * LXSS ("Ubuntu on Windows") support
+* Balancing (including resuming balances started on Linux)
+* Device addition and removal
+* Creation of new filesystems with `mkbtrfs.exe` and `ubtrfs.dll`
 
 Todo
 ----
 
 * New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
+* Scrubbing
 * Passthrough of permissions etc. for LXSS
-* Maintenance tools: mkfs.btrfs, btrfs-balance, scrubbing, etc.
 * TRIM/DISCARD
 
 Installation
@@ -155,8 +158,30 @@ type 7 in `fdisk`. For GPT partitions, this should be type 6 in `fdisk` ("Micros
 basic data"), or 0700 in `gdisk`. We have to do some chicanery to get Linux partitions
 to appear in the first place, but unfortunately this confuses diskmgmt.msc too much.
 
+* How do I format a partition as Btrfs?
+
+Use the included command line program mkbtrfs.exe. We can't add Btrfs to Windows' own
+dialog box, unfortunately, as its list of filesystems has been hardcoded.
+
+* I can't reformat a mounted Btrfs filesystem
+
+If Windows' Format dialog box refuses to appear, try running format.com with the /fs
+flag, e.g. `format /fs:ntfs D:`.
+
 Changelog
 ---------
+
+v0.8 (2016-12-30):
+* Volume property sheet, for:
+ * Balances
+ * Adding and removing devices
+ * Showing disk usage, i.e. the equivalent to `btrfs fi usage`
+* Checksums now calulated in parallel where appropriate
+* Creation of new filesystems, with mkbtrfs.exe
+* Plug and play support for RAID devices
+* Disk usage now correctly allocated to processes in taskmgr
+* Performance increases
+* Miscellaneous bug fixes
 
 v0.7 (2016-10-24):
 * Support for RAID5/6 (incompat flag `raid56`)
@@ -204,7 +229,6 @@ v0.4 (2016-05-02):
 * Miscellaneous bug fixes
 
 v0.3 (2016-03-25):
-
 * Bug fixes:
  * Fixed crashes when metadata blocks were SINGLE, such as on SSDs
  * Fixed crash when splitting an internal tree
@@ -215,7 +239,6 @@ v0.3 (2016-03-25):
 * Added beginnings of shell extension, which currently only changes the icon of subvolumes
 
 v0.2 (2016-03-13):
-
 * Bug fix release:
  * Check memory allocations succeed
  * Check tree items are the size we're expecting
@@ -229,7 +252,6 @@ v0.2 (2016-03-13):
 * Debug log support (see below)
 
 v0.1 (2016-02-21):
-
 * Initial alpha release.
 
 Debug log
@@ -302,6 +324,9 @@ from a RAID5 or 6 chunk. Because disk I/O is so much slower than CPU operations,
 recalculate a stripe from the others than to read it in the first place. Valid values are 0 and 1 for
 RAID5, and 0, 1, and 2 for RAID6. You might want to experiment with which is quicker for you; for SSDs
 this probably should be 0. The default for both options is 1.
+
+* `SkipBalance` (DWORD): set to 1 to tell the driver not to attempt resuming a balance which was running
+when the system last powered down. The default is 0. The equivalent parameter on Linux is `skip_balance`.
 
 Contact
 -------
