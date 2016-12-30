@@ -946,6 +946,9 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_directory_control(DeviceObject, Irp);
+        goto end;
     }
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -973,6 +976,7 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     if (Status == STATUS_PENDING)
         goto exit;
     
+end:
     Irp->IoStatus.Status = Status;
 
 //     if (Irp->UserIosb)

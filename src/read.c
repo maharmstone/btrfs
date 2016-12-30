@@ -3424,6 +3424,9 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
+        goto exit3;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_read(DeviceObject, Irp);
         goto exit2;
     }
     
@@ -3468,7 +3471,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
         
-        goto exit2;
+        goto exit3;
     }
     
     wait = IoIsOperationSynchronous(Irp);
@@ -3507,6 +3510,7 @@ exit:
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
     TRACE("returning %08x\n", Status);
     
+exit2:
     if (Status != STATUS_PENDING)
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     else {
@@ -3514,7 +3518,7 @@ exit:
             do_read_job(Irp);
     }
     
-exit2:
+exit3:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

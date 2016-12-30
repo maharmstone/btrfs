@@ -435,7 +435,10 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (DeviceObject == devobj || (Vcb && Vcb->type == VCB_TYPE_PARTITION0)) {
         TRACE("Closing file system\n");
         Status = STATUS_SUCCESS;
-        goto exit;
+        goto end;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_close(DeviceObject, Irp);
+        goto end;
     }
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -445,7 +448,7 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     Status = close_file(DeviceObject->DeviceExtension, IrpSp->FileObject);
 
-exit:
+end:
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
     
@@ -478,6 +481,9 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_flush_buffers(DeviceObject, Irp);
+        goto end;
     }
     
     Status = STATUS_SUCCESS;
@@ -495,6 +501,7 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
         Status = Irp->IoStatus.Status;
     }
     
+end:
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
 exit:
@@ -553,6 +560,9 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_query_volume_information(DeviceObject, Irp);
+        goto end;
     }    
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -757,12 +767,13 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 //         Status = STATUS_BUFFER_OVERFLOW;
 //     }
 
-    Irp->IoStatus.Status = Status;
-    
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
         Irp->IoStatus.Information = 0;
     else
         Irp->IoStatus.Information = BytesCopied;
+    
+end:
+    Irp->IoStatus.Status = Status;
     
     IoCompleteRequest( Irp, IO_DISK_INCREMENT );
     
@@ -1322,6 +1333,9 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_set_volume_information(DeviceObject, Irp);
+        goto end;
     }
     
     Status = STATUS_NOT_IMPLEMENTED;
@@ -2149,6 +2163,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit2;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_cleanup(DeviceObject, Irp);
+        goto exit;
     }
     
     if (DeviceObject == devobj) {
@@ -3744,7 +3761,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Flags |= DO_DIRECT_IO;
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
-    Vcb->type = VCB_TYPE_VOLUME;
+    Vcb->type = VCB_TYPE_FS;
     
     ExInitializeResourceLite(&Vcb->tree_lock);
     Vcb->open_trees = 0;
@@ -4286,6 +4303,9 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_file_system_control(DeviceObject, Irp);
+        goto end;
     }
     
     Status = STATUS_NOT_IMPLEMENTED;
@@ -4332,6 +4352,7 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             break;
     }
 
+end:
     Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -4358,6 +4379,13 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_lock_control(DeviceObject, Irp);
+        
+        Irp->IoStatus.Status = Status;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        
         goto exit;
     }
     
@@ -4401,6 +4429,9 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_shutdown(DeviceObject, Irp);
+        goto end;
     }    
     
     Status = STATUS_SUCCESS;
@@ -4413,6 +4444,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         uninit(Vcb, TRUE);
     }
     
+end:
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
 

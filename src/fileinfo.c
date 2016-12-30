@@ -2613,6 +2613,9 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_set_information(DeviceObject, Irp);
+        goto end;
     }
     
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED)) {
@@ -4417,6 +4420,9 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_query_information(DeviceObject, Irp);
+        goto end;
     }
     
     Irp->IoStatus.Information = 0;
@@ -4433,6 +4439,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     Status = query_info(fcb->Vcb, IrpSp->FileObject, Irp);
     
+end:
     TRACE("returning %08x\n", Status);
     
     Irp->IoStatus.Status = Status;
@@ -4470,6 +4477,9 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_query_ea(DeviceObject, Irp);
+        goto end;
     }
     
     ffei = map_user_buffer(Irp);
@@ -4703,6 +4713,9 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_set_ea(DeviceObject, Irp);
+        goto end;
     }
     
     if (Vcb->readonly) {

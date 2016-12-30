@@ -521,6 +521,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\volume.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\worker-thread.c"
 				>
 			</File>

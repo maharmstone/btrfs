@@ -3555,6 +3555,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = STATUS_SUCCESS;
 
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_create(DeviceObject, Irp);
+        goto exit;
     }
     
     Status = verify_vcb(Vcb, Irp);

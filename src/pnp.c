@@ -282,6 +282,9 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
         Status = part0_passthrough(DeviceObject, Irp);
+        goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_pnp(DeviceObject, Irp);
         goto end;
     }
     
@@ -313,7 +316,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             IoSkipCurrentIrpStackLocation(Irp);
             Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
-            goto end;
+            goto exit;
     }
 
 // //     Irp->IoStatus.Status = Status;
@@ -325,11 +328,12 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 // 
 // //     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
+end:
     Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-end:
+exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
