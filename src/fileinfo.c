@@ -4439,14 +4439,14 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     Status = query_info(fcb->Vcb, IrpSp->FileObject, Irp);
     
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
 end:
     TRACE("returning %08x\n", Status);
     
     Irp->IoStatus.Status = Status;
     
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
-    
-    ExReleaseResourceLite(&Vcb->tree_lock);
     
 exit:
     if (top_level) 
