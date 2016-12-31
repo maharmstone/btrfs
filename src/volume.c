@@ -194,6 +194,22 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_is_dynamic(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    UINT8* buf;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength == 0 || !Irp->AssociatedIrp.SystemBuffer)
+        return STATUS_INVALID_PARAMETER;
+    
+    buf = (UINT8*)Irp->AssociatedIrp.SystemBuffer;
+    
+    *buf = 1;
+    
+    Irp->IoStatus.Information = 1;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -230,8 +246,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             break;
 
         case IOCTL_VOLUME_IS_DYNAMIC:
-            ERR("unhandled control code IOCTL_VOLUME_IS_DYNAMIC\n");
-            break;
+            return vol_is_dynamic(vde, Irp);
 
         case IOCTL_VOLUME_ONLINE:
             ERR("unhandled control code IOCTL_VOLUME_ONLINE\n");
