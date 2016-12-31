@@ -17,6 +17,10 @@
 
 #include "btrfs_drv.h"
 #include <mountdev.h>
+#include <winioctl.h>
+
+#define IOCTL_VOLUME_IS_DYNAMIC     CTL_CODE(IOCTL_VOLUME_BASE, 18, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_VOLUME_POST_ONLINE    CTL_CODE(IOCTL_VOLUME_BASE, 25, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
 extern PDRIVER_OBJECT drvobj;
 extern ERESOURCE volume_list_lock;
@@ -204,6 +208,50 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             
         case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:
             return vol_query_unique_id(vde, Irp);
+            
+        case IOCTL_STORAGE_GET_DEVICE_NUMBER:
+            ERR("unhandled control code IOCTL_STORAGE_GET_DEVICE_NUMBER\n");
+            break;
+
+        case IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME:
+            ERR("unhandled control code IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME\n");
+            break;
+
+        case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
+            ERR("unhandled control code IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
+            break;
+
+        case IOCTL_MOUNTDEV_LINK_CREATED:
+            ERR("unhandled control code IOCTL_MOUNTDEV_LINK_CREATED\n");
+            break;
+
+        case IOCTL_VOLUME_GET_GPT_ATTRIBUTES:
+            ERR("unhandled control code IOCTL_VOLUME_GET_GPT_ATTRIBUTES\n");
+            break;
+
+        case IOCTL_VOLUME_IS_DYNAMIC:
+            ERR("unhandled control code IOCTL_VOLUME_IS_DYNAMIC\n");
+            break;
+
+        case IOCTL_VOLUME_ONLINE:
+            ERR("unhandled control code IOCTL_VOLUME_ONLINE\n");
+            break;
+
+        case IOCTL_VOLUME_POST_ONLINE:
+            ERR("unhandled control code IOCTL_VOLUME_POST_ONLINE\n");
+            break;
+
+        case IOCTL_DISK_GET_DRIVE_GEOMETRY:
+            ERR("unhandled control code IOCTL_DISK_GET_DRIVE_GEOMETRY\n");
+            break;
+
+        case IOCTL_DISK_IS_WRITABLE:
+            ERR("unhandled control code IOCTL_DISK_IS_WRITABLE\n");
+            break;
+
+        case IOCTL_DISK_GET_LENGTH_INFO:
+            ERR("unhandled control code IOCTL_DISK_GET_LENGTH_INFO\n");
+            break;
 
         default:
             ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
