@@ -16,25 +16,26 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include <mountdev.h>
 
 extern PDRIVER_OBJECT drvobj;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
 NTSTATUS STDCALL vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    ERR("(%p, %p)\n", DeviceObject, Irp);
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
-    // FIXME
-
-    return STATUS_INVALID_DEVICE_REQUEST;
+    Irp->IoStatus.Information = FILE_OPENED;
+    
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    ERR("(%p, %p)\n", DeviceObject, Irp);
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
+    
+    Irp->IoStatus.Information = 0;
 
-    // FIXME
-
-    return STATUS_INVALID_DEVICE_REQUEST;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
@@ -110,11 +111,11 @@ NTSTATUS STDCALL vol_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN P
 }
 
 NTSTATUS STDCALL vol_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    ERR("(%p, %p)\n", DeviceObject, Irp);
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
-    // FIXME
+    Irp->IoStatus.Information = 0;
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
@@ -141,10 +142,73 @@ NTSTATUS STDCALL vol_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    ERR("(%p, %p)\n", DeviceObject, Irp);
+static NTSTATUS vol_query_device_name(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PMOUNTDEV_NAME name;
 
-    // FIXME
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_NAME)) {
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    name = Irp->AssociatedIrp.SystemBuffer;
+    name->NameLength = vde->name.Length;
+
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength) {
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME);
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    
+    RtlCopyMemory(name->Name, vde->name.Buffer, vde->name.Length);
+
+    Irp->IoStatus.Information = offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength;
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    MOUNTDEV_UNIQUE_ID* mduid;
+
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID)) {
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    mduid = Irp->AssociatedIrp.SystemBuffer;
+    mduid->UniqueIdLength = sizeof(BTRFS_UUID);
+
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(MOUNTDEV_UNIQUE_ID, UniqueId[0]) + mduid->UniqueIdLength) {
+        Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    RtlCopyMemory(mduid->UniqueId, &vde->uuid, sizeof(BTRFS_UUID));
+
+    Irp->IoStatus.Information = offsetof(MOUNTDEV_UNIQUE_ID, UniqueId[0]) + mduid->UniqueIdLength;
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    volume_device_extension* vde = DeviceObject->DeviceExtension;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
+
+    Irp->IoStatus.Information = 0;
+    
+    switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
+        case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:
+            return vol_query_device_name(vde, Irp);
+            
+        case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:
+            return vol_query_unique_id(vde, Irp);
+
+        default:
+            ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+            break;
+    }
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
@@ -181,6 +245,27 @@ NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
+static NTSTATUS mountmgr_volume_arrival(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
+    NTSTATUS Status;
+    MOUNTMGR_TARGET_NAME* mtn;
+    
+    mtn = ExAllocatePoolWithTag(PagedPool, offsetof(MOUNTMGR_TARGET_NAME, DeviceName[0]) + devpath->Length, ALLOC_TAG);
+    if (!mtn) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    mtn->DeviceNameLength = devpath->Length;
+    RtlCopyMemory(mtn->DeviceName, devpath->Buffer, devpath->Length);
+    
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION, mtn, offsetof(MOUNTMGR_TARGET_NAME, DeviceName[0]) + devpath->Length,
+                       NULL, 0, FALSE, NULL);
+    
+    ExFreePool(mtn);
+    
+    return Status;
+}
+
 static __inline WCHAR hex_digit(UINT8 n) {
     if (n >= 0 && n <= 9)
         return n + '0';
@@ -191,10 +276,11 @@ static __inline WCHAR hex_digit(UINT8 n) {
 void add_volume_device(BTRFS_UUID* uuid) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    UNICODE_STRING volname;
-    PDEVICE_OBJECT voldev;
+    UNICODE_STRING volname, mmdevpath;
+    PDEVICE_OBJECT voldev, mountmgr;
     volume_device_extension* vde;
     int i, j;
+    PFILE_OBJECT mountmgrfo;
     
     static const WCHAR devpref[] = L"\\Device\\Btrfs{";
     
@@ -258,5 +344,15 @@ void add_volume_device(BTRFS_UUID* uuid) {
     
     voldev->Flags &= ~DO_DEVICE_INITIALIZING;
     
-    // FIXME - mountmgr
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status))
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+    else {
+        Status = mountmgr_volume_arrival(mountmgr, &volname);
+        if (!NT_SUCCESS(Status))
+            ERR("mountmgr_volume_arrival returned %08x\n", Status);
+        
+        ObDereferenceObject(mountmgrfo);
+    }
 }
