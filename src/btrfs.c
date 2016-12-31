@@ -66,6 +66,8 @@ tCcCopyWriteEx CcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 BOOL diskacc = FALSE;
 void* notification_entry = NULL;
+ERESOURCE volume_list_lock;
+LIST_ENTRY volume_list;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -293,8 +295,8 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
 #endif
     
     ExDeleteResourceLite(&global_loading_lock);
-    
     ExDeleteResourceLite(&volumes_lock);
+    ExDeleteResourceLite(&volume_list_lock);
     
     if (log_device.Buffer)
         ExFreePool(log_device.Buffer);
@@ -4801,6 +4803,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);
     ExInitializeResourceLite(&volumes_lock);
+    ExInitializeResourceLite(&volume_list_lock);
+    
+    InitializeListHead(&volume_list);
     
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_DISK, DriverObject, pnp_notification, DriverObject, &notification_entry);

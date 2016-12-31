@@ -645,6 +645,9 @@ typedef struct {
 
 typedef struct {
     UINT32 type;
+    BTRFS_UUID uuid;
+    UNICODE_STRING name;
+    LIST_ENTRY list_entry;
 } volume_device_extension;
 
 typedef struct {
@@ -1097,6 +1100,7 @@ NTSTATUS STDCALL vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+void add_volume_device(BTRFS_UUID* uuid);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
