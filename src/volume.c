@@ -345,8 +345,6 @@ void add_volume_device(BTRFS_UUID* uuid) {
     int i, j;
     PFILE_OBJECT mountmgrfo;
     
-    static const WCHAR devpref[] = L"\\Device\\Btrfs{";
-    
     ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
     
     le = volume_list.Flink;
@@ -363,7 +361,7 @@ void add_volume_device(BTRFS_UUID* uuid) {
     
 //     volname.Buffer = L"\\Device\\BtrfsVolume"; // FIXME
 //     volname.Length = volname.MaximumLength = wcslen(volname.Buffer) * sizeof(WCHAR);
-    volname.Length = volname.MaximumLength = (wcslen(devpref) + 36 + 1) * sizeof(WCHAR);
+    volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
     volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
     
     if (!volname.Buffer) {
@@ -372,9 +370,9 @@ void add_volume_device(BTRFS_UUID* uuid) {
         return;
     }
     
-    RtlCopyMemory(volname.Buffer, devpref, wcslen(devpref) * sizeof(WCHAR));
+    RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
     
-    j = wcslen(devpref);
+    j = wcslen(BTRFS_VOLUME_PREFIX);
     for (i = 0; i < 16; i++) {
         volname.Buffer[j] = hex_digit(uuid->uuid[i] >> 4); j++;
         volname.Buffer[j] = hex_digit(uuid->uuid[i] & 0xf); j++;

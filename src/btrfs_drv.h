@@ -76,6 +76,8 @@
 
 #define IO_REPARSE_TAG_LXSS_SYMLINK 0xa000001d // undocumented?
 
+#define BTRFS_VOLUME_PREFIX L"\\Device\\Btrfs{"
+
 #ifdef _MSC_VER
 #define try __try
 #define except __except

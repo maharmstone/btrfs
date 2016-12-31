@@ -3721,6 +3721,43 @@ static BOOL raid_generations_okay(device_extension* Vcb) {
     return TRUE;
 }
 
+static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
+    NTSTATUS Status;
+    MOUNTDEV_NAME mdn, *mdn2;
+    ULONG mdnsize;
+    
+    Status = dev_ioctl(DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        return FALSE;
+    }
+    
+    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    
+    mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+    if (!mdn2) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
+    Status = dev_ioctl(DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+        ExFreePool(mdn2);
+        return FALSE;
+    }
+    
+    if (mdn2->NameLength > wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR) &&
+        RtlCompareMemory(mdn2->Name, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR)) == wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR)) {
+        ExFreePool(mdn2);
+        return TRUE;
+    }
+    
+    ExFreePool(mdn2);
+    
+    return FALSE;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3745,6 +3782,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
+    
+    if (is_btrfs_volume(DeviceToMount)) { // refuse to mount these for the time being
+        Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit;
+    }
 
     Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
