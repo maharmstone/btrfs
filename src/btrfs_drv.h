@@ -646,9 +646,25 @@ typedef struct {
 } control_device_extension;
 
 typedef struct {
+    BTRFS_UUID uuid;
+    UINT64 devid;
+    PDEVICE_OBJECT devobj;
+    UNICODE_STRING pnp_name;
+    UINT64 offset;
+    UINT64 size;
+    LIST_ENTRY list_entry;
+} volume_child;
+
+typedef struct {
     UINT32 type;
     BTRFS_UUID uuid;
     UNICODE_STRING name;
+    
+    UINT64 num_children;
+    UINT64 children_loaded;
+    ERESOURCE child_lock;
+    LIST_ENTRY children;
+    
     LIST_ENTRY list_entry;
 } volume_device_extension;
 
@@ -1102,7 +1118,7 @@ NTSTATUS STDCALL vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void add_volume_device(BTRFS_UUID* uuid);
+void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING devpath, UINT64 offset, UINT64 length);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

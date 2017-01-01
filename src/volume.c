@@ -336,84 +336,135 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-void add_volume_device(BTRFS_UUID* uuid) {
+void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING devpath, UINT64 offset, UINT64 length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UNICODE_STRING volname, mmdevpath;
     PDEVICE_OBJECT voldev, mountmgr;
-    volume_device_extension* vde;
+    volume_device_extension* vde = NULL;
     int i, j;
     PFILE_OBJECT mountmgrfo;
+    BOOL new_vde = FALSE;
+    volume_child* vc;
     
     ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
     
     le = volume_list.Flink;
     while (le != &volume_list) {
-        vde = CONTAINING_RECORD(le, volume_device_extension, list_entry);
+        volume_device_extension* vde2 = CONTAINING_RECORD(le, volume_device_extension, list_entry);
         
-        if (RtlCompareMemory(&vde->uuid, uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            ExReleaseResourceLite(&volume_list_lock);
-            return;
+        if (RtlCompareMemory(&vde2->uuid, &sb->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            vde = vde2;
+            break;
         }
         
         le = le->Flink;
     }
     
-//     volname.Buffer = L"\\Device\\BtrfsVolume"; // FIXME
-//     volname.Length = volname.MaximumLength = wcslen(volname.Buffer) * sizeof(WCHAR);
-    volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
-    volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
-    
-    if (!volname.Buffer) {
-        ERR("out of memory\n");
-        ExReleaseResourceLite(&volume_list_lock);
-        return;
-    }
-    
-    RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
-    
-    j = wcslen(BTRFS_VOLUME_PREFIX);
-    for (i = 0; i < 16; i++) {
-        volname.Buffer[j] = hex_digit(uuid->uuid[i] >> 4); j++;
-        volname.Buffer[j] = hex_digit(uuid->uuid[i] & 0xf); j++;
+    if (!vde) {
+        volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
+        volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
         
-        if (i == 3 || i == 5 || i == 7 || i == 9) {
-            volname.Buffer[j] = '-';
-            j++;
+        if (!volname.Buffer) {
+            ERR("out of memory\n");
+            ExReleaseResourceLite(&volume_list_lock);
+            return;
         }
-    }
-    
-    volname.Buffer[j] = '}';
-    
-    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &voldev);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IoCreateDevice returned %08x\n", Status);
-        ExReleaseResourceLite(&volume_list_lock);
-        return;
-    }
-    
-    voldev->StackSize = 1;
-    // FIXME - set sector size?
-    
-    vde = voldev->DeviceExtension;
-    vde->type = VCB_TYPE_VOLUME;
-    vde->uuid = *uuid;
-    vde->name = volname;
-    
-    InsertTailList(&volume_list, &vde->list_entry);
-    ExReleaseResourceLite(&volume_list_lock);
-    
-    voldev->Flags &= ~DO_DEVICE_INITIALIZING;
-    
-    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-    if (!NT_SUCCESS(Status))
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-    else {
-        Status = mountmgr_volume_arrival(mountmgr, &volname);
-        if (!NT_SUCCESS(Status))
-            ERR("mountmgr_volume_arrival returned %08x\n", Status);
         
-        ObDereferenceObject(mountmgrfo);
+        RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
+        
+        j = wcslen(BTRFS_VOLUME_PREFIX);
+        for (i = 0; i < 16; i++) {
+            volname.Buffer[j] = hex_digit(sb->uuid.uuid[i] >> 4); j++;
+            volname.Buffer[j] = hex_digit(sb->uuid.uuid[i] & 0xf); j++;
+            
+            if (i == 3 || i == 5 || i == 7 || i == 9) {
+                volname.Buffer[j] = '-';
+                j++;
+            }
+        }
+        
+        volname.Buffer[j] = '}';
+        
+        Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &voldev);
+        if (!NT_SUCCESS(Status)) {
+            ERR("IoCreateDevice returned %08x\n", Status);
+            ExReleaseResourceLite(&volume_list_lock);
+            return;
+        }
+        
+        voldev->StackSize = 1;
+        // FIXME - set sector size?
+        
+        vde = voldev->DeviceExtension;
+        vde->type = VCB_TYPE_VOLUME;
+        vde->uuid = sb->uuid;
+        vde->name = volname;
+        
+        ExInitializeResourceLite(&vde->child_lock);
+        InitializeListHead(&vde->children);
+        vde->num_children = sb->num_devices;
+        vde->children_loaded = 0;
+        
+        new_vde = TRUE;
+    } else {
+        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        ExConvertExclusiveToSharedLite(&volume_list_lock);
     }
+    
+    vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
+    if (!vc)
+        ERR("out of memory\n");
+    else {
+        vc->uuid = sb->dev_item.device_uuid;
+        vc->devid = sb->dev_item.dev_id;
+        
+        ObReferenceObject(devobj);
+        vc->devobj = devobj;
+        
+        if (devpath->Length > 0) {
+            vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath->Length;
+            vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
+            
+            if (vc->pnp_name.Buffer)
+                RtlCopyMemory(vc->pnp_name.Buffer, devpath->Buffer, devpath->Length);
+            else {
+                ERR("out of memory\n");
+                vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
+            }
+        } else {
+            vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
+            vc->pnp_name.Buffer = NULL;
+        }
+        
+        vc->offset = offset;
+        vc->size = length;
+        
+        InsertTailList(&vde->children, &vc->list_entry); // FIXME - these should be in order
+        
+        vde->children_loaded++;
+    }
+    
+    if (!new_vde) {
+        ExReleaseResourceLite(&vde->child_lock);
+        ExReleaseResourceLite(&volume_list_lock);
+    } else {
+        InsertTailList(&volume_list, &vde->list_entry);
+        
+        voldev->Flags &= ~DO_DEVICE_INITIALIZING;
+        
+        ExReleaseResourceLite(&volume_list_lock);
+        
+        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+        if (!NT_SUCCESS(Status))
+            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        else {
+            Status = mountmgr_volume_arrival(mountmgr, &volname);
+            if (!NT_SUCCESS(Status))
+                ERR("mountmgr_volume_arrival returned %08x\n", Status);
+            
+            ObDereferenceObject(mountmgrfo);
+        }
+    }        
 }

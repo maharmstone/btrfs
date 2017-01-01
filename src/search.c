@@ -169,7 +169,8 @@ void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ExFreePool(mmdlt);
 }
 
-static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, LIST_ENTRY* volumes) {
+static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num,
+                             LIST_ENTRY* volumes, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -244,20 +245,11 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
 
     if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
         int i;
-        GET_LENGTH_INFORMATION gli;
         superblock* sb = (superblock*)data;
         volume* v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
         
         if (!v) {
             ERR("out of memory\n");
-            goto deref;
-        }
-        
-        Status = dev_ioctl(DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-                           &gli, sizeof(gli), TRUE, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error reading length information: %08x\n", Status);
-            ExFreePool(v);
             goto deref;
         }
         
@@ -290,7 +282,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
         v->devnum = sb->dev_item.dev_id;
         v->processed = FALSE;
-        v->length = gli.Length.QuadPart;
+        v->length = length;
         v->gen1 = sb->generation;
         v->gen2 = 0;
         v->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
@@ -347,7 +339,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
               v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
         TRACE("device number %llx\n", v->devnum);
         
-        add_volume_device(&v->fsuuid);
+        add_volume_device(sb, DeviceObject, pnp_name, offset, length);
     }
     
 deref:
@@ -597,7 +589,8 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             RtlIntegerToUnicodeString(dli->PartitionEntry[i].PartitionNumber, 10, &num);
             RtlAppendUnicodeStringToString(&devname, &num);
             
-            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber, &volumes);
+            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber, &volumes,
+                     devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
             
             num_parts++;
         }
@@ -607,11 +600,20 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     
 no_parts:
     if (num_parts == 0) {
-        devname.Length = preflen;
-        devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
-        devname.Length += sizeof(WCHAR);
+        GET_LENGTH_INFORMATION gli;
         
-        test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, 0, &volumes);
+        Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                           &gli, sizeof(gli), TRUE, NULL);
+        
+        if (!NT_SUCCESS(Status))
+            ERR("error reading length information: %08x\n", Status);
+        else {
+            devname.Length = preflen;
+            devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
+            devname.Length += sizeof(WCHAR);
+            
+            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, 0, &volumes, devpath, 0, gli.Length.QuadPart);
+        }
     }
     
 end:
