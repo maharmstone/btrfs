@@ -339,7 +339,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
               v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
         TRACE("device number %llx\n", v->devnum);
         
-        add_volume_device(sb, pnp_name, offset, length, disk_num, part_num);
+        add_volume_device(sb, mountmgr, pnp_name, offset, length, disk_num, part_num, devpath);
     }
     
 deref:
@@ -351,12 +351,9 @@ deref:
 
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
-    KEVENT Event;
-    PIRP Irp;
     MOUNTMGR_MOUNT_POINT* mmp;
     ULONG mmpsize;
     MOUNTMGR_MOUNT_POINTS mmps1, *mmps2;
-    IO_STATUS_BLOCK IoStatusBlock;
     
     mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + devpath->Length;
     
@@ -372,24 +369,10 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     mmp->DeviceNameLength = devpath->Length;
     RtlCopyMemory(&mmp[1], devpath->Buffer, devpath->Length);
     
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_DELETE_POINTS,
-                                        mountmgr, mmp, mmpsize, 
-                                        &mmps1, sizeof(MOUNTMGR_MOUNT_POINTS), FALSE, &Event, &IoStatusBlock);
-    if (!Irp) {
-        ERR("%.*S: IoBuildDeviceIoControlRequest 1 failed\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
-        ExFreePool(mmp);
-        return;
-    }
-
-    Status = IoCallDriver(mountmgr, Irp);
-    if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-        Status = IoStatusBlock.Status;
-    }
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, &mmps1, sizeof(MOUNTMGR_MOUNT_POINTS), FALSE, NULL);
 
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("%.*S: IoCallDriver 1  returned %08x\n", devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
+        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 1 returned %08x\n", Status);
         ExFreePool(mmp);
         return;
     }
@@ -406,70 +389,13 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
         return;
     }
     
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_DELETE_POINTS,
-                                        mountmgr, mmp, mmpsize, 
-                                        mmps2, mmps1.Size, FALSE, &Event, &IoStatusBlock);
-    if (!Irp) {
-        ERR("%.*S: IoBuildDeviceIoControlRequest 2 failed\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
-        ExFreePool(mmps2);
-        ExFreePool(mmp);
-        return;
-    }
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, mmps2, mmps1.Size, FALSE, NULL);
 
-    Status = IoCallDriver(mountmgr, Irp);
-    if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-        Status = IoStatusBlock.Status;
-    }
+    if (!NT_SUCCESS(Status))
+        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 2 returned %08x\n", Status);
 
-    if (!NT_SUCCESS(Status)) {
-        ERR("%.*S: IoCallDriver 2 returned %08x\n", devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
-        ExFreePool(mmps2);
-        ExFreePool(mmp);
-        return;
-    }
-    
     ExFreePool(mmps2);
     ExFreePool(mmp);
-}
-
-static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
-    LIST_ENTRY* le;
-    
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
-    
-    le = volumes->Flink;
-    while (le != volumes) {
-        volume* v = CONTAINING_RECORD(le, volume, list_entry);
-        
-        if (!v->processed) {
-            LIST_ENTRY* le2 = le;
-            volume* mountvol = v;
-            
-            while (le2 != volumes) {
-                volume* v2 = CONTAINING_RECORD(le2, volume, list_entry);
-                
-                if (RtlCompareMemory(&v2->fsuuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                    v2->processed = TRUE;
-                    
-                    if (v2->devnum < mountvol->devnum) {
-                        remove_drive_letter(mountmgr, &mountvol->devpath);
-                        mountvol = v2;
-                    } else if (v2->devnum > mountvol->devnum)
-                        remove_drive_letter(mountmgr, &v2->devpath);
-                }
-                
-                le2 = le2->Flink;
-            }
-            
-            add_volume(mountmgr, &mountvol->devpath);
-        }
-        
-        le = le->Flink;
-    }
-    
-    ExReleaseResourceLite(&volumes_lock);
 }
 
 static void add_pnp_disk(ULONG disk_num, PUNICODE_STRING devpath) {
@@ -617,8 +543,6 @@ no_parts:
     }
     
 end:
-    refresh_mountmgr(mountmgr, &volumes);
-
     ObDereferenceObject(FileObject);
     ObDereferenceObject(FileObject2);
 }

@@ -364,14 +364,14 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num, ULONG part_num) {
+void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num,
+                       ULONG part_num, PUNICODE_STRING partname) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    UNICODE_STRING volname, mmdevpath;
-    PDEVICE_OBJECT voldev, mountmgr, DeviceObject;
+    UNICODE_STRING volname;
+    PDEVICE_OBJECT voldev, DeviceObject;
     volume_device_extension* vde = NULL;
     int i, j;
-    PFILE_OBJECT mountmgrfo;
     BOOL new_vde = FALSE;
     volume_child* vc;
     PFILE_OBJECT FileObject;
@@ -491,19 +491,14 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, U
         voldev->Flags &= ~DO_DEVICE_INITIALIZING;
         
         ExReleaseResourceLite(&volume_list_lock);
-        
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+
+        Status = mountmgr_volume_arrival(mountmgr, &volname);
         if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            Status = mountmgr_volume_arrival(mountmgr, &volname);
-            if (!NT_SUCCESS(Status))
-                ERR("mountmgr_volume_arrival returned %08x\n", Status);
-            
-            ObDereferenceObject(mountmgrfo);
-        }
+            ERR("mountmgr_volume_arrival returned %08x\n", Status);
     }
+    
+    if (part_num != 0)
+        remove_drive_letter(mountmgr, partname);
     
 end:
     ObDereferenceObject(FileObject);
