@@ -3868,24 +3868,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
-    
-    le = volumes.Flink;
-    while (le != &volumes) {
-        volume* v = CONTAINING_RECORD(le, volume, list_entry);
-        
-        if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && v->devnum < Vcb->superblock.dev_item.dev_id) {
-            // skipping over device in RAID which isn't the first one
-            ExReleaseResourceLite(&volumes_lock);
-            Status = STATUS_UNRECOGNIZED_VOLUME;
-            goto exit;
-        }
-        
-        le = le->Flink;
-    }
-    
-    ExReleaseResourceLite(&volumes_lock);
-    
     Vcb->readonly = FALSE;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
         WARN("mounting read-only because of unsupported flags (%llx)\n", Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED);
