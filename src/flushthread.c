@@ -5382,6 +5382,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     // We process deleted streams first, so we don't run over our xattr
     // limit unless we absolutely have to.
     
+    ExAcquireResourceExclusiveLite(&Vcb->dirty_fcbs_lock, TRUE);
+    
     le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
         dirty_fcb* dirt;
@@ -5430,6 +5432,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         
         le = le2;
     }
+    
+    ExReleaseResourceLite(&Vcb->dirty_fcbs_lock);
     
     commit_batch_list(Vcb, &batchlist, Irp, rollback);
     

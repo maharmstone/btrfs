@@ -578,7 +578,7 @@ typedef struct _device_extension {
     LIST_ENTRY* trees_ptrs[256];
     LIST_ENTRY all_fcbs;
     LIST_ENTRY dirty_fcbs;
-    KSPIN_LOCK dirty_fcbs_lock;
+    ERESOURCE dirty_fcbs_lock;
     LIST_ENTRY dirty_filerefs;
     KSPIN_LOCK dirty_filerefs_lock;
     ERESOURCE chunk_lock;
