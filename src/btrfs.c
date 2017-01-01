@@ -2962,7 +2962,7 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
-void init_device(device_extension* Vcb, device* dev, BOOL get_length, BOOL get_nums) {
+void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     NTSTATUS Status;
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
@@ -2970,18 +2970,6 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_length, BOOL get_n
     
     dev->removable = is_device_removable(dev->devobj);
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
-    
-    if (get_length) {
-        GET_LENGTH_INFORMATION gli;
-        
-        Status = dev_ioctl(dev->devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-                           &gli, sizeof(GET_LENGTH_INFORMATION), TRUE, NULL);
-        
-        if (!NT_SUCCESS(Status))
-            ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
-        
-        dev->length = gli.Length.QuadPart;
-    }
     
     if (get_nums) {
         STORAGE_DEVICE_NUMBER sdn;
@@ -3094,7 +3082,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                         RtlCopyMemory(&dev->devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
                         
                         if (le != Vcb->devices.Flink)
-                            init_device(Vcb, dev, TRUE, TRUE);
+                            init_device(Vcb, dev, TRUE);
                         
                         done = TRUE;
                         break;
@@ -3129,7 +3117,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->devobj = vc->devobj;
                                 RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 dev->seeding = vc->seeding;
-                                init_device(Vcb, dev, FALSE, FALSE);
+                                init_device(Vcb, dev, FALSE);
 
                                 dev->offset = vc->offset;
                                 dev->length = vc->size;
@@ -3870,7 +3858,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
-    init_device(Vcb, dev, FALSE, TRUE);
+    init_device(Vcb, dev, TRUE);
     
     InsertTailList(&Vcb->devices, &dev->list_entry);
     Vcb->devices_loaded = 1;

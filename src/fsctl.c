@@ -2638,7 +2638,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     dev->devobj = fileobj->DeviceObject;
     dev->seeding = FALSE;
     dev->length = gli.Length.QuadPart;
-    init_device(Vcb, dev, FALSE, TRUE);
+    init_device(Vcb, dev, TRUE);
     
     InitializeListHead(&dev->space);
     
