@@ -4216,70 +4216,30 @@ exit2:
 
 static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
     device_extension* Vcb = devobj->DeviceExtension;
-    ULONG cc, to_read;
-    IO_STATUS_BLOCK iosb;
+    ULONG cc;
     NTSTATUS Status;
-    superblock* sb;
-    UINT32 crc32;
     LIST_ENTRY* le;
     
     if (Vcb->removing)
         return STATUS_WRONG_VOLUME;
     
-    Status = dev_ioctl(Vcb->Vpb->RealDevice, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+    Status = dev_ioctl(Vcb->Vpb->RealDevice, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, NULL);
     
     if (!NT_SUCCESS(Status)) {
         ERR("dev_ioctl returned %08x\n", Status);
         return Status;
     }
     
-    to_read = devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), devobj->SectorSize);
-    
-    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
-    if (!sb) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    Status = sync_read_phys(Vcb->Vpb->RealDevice, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("Failed to read superblock: %08x\n", Status);
-        ExFreePool(sb);
-        return Status;
-    }
-    
-    if (sb->magic != BTRFS_MAGIC) {
-        ERR("not a BTRFS volume\n");
-        ExFreePool(sb);
-        return STATUS_WRONG_VOLUME;
-    }
-    
-    if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
-        ERR("different UUIDs\n");
-        ExFreePool(sb);
-        return STATUS_WRONG_VOLUME;
-    }
-    
-    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-    TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
-    
-    if (crc32 != *((UINT32*)sb->checksum)) {
-        ERR("different UUIDs\n");
-        ExFreePool(sb);
-        return STATUS_WRONG_VOLUME;
-    }
-    
-    ExFreePool(sb);
-    
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
+        superblock* sb;
+        UINT32 crc32;
+        ULONG to_read;
         
         if (dev->removable) {
-            NTSTATUS Status;
-            ULONG cc;
             IO_STATUS_BLOCK iosb;
             
             Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
@@ -4298,6 +4258,44 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
             
             dev->change_count = cc;
         }
+        
+        to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize);
+        
+        sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+        if (!sb) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        Status = sync_read_phys(dev->devobj, dev->offset + superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("Failed to read superblock: %08x\n", Status);
+            ExFreePool(sb);
+            return Status;
+        }
+        
+        if (sb->magic != BTRFS_MAGIC) {
+            ERR("not a BTRFS volume\n");
+            ExFreePool(sb);
+            return STATUS_WRONG_VOLUME;
+        }
+        
+        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+        
+        if (crc32 != *((UINT32*)sb->checksum)) {
+            ERR("checksum error\n");
+            ExFreePool(sb);
+            return STATUS_WRONG_VOLUME;
+        }
+        
+        if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
+            ERR("different UUIDs\n");
+            ExFreePool(sb);
+            return STATUS_WRONG_VOLUME;
+        }
+        
+        ExFreePool(sb);
         
         dev->devobj->Flags &= ~DO_VERIFY_VOLUME;
         
