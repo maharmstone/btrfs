@@ -364,7 +364,7 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length) {
+void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num, ULONG part_num) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UNICODE_STRING volname, mmdevpath;
@@ -473,6 +473,9 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, U
         
         vc->offset = offset;
         vc->size = length;
+        vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
+        vc->disk_num = disk_num;
+        vc->part_num = part_num;
         
         InsertTailList(&vde->children, &vc->list_entry); // FIXME - these should be in order
         

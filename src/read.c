@@ -1263,7 +1263,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                     }
 
                     IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
-                    IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
+                    IrpSp->Parameters.Read.ByteOffset.QuadPart = devices[i]->offset + stripestart[i] + cis[i].offset;
                     
                     context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
                     
@@ -1730,7 +1730,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                     }
 
                     IrpSp->Parameters.Read.Length = stripeend[other_stripe] - stripestart[other_stripe];
-                    IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[other_stripe] + cis[other_stripe].offset;
+                    IrpSp->Parameters.Read.ByteOffset.QuadPart = devices[i]->offset + stripestart[other_stripe] + cis[other_stripe].offset;
                     
                     context->stripes[other_stripe].Irp->UserIosb = &context->stripes[other_stripe].iosb;
                     
@@ -2073,7 +2073,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             }
 
             IrpSp->Parameters.Read.Length = stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe];
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[reconstruct_stripe] + cis[reconstruct_stripe].offset;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = devices[i]->offset + stripestart[reconstruct_stripe] + cis[reconstruct_stripe].offset;
             
             context->stripes[reconstruct_stripe].Irp->UserIosb = &context->stripes[reconstruct_stripe].iosb;
             
@@ -2373,7 +2373,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             }
 
             IrpSp->Parameters.Read.Length = stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe];
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[reconstruct_stripe] + cis[reconstruct_stripe].offset;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = devices[i]->offset + stripestart[reconstruct_stripe] + cis[reconstruct_stripe].offset;
             
             context->stripes[reconstruct_stripe].Irp->UserIosb = &context->stripes[reconstruct_stripe].iosb;
             
@@ -2841,7 +2841,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
 
             IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = devices[i]->offset + stripestart[i] + cis[i].offset;
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             

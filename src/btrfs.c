@@ -2856,6 +2856,7 @@ static void add_device_to_list(device_extension* Vcb, device* dev) {
 }
 
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
+    volume_device_extension* vde;
     LIST_ENTRY* le;
     
     le = Vcb->devices.Flink;
@@ -2874,56 +2875,42 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
         le = le->Flink;
     }
     
-    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+    vde = Vcb->Vpb->RealDevice->DeviceExtension;
     
-    if (Vcb->devices_loaded < Vcb->superblock.num_devices && !IsListEmpty(&volumes)) {
-        LIST_ENTRY* le = volumes.Flink;
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
+        LIST_ENTRY* le = vde->children.Flink;
         
-        while (le != &volumes) {
-            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        while (le != &vde->children) {
+            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
             
-            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
-                RtlCompareMemory(uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
-            ) {
-                NTSTATUS Status;
-                PFILE_OBJECT FileObject;
-                PDEVICE_OBJECT DeviceObject;
+            if (RtlCompareMemory(uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 device* dev;
-                
-                Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
-                if (!NT_SUCCESS(Status)) {
-                    ExReleaseResourceLite(&volumes_lock);
-                    ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
-                    return NULL;
-                }
-                
-                DeviceObject = FileObject->DeviceObject;
-                
-                ObReferenceObject(DeviceObject);
-                ObDereferenceObject(FileObject);
                 
                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                 if (!dev) {
-                    ExReleaseResourceLite(&volumes_lock);
+                    ExReleaseResourceLite(&vde->child_lock);
                     ERR("out of memory\n");
-                    ObDereferenceObject(DeviceObject);
                     return NULL;
                 }
                 
                 RtlZeroMemory(dev, sizeof(device));
-                dev->devobj = DeviceObject;
+                dev->devobj = vc->devobj;
                 dev->devitem.device_uuid = *uuid;
-                dev->devitem.dev_id = v->devnum;
-                dev->seeding = v->seeding;
+                dev->devitem.dev_id = vc->devid;
+                dev->seeding = vc->seeding;
                 dev->readonly = dev->seeding;
                 dev->reloc = FALSE;
                 dev->removable = FALSE;
-                dev->disk_num = v->disk_num;
-                dev->part_num = v->part_num;
+                dev->disk_num = vc->disk_num;
+                dev->part_num = vc->part_num;
+                dev->offset = vc->offset;
+                dev->length = vc->size;
                 add_device_to_list(Vcb, dev);
                 Vcb->devices_loaded++;
                 
-                ExReleaseResourceLite(&volumes_lock);
+                ExReleaseResourceLite(&vde->child_lock);
                 
                 return dev;
             }
@@ -2932,7 +2919,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
         }
     }
     
-    ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&vde->child_lock);
     
     WARN("could not find device with uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
          uuid->uuid[0], uuid->uuid[1], uuid->uuid[2], uuid->uuid[3], uuid->uuid[4], uuid->uuid[5], uuid->uuid[6], uuid->uuid[7],
@@ -3117,49 +3104,37 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 }
                 
                 if (!done) {
-                    ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+                    volume_device_extension* vde = Vcb->Vpb->RealDevice->DeviceExtension;
                     
-                    if (!IsListEmpty(&volumes) && Vcb->devices_loaded < Vcb->superblock.num_devices) {
-                        LIST_ENTRY* le = volumes.Flink;
+                    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+                    
+                    if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
+                        LIST_ENTRY* le = vde->children.Flink;
                         
-                        while (le != &volumes) {
-                            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+                        while (le != &vde->children) {
+                            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
             
-                            if (RtlCompareMemory(&di->device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                                PFILE_OBJECT FileObject;
-                                PDEVICE_OBJECT DeviceObject;
+                            if (RtlCompareMemory(&di->device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                                 device* dev;
-                                
-                                Status = IoGetDeviceObjectPointer(&v->devpath, FILE_READ_DATA | FILE_WRITE_DATA, &FileObject, &DeviceObject);
-                                if (!NT_SUCCESS(Status)) {
-                                    ExReleaseResourceLite(&volumes_lock);
-                                    ERR("IoGetDeviceObjectPointer(%.*S) returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
-                                    return Status;
-                                }
-                                
-                                DeviceObject = FileObject->DeviceObject;
-                                
-                                ObReferenceObject(DeviceObject);
-                                ObDereferenceObject(FileObject);
-                                
+
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                                 if (!dev) {
-                                    ExReleaseResourceLite(&volumes_lock);
+                                    ExReleaseResourceLite(&vde->child_lock);
                                     ERR("out of memory\n");
-                                    ObDereferenceObject(DeviceObject);
                                     return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 RtlZeroMemory(dev, sizeof(device));
                                
-                                dev->devobj = DeviceObject;
+                                dev->devobj = vc->devobj;
                                 RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
-                                dev->seeding = v->seeding;
+                                dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, FALSE, FALSE);
 
-                                dev->length = v->length;
-                                dev->disk_num = v->disk_num;
-                                dev->part_num = v->part_num;
+                                dev->offset = vc->offset;
+                                dev->length = vc->size;
+                                dev->disk_num = vc->disk_num;
+                                dev->part_num = vc->part_num;
                                 add_device_to_list(Vcb, dev);
                                 Vcb->devices_loaded++;
 
@@ -3178,7 +3153,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                     } else
                         ERR("unexpected device %llx found\n", tp.item->key.offset);
                     
-                    ExReleaseResourceLite(&volumes_lock);
+                    ExReleaseResourceLite(&vde->child_lock);
                 }
             }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
@@ -3888,13 +3863,14 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    dev->devobj = DeviceToMount;
+    dev->devobj = vc->devobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
+    dev->length = vc->size;
+    dev->offset = vc->offset;
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
     init_device(Vcb, dev, FALSE, TRUE);
-    dev->length = vc->size;
     
     InsertTailList(&Vcb->devices, &dev->list_entry);
     Vcb->devices_loaded = 1;
@@ -3949,6 +3925,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     init_lookaside = TRUE;
+    
+    Vcb->Vpb = IrpSp->Parameters.MountVolume.Vpb;
     
     Status = load_chunk_root(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -4159,7 +4137,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
-    Vcb->Vpb = NewDeviceObject->Vpb;
     
     KeInitializeEvent(&Vcb->flush_thread_finished, NotificationEvent, FALSE);
     

@@ -339,7 +339,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
               v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
         TRACE("device number %llx\n", v->devnum);
         
-        add_volume_device(sb, pnp_name, offset, length);
+        add_volume_device(sb, pnp_name, offset, length, disk_num, part_num);
     }
     
 deref:

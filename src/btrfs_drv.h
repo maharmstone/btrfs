@@ -409,6 +409,7 @@ typedef struct {
     BOOL ssd;
     BOOL trim;
     ULONG change_count;
+    UINT64 offset;
     UINT64 length;
     ULONG disk_num;
     ULONG part_num;
@@ -652,6 +653,9 @@ typedef struct {
     UNICODE_STRING pnp_name;
     UINT64 offset;
     UINT64 size;
+    BOOL seeding;
+    ULONG disk_num;
+    ULONG part_num;
     LIST_ENTRY list_entry;
 } volume_child;
 
@@ -1118,7 +1122,7 @@ NTSTATUS STDCALL vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length);
+void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num, ULONG part_num);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
