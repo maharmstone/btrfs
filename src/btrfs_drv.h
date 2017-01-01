@@ -610,6 +610,7 @@ typedef struct {
 typedef struct {
     BTRFS_UUID uuid;
     UINT64 devid;
+    UINT64 generation;
     PDEVICE_OBJECT devobj;
     UNICODE_STRING pnp_name;
     UINT64 offset;

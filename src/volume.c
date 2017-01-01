@@ -457,6 +457,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     else {
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
+        vc->generation = sb->generation;
         
         ObReferenceObject(DeviceObject);
         vc->devobj = DeviceObject;

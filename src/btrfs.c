@@ -3661,35 +3661,37 @@ static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
 
 static BOOL raid_generations_okay(device_extension* Vcb) {
     LIST_ENTRY* le2;
+    volume_device_extension* vde;
     
     // FIXME - if the difference between superblocks is small, we should try to recover
+    
+    vde = Vcb->Vpb->RealDevice->DeviceExtension;
     
     le2 = Vcb->devices.Flink;
     while (le2 != &Vcb->devices) {
         LIST_ENTRY* le;
         device* dev = CONTAINING_RECORD(le2, device, list_entry);
         
-        ExAcquireResourceSharedLite(&volumes_lock, TRUE);
+        ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
         
-        le = volumes.Flink;
+        le = vde->children.Flink;
         
-        while (le != &volumes) {
-            volume* v = CONTAINING_RECORD(le, volume, list_entry);
+        while (le != &vde->children) {
+            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
             
-            if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
-                RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)
-            ) {
-                if (v->gen1 != Vcb->superblock.generation - 1) {
-                    WARN("device %llu had generation %llx, expected %llx\n", dev->devitem.dev_id, v->gen1, Vcb->superblock.generation - 1);
-                    ExReleaseResourceLite(&volumes_lock);
+            if (RtlCompareMemory(&dev->devitem.device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                if (vc->generation != Vcb->superblock.generation - 1) {
+                    WARN("device %llu had generation %llx, expected %llx\n", dev->devitem.dev_id, vc->generation, Vcb->superblock.generation - 1);
+                    ExReleaseResourceLite(&vde->child_lock);
                     return FALSE;
                 } else
                     break;
             }
+            
             le = le->Flink;
         }
         
-        ExReleaseResourceLite(&volumes_lock);
+        ExReleaseResourceLite(&vde->child_lock);
         
         le2 = le2->Flink;
     }
