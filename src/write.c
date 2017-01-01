@@ -1686,7 +1686,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
 #endif
 
             IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
-            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset + stripes[i].skip_start;
+            IrpSp->Parameters.Write.ByteOffset.QuadPart = c->devices[i]->offset + stripes[i].start + cis[i].offset + stripes[i].skip_start;
             
             stripe->Irp->UserIosb = &stripe->iosb;
             wtc->stripes_left++;
