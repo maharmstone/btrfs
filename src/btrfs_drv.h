@@ -926,7 +926,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 #define do_load_tree(Vcb, th, r, t, td, loaded, Irp) _do_load_tree(Vcb, th, r, t, td, loaded, Irp, funcname, __FILE__, __LINE__)  
 
 // in search.c
-void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v);
+void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us);
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 

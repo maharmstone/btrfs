@@ -2781,7 +2781,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     if (!NT_SUCCESS(Status))
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
     else {
-        remove_drive_letter(mountmgr, v);
+        remove_drive_letter(mountmgr, &v->devpath);
         
         ObDereferenceObject(mountmgrfo);
     }

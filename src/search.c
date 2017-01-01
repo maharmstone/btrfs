@@ -349,7 +349,7 @@ deref:
     ObDereferenceObject(FileObject);
 }
 
-void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
+void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     KEVENT Event;
     PIRP Irp;
@@ -358,7 +358,7 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     MOUNTMGR_MOUNT_POINTS mmps1, *mmps2;
     IO_STATUS_BLOCK IoStatusBlock;
     
-    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + v->devpath.Length;
+    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + devpath->Length;
     
     mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
     if (!mmp) {
@@ -369,15 +369,15 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     RtlZeroMemory(mmp, mmpsize);
     
     mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
-    mmp->DeviceNameLength = v->devpath.Length;
-    RtlCopyMemory(&mmp[1], v->devpath.Buffer, v->devpath.Length);
+    mmp->DeviceNameLength = devpath->Length;
+    RtlCopyMemory(&mmp[1], devpath->Buffer, devpath->Length);
     
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
     Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_DELETE_POINTS,
                                         mountmgr, mmp, mmpsize, 
                                         &mmps1, sizeof(MOUNTMGR_MOUNT_POINTS), FALSE, &Event, &IoStatusBlock);
     if (!Irp) {
-        ERR("%.*S: IoBuildDeviceIoControlRequest 1 failed\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer);
+        ERR("%.*S: IoBuildDeviceIoControlRequest 1 failed\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
         ExFreePool(mmp);
         return;
     }
@@ -389,7 +389,7 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     }
 
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("%.*S: IoCallDriver 1  returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+        ERR("%.*S: IoCallDriver 1  returned %08x\n", devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
         ExFreePool(mmp);
         return;
     }
@@ -411,7 +411,7 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
                                         mountmgr, mmp, mmpsize, 
                                         mmps2, mmps1.Size, FALSE, &Event, &IoStatusBlock);
     if (!Irp) {
-        ERR("%.*S: IoBuildDeviceIoControlRequest 2 failed\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer);
+        ERR("%.*S: IoBuildDeviceIoControlRequest 2 failed\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
         ExFreePool(mmps2);
         ExFreePool(mmp);
         return;
@@ -424,7 +424,7 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, volume* v) {
     }
 
     if (!NT_SUCCESS(Status)) {
-        ERR("%.*S: IoCallDriver 2 returned %08x\n", v->devpath.Length / sizeof(WCHAR), v->devpath.Buffer, Status);
+        ERR("%.*S: IoCallDriver 2 returned %08x\n", devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
         ExFreePool(mmps2);
         ExFreePool(mmp);
         return;
@@ -454,10 +454,10 @@ static void refresh_mountmgr(PDEVICE_OBJECT mountmgr, LIST_ENTRY* volumes) {
                     v2->processed = TRUE;
                     
                     if (v2->devnum < mountvol->devnum) {
-                        remove_drive_letter(mountmgr, mountvol);
+                        remove_drive_letter(mountmgr, &mountvol->devpath);
                         mountvol = v2;
                     } else if (v2->devnum > mountvol->devnum)
-                        remove_drive_letter(mountmgr, v2);
+                        remove_drive_letter(mountmgr, &v2->devpath);
                 }
                 
                 le2 = le2->Flink;
