@@ -3496,8 +3496,6 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 exit:
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
-
-    Irp->IoStatus.Status = Status;
     
     if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
         FileObject->CurrentByteOffset.QuadPart = IrpSp->Parameters.Read.ByteOffset.QuadPart + (NT_SUCCESS(Status) ? bytes_read : 0);
@@ -3506,11 +3504,13 @@ exit:
     if (Irp->UserIosb)
         *Irp->UserIosb = Irp->IoStatus;
     
+exit2:
+    Irp->IoStatus.Status = Status;
+    
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
     TRACE("returning %08x\n", Status);
     
-exit2:
     if (Status != STATUS_PENDING)
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     else {
