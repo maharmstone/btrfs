@@ -2472,7 +2472,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 length) {
+static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 offset, UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
     unsigned int i, to_read;
@@ -2486,16 +2486,22 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
+    if (superblock_addrs[0] + to_read > length) {
+        WARN("device was too short to have any superblock\n");
+        ExFreePool(sb);
+        return STATUS_UNRECOGNIZED_VOLUME;
+    }
+    
     i = 0;
     valid_superblocks = 0;
     
     while (superblock_addrs[i] > 0) {
         UINT32 crc32;
         
-        if (i > 0 && superblock_addrs[i] + sizeof(superblock) > length)
+        if (i > 0 && superblock_addrs[i] + to_read > length)
             break;
         
-        Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
+        Status = sync_read_phys(device, offset + superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("Failed to read superblock %u: %08x\n", i, Status);
             ExFreePool(sb);
@@ -2505,6 +2511,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
         if (sb->magic != BTRFS_MAGIC) {
             if (i == 0) {
                 TRACE("not a BTRFS volume\n");
+                ExFreePool(sb);
                 return STATUS_UNRECOGNIZED_VOLUME;
             }
         } else {
@@ -3764,7 +3771,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PDEVICE_OBJECT DeviceToMount;
     NTSTATUS Status;
     device_extension* Vcb = NULL;
-    GET_LENGTH_INFORMATION gli;
     LIST_ENTRY *le, batchlist;
     KEY searchkey;
     traverse_ptr tp;
@@ -3772,6 +3778,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ccb* root_ccb = NULL;
     BOOL init_lookaside = FALSE;
     device* dev;
+    volume_device_extension* vde;
+    volume_child* vc;
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
@@ -3783,17 +3791,34 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
     
-    if (is_btrfs_volume(DeviceToMount)) { // refuse to mount these for the time being
+    if (!is_btrfs_volume(DeviceToMount)) {
+        // FIXME - look for superblock, in case this is a device just formatted
+        // as Btrfs. Don't mount, but add a volume object if it is.
         Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit2;
+    }
+    
+    vde = DeviceToMount->DeviceExtension;
+    
+    if (!vde || vde->type != VCB_TYPE_VOLUME) {
+        Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit2;
+    }
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    if (vde->children_loaded < vde->num_children) { // devices missing
+        Status = STATUS_DEVICE_NOT_READY;
         goto exit;
     }
-
-    Status = dev_ioctl(DeviceToMount, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error reading length information: %08x\n", Status);
-        Status = STATUS_UNRECOGNIZED_VOLUME;
+    
+    if (vde->num_children == 0) {
+        ERR("error - number of devices is zero\n");
+        Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
+    
+    vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
 
     Status = IoCreateDevice(drvobj, sizeof(device_extension), NULL, FILE_DEVICE_DISK_FILE_SYSTEM, 0, FALSE, &NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
@@ -3818,10 +3843,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExAcquireResourceExclusiveLite(&Vcb->load_lock, TRUE);
 
     DeviceToMount->Flags |= DO_DIRECT_IO;
-    
-    TRACE("partition length = %llx\n", gli.Length.QuadPart);
 
-    Status = read_superblock(Vcb, DeviceToMount, gli.Length.QuadPart);
+    Status = read_superblock(Vcb, vc->devobj, vc->offset, vc->size);
     if (!NT_SUCCESS(Status)) {
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
@@ -3889,7 +3912,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
     init_device(Vcb, dev, FALSE, TRUE);
-    dev->length = gli.Length.QuadPart;
+    dev->length = vc->size;
     
     InsertTailList(&Vcb->devices, &dev->list_entry);
     Vcb->devices_loaded = 1;
@@ -4179,8 +4202,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         WARN("look_for_balance_item returned %08x\n", Status);
     
     Status = STATUS_SUCCESS;
-
+    
 exit:
+    ExReleaseResourceLite(&vde->child_lock);
+
+exit2:
     if (Vcb) {
         ExReleaseResourceLite(&Vcb->load_lock);
     }

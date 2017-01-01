@@ -210,6 +210,31 @@ static NTSTATUS vol_is_dynamic(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_check_verify(volume_device_extension* vde) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        Status = dev_ioctl(vc->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, NULL, 0, FALSE, NULL);
+        if (!NT_SUCCESS(Status))
+            goto end;
+        
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    return Status;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -267,6 +292,9 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         case IOCTL_DISK_GET_LENGTH_INFO:
             ERR("unhandled control code IOCTL_DISK_GET_LENGTH_INFO\n");
             break;
+            
+        case IOCTL_STORAGE_CHECK_VERIFY:
+            return vol_check_verify(vde);
 
         default:
             ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
@@ -336,16 +364,20 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING devpath, UINT64 offset, UINT64 length) {
+void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 offset, UINT64 length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UNICODE_STRING volname, mmdevpath;
-    PDEVICE_OBJECT voldev, mountmgr;
+    PDEVICE_OBJECT voldev, mountmgr, DeviceObject;
     volume_device_extension* vde = NULL;
     int i, j;
     PFILE_OBJECT mountmgrfo;
     BOOL new_vde = FALSE;
     volume_child* vc;
+    PFILE_OBJECT FileObject;
+    
+    if (devpath->Length == 0)
+        return;
     
     ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
     
@@ -361,6 +393,13 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING de
         le = le->Flink;
     }
     
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ExReleaseResourceLite(&volume_list_lock);
+        goto end;
+    }
+    
     if (!vde) {
         volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
         volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
@@ -368,7 +407,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING de
         if (!volname.Buffer) {
             ERR("out of memory\n");
             ExReleaseResourceLite(&volume_list_lock);
-            return;
+            goto end;
         }
         
         RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
@@ -390,7 +429,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING de
         if (!NT_SUCCESS(Status)) {
             ERR("IoCreateDevice returned %08x\n", Status);
             ExReleaseResourceLite(&volume_list_lock);
-            return;
+            goto end;
         }
         
         voldev->StackSize = 1;
@@ -419,22 +458,17 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING de
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
         
-        ObReferenceObject(devobj);
-        vc->devobj = devobj;
+        ObReferenceObject(DeviceObject);
+        vc->devobj = DeviceObject;
         
-        if (devpath->Length > 0) {
-            vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath->Length;
-            vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
-            
-            if (vc->pnp_name.Buffer)
-                RtlCopyMemory(vc->pnp_name.Buffer, devpath->Buffer, devpath->Length);
-            else {
-                ERR("out of memory\n");
-                vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
-            }
-        } else {
+        vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath->Length;
+        vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
+        
+        if (vc->pnp_name.Buffer)
+            RtlCopyMemory(vc->pnp_name.Buffer, devpath->Buffer, devpath->Length);
+        else {
+            ERR("out of memory\n");
             vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
-            vc->pnp_name.Buffer = NULL;
         }
         
         vc->offset = offset;
@@ -466,5 +500,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT devobj, PUNICODE_STRING de
             
             ObDereferenceObject(mountmgrfo);
         }
-    }        
+    }
+    
+end:
+    ObDereferenceObject(FileObject);
 }
