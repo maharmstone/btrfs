@@ -1607,7 +1607,9 @@ void mark_fileref_dirty(file_ref* fileref) {
         
         dirt->fileref = fileref;
         
-        ExInterlockedInsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &dirt->list_entry, &fileref->fcb->Vcb->dirty_filerefs_lock);
+        ExAcquireResourceExclusiveLite(&fileref->fcb->Vcb->dirty_filerefs_lock, TRUE);
+        InsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &dirt->list_entry);
+        ExReleaseResourceLite(&fileref->fcb->Vcb->dirty_filerefs_lock);
     }
     
     fileref->fcb->Vcb->need_write = TRUE;
@@ -1993,6 +1995,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->tree_lock);
     ExDeleteResourceLite(&Vcb->chunk_lock);
     ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
+    ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
     ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
@@ -3904,7 +3907,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->dirty_filerefs);
     
     ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
-    KeInitializeSpinLock(&Vcb->dirty_filerefs_lock);
+    ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 

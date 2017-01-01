@@ -580,7 +580,7 @@ typedef struct _device_extension {
     LIST_ENTRY dirty_fcbs;
     ERESOURCE dirty_fcbs_lock;
     LIST_ENTRY dirty_filerefs;
-    KSPIN_LOCK dirty_filerefs_lock;
+    ERESOURCE dirty_filerefs_lock;
     ERESOURCE chunk_lock;
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;

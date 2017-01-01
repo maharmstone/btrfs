@@ -5353,6 +5353,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     time1 = KeQueryPerformanceCounter(&freq);
 #endif
     
+    ExAcquireResourceExclusiveLite(&Vcb->dirty_filerefs_lock, TRUE);
+    
     while (!IsListEmpty(&Vcb->dirty_filerefs)) {
         dirty_fileref* dirt;
         
@@ -5368,6 +5370,8 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         filerefs++;
 #endif
     }
+    
+    ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
     
     commit_batch_list(Vcb, &batchlist, Irp, rollback);
     
