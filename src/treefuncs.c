@@ -276,38 +276,9 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
 
 NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp,
                                const char* func, const char* file, unsigned int line) {
-//     KIRQL irql;
-//     tree_holder_nonpaged* thnp = th->nonpaged;
     BOOL ret;
     
-//     ExAcquireResourceExclusiveLite(&thnp->lock, TRUE);
     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-    
-//     KeAcquireSpinLock(&thnp->spin_lock, &irql);
-//     
-//     if (thnp->status == tree_header_loading) {
-//         KeReleaseSpinLock(&thnp->spin_lock, irql);
-//         
-//         // FIXME - wait for Event
-//     } else if (thnp->status == tree_header_unloaded || thnp->status == tree_header_unloading) {
-//         if (thnp->status == tree_header_unloading) {
-//             KeReleaseSpinLock(&thnp->spin_lock, irql);
-//             // FIXME - wait for Event
-//         }
-//         
-//         // FIXME - change status
-//         thnp->status = tree_header_loading;
-//         KeReleaseSpinLock(&thnp->spin_lock, irql);
-//         
-//         // FIXME - load
-//         // FIXME - change status
-//         // FIXME - trigger event
-//     } else if (thnp->status == tree_header_loaded) {
-//         _increase_tree_rc(th->tree, func, file, line);
-//         KeReleaseSpinLock(&thnp->spin_lock, irql);
-//         
-//         ret = FALSE;
-//     }
 
     if (!th->tree) {
         NTSTATUS Status;
@@ -331,9 +302,6 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
     } else
         ret = FALSE;
     
-//     KeReleaseSpinLock(&thnp->spin_lock, irql);
-    
-//     ExReleaseResourceLite(&thnp->lock);
     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
     
     *loaded = ret;
