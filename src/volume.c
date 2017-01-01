@@ -17,7 +17,10 @@
 
 #include "btrfs_drv.h"
 #include <mountdev.h>
-#include <winioctl.h>
+#include <ntddvol.h>
+#include <ntddstor.h>
+#include <ntdddisk.h>
+// #include <winioctl.h>
 
 #define IOCTL_VOLUME_IS_DYNAMIC     CTL_CODE(IOCTL_VOLUME_BASE, 18, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_VOLUME_POST_ONLINE    CTL_CODE(IOCTL_VOLUME_BASE, 25, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
