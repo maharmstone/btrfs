@@ -28,7 +28,6 @@
 #include <ntifs.h>
 #include <ntddk.h>
 #include <mountmgr.h>
-//#include <windows.h>
 #include <windef.h>
 #include <wdm.h>
 #include <stdio.h>
@@ -87,8 +86,6 @@
 #define except(x) if (0 && (x))
 #define finally if (1)
 #endif
-
-// #pragma pack(push, 1)
 
 struct _device_extension;
 
@@ -251,7 +248,6 @@ typedef struct _ccb {
     ULONG disposition;
     ULONG options;
     UINT64 query_dir_offset;
-//     char* query_string;
     UNICODE_STRING query_string;
     BOOL has_wildcard;
     BOOL specific_file;
@@ -268,34 +264,12 @@ typedef struct _ccb {
     BOOL user_set_change_time;
 } ccb;
 
-// typedef struct _log_to_phys {
-//     UINT64 address;
-//     UINT64 size;
-//     UINT64 physaddr;
-//     UINT32 sector_size;
-//     struct _log_to_phys* next;
-// } log_to_phys;
-
 struct _device_extension;
-
-// enum tree_holder_status {
-//     tree_holder_unloaded,
-//     tree_holder_loading,
-//     tree_holder_loaded,
-//     tree_holder_unloading
-// };
-
-// typedef struct {
-//     enum tree_holder_status status;
-//     KSPIN_LOCK spin_lock;
-//     ERESOURCE lock;
-// } tree_holder_nonpaged;
 
 typedef struct {
     UINT64 address;
     UINT64 generation;
     struct _tree* tree;
-//     tree_holder_nonpaged* nonpaged;
 } tree_holder;
 
 typedef struct _tree_data {
@@ -314,13 +288,7 @@ typedef struct _tree_data {
     };
 } tree_data;
 
-// typedef struct _tree_nonpaged {
-//     ERESOURCE load_tree_lock;
-// } tree_nonpaged;
-
 typedef struct _tree {
-//     UINT64 address;
-//     UINT8 level;
     tree_header header;
     UINT32 hash;
     BOOL has_address;
@@ -329,7 +297,6 @@ typedef struct _tree {
     struct _tree* parent;
     tree_data* paritem;
     struct _root* root;
-//     tree_nonpaged* nonpaged;
     LIST_ENTRY itemlist;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_hash;
@@ -340,7 +307,6 @@ typedef struct _tree {
 } tree;
 
 typedef struct {
-//     KSPIN_LOCK load_tree_lock;
     ERESOURCE load_tree_lock;
 } root_nonpaged;
 
@@ -573,9 +539,7 @@ typedef struct _device_extension {
     debug_stats stats;
 #endif
     UINT64 devices_loaded;
-//     DISK_GEOMETRY geometry;
     superblock superblock;
-//     WCHAR label[MAX_LABEL_SIZE];
     BOOL readonly;
     BOOL removing;
     BOOL locked;
@@ -593,12 +557,9 @@ typedef struct _device_extension {
     LIST_ENTRY DirNotifyList;
     LONG open_trees;
     BOOL need_write;
-//     ERESOURCE LogToPhysLock;
-//     UINT64 chunk_root_phys_addr;
     UINT64 data_flags;
     UINT64 metadata_flags;
     UINT64 system_flags;
-//     log_to_phys* log_to_phys;
     LIST_ENTRY roots;
     LIST_ENTRY drop_roots;
     root* chunk_root;
@@ -714,8 +675,6 @@ typedef struct {
     UINT8* data;
     LIST_ENTRY list_entry;
 } tree_write;
-
-// #pragma pack(pop)
 
 static __inline void* map_user_buffer(PIRP Irp) {
     if (!Irp->MdlAddress) {
@@ -965,7 +924,6 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL get_sd_from_xattr(fcb* fcb, ULONG buflen);
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
-// UINT32 STDCALL get_uid();
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 UINT32 sid_to_uid(PSID sid);
 void uid_to_sid(UINT32 uid, PSID* sid);
@@ -1048,7 +1006,6 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
                                        UINT32 refcount, BOOL superseded, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT8 level, PIRP Irp, LIST_ENTRY* rollback);
 void decrease_chunk_usage(chunk* c, UINT64 delta);
-// NTSTATUS convert_old_data_extent(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp, LIST_ENTRY* rollback);
 UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback);
@@ -1198,14 +1155,10 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #endif
 
 #ifdef _MSC_VER
-// #define int3 __asm { int 3 }
 #define int3 __debugbreak()
 #else
 #define int3 asm("int3;")
 #endif
-
-// if (Vcb->open_trees > 0) { ERR("open tree count = %i\n", Vcb->open_trees); print_open_trees(Vcb); int3; }
-// else TRACE("open tree count = %i\n", Vcb->open_trees);
 
 // FIXME - find a way to catch unfreed trees again
 
