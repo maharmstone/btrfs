@@ -2215,7 +2215,7 @@ static NTSTATUS remove_superblocks(device* dev) {
     RtlZeroMemory(sb, sizeof(superblock));
     
     while (superblock_addrs[i] > 0 && dev->length >= superblock_addrs[i] + sizeof(superblock)) {
-        Status = write_data_phys(dev->devobj, superblock_addrs[i], sb, sizeof(superblock));
+        Status = write_data_phys(dev->devobj, dev->offset + superblock_addrs[i], sb, sizeof(superblock));
         
         if (!NT_SUCCESS(Status)) {
             ExFreePool(sb);
