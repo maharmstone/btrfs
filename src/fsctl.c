@@ -31,6 +31,7 @@ extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern LIST_ENTRY volumes;
 extern ERESOURCE volumes_lock;
+extern LIST_ENTRY pnp_disks;
 
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
@@ -2850,9 +2851,36 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->generation = Vcb->superblock.generation;
     vc->devobj = fileobj->DeviceObject;
     
-    // FIXME
     vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
     vc->pnp_name.Buffer = NULL;
+    
+    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    
+    le = pnp_disks.Flink;
+    while (le != &pnp_disks) {
+        pnp_disk* disk = CONTAINING_RECORD(le, pnp_disk, list_entry);
+        
+        if (disk->disk_num == sdn.DeviceNumber) {
+            vc->pnp_name.Length = vc->pnp_name.MaximumLength = disk->devpath.Length;
+            
+            if (disk->devpath.Length > 0) {
+                vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, disk->devpath.Length, ALLOC_TAG);
+                if (!vc->pnp_name.Buffer) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(vc->pnp_name.Buffer, disk->devpath.Buffer, disk->devpath.Length);
+            }
+            
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&volumes_lock);
     
     vc->offset = offset;
     vc->size = size;
