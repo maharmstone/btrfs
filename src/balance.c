@@ -64,9 +64,6 @@ typedef struct {
     LIST_ENTRY list_entry;
 } data_reloc_ref;
 
-extern LIST_ENTRY volumes;
-extern ERESOURCE volumes_lock;
-
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     metadata_reloc* mr;
     EXTENT_ITEM* ei;

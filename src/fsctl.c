@@ -29,7 +29,6 @@
 
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
-extern LIST_ENTRY volumes;
 extern ERESOURCE volumes_lock;
 extern LIST_ENTRY pnp_disks;
 

@@ -43,7 +43,6 @@ PDEVICE_OBJECT devobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
-LIST_ENTRY volumes;
 ERESOURCE volumes_lock;
 LIST_ENTRY pnp_disks;
 LIST_ENTRY VcbList;
@@ -4820,7 +4819,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
         return Status;
     }
 
-    InitializeListHead(&volumes);
     InitializeListHead(&pnp_disks);
     
     InitializeListHead(&VcbList);

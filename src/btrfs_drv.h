@@ -90,20 +90,6 @@
 struct _device_extension;
 
 typedef struct {
-    BTRFS_UUID fsuuid;
-    BTRFS_UUID devuuid;
-    UINT64 devnum;
-    UNICODE_STRING devpath;
-    UINT64 length;
-    UINT64 gen1, gen2;
-    BOOL seeding;
-    BOOL processed;
-    DWORD disk_num;
-    DWORD part_num;
-    LIST_ENTRY list_entry;
-} volume;
-
-typedef struct {
     UNICODE_STRING devpath;
     ULONG disk_num;
     LIST_ENTRY list_entry;

@@ -26,72 +26,13 @@
 #include <winioctl.h>
 #include <wdmguid.h>
 
-extern LIST_ENTRY volumes;
 extern ERESOURCE volumes_lock;
 extern LIST_ENTRY pnp_disks;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
-static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
-                             PUNICODE_STRING nameus, BTRFS_UUID* uuid) {
-    PDEVICE_OBJECT newdevobj;
-    UNICODE_STRING name;
-    NTSTATUS Status;
-    part0_device_extension* p0de;
-    
-    static const WCHAR part0_suffix[] = L"Btrfs";
-    
-    name.Length = name.MaximumLength = devpath->Length + (wcslen(part0_suffix) * sizeof(WCHAR));
-    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
-    if (!name.Buffer) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(name.Buffer, devpath->Buffer, devpath->Length);
-    RtlCopyMemory(&name.Buffer[devpath->Length / sizeof(WCHAR)], part0_suffix, wcslen(part0_suffix) * sizeof(WCHAR));
-    
-    Status = IoCreateDevice(DriverObject, sizeof(part0_device_extension), &name, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &newdevobj);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IoCreateDevice returned %08x\n", Status);
-        ExFreePool(name.Buffer);
-        return Status;
-    }
-    
-    p0de = newdevobj->DeviceExtension;
-    p0de->type = VCB_TYPE_PARTITION0;
-    p0de->devobj = DeviceObject;
-    RtlCopyMemory(&p0de->uuid, uuid, sizeof(BTRFS_UUID));
-    
-    p0de->name.Length = name.Length;
-    p0de->name.MaximumLength = name.MaximumLength;
-    p0de->name.Buffer = ExAllocatePoolWithTag(PagedPool, p0de->name.MaximumLength, ALLOC_TAG);
-    
-    if (!p0de->name.Buffer) {
-        ERR("out of memory\b");
-        ExFreePool(name.Buffer);
-        ExFreePool(p0de->name.Buffer);
-        IoDeleteDevice(newdevobj);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(p0de->name.Buffer, name.Buffer, name.Length);
-    
-    ObReferenceObject(DeviceObject);
-    
-    newdevobj->StackSize = DeviceObject->StackSize + 1;
-    newdevobj->SectorSize = DeviceObject->SectorSize;
-    
-    newdevobj->Flags |= DO_DIRECT_IO;
-    newdevobj->Flags &= ~DO_DEVICE_INITIALIZING;
-    
-    *nameus = name;
-    
-    return STATUS_SUCCESS;
-}
-
 static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
-                             DWORD disk_num, DWORD part_num, LIST_ENTRY* volumes, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
+                             DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -157,102 +98,16 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     }
 
     if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
-        int i;
         superblock* sb = (superblock*)data;
-        volume* v = ExAllocatePoolWithTag(PagedPool, sizeof(volume), ALLOC_TAG);
-        
-        if (!v) {
-            ERR("out of memory\n");
-            goto deref;
-        }
-        
-        if (part_num == 0) {
-            UNICODE_STRING us3;
-            
-            Status = create_part0(DriverObject, DeviceObject, devpath, &us3, &sb->dev_item.device_uuid);
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("create_part0 returned %08x\n", Status);
-                ExFreePool(v);
-                goto deref;
-            }
-            
-            v->devpath = us3;
-        } else {
-            v->devpath.Length = v->devpath.MaximumLength = devpath->Length;
-            v->devpath.Buffer = ExAllocatePoolWithTag(PagedPool, v->devpath.Length, ALLOC_TAG);
-            
-            if (!v->devpath.Buffer) {
-                ERR("out of memory\n");
-                ExFreePool(v);
-                goto deref;
-            }
-            
-            RtlCopyMemory(v->devpath.Buffer, devpath->Buffer, v->devpath.Length);
-        }
-        
-        RtlCopyMemory(&v->fsuuid, &sb->uuid, sizeof(BTRFS_UUID));
-        RtlCopyMemory(&v->devuuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID));
-        v->devnum = sb->dev_item.dev_id;
-        v->processed = FALSE;
-        v->length = length;
-        v->gen1 = sb->generation;
-        v->gen2 = 0;
-        v->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
-        v->disk_num = disk_num;
-        v->part_num = part_num;
-        
-        ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
-        InsertTailList(volumes, &v->list_entry);
-        ExReleaseResourceLite(&volumes_lock);
-        
-        i = 1;
-        while (superblock_addrs[i] != 0 && superblock_addrs[i] + toread <= v->length) {
-            KeInitializeEvent(&Event, NotificationEvent, FALSE);
-            
-            Offset.QuadPart = offset + superblock_addrs[i];
-            
-            Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, data, toread, &Offset, &Event, &IoStatusBlock);
-            
-            if (!Irp) {
-                ERR("IoBuildSynchronousFsdRequest failed\n");
-                goto deref;
-            }
-
-            Status = IoCallDriver(DeviceObject, Irp);
-
-            if (Status == STATUS_PENDING) {
-                KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-                Status = IoStatusBlock.Status;
-            }
-            
-            if (NT_SUCCESS(Status)) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
                 
-                if (crc32 != *((UINT32*)sb->checksum))
-                    WARN("superblock %u CRC error\n", i);
-                else if (sb->generation > v->gen1) {
-                    v->gen2 = v->gen1;
-                    v->gen1 = sb->generation;
-                }
-            } else {
-                ERR("got error %08x while reading superblock %u\n", Status, i);
-            }
+        if (crc32 != *((UINT32*)sb->checksum))
+            ERR("checksum error on superblock\n");
+        else {
+            TRACE("volume found\n");
             
-            i++;
+            add_volume_device(sb, mountmgr, pnp_name, offset, length, disk_num, part_num, devpath);
         }
-        
-        TRACE("volume found\n");
-        TRACE("gen1 = %llx, gen2 = %llx\n", v->gen1, v->gen2);
-        TRACE("FS uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
-              v->fsuuid.uuid[0], v->fsuuid.uuid[1], v->fsuuid.uuid[2], v->fsuuid.uuid[3], v->fsuuid.uuid[4], v->fsuuid.uuid[5], v->fsuuid.uuid[6], v->fsuuid.uuid[7],
-              v->fsuuid.uuid[8], v->fsuuid.uuid[9], v->fsuuid.uuid[10], v->fsuuid.uuid[11], v->fsuuid.uuid[12], v->fsuuid.uuid[13], v->fsuuid.uuid[14], v->fsuuid.uuid[15]);
-        TRACE("device uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
-              v->devuuid.uuid[0], v->devuuid.uuid[1], v->devuuid.uuid[2], v->devuuid.uuid[3], v->devuuid.uuid[4], v->devuuid.uuid[5], v->devuuid.uuid[6], v->devuuid.uuid[7],
-              v->devuuid.uuid[8], v->devuuid.uuid[9], v->devuuid.uuid[10], v->devuuid.uuid[11], v->devuuid.uuid[12], v->devuuid.uuid[13], v->devuuid.uuid[14], v->devuuid.uuid[15]);
-        TRACE("device number %llx\n", v->devnum);
-        
-        add_volume_device(sb, mountmgr, pnp_name, offset, length, disk_num, part_num, devpath);
     }
     
 deref:
@@ -427,7 +282,7 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             RtlAppendUnicodeStringToString(&devname, &num);
             
             test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber,
-                     &volumes, devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
+                     devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
             
             num_parts++;
         }
@@ -449,7 +304,7 @@ no_parts:
             devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
             devname.Length += sizeof(WCHAR);
             
-            test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, 0, &volumes, devpath, 0, gli.Length.QuadPart);
+            test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, 0, devpath, 0, gli.Length.QuadPart);
         }
     }
     
@@ -560,23 +415,6 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     if (!disk) {
         ExReleaseResourceLite(&volumes_lock);
         return;
-    }
-
-    le = volumes.Flink;
-    while (le != &volumes) {
-        volume* v = CONTAINING_RECORD(le, volume, list_entry);
-        LIST_ENTRY* le2 = le->Flink;
-        
-        if (v->disk_num == disk->disk_num) {
-            if (v->devpath.Buffer)
-                ExFreePool(v->devpath.Buffer);
-            
-            RemoveEntryList(&v->list_entry);
-            
-            ExFreePool(v);
-        }
-        
-        le = le2;
     }
     
     ExReleaseResourceLite(&volumes_lock);
