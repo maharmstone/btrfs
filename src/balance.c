@@ -2230,165 +2230,12 @@ static NTSTATUS remove_superblocks(device* dev) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS replace_mount_dev(device_extension* Vcb, device* dev, PDEVICE_OBJECT mountmgr, BOOL part0) {
-    NTSTATUS Status;
-    MOUNTDEV_NAME mdn, *mdn2 = NULL, *mdn3 = NULL;
-    ULONG mdnsize, mmpsize;
-    MOUNTMGR_MOUNT_POINT* mmp = NULL;
-    MOUNTMGR_MOUNT_POINTS mmps, *mmps2 = NULL;
-    ULONG i;
-    UNICODE_STRING us;
-
-    // get old device name
-    
-    Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
-    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-        return Status;
-    }
-    
-    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
-    
-    mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
-    if (!mdn2) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-        goto end;
-    }
-    
-    // get new device name
-    
-    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
-    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-        goto end2;
-    }
-    
-    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
-    
-    mdn3 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
-    if (!mdn3) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end2;
-    }
-    
-    Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn3, mdnsize, TRUE, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-        goto end2;
-    }
-    
-    // query and delete existing mount points
-    
-    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + mdn2->NameLength;
-    
-    mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
-    if (!mmp) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end2;
-    }
-    
-    RtlZeroMemory(mmp, sizeof(MOUNTMGR_MOUNT_POINT));
-    mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
-    mmp->DeviceNameLength = mdn2->NameLength;
-    RtlCopyMemory(&mmp[1], mdn2->Name, mdn2->NameLength);
-    
-    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_QUERY_POINTS, mmp, mmpsize, &mmps, mmpsize, TRUE, NULL);
-    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08x\n", Status);
-        goto end2;
-    }
-    
-    mmps2 = ExAllocatePoolWithTag(PagedPool, mmps.Size, ALLOC_TAG);
-    if (!mmps2) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end2;
-    }
-    
-    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, mmps2, mmps.Size, TRUE, NULL);
-    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("IOCTL_MOUNTMGR_DELETE_POINTS returned %08x\n", Status);
-        goto end2;
-    }
-    
-    // re-create mount points
-    
-    for (i = 0; i < mmps2->NumberOfMountPoints; i++) {
-        if (mmps2->MountPoints[i].SymbolicLinkNameOffset != 0) {
-            ULONG mcpilen;
-            MOUNTMGR_CREATE_POINT_INPUT* mcpi;
-            
-            mcpilen = sizeof(MOUNTMGR_CREATE_POINT_INPUT) + mmps2->MountPoints[i].SymbolicLinkNameLength + mdn3->NameLength;
-            
-            mcpi = ExAllocatePoolWithTag(PagedPool, mcpilen, ALLOC_TAG);
-            if (!mcpi) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end2;
-            }
-            
-            mcpi->SymbolicLinkNameOffset = sizeof(MOUNTMGR_CREATE_POINT_INPUT);
-            mcpi->SymbolicLinkNameLength = mmps2->MountPoints[i].SymbolicLinkNameLength;
-            mcpi->DeviceNameOffset = mcpi->SymbolicLinkNameOffset + mcpi->SymbolicLinkNameLength;
-            mcpi->DeviceNameLength = mdn3->NameLength;
-            
-            RtlCopyMemory((UINT8*)mcpi + mcpi->SymbolicLinkNameOffset, (UINT8*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset,
-                          mcpi->SymbolicLinkNameLength);
-            RtlCopyMemory((UINT8*)mcpi + mcpi->DeviceNameOffset, mdn3->Name, mdn3->NameLength);
-
-            Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_CREATE_POINT, mcpi, mcpilen, NULL, 0, TRUE, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("IOCTL_MOUNTMGR_CREATE_POINT returned %08x\n", Status);
-                ExFreePool(mcpi);
-                goto end2;
-            }
-            
-            ExFreePool(mcpi);
-        }
-    }
-    
-    Status = STATUS_SUCCESS;
-    
-end2:
-    // re-add old device back to mountmgr
-    
-    if (!part0) {
-        us.Buffer = mdn2->Name;
-        us.Length = us.MaximumLength = mdn2->NameLength;
-        
-        add_volume(mountmgr, &us);
-    }
-    
-end:
-    if (mdn2)
-        ExFreePool(mdn2);
-    
-    if (mdn3)
-        ExFreePool(mdn3);
-    
-    if (mmp)
-        ExFreePool(mmp);
-    
-    if (mmps2)
-        ExFreePool(mmps2);
-
-    return Status;
-}
-
 static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     LIST_ENTRY rollback, *le;
-    BOOL first_dev, part0 = FALSE;
+    volume_device_extension* vde;
     
     InitializeListHead(&rollback);
     
@@ -2435,8 +2282,6 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     Vcb->superblock.total_bytes -= dev->devitem.num_bytes;
     Vcb->devices_loaded--;
     
-    first_dev = first_device(Vcb) == dev;
-    
     RemoveEntryList(&dev->list_entry);
     
     // flush
@@ -2455,76 +2300,73 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     // remove entry in volume list
     
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    vde = Vcb->Vpb->RealDevice->DeviceExtension;
     
-    le = volumes.Flink;
-    while (le != &volumes) {
-        volume* v = CONTAINING_RECORD(le, volume, list_entry);
+    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
         
-        if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) &&
-            RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&dev->devitem.device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
             PFILE_OBJECT FileObject;
             PDEVICE_OBJECT mountmgr;
             UNICODE_STRING mmdevpath;
         
-            RemoveEntryList(&v->list_entry);
-        
+            vde->children_loaded--;
+            
             // re-add entry to mountmgr
-
-            if (!first_dev && v->part_num != 0) {
+            
+            if (vc->part_num != 0) {
                 RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
                 Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
                 if (!NT_SUCCESS(Status))
                     ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
                 else {
-                    add_volume(mountmgr, &v->devpath);
+                    static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
+                    static WCHAR bs_partition[] = L"\\Partition";
+                    
+                    WCHAR devnamew[255], numw[20];
+                    UNICODE_STRING devname, num, bspus;
+
+                    wcscpy(devnamew, device_harddisk);
+                    devname.Buffer = devnamew;
+                    devname.MaximumLength = sizeof(devnamew);
+                    devname.Length = wcslen(device_harddisk) * sizeof(WCHAR);
+
+                    num.Buffer = numw;
+                    num.MaximumLength = sizeof(numw);
+                    RtlIntegerToUnicodeString(vc->disk_num, 10, &num);
+                    RtlAppendUnicodeStringToString(&devname, &num);
+
+                    bspus.Buffer = bs_partition;
+                    bspus.Length = bspus.MaximumLength = wcslen(bs_partition) * sizeof(WCHAR);
+                    RtlAppendUnicodeStringToString(&devname, &bspus);
+                    
+                    RtlIntegerToUnicodeString(vc->part_num, 10, &num);
+                    RtlAppendUnicodeStringToString(&devname, &num);
+                    
+                    Status = mountmgr_add_drive_letter(mountmgr, &devname);
+                    if (!NT_SUCCESS(Status))
+                        WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                    
                     ObDereferenceObject(FileObject);
                 }
             }
             
-            part0 = v->part_num == 0 ? TRUE : FALSE;
-        
-            if (v->devpath.Buffer)
-                ExFreePool(v->devpath.Buffer);
+            ExFreePool(vc->pnp_name.Buffer);
+            RemoveEntryList(&vc->list_entry);
+            ExFreePool(vc);
             
-            ExFreePool(v);
             break;
         }
         
         le = le->Flink;
     }
     
-    ExReleaseResourceLite(&volumes_lock);
+    vde->num_children = Vcb->superblock.num_devices;
     
-    if (first_dev) {
-        PDEVICE_OBJECT DeviceObject, olddev;
-        device* newfirstdev;
-        PFILE_OBJECT FileObject;
-        UNICODE_STRING mmdevpath;
-        PDEVICE_OBJECT mountmgr;
-        
-        DeviceObject = Vcb->Vpb->DeviceObject;
-        
-        olddev = DeviceObject->Vpb->RealDevice;
-        newfirstdev = first_device(Vcb);
-        
-        ObReferenceObject(newfirstdev->devobj);
-        DeviceObject->Vpb->RealDevice = newfirstdev->devobj;
-        ObDereferenceObject(olddev);
-        
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
-        if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            Status = replace_mount_dev(Vcb, dev, mountmgr, part0);
-            if (!NT_SUCCESS(Status))
-                ERR("replace_mount_dev returned %08x\n", Status);
-            
-            ObDereferenceObject(FileObject);
-        }
-        
-    }
+    ExReleaseResourceLite(&vde->child_lock);
     
     // free dev
     

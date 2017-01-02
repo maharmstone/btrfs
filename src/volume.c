@@ -360,7 +360,7 @@ static NTSTATUS mountmgr_volume_arrival(PDEVICE_OBJECT mountmgr, PUNICODE_STRING
     return Status;
 }
 
-static NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
+NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     ULONG mmdltsize;
     MOUNTMGR_DRIVE_LETTER_TARGET* mmdlt;
