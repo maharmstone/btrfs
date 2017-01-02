@@ -360,6 +360,34 @@ static NTSTATUS mountmgr_volume_arrival(PDEVICE_OBJECT mountmgr, PUNICODE_STRING
     return Status;
 }
 
+static NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
+    NTSTATUS Status;
+    ULONG mmdltsize;
+    MOUNTMGR_DRIVE_LETTER_TARGET* mmdlt;
+    MOUNTMGR_DRIVE_LETTER_INFORMATION mmdli;
+    
+    mmdltsize = offsetof(MOUNTMGR_DRIVE_LETTER_TARGET, DeviceName[0]) + devpath->Length;
+    
+    mmdlt = ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
+    if (!mmdlt) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    mmdlt->DeviceNameLength = devpath->Length;
+    RtlCopyMemory(&mmdlt->DeviceName, devpath->Buffer, devpath->Length);
+    TRACE("mmdlt = %.*S\n", mmdlt->DeviceNameLength / sizeof(WCHAR), mmdlt->DeviceName);
+    
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER, mmdlt, mmdltsize, &mmdli, sizeof(MOUNTMGR_DRIVE_LETTER_INFORMATION), FALSE, NULL);
+    
+    if (!NT_SUCCESS(Status))
+        ERR("IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER returned %08x\n", Status);
+    else
+        TRACE("DriveLetterWasAssigned = %u, CurrentDriveLetter = %c\n", mmdli.DriveLetterWasAssigned, mmdli.CurrentDriveLetter);
+    
+    return Status;
+}
+
 static __inline WCHAR hex_digit(UINT8 n) {
     if (n >= 0 && n <= 9)
         return n + '0';
@@ -501,6 +529,10 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         Status = mountmgr_volume_arrival(mountmgr, &volname);
         if (!NT_SUCCESS(Status))
             ERR("mountmgr_volume_arrival returned %08x\n", Status);
+        
+        Status = mountmgr_add_drive_letter(mountmgr, &volname);
+        if (!NT_SUCCESS(Status))
+            ERR("mountmgr_add_drive_letter returned %08x\n", Status);
     }
     
     if (part_num != 0)
