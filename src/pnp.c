@@ -290,10 +290,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_pnp(DeviceObject, Irp);
         goto end;
     }

@@ -433,7 +433,7 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
-    if (DeviceObject == devobj || (Vcb && Vcb->type == VCB_TYPE_PARTITION0)) {
+    if (DeviceObject == devobj) {
         TRACE("Closing file system\n");
         Status = STATUS_SUCCESS;
         goto end;
@@ -479,10 +479,7 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_flush_buffers(DeviceObject, Irp);
         goto end;
     }
@@ -505,7 +502,6 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
 end:
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -558,10 +554,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     FsRtlEnterFileSystem();
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_volume_information(DeviceObject, Irp);
         goto end;
     }    
@@ -778,7 +771,6 @@ end:
     
     IoCompleteRequest( Irp, IO_DISK_INCREMENT );
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -1331,10 +1323,7 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_volume_information(DeviceObject, Irp);
         goto end;
     }
@@ -1377,7 +1366,6 @@ end:
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -2167,10 +2155,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit2;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_cleanup(DeviceObject, Irp);
         goto exit;
     }
@@ -2277,7 +2262,6 @@ exit:
     
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-exit2:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4324,10 +4308,7 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_file_system_control(DeviceObject, Irp);
         goto end;
     }
@@ -4381,7 +4362,6 @@ end:
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4401,10 +4381,7 @@ static NTSTATUS STDCALL drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_lock_control(DeviceObject, Irp);
         
         Irp->IoStatus.Status = Status;
@@ -4428,17 +4405,6 @@ exit:
     return Status;
 }
 
-NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    NTSTATUS Status;
-    part0_device_extension* p0de = DeviceObject->DeviceExtension;
-    
-    IoSkipCurrentIrpStackLocation(Irp);
-    
-    Status = IoCallDriver(p0de->devobj, Irp);
-    
-    return Status;
-}
-
 static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
@@ -4450,10 +4416,7 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_shutdown(DeviceObject, Irp);
         goto end;
     }    
@@ -4474,7 +4437,6 @@ end:
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
 
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

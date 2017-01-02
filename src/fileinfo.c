@@ -2610,10 +2610,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_information(DeviceObject, Irp);
         goto end;
     }
@@ -2757,7 +2754,6 @@ end:
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4417,10 +4413,7 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_information(DeviceObject, Irp);
         goto end;
     }
@@ -4448,7 +4441,6 @@ end:
     
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4474,10 +4466,7 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_ea(DeviceObject, Irp);
         goto end;
     }
@@ -4671,7 +4660,6 @@ end:
 
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
 
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
@@ -4710,10 +4698,7 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_ea(DeviceObject, Irp);
         goto end;
     }
@@ -4969,7 +4954,6 @@ end:
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
-exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     

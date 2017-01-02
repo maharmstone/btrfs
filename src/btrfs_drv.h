@@ -476,9 +476,8 @@ typedef struct {
 } mount_options;
 
 #define VCB_TYPE_FS         1
-#define VCB_TYPE_PARTITION0 2
-#define VCB_TYPE_CONTROL    3
-#define VCB_TYPE_VOLUME     4
+#define VCB_TYPE_CONTROL    2
+#define VCB_TYPE_VOLUME     3
 
 #ifdef DEBUG_STATS
 typedef struct {
@@ -581,13 +580,6 @@ typedef struct _device_extension {
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
-
-typedef struct {
-    UINT32 type;
-    PDEVICE_OBJECT devobj;
-    BTRFS_UUID uuid;
-    UNICODE_STRING name;
-} part0_device_extension;
 
 typedef struct {
     UINT32 type;
@@ -735,7 +727,6 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
 WCHAR* file_desc_fileref(file_ref* fileref);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
-NTSTATUS part0_passthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void mark_fcb_dirty(fcb* fcb);
 void mark_fileref_dirty(file_ref* fileref);
 NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);

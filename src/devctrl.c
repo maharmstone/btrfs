@@ -24,90 +24,6 @@
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 
-static NTSTATUS part0_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    NTSTATUS Status;
-    part0_device_extension* p0de = DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    
-    TRACE("control code = %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
-    
-    switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
-        case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:
-        {
-            MOUNTDEV_UNIQUE_ID* mduid;
-
-            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID)) {
-                Status = STATUS_BUFFER_TOO_SMALL;
-                Irp->IoStatus.Status = Status;
-                Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
-                IoCompleteRequest(Irp, IO_NO_INCREMENT);
-                return Status;
-            }
-
-            mduid = Irp->AssociatedIrp.SystemBuffer;
-            mduid->UniqueIdLength = sizeof(BTRFS_UUID);
-
-            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID) - 1 + mduid->UniqueIdLength) {
-                Status = STATUS_BUFFER_OVERFLOW;
-                Irp->IoStatus.Status = Status;
-                Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
-                IoCompleteRequest(Irp, IO_NO_INCREMENT);
-                return Status;
-            }
-
-            RtlCopyMemory(mduid->UniqueId, &p0de->uuid, sizeof(BTRFS_UUID));
-
-            Status = STATUS_SUCCESS;
-            Irp->IoStatus.Status = Status;
-            Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID) - 1 + mduid->UniqueIdLength;
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
-            
-            return Status;
-        }
-        
-        case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:
-        {
-            PMOUNTDEV_NAME name;
-
-            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_NAME)) {
-                Status = STATUS_BUFFER_TOO_SMALL;
-                Irp->IoStatus.Status = Status;
-                Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME);
-                IoCompleteRequest(Irp, IO_NO_INCREMENT);
-                return Status;
-            }
-
-            name = Irp->AssociatedIrp.SystemBuffer;
-            name->NameLength = p0de->name.Length;
-
-            if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength) {
-                Status = STATUS_BUFFER_OVERFLOW;
-                Irp->IoStatus.Status = Status;
-                Irp->IoStatus.Information = sizeof(MOUNTDEV_NAME);
-                IoCompleteRequest(Irp, IO_NO_INCREMENT);
-                return Status;
-            }
-            
-            RtlCopyMemory(name->Name, p0de->name.Buffer, p0de->name.Length);
-
-            Status = STATUS_SUCCESS;
-            Irp->IoStatus.Status = Status;
-            Irp->IoStatus.Information = offsetof(MOUNTDEV_NAME, Name[0]) + name->NameLength;
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
-            
-            return Status;
-        }
-    }
-    
-    IoSkipCurrentIrpStackLocation(Irp);
-    
-    Status = IoCallDriver(p0de->devobj, Irp);
-    
-    TRACE("returning %08x\n", Status);
-    
-    return Status;
-}
-
 static NTSTATUS mountdev_query_stable_guid(device_extension* Vcb, PIRP Irp) {
     MOUNTDEV_STABLE_GUID* msg = Irp->UserBuffer;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -293,10 +209,7 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     Irp->IoStatus.Information = 0;
     
     if (Vcb) {
-        if (Vcb->type == VCB_TYPE_PARTITION0) {
-            Status = part0_device_control(DeviceObject, Irp);
-            goto end2;
-        } else if (Vcb->type == VCB_TYPE_CONTROL) {
+        if (Vcb->type == VCB_TYPE_CONTROL) {
             Status = control_ioctl(Irp);
             goto end;
         } else if (Vcb->type == VCB_TYPE_VOLUME) {

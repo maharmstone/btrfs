@@ -3422,10 +3422,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     TRACE("read\n");
     
-    if (Vcb && Vcb->type == VCB_TYPE_PARTITION0) {
-        Status = part0_passthrough(DeviceObject, Irp);
-        goto exit3;
-    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_read(DeviceObject, Irp);
         goto exit2;
     }
