@@ -2319,35 +2319,26 @@ static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
 
 static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
+    volume_device_extension* vde;
+    
+    vde = Vcb->Vpb->RealDevice->DeviceExtension;
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
     
-    le = volumes.Flink;
+    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
         
-    while (le != &volumes) {
-        volume* v = CONTAINING_RECORD(le, volume, list_entry);
-        
-        if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            LIST_ENTRY* le;
-            
-            le = Vcb->devices.Flink;
-            while (le != &Vcb->devices) {
-                device* dev = CONTAINING_RECORD(le, device, list_entry);
-                
-                if (RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                    v->gen1 = v->gen2 = Vcb->superblock.generation - 1;
-                    break;
-                }
-                
-                le = le->Flink;
-            }
-        }
-        
+        vc->generation = Vcb->superblock.generation - 1;
+
         le = le->Flink;
     }
     
-    ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&vde->child_lock);
+    
     ExReleaseResourceLite(&Vcb->tree_lock);
 }
 
