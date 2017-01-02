@@ -233,10 +233,15 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
+        volume_device_extension* vde;
+        
         Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
         if (!NT_SUCCESS(Status)) {
             WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
         }
+        
+        vde = Vcb->Vpb->RealDevice->DeviceExtension;
+        vde->mounted_device = NULL;
         
         if (Vcb->open_files > 0) {
             Vcb->removing = TRUE;
@@ -254,12 +259,17 @@ static NTSTATUS pnp_start_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
+        volume_device_extension* vde;
+        
+        vde = Vcb->Vpb->RealDevice->DeviceExtension;
+        vde->mounted_device = NULL;
+        
         if (Vcb->open_files > 0) {
             Vcb->removing = TRUE;
             Vcb->Vpb->Flags &= ~VPB_MOUNTED;

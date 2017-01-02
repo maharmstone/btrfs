@@ -4158,6 +4158,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Status = STATUS_SUCCESS;
     
+    vde->mounted_device = NewDeviceObject;
+    
 exit:
     ExReleaseResourceLite(&vde->child_lock);
 

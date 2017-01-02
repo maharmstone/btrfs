@@ -442,6 +442,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->type = VCB_TYPE_VOLUME;
         vde->uuid = sb->uuid;
         vde->name = volname;
+        vde->device = voldev;
+        vde->mounted_device = NULL;
         
         ExInitializeResourceLite(&vde->child_lock);
         InitializeListHead(&vde->children);

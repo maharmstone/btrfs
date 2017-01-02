@@ -29,6 +29,8 @@
 extern LIST_ENTRY volumes;
 extern ERESOURCE volumes_lock;
 extern LIST_ENTRY pnp_disks;
+extern ERESOURCE volume_list_lock;
+extern LIST_ENTRY volume_list;
 
 static NTSTATUS create_part0(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              PUNICODE_STRING nameus, BTRFS_UUID* uuid) {
@@ -548,11 +550,88 @@ end:
 }
 
 static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     pnp_disk* disk = NULL;
     
     // FIXME - remove Partition0Btrfs devices and unlink from mountmgr
     // FIXME - emergency unmount of RAIDed volumes
+    
+    ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
+    
+    le = volume_list.Flink;
+    while (le != &volume_list) {
+        volume_device_extension* vde = CONTAINING_RECORD(le, volume_device_extension, list_entry);
+        LIST_ENTRY* le2;
+        BOOL changed = FALSE;
+        
+        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        
+        le2 = vde->children.Flink;
+        while (le2 != &vde->children) {
+            volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+            LIST_ENTRY* le3 = le2->Flink;
+            
+            if (vc->pnp_name.Length == devpath->Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath->Buffer, devpath->Length) == devpath->Length) {
+                TRACE("removing device\n");
+                
+                ObDereferenceObject(vc->devobj);
+                ExFreePool(vc->pnp_name.Buffer);
+                RemoveEntryList(&vc->list_entry);
+                ExFreePool(vc);
+                
+                vde->children_loaded--;
+                
+                changed = TRUE;
+            }
+            
+            le2 = le3;
+        }
+        
+        if (changed) {
+            device_extension* Vcb = vde->mounted_device->DeviceExtension;
+            
+            Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
+            if (!NT_SUCCESS(Status))
+                WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
+            
+            Status = pnp_surprise_removal(vde->mounted_device, NULL);
+            if (!NT_SUCCESS(Status))
+                ERR("pnp_surprise_removal returned %08x\n", Status);
+        }
+        
+        if (changed && vde->children_loaded == 0) { // remove volume device
+            UNICODE_STRING mmdevpath;
+            PDEVICE_OBJECT mountmgr;
+            PFILE_OBJECT mountmgrfo;
+            
+            ExReleaseResourceLite(&vde->child_lock);
+            le = le->Flink;
+            RemoveEntryList(&vde->list_entry);
+            
+            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            else {
+                remove_drive_letter(mountmgr, &vde->name);
+                
+                ObDereferenceObject(mountmgrfo);
+            }
+            
+            if (vde->name.Buffer)
+                ExFreePool(vde->name.Buffer);
+            
+            ExDeleteResourceLite(&vde->child_lock);
+            
+            IoDeleteDevice(vde->device);
+        } else {
+            ExReleaseResourceLite(&vde->child_lock);
+            le = le->Flink;
+        }
+    }
+    
+    ExReleaseResourceLite(&volume_list_lock);
     
     ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
     

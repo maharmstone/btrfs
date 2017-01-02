@@ -625,6 +625,8 @@ typedef struct {
     UINT32 type;
     BTRFS_UUID uuid;
     UNICODE_STRING name;
+    PDEVICE_OBJECT device;
+    PDEVICE_OBJECT mounted_device;
     
     UINT64 num_children;
     UINT64 children_loaded;
@@ -984,6 +986,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
 
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in free-space.c
 NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp);

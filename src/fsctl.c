@@ -2354,6 +2354,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     KIRQL irql;
     LIST_ENTRY rollback;
+    volume_device_extension* vde;
     
     TRACE("FSCTL_DISMOUNT_VOLUME\n");
     
@@ -2385,6 +2386,9 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     
     Vcb->removing = TRUE;
     update_volumes(Vcb);
+    
+    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde->mounted_device = NULL;
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
