@@ -2493,7 +2493,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     UINT64 dev_id, offset, size;
     UINT8* mb;
     UINT64* stats;
-    UNICODE_STRING mmdevpath;
+    UNICODE_STRING mmdevpath, volname;
     volume_child* vc;
     PDEVICE_OBJECT mountmgr;
     KEY searchkey;
@@ -2557,6 +2557,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         ObDereferenceObject(fileobj);
         return STATUS_INVALID_PARAMETER;
     }
+    
+    volname.Buffer = NULL;
+    volname.Length = volname.MaximumLength = 0;
 
     if (sdn.PartitionNumber != 0) { // if this is a partition, open the disk device instead
         static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
@@ -2569,6 +2572,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         DRIVE_LAYOUT_INFORMATION_EX* dli;
         ULONG dlisize, i;
         BOOL found = FALSE;
+        MOUNTDEV_NAME mdn1;
         
         dlisize = 0;
         
@@ -2610,6 +2614,45 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
             ObDereferenceObject(fileobj);
             return Status;
         }
+        
+        // get name of partition
+        
+        Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
+                           &mdn1, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+        
+        if (Status == STATUS_BUFFER_OVERFLOW || NT_SUCCESS(Status)) {
+            MOUNTDEV_NAME* mdn2;
+            
+            mdn2 = ExAllocatePoolWithTag(PagedPool, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, ALLOC_TAG);
+            if (!mdn2) {
+                ERR("out of memory\n");
+                ObDereferenceObject(fileobj);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
+                               mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, TRUE, NULL);
+            
+            if (!NT_SUCCESS(Status))
+                WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+            else if (mdn2->NameLength == 0)
+                WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned zero-length name\n");
+            else {
+                volname.Length = volname.MaximumLength = mdn2->NameLength;
+                volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG);
+                if (!volname.Buffer) {
+                    ERR("out of memory\n");
+                    ObDereferenceObject(fileobj);
+                    ExFreePool(mdn2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(volname.Buffer, mdn2->Name, mdn2->NameLength);
+            }
+            
+            ExFreePool(mdn2);
+        } else
+            WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
 
         wcscpy(devnamew, device_harddisk);
         devname.Buffer = devnamew;
@@ -2821,14 +2864,16 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     InsertTailList(&vde->children, &vc->list_entry);
     ExReleaseResourceLite(&vde->child_lock);
     
-    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-    if (!NT_SUCCESS(Status))
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-    else {
-//         remove_drive_letter(mountmgr, &v->devpath);
-        
-        ObDereferenceObject(mountmgrfo);
+    if (volname.Length > 0) {
+        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+        if (!NT_SUCCESS(Status))
+            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        else {
+            remove_drive_letter(mountmgr, &volname);
+            
+            ObDereferenceObject(mountmgrfo);
+        }
     }
     
     Vcb->superblock.num_devices++;
@@ -2849,6 +2894,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
 end:
     ExReleaseResourceLite(&Vcb->tree_lock);
     ObDereferenceObject(fileobj);
+    
+    if (volname.Buffer)
+        ExFreePool(volname.Buffer);
     
     return Status;
 }
