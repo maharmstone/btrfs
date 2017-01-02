@@ -578,7 +578,7 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             le2 = le3;
         }
         
-        if (changed) {
+        if (changed && vde->mounted_device) {
             device_extension* Vcb = vde->mounted_device->DeviceExtension;
             
             Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
