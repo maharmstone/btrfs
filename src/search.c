@@ -171,14 +171,12 @@ void add_volume(PDEVICE_OBJECT mountmgr, PUNICODE_STRING us) {
     ExFreePool(mmdlt);
 }
 
-static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num,
-                             LIST_ENTRY* volumes, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
+static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
+                             DWORD disk_num, DWORD part_num, LIST_ENTRY* volumes, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
     NTSTATUS Status;
-    PFILE_OBJECT FileObject;
-    PDEVICE_OBJECT DeviceObject;
     LARGE_INTEGER Offset;
     ULONG toread;
     UINT8* data = NULL;
@@ -186,12 +184,6 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     
     TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
     
-    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
-    if (!NT_SUCCESS(Status)) {
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        return;
-    }
-
     sector_size = DeviceObject->SectorSize;
     
     if (sector_size == 0) {
@@ -199,7 +191,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         IO_STATUS_BLOCK iosb;
         
         Status = dev_ioctl(DeviceObject, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0,
-                        &geometry, sizeof(DISK_GEOMETRY), TRUE, &iosb);
+                           &geometry, sizeof(DISK_GEOMETRY), TRUE, &iosb);
         
         if (!NT_SUCCESS(Status)) {
             ERR("%.*S had a sector size of 0, and IOCTL_DISK_GET_DRIVE_GEOMETRY returned %08x\n",
@@ -222,7 +214,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
-    Offset.QuadPart = superblock_addrs[0];
+    Offset.QuadPart = offset + superblock_addrs[0];
     
     toread = sector_align(sizeof(superblock), sector_size);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
@@ -299,7 +291,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         while (superblock_addrs[i] != 0 && superblock_addrs[i] + toread <= v->length) {
             KeInitializeEvent(&Event, NotificationEvent, FALSE);
             
-            Offset.QuadPart = superblock_addrs[i];
+            Offset.QuadPart = offset + superblock_addrs[i];
             
             Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, data, toread, &Offset, &Event, &IoStatusBlock);
             
@@ -347,8 +339,6 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
 deref:
     if (data)
         ExFreePool(data);
-    
-    ObDereferenceObject(FileObject);
 }
 
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
@@ -517,8 +507,8 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             RtlIntegerToUnicodeString(dli->PartitionEntry[i].PartitionNumber, 10, &num);
             RtlAppendUnicodeStringToString(&devname, &num);
             
-            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber, &volumes,
-                     devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
+            test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber,
+                     &volumes, devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
             
             num_parts++;
         }
@@ -540,7 +530,7 @@ no_parts:
             devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
             devname.Length += sizeof(WCHAR);
             
-            test_vol(DriverObject, mountmgr, &devname, sdn.DeviceNumber, 0, &volumes, devpath, 0, gli.Length.QuadPart);
+            test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, 0, &volumes, devpath, 0, gli.Length.QuadPart);
         }
     }
     
