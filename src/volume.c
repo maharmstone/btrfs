@@ -482,6 +482,20 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     } else {
         ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
         ExConvertExclusiveToSharedLite(&volume_list_lock);
+        
+        le = vde->children.Flink;
+        while (le != &vde->children) {
+            volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
+            
+            if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                // duplicate, ignore
+                ExReleaseResourceLite(&vde->child_lock);
+                ExReleaseResourceLite(&volume_list_lock);
+                goto end;
+            }
+            
+            le = le->Flink;
+        }
     }
     
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
