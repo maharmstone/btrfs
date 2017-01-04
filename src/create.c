@@ -1613,15 +1613,8 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         }
         
         if (fnus2.Length == sizeof(WCHAR)) {
-            if (Vcb->root_fileref->open_count == 0) { // don't allow root to be opened on unmounted FS
-                ULONG cc;
-                IO_STATUS_BLOCK iosb;
-                
-                Status = dev_ioctl(first_device(Vcb)->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
-                
-                if (!NT_SUCCESS(Status))
-                    return Status;
-            }
+            if (Vcb->root_fileref->open_count == 0 && !(Vcb->Vpb->Flags & VPB_MOUNTED)) // don't allow root to be opened on unmounted FS
+                return STATUS_DEVICE_NOT_READY;
             
             increase_fileref_refcount(Vcb->root_fileref);
             *pfr = Vcb->root_fileref;
