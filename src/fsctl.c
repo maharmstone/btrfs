@@ -29,7 +29,7 @@
 
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
-extern ERESOURCE volumes_lock;
+extern ERESOURCE pnp_disks_lock;
 extern LIST_ENTRY pnp_disks;
 
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
@@ -2844,7 +2844,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
     vc->pnp_name.Buffer = NULL;
     
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&pnp_disks_lock, TRUE);
     
     le = pnp_disks.Flink;
     while (le != &pnp_disks) {
@@ -2870,7 +2870,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         le = le->Flink;
     }
     
-    ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&pnp_disks_lock);
     
     vc->offset = offset;
     vc->size = size;

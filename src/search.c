@@ -26,7 +26,7 @@
 #include <winioctl.h>
 #include <wdmguid.h>
 
-extern ERESOURCE volumes_lock;
+extern ERESOURCE pnp_disks_lock;
 extern LIST_ENTRY pnp_disks;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
@@ -240,9 +240,9 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         goto end;
     }
     
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&pnp_disks_lock, TRUE);
     add_pnp_disk(sdn.DeviceNumber, devpath);
-    ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&pnp_disks_lock);
     
     dlisize = 0;
     
@@ -397,7 +397,7 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     
     ExReleaseResourceLite(&volume_list_lock);
     
-    ExAcquireResourceExclusiveLite(&volumes_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&pnp_disks_lock, TRUE);
     
     le = pnp_disks.Flink;
     while (le != &pnp_disks) {
@@ -413,11 +413,11 @@ static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     }
     
     if (!disk) {
-        ExReleaseResourceLite(&volumes_lock);
+        ExReleaseResourceLite(&pnp_disks_lock);
         return;
     }
     
-    ExReleaseResourceLite(&volumes_lock);
+    ExReleaseResourceLite(&pnp_disks_lock);
     
     ExFreePool(disk->devpath.Buffer);
     
