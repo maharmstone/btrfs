@@ -238,6 +238,105 @@ end:
     return Status;
 }
 
+static NTSTATUS vol_get_disk_extents(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    LIST_ENTRY* le;
+    ULONG num_extents = 0, i, max_extents = 1;
+    NTSTATUS Status;
+    VOLUME_DISK_EXTENTS *ext, *ext3;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(VOLUME_DISK_EXTENTS))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        if (vc->offset == 0) { // passthrough
+            VOLUME_DISK_EXTENTS ext2;
+            
+            Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &ext2, sizeof(VOLUME_DISK_EXTENTS), FALSE, NULL);
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
+                goto end;
+            }
+            
+            num_extents += ext2.NumberOfDiskExtents;
+            
+            if (ext2.NumberOfDiskExtents > max_extents)
+                max_extents = ext2.NumberOfDiskExtents;
+        } else
+            num_extents++;
+        
+        le = le->Flink;
+    }
+    
+    ext = Irp->AssociatedIrp.SystemBuffer;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (num_extents * sizeof(DISK_EXTENT))) {
+        Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]);
+        ext->NumberOfDiskExtents = num_extents;
+        Status = STATUS_BUFFER_OVERFLOW;
+        goto end;
+    }
+    
+    ext3 = ExAllocatePoolWithTag(PagedPool, offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), ALLOC_TAG);
+    if (!ext3) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    i = 0;
+    ext->NumberOfDiskExtents = 0;
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        if (vc->offset == 0) { // passthrough
+            Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, ext3,
+                               offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
+                ExFreePool(ext3);
+                goto end;
+            }
+            
+            if (i + ext3->NumberOfDiskExtents > num_extents) {
+                Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]);
+                ext->NumberOfDiskExtents = i + ext3->NumberOfDiskExtents;
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto end;
+            }
+            
+            RtlCopyMemory(&ext->Extents[i], ext3->Extents, sizeof(DISK_EXTENT) * ext3->NumberOfDiskExtents);
+            i += ext3->NumberOfDiskExtents;
+        } else {
+            ext->Extents[i].DiskNumber = vc->disk_num;
+            ext->Extents[i].StartingOffset.QuadPart = vc->offset;
+            ext->Extents[i].ExtentLength.QuadPart = vc->size;
+            i++;
+        }
+        
+        le = le->Flink;
+    }
+    
+    ExFreePool(ext3);
+    
+    Status = STATUS_SUCCESS;
+    
+    ext->NumberOfDiskExtents = i;
+    Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (i * sizeof(DISK_EXTENT));
+    
+end:
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    return Status;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -298,6 +397,9 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             
         case IOCTL_STORAGE_CHECK_VERIFY:
             return vol_check_verify(vde);
+
+        case IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
+            return vol_get_disk_extents(vde, Irp);
 
         default:
             ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
