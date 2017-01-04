@@ -337,6 +337,36 @@ end:
     return Status;
 }
 
+static NTSTATUS vol_is_writable(volume_device_extension* vde) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    BOOL writable = FALSE;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        Status = dev_ioctl(vc->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
+        
+        if (NT_SUCCESS(Status)) {
+            writable = TRUE;
+            break;
+        } else if (Status != STATUS_MEDIA_WRITE_PROTECTED)
+            goto end;
+        
+        le = le->Flink;
+    }
+    
+    Status = writable ? STATUS_SUCCESS : STATUS_MEDIA_WRITE_PROTECTED;
+    
+end:
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -388,8 +418,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             break;
 
         case IOCTL_DISK_IS_WRITABLE:
-            ERR("unhandled control code IOCTL_DISK_IS_WRITABLE\n");
-            break;
+            return vol_is_writable(vde);
 
         case IOCTL_DISK_GET_LENGTH_INFO:
             ERR("unhandled control code IOCTL_DISK_GET_LENGTH_INFO\n");
