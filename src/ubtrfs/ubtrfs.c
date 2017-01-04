@@ -1072,7 +1072,7 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     OBJECT_ATTRIBUTES attr;
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
-    DISK_GEOMETRY_EX dgex;
+    DISK_GEOMETRY dg;
     UINT32 sector_size;
     
     InitializeObjectAttributes(&attr, DriveRoot, 0, NULL, NULL);
@@ -1089,13 +1089,16 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
         return Status;
     }
 
-    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &dgex, sizeof(dgex));
+    // MSDN tells us to use IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, but there are
+    // some instances where it fails and IOCTL_DISK_GET_DRIVE_GEOMETRY succeeds -
+    // such as with spanned volumes.
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &dg, sizeof(dg));
     if (!NT_SUCCESS(Status)) {
         NtClose(h);
         return Status;
     }
     
-    sector_size = dgex.Geometry.BytesPerSector;
+    sector_size = dg.BytesPerSector;
     
     if (sector_size == 0x200 || sector_size == 0)
         sector_size = 0x1000;
