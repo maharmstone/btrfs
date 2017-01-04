@@ -134,9 +134,13 @@ NTSTATUS STDCALL vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 }
 
 NTSTATUS STDCALL vol_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    
     ERR("(%p, %p)\n", DeviceObject, Irp);
 
     // FIXME
+    
+    ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
