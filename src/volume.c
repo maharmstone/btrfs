@@ -254,19 +254,19 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             return vol_query_unique_id(vde, Irp);
             
         case IOCTL_STORAGE_GET_DEVICE_NUMBER:
-            ERR("unhandled control code IOCTL_STORAGE_GET_DEVICE_NUMBER\n");
+            TRACE("unhandled control code IOCTL_STORAGE_GET_DEVICE_NUMBER\n");
             break;
 
         case IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME:
-            ERR("unhandled control code IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME\n");
+            TRACE("unhandled control code IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME\n");
             break;
 
         case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
-            ERR("unhandled control code IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
+            TRACE("unhandled control code IOCTL_MOUNTDEV_QUERY_STABLE_GUID\n");
             break;
 
         case IOCTL_MOUNTDEV_LINK_CREATED:
-            ERR("unhandled control code IOCTL_MOUNTDEV_LINK_CREATED\n");
+            TRACE("unhandled control code IOCTL_MOUNTDEV_LINK_CREATED\n");
             break;
 
         case IOCTL_VOLUME_GET_GPT_ATTRIBUTES:
@@ -277,11 +277,11 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             return vol_is_dynamic(vde, Irp);
 
         case IOCTL_VOLUME_ONLINE:
-            ERR("unhandled control code IOCTL_VOLUME_ONLINE\n");
+            TRACE("unhandled control code IOCTL_VOLUME_ONLINE\n");
             break;
 
         case IOCTL_VOLUME_POST_ONLINE:
-            ERR("unhandled control code IOCTL_VOLUME_POST_ONLINE\n");
+            TRACE("unhandled control code IOCTL_VOLUME_POST_ONLINE\n");
             break;
 
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
