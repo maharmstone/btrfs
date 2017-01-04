@@ -437,3 +437,66 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
     
     return STATUS_SUCCESS;
 }
+
+
+static void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+    STORAGE_DEVICE_NUMBER sdn;
+    PFILE_OBJECT FileObject, mountmgrfo;
+    UNICODE_STRING mmdevpath;
+    PDEVICE_OBJECT devobj, mountmgr;
+    GET_LENGTH_INFORMATION gli;
+    NTSTATUS Status;
+    
+    TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+    
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return;
+    }
+    
+    Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
+        goto end;
+    }
+    
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                       &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        sdn.DeviceNumber = 0;
+        sdn.PartitionNumber = 0;
+    } else
+        ERR("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
+    
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        goto end;
+    }
+
+    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, 0, gli.Length.QuadPart);
+    
+    ObDereferenceObject(mountmgrfo);
+    
+end:
+    ObDereferenceObject(FileObject);
+}
+
+// static void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+//     ERR("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+// }
+
+NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
+    DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
+    PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
+    
+    if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
+        volume_arrival(DriverObject, dicn->SymbolicLinkName);
+//     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
+//         volume_removal(DriverObject, dicn->SymbolicLinkName);
+    
+    return STATUS_SUCCESS;
+}
