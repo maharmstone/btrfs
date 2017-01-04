@@ -464,11 +464,11 @@ static void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath)
     Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
                        &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
         sdn.DeviceNumber = 0;
         sdn.PartitionNumber = 0;
     } else
-        ERR("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
+        TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
     
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
