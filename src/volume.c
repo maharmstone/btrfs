@@ -549,8 +549,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             ERR("mountmgr_add_drive_letter returned %08x\n", Status);
     }
     
-    if (part_num != 0)
-        remove_drive_letter(mountmgr, partname);
+    remove_drive_letter(mountmgr, partname);
     
 end:
     ObDereferenceObject(FileObject);
