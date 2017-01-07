@@ -733,7 +733,6 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
 static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
     INODE_ITEM ii;
     INODE_REF* ir;
-    SYSTEMTIME systime;
     FILETIME filetime;
     LARGE_INTEGER time;
     
@@ -744,8 +743,7 @@ static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
     ii.st_nlink = 1;
     ii.st_mode = 040755;
     
-    GetSystemTime(&systime);
-    SystemTimeToFileTime(&systime, &filetime);
+    GetSystemTimeAsFileTime(&filetime);
     time.LowPart = filetime.dwLowDateTime;
     time.HighPart = filetime.dwHighDateTime;
 
