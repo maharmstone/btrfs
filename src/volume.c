@@ -20,7 +20,6 @@
 #include <ntddvol.h>
 #include <ntddstor.h>
 #include <ntdddisk.h>
-// #include <winioctl.h>
 
 #define IOCTL_VOLUME_IS_DYNAMIC     CTL_CODE(IOCTL_VOLUME_BASE, 18, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_VOLUME_POST_ONLINE    CTL_CODE(IOCTL_VOLUME_BASE, 25, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
@@ -133,16 +132,45 @@ NTSTATUS STDCALL vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
+static NTSTATUS vol_fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, ULONG code, BOOL user) {
+    switch (code) {
+        case FSCTL_QUERY_DEPENDENT_VOLUME:
+            ERR("unhandle control code FSCTL_QUERY_DEPENDENT_VOLUME\n");
+        break;
+        
+        default:
+            ERR("unhandled control code %x\n", code);
+        break;
+    }
+    
+    return STATUS_INVALID_DEVICE_REQUEST;
+}
+
 NTSTATUS STDCALL vol_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    NTSTATUS Status;
     
     ERR("(%p, %p)\n", DeviceObject, Irp);
 
-    // FIXME
-    
-    ERR("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+    switch (IrpSp->MinorFunction) {
+        case IRP_MN_KERNEL_CALL:
+            TRACE("IRP_MN_KERNEL_CALL\n");
+            
+            Status = vol_fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, FALSE);
+            break;
+            
+        case IRP_MN_USER_FS_REQUEST:
+            TRACE("IRP_MN_USER_FS_REQUEST\n");
+            
+            Status = vol_fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, TRUE);
+            break;
+            
+        default:
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+    }
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    return Status;
 }
 
 NTSTATUS STDCALL vol_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
