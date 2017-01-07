@@ -653,7 +653,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         }
         
         voldev->StackSize = 2;
-        // FIXME - set sector size?
+        voldev->SectorSize = sb->sector_size;
         
         vde = voldev->DeviceExtension;
         vde->type = VCB_TYPE_VOLUME;
