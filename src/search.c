@@ -455,6 +455,11 @@ static void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath)
         return;
     }
     
+    // make sure we're not processing devices we've created ourselves
+    
+    if (devobj->DriverObject == DriverObject)
+        goto end;
+
     Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
