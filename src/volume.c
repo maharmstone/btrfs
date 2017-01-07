@@ -135,7 +135,7 @@ NTSTATUS STDCALL vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 static NTSTATUS vol_fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, ULONG code, BOOL user) {
     switch (code) {
         case FSCTL_QUERY_DEPENDENT_VOLUME:
-            ERR("unhandle control code FSCTL_QUERY_DEPENDENT_VOLUME\n");
+            ERR("unhandled control code FSCTL_QUERY_DEPENDENT_VOLUME\n");
         break;
         
         default:
