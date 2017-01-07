@@ -371,6 +371,36 @@ end:
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_get_length(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    GET_LENGTH_INFORMATION* gli;
+    LIST_ENTRY* le;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(GET_LENGTH_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    gli = (GET_LENGTH_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    
+    gli->Length.QuadPart = 0;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        gli->Length.QuadPart += vc->size;
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    Irp->IoStatus.Information = sizeof(GET_LENGTH_INFORMATION);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -425,8 +455,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             return vol_is_writable(vde);
 
         case IOCTL_DISK_GET_LENGTH_INFO:
-            ERR("unhandled control code IOCTL_DISK_GET_LENGTH_INFO\n");
-            break;
+            return vol_get_length(vde, Irp);
             
         case IOCTL_STORAGE_CHECK_VERIFY:
             return vol_check_verify(vde);
