@@ -2181,6 +2181,10 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fileref %p (%S), refcount = %u, open_count = %u\n", fileref, file_desc(FileObject), fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
         
+        ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+        
+        ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+        
         IoRemoveShareAccess(FileObject, &fcb->share_access);
         
         FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);    
@@ -2213,8 +2217,6 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                 if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
                     send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
                     
-                    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-                    
                     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
                     
                     Status = delete_fileref(fileref, FileObject, Irp, &rollback);
@@ -2222,13 +2224,13 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                         ERR("delete_fileref returned %08x\n", Status);
                         do_rollback(Vcb, &rollback);
                         ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+                        ExReleaseResourceLite(fcb->Header.Resource);
                         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                         goto exit;
                     }
                     
                     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                     
-                    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                     clear_rollback(Vcb, &rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                     IO_STATUS_BLOCK iosb;
@@ -2253,6 +2255,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
                 CcUninitializeCacheMap(FileObject, NULL, NULL);
         }
+        
+        ExReleaseResourceLite(fcb->Header.Resource);
+        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
         
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
     }
