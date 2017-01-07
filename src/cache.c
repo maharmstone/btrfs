@@ -59,13 +59,24 @@ static void STDCALL release_from_lazy_write(PVOID Context) {
 }
 
 static BOOLEAN STDCALL acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
+    PFILE_OBJECT FileObject = Context;
+    fcb* fcb = FileObject->FsContext;
+    
     TRACE("(%p, %u)\n", Context, Wait);
+    
+    if (!ExAcquireResourceSharedLite(fcb->Header.Resource, Wait))
+        return FALSE;
     
     return TRUE;
 }
 
 static void STDCALL release_from_read_ahead(PVOID Context) {
+    PFILE_OBJECT FileObject = Context;
+    fcb* fcb = FileObject->FsContext;
+    
     TRACE("(%p)\n", Context);
+    
+    ExReleaseResourceLite(fcb->Header.Resource);
 }
 
 NTSTATUS STDCALL init_cache() {
