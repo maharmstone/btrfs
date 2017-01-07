@@ -450,14 +450,6 @@ NTSTATUS STDCALL vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_pnp(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    ERR("(%p, %p)\n", DeviceObject, Irp);
-
-    // FIXME
-
-    return STATUS_INVALID_DEVICE_REQUEST;
-}
-
 NTSTATUS STDCALL vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     ERR("(%p, %p)\n", DeviceObject, Irp);
 
@@ -472,6 +464,21 @@ NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     // FIXME
 
     return STATUS_INVALID_DEVICE_REQUEST;
+}
+
+NTSTATUS STDCALL vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    NTSTATUS Status;
+    
+    ERR("(%p, %p)\n", DeviceObject, Irp);
+
+    if (IrpSp->MinorFunction == IRP_MN_SET_POWER || IrpSp->MinorFunction == IRP_MN_QUERY_POWER)
+        Irp->IoStatus.Status = STATUS_SUCCESS;
+    
+    Status = Irp->IoStatus.Status;
+    PoStartNextPowerIrp(Irp);
+
+    return Status;
 }
 
 static NTSTATUS mountmgr_volume_arrival(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
@@ -567,6 +574,16 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     }
     
     if (!vde) {
+        PDEVICE_OBJECT pdo = NULL;
+        
+        Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF,
+                                        NULL, NULL, 0, &pdo);
+        if (!NT_SUCCESS(Status)) {
+            ERR("IoReportDetectedDevice returned %08x\n", Status);
+            ExReleaseResourceLite(&volume_list_lock);
+            goto end;
+        }
+        
         volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
         volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
         
@@ -598,7 +615,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             goto end;
         }
         
-        voldev->StackSize = 1;
+        voldev->StackSize = 2;
         // FIXME - set sector size?
         
         vde = voldev->DeviceExtension;
@@ -607,6 +624,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->name = volname;
         vde->device = voldev;
         vde->mounted_device = NULL;
+        vde->pdo = pdo;
         
         ExInitializeResourceLite(&vde->child_lock);
         InitializeListHead(&vde->children);
@@ -614,6 +632,14 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->children_loaded = 0;
         
         new_vde = TRUE;
+        
+        Status = IoRegisterDeviceInterface(pdo, &GUID_DEVINTERFACE_VOLUME, NULL, &vde->bus_name);
+        if (!NT_SUCCESS(Status))
+            WARN("IoRegisterDeviceInterface returned %08x\n", Status);
+        
+        vde->attached_device = IoAttachDeviceToDeviceStack(voldev, pdo);
+        
+        pdo->Flags &= ~DO_DEVICE_INITIALIZING;
     } else {
         ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
         ExConvertExclusiveToSharedLite(&volume_list_lock);

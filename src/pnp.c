@@ -291,8 +291,10 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     top_level = is_top_level(Irp);
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_pnp(DeviceObject, Irp);
-        goto end;
+        volume_device_extension* vde = DeviceObject->DeviceExtension;
+        IoSkipCurrentIrpStackLocation(Irp);
+        Status = IoCallDriver(vde->pdo, Irp);
+        goto exit;
     }
     
     Status = STATUS_NOT_IMPLEMENTED;
@@ -335,7 +337,6 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 // 
 // //     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-end:
     Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);

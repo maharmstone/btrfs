@@ -4448,6 +4448,88 @@ end:
     return Status;
 }
 
+static NTSTATUS STDCALL drv_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    BOOL top_level;
+
+    FsRtlEnterFileSystem();
+
+    top_level = is_top_level(Irp);
+    
+    Irp->IoStatus.Information = 0;
+    
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_power(DeviceObject, Irp);
+        
+        Irp->IoStatus.Status = Status;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        
+        goto exit;
+    }
+    
+    if (Vcb && Vcb->type == VCB_TYPE_FS) {
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
+    
+        goto exit;
+    }
+
+    Status = STATUS_INVALID_DEVICE_REQUEST;
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
+exit:
+    if (top_level) 
+        IoSetTopLevelIrp(NULL);
+    
+    FsRtlExitFileSystem();
+    
+    return Status;
+}
+
+static NTSTATUS STDCALL drv_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    NTSTATUS Status;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+    BOOL top_level;
+
+    FsRtlEnterFileSystem();
+
+    top_level = is_top_level(Irp);
+    
+    Irp->IoStatus.Information = 0;
+    
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        volume_device_extension* vde = DeviceObject->DeviceExtension;
+
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(vde->pdo, Irp);
+        
+        goto exit;
+    }
+    
+    if (Vcb && Vcb->type == VCB_TYPE_FS) {
+        IoSkipCurrentIrpStackLocation(Irp);
+    
+        Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
+    
+        goto exit;
+    }
+
+    Status = Irp->IoStatus.Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
+exit:
+    if (top_level) 
+        IoSetTopLevelIrp(NULL);
+    
+    FsRtlExitFileSystem();
+    
+    return Status;
+}
+
 BOOL is_file_name_valid(PUNICODE_STRING us) {
     ULONG i;
     
@@ -4741,15 +4823,17 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = (PDRIVER_DISPATCH)drv_flush_buffers;
     DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = (PDRIVER_DISPATCH)drv_query_volume_information;
     DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = (PDRIVER_DISPATCH)drv_set_volume_information;
-    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)drv_cleanup;
     DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = (PDRIVER_DISPATCH)drv_directory_control;
     DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = (PDRIVER_DISPATCH)drv_file_system_control;
-    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)drv_lock_control;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)drv_device_control;
     DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)drv_shutdown;
-    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)drv_pnp;
+    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)drv_lock_control;
+    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)drv_cleanup;
     DriverObject->MajorFunction[IRP_MJ_QUERY_SECURITY]           = (PDRIVER_DISPATCH)drv_query_security;
     DriverObject->MajorFunction[IRP_MJ_SET_SECURITY]             = (PDRIVER_DISPATCH)drv_set_security;
+    DriverObject->MajorFunction[IRP_MJ_POWER]                    = (PDRIVER_DISPATCH)drv_power;
+    DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL]           = (PDRIVER_DISPATCH)drv_system_control;
+    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)drv_pnp;
 
     init_fast_io_dispatch(&DriverObject->FastIoDispatch);
 
