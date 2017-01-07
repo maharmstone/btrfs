@@ -481,27 +481,6 @@ NTSTATUS STDCALL vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return Status;
 }
 
-static NTSTATUS mountmgr_volume_arrival(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
-    NTSTATUS Status;
-    MOUNTMGR_TARGET_NAME* mtn;
-    
-    mtn = ExAllocatePoolWithTag(PagedPool, offsetof(MOUNTMGR_TARGET_NAME, DeviceName[0]) + devpath->Length, ALLOC_TAG);
-    if (!mtn) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    mtn->DeviceNameLength = devpath->Length;
-    RtlCopyMemory(mtn->DeviceName, devpath->Buffer, devpath->Length);
-    
-    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION, mtn, offsetof(MOUNTMGR_TARGET_NAME, DeviceName[0]) + devpath->Length,
-                       NULL, 0, FALSE, NULL);
-    
-    ExFreePool(mtn);
-    
-    return Status;
-}
-
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     ULONG mmdltsize;
@@ -709,14 +688,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         voldev->Flags &= ~DO_DEVICE_INITIALIZING;
         
         ExReleaseResourceLite(&volume_list_lock);
-
-        Status = mountmgr_volume_arrival(mountmgr, &volname);
-        if (!NT_SUCCESS(Status))
-            ERR("mountmgr_volume_arrival returned %08x\n", Status);
-        
-        Status = mountmgr_add_drive_letter(mountmgr, &volname);
-        if (!NT_SUCCESS(Status))
-            ERR("mountmgr_add_drive_letter returned %08x\n", Status);
     }
     
     remove_drive_letter(mountmgr, partname);
