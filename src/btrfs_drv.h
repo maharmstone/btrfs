@@ -517,6 +517,7 @@ typedef struct {
 
 typedef struct {
     HANDLE thread;
+    BOOL stopping;
 } scrub_info;
 
 typedef struct _device_extension {
