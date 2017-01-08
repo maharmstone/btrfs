@@ -17,13 +17,50 @@
 
 #include "btrfs_drv.h"
 
-static NTSTATUS scrub_extent_dup(device_extension* Vcb, UINT64 offset, UINT64 size, UINT32* csum, RTL_BITMAP* bmp) {
+#define SCRUB_UNIT 0x100000 // 1 MB
+
+static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT32* csum) {
+    ERR("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
+    
+    // FIXME
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, ULONG type, UINT32* csum, RTL_BITMAP* bmp) {
+    NTSTATUS Status;
+    ULONG runlength, index;
+    
     if (!csum) {
         FIXME("FIXME - scrub trees\n");
         return STATUS_SUCCESS;
     }
     
-    // FIXME
+    runlength = RtlFindFirstRunClear(bmp, &index);
+        
+    while (runlength != 0) {
+        do {
+            ULONG rl;
+            
+            if (runlength * Vcb->superblock.sector_size > SCRUB_UNIT)
+                rl = SCRUB_UNIT / Vcb->superblock.sector_size;
+            else
+                rl = runlength;
+            
+            if (type == BLOCK_FLAG_DUPLICATE) {
+                Status = scrub_data_extent_dup(Vcb, c, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("scrub_data_extent_dup returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            runlength -= rl;
+            index += rl;
+        } while (runlength > 0);
+        
+        runlength = RtlFindNextForwardRunClear(bmp, index, &index);
+    }
     
     return STATUS_SUCCESS;
 }
@@ -175,10 +212,12 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                 }
             }
             
-            if (type == BLOCK_FLAG_DUPLICATE) {
-                Status = scrub_extent_dup(Vcb, tp.item->key.obj_id, size, csum, &bmp);
+            if (is_tree) {
+                FIXME("FIXME - scrub trees\n");
+            } else {
+                Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, size, type, csum, &bmp);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("scrub_extent_dup returned %08x\n", Status);
+                    ERR("scrub_data_extent returned %08x\n", Status);
                     goto end;
                 }
             }
