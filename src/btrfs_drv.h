@@ -515,6 +515,10 @@ typedef struct {
     KEVENT finished;
 } balance_info;
 
+typedef struct {
+    HANDLE thread;
+} scrub_info;
+
 typedef struct _device_extension {
     UINT32 type;
     mount_options options;
@@ -572,6 +576,7 @@ typedef struct _device_extension {
     KEVENT flush_thread_finished;
     drv_calc_threads calcthreads;
     balance_info balance;
+    scrub_info scrub;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
@@ -1065,6 +1070,9 @@ NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num, ULONG part_num, PUNICODE_STRING partname);
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
+
+// in scrub.c
+NTSTATUS start_scrub(device_extension* Vcb);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

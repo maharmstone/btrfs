@@ -509,6 +509,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\scrub.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\search.c"
 				>
 			</File>
