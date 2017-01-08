@@ -17,17 +17,51 @@
 
 #include "btrfs_drv.h"
 
+static NTSTATUS scrub_extent_dup(device_extension* Vcb, UINT64 offset, UINT64 size, UINT32* csum, RTL_BITMAP* bmp) {
+    if (!csum) {
+        FIXME("FIXME - scrub trees\n");
+        return STATUS_SUCCESS;
+    }
+    
+    // FIXME
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     BOOL b = FALSE;
-    ULONG num_extents = 0;
+    ULONG type, num_extents = 0;
     UINT64 total_data = 0;
     
-    FIXME("FIXME - scrub chunk %llx\n", c->offset);
+    TRACE("chunk %llx\n", c->offset);
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
+    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+        type = BLOCK_FLAG_RAID0;
+        ERR("RAID0 not yet supported\n");
+        goto end;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+        type = BLOCK_FLAG_RAID10;
+        ERR("RAID10 not yet supported\n");
+        goto end;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        type = BLOCK_FLAG_RAID5;
+        ERR("RAID5 not yet supported\n");
+        goto end;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        type = BLOCK_FLAG_RAID6;
+        ERR("RAID6 not yet supported\n");
+        goto end;
+    } else // SINGLE
+        type = BLOCK_FLAG_DUPLICATE;
     
     searchkey.obj_id = *offset;
     searchkey.obj_type = TYPE_METADATA_ITEM;
@@ -47,9 +81,112 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
         
         if (tp.item->key.obj_id >= *offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
             UINT64 size = tp.item->key.obj_type == TYPE_METADATA_ITEM ? Vcb->superblock.node_size : tp.item->key.offset;
+            BOOL is_tree;
+            UINT32* csum = NULL;
+            RTL_BITMAP bmp;
+            ULONG* bmparr = NULL;
             
-            // FIXME
-            ERR("%llx\n", tp.item->key.obj_id);
+            TRACE("%llx\n", tp.item->key.obj_id);
+            
+            is_tree = FALSE;
+            
+            if (tp.item->key.obj_type == TYPE_METADATA_ITEM)
+                is_tree = TRUE;
+            else {
+                EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                
+                if (tp.item->size < sizeof(EXTENT_ITEM)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
+                
+                if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                    is_tree = TRUE;
+            }
+            
+            if (size < Vcb->superblock.sector_size) {
+                ERR("extent %llx has size less than sector_size (%llx < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            // load csum
+            if (!is_tree) {
+                traverse_ptr tp2;
+                
+                csum = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * size / Vcb->superblock.sector_size, ALLOC_TAG);
+                if (!csum) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                bmparr = ExAllocatePoolWithTag(PagedPool, sector_align(((size / Vcb->superblock.sector_size) >> 3) + 1, sizeof(ULONG)), ALLOC_TAG);
+                if (!bmparr) {
+                    ERR("out of memory\n");
+                    ExFreePool(csum);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                    
+                RtlInitializeBitMap(&bmp, bmparr, size / Vcb->superblock.sector_size);
+                RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
+                
+                searchkey.obj_id = EXTENT_CSUM_ID;
+                searchkey.obj_type = TYPE_EXTENT_CSUM;
+                searchkey.offset = tp.item->key.obj_id;
+                
+                Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, FALSE, NULL);
+                if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+                    ERR("find_tree returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
+                    goto end;
+                }
+                
+                if (Status != STATUS_NOT_FOUND) {
+                    do {
+                        traverse_ptr next_tp2;
+                        
+                        if (tp2.item->key.obj_type == TYPE_EXTENT_CSUM) {
+                            if (tp2.item->key.offset >= tp.item->key.obj_id + size)
+                                break;
+                            else if (tp2.item->size >= sizeof(UINT32) && tp2.item->key.offset + (tp2.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= tp.item->key.obj_id) {
+                                UINT64 cs = max(tp.item->key.obj_id, tp2.item->key.offset);
+                                UINT64 ce = min(tp.item->key.obj_id + size, tp2.item->key.offset + (tp2.item->size * Vcb->superblock.sector_size / sizeof(UINT32)));
+                                
+                                RtlCopyMemory(csum + ((cs - tp.item->key.obj_id) / Vcb->superblock.sector_size),
+                                              tp2.item->data + ((cs - tp2.item->key.offset) * sizeof(UINT32) / Vcb->superblock.sector_size),
+                                              (ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                
+                                RtlClearBits(&bmp, (cs - tp.item->key.obj_id) / Vcb->superblock.sector_size, (ce - cs) / Vcb->superblock.sector_size);
+                                
+                                if (ce == tp.item->key.obj_id + size)
+                                    break;
+                            }
+                        }
+                        
+                        if (find_next_item(Vcb, &tp2, &next_tp2, FALSE, NULL))
+                            tp2 = next_tp2;
+                        else
+                            break;
+                    } while (TRUE);
+                }
+            }
+            
+            if (type == BLOCK_FLAG_DUPLICATE) {
+                Status = scrub_extent_dup(Vcb, tp.item->key.obj_id, size, csum, &bmp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("scrub_extent_dup returned %08x\n", Status);
+                    goto end;
+                }
+            }
+            
+            if (!is_tree) {
+                ExFreePool(csum);
+                ExFreePool(bmparr);
+            }
             
             *offset += size;
             *changed = TRUE;
