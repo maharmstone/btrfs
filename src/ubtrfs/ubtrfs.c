@@ -887,10 +887,14 @@ static BOOL is_ssd(HANDLE h) {
     if (NT_SUCCESS(Status)) {
         idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
         
-        if (idd->NominalMediaRotationRate == 1)
+        if (idd->NominalMediaRotationRate == 1) {
+            free(apte);
             return TRUE;
+        }
     }
     
+    free(apte);
+
     return FALSE;
 }
 
