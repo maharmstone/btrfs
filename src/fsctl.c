@@ -2328,18 +2328,18 @@ static void update_volumes(device_extension* Vcb) {
         volume* v = CONTAINING_RECORD(le, volume, list_entry);
         
         if (RtlCompareMemory(&Vcb->superblock.uuid, &v->fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            LIST_ENTRY* le;
+            LIST_ENTRY* le2;
             
-            le = Vcb->devices.Flink;
-            while (le != &Vcb->devices) {
-                device* dev = CONTAINING_RECORD(le, device, list_entry);
+            le2 = Vcb->devices.Flink;
+            while (le2 != &Vcb->devices) {
+                device* dev = CONTAINING_RECORD(le2, device, list_entry);
                 
                 if (RtlCompareMemory(&dev->devitem.device_uuid, &v->devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                     v->gen1 = v->gen2 = Vcb->superblock.generation - 1;
                     break;
                 }
                 
-                le = le->Flink;
+                le2 = le2->Flink;
             }
         }
         
