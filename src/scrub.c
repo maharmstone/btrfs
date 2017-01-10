@@ -36,6 +36,297 @@ typedef struct _scrub_context {
     LONG stripes_left;
 } scrub_context;
 
+typedef struct {
+    ANSI_STRING name;
+    BOOL orig_subvol;
+    LIST_ENTRY list_entry;
+} path_part;
+
+static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64 inode, UINT64 offset) {
+    LIST_ENTRY *le, parts;
+    root* r = NULL;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 dir;
+    BOOL orig_subvol = TRUE;
+    ANSI_STRING fn;
+    
+    le = Vcb->roots.Flink;
+    while (le != &Vcb->roots) {
+        root* r2 = CONTAINING_RECORD(le, root, list_entry);
+        
+        if (r2->id == subvol) {
+            r = r2;
+            break;
+        }
+        
+        le = le->Flink;
+    }
+    
+    if (!r) {
+        ERR("could not find subvol %llx\n", subvol);
+        return;
+    }
+    
+    InitializeListHead(&parts);
+    
+    dir = inode;
+    
+    while (TRUE) {
+        NTSTATUS Status;
+        
+        // FIXME - default subvol
+        if (dir == r->root_item.objid) {
+            if (r->id == BTRFS_ROOT_FSTREE)
+                break;
+            
+            searchkey.obj_id = r->id;
+            searchkey.obj_type = TYPE_ROOT_BACKREF;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_tree returned %08x\n", Status);
+                goto end;
+            }
+            
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                ROOT_REF* rr = (ROOT_REF*)tp.item->data;
+                path_part* pp;
+                
+                if (tp.item->size < sizeof(ROOT_REF)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                    goto end;
+                }
+                
+                if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                    goto end;
+                }
+                
+                pp = ExAllocatePoolWithTag(PagedPool, sizeof(path_part), ALLOC_TAG);
+                if (!pp) {
+                    ERR("out of memory\n");
+                    goto end;
+                }
+                
+                pp->name.Buffer = rr->name;
+                pp->name.Length = pp->name.MaximumLength = rr->n;
+                pp->orig_subvol = orig_subvol;
+                
+                InsertTailList(&parts, &pp->list_entry);
+                
+                r = NULL;
+                
+                le = Vcb->roots.Flink;
+                while (le != &Vcb->roots) {
+                    root* r2 = CONTAINING_RECORD(le, root, list_entry);
+                    
+                    if (r2->id == tp.item->key.offset) {
+                        r = r2;
+                        break;
+                    }
+                    
+                    le = le->Flink;
+                }
+                
+                if (!r) {
+                    ERR("could not find subvol %llx\n", tp.item->key.offset);
+                    goto end;
+                }
+                
+                dir = rr->dir;
+                orig_subvol = FALSE;
+            } else {
+                ERR("could not find ROOT_BACKREF for subvol %llx\n", r->id);
+                goto end;
+            }
+        } else {
+            searchkey.obj_id = dir;
+            searchkey.obj_type = TYPE_INODE_REF;
+            searchkey.offset = 0xffffffffffffffff;
+            
+            Status = find_item(Vcb, r, &tp, &searchkey, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_tree returned %08x\n", Status);
+                goto end;
+            }
+            
+            // FIXME - work with extended irefs
+            
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                INODE_REF* ir = (INODE_REF*)tp.item->data;
+                path_part* pp;
+                
+                if (tp.item->size < sizeof(INODE_REF)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+                    goto end;
+                }
+                
+                if (tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        tp.item->size, offsetof(INODE_REF, name[0]) + ir->n);
+                    goto end;
+                }
+                
+                pp = ExAllocatePoolWithTag(PagedPool, sizeof(path_part), ALLOC_TAG);
+                if (!pp) {
+                    ERR("out of memory\n");
+                    goto end;
+                }
+                
+                pp->name.Buffer = ir->name;
+                pp->name.Length = pp->name.MaximumLength = ir->n;
+                pp->orig_subvol = orig_subvol;
+                
+                InsertTailList(&parts, &pp->list_entry);
+                
+                if (dir == tp.item->key.offset)
+                    break;
+                
+                dir = tp.item->key.offset;
+            } else {
+                ERR("could not find INODE_REF for inode %llx in subvol %llx\n", dir, subvol);
+                goto end;
+            }
+        }
+    }
+    
+    fn.MaximumLength = 0;
+    
+    le = parts.Flink;
+    while (le != &parts) {
+        path_part* pp = CONTAINING_RECORD(le, path_part, list_entry);
+        
+        fn.MaximumLength += pp->name.Length + 1;
+            
+        le = le->Flink;
+    }
+    
+    fn.Buffer = ExAllocatePoolWithTag(PagedPool, fn.MaximumLength, ALLOC_TAG);
+    if (!fn.Buffer) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
+    fn.Length = 0;
+    
+    le = parts.Blink;
+    while (le != &parts) {
+        path_part* pp = CONTAINING_RECORD(le, path_part, list_entry);
+        
+        fn.Buffer[fn.Length] = '\\';
+        fn.Length++;
+        
+        RtlCopyMemory(&fn.Buffer[fn.Length], pp->name.Buffer, pp->name.Length);
+        fn.Length += pp->name.Length;
+            
+        le = le->Blink;
+    }
+    
+    ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
+    
+    ExFreePool(fn.Buffer);
+    
+end:
+    while (!IsListEmpty(&parts)) {
+        path_part* pp = CONTAINING_RECORD(RemoveHeadList(&parts), path_part, list_entry);
+        
+        ExFreePool(pp);
+    }
+}
+
+static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    EXTENT_ITEM* ei;
+    UINT8* ptr;
+    ULONG len;
+    UINT64 rc;
+    
+    // FIXME - make log accessible from userspace
+    // FIXME - still log even if rest of this function fails
+    
+    searchkey.obj_id = address;
+    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_tree returned %08x\n", Status);
+        return;
+    }
+    
+    if ((tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM) ||
+        tp.item->key.obj_id >= address + Vcb->superblock.sector_size ||
+        (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.obj_id + tp.item->key.offset <= address) ||
+        (tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->key.obj_id + Vcb->superblock.node_size <= address)
+    )
+        return;
+    
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return;
+    }
+    
+    ei = (EXTENT_ITEM*)tp.item->data;
+    ptr = (UINT8*)&ei[1];
+    len = tp.item->size - sizeof(EXTENT_ITEM);
+    
+    if (tp.item->key.obj_id == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                       tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            return;
+        }
+        
+        ptr += sizeof(EXTENT_ITEM2);
+        len -= sizeof(EXTENT_ITEM2);
+    }
+    
+    rc = 0;
+    
+    while (len > 0) {
+        UINT8 type = *ptr;
+        
+        ptr++;
+        len--;
+        
+        if (type == TYPE_TREE_BLOCK_REF) {
+            FIXME("FIXME - TREE_BLOCK_REF\n"); // FIXME
+        } else if (type == TYPE_EXTENT_DATA_REF) {
+            EXTENT_DATA_REF* edr;
+            
+            if (len < sizeof(EXTENT_DATA_REF)) {
+                ERR("EXTENT_DATA_REF takes up %u bytes, but only %u remaining\n", sizeof(EXTENT_DATA_REF), len);
+                break;
+            }
+            
+            edr = (EXTENT_DATA_REF*)ptr;
+            
+            log_file_checksum_error(Vcb, edr->root, edr->objid, edr->offset + address - tp.item->key.obj_id);
+            
+            rc += edr->count;
+            
+            ptr += sizeof(EXTENT_DATA_REF);
+            len -= sizeof(EXTENT_DATA_REF);
+        } else if (type == TYPE_SHARED_BLOCK_REF) {
+            FIXME("FIXME - SHARED_BLOCK_REF\n"); // FIXME
+        } else if (type == TYPE_SHARED_DATA_REF) {
+            FIXME("FIXME - SHARED_DATA_REF\n"); // FIXME
+        } else {
+            ERR("unknown extent type %x\n", type);
+            break;
+        }
+    }
+    
+    if (rc < ei->refcount) {
+        // FIXME - non-inline extents
+    }
+}
+
 static NTSTATUS STDCALL scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_stripe* stripe = conptr;
     scrub_context* context = (scrub_context*)stripe->context;
@@ -202,10 +493,14 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
         
         for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
             if (context->stripes[i].bad_csums[j] != csum[j]) {
-                ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n",
-                    offset + UInt32x32To64(j, Vcb->superblock.sector_size), context->stripes[i].bad_csums[j], csum[j]);
+                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                
+                ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                    context->stripes[i].bad_csums[j], csum[j]);
+                
                 // FIXME - blank sector
-                // FIXME - log address, disk number, filename, and offset within file
+                
+                log_unrecoverable_error(Vcb, addr);
             }
         }
     }
