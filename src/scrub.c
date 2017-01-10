@@ -143,7 +143,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
             }
         } else {
             searchkey.obj_id = dir;
-            searchkey.obj_type = TYPE_INODE_REF;
+            searchkey.obj_type = TYPE_INODE_EXTREF;
             searchkey.offset = 0xffffffffffffffff;
             
             Status = find_item(Vcb, r, &tp, &searchkey, FALSE, NULL);
@@ -152,9 +152,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
                 goto end;
             }
             
-            // FIXME - work with extended irefs
-            
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_INODE_REF) {
                 INODE_REF* ir = (INODE_REF*)tp.item->data;
                 path_part* pp;
                 
@@ -185,6 +183,38 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
                     break;
                 
                 dir = tp.item->key.offset;
+            } else if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+                path_part* pp;
+
+                if (tp.item->size < sizeof(INODE_EXTREF)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                               tp.item->size, sizeof(INODE_EXTREF));
+                    goto end;
+                }
+                
+                if (tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        tp.item->size, offsetof(INODE_EXTREF, name[0]) + ier->n);
+                    goto end;
+                }
+                
+                pp = ExAllocatePoolWithTag(PagedPool, sizeof(path_part), ALLOC_TAG);
+                if (!pp) {
+                    ERR("out of memory\n");
+                    goto end;
+                }
+                
+                pp->name.Buffer = ier->name;
+                pp->name.Length = pp->name.MaximumLength = ier->n;
+                pp->orig_subvol = orig_subvol;
+                
+                InsertTailList(&parts, &pp->list_entry);
+                
+                if (dir == ier->dir)
+                    break;
+                
+                dir = ier->dir;
             } else {
                 ERR("could not find INODE_REF for inode %llx in subvol %llx\n", dir, r->id);
                 goto end;
