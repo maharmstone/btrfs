@@ -969,6 +969,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                            PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
+NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum);
 
 // in pnp.c
 NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);

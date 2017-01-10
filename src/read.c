@@ -1110,7 +1110,7 @@ end:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
+NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
     NTSTATUS Status;
     calc_job* cj;
     UINT32* csum2;
