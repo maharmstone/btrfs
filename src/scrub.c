@@ -527,8 +527,36 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
         }
         
         if (good_stripe != 0xffffffff) {
-            // FIXME - write good data over bad
-            // FIXME - log
+            // log
+            
+            for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                if (context->stripes[i].csum_error) {
+                    ULONG j;
+                    
+                    for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                        if (context->stripes[i].bad_csums[j] != csum[j]) {
+                            UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                            
+                            ERR("recovering from checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                        }
+                    }
+                }
+            }
+            
+            // write good data over bad
+            
+            for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                if (context->stripes[i].csum_error) {
+                    Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
+                                             context->stripes[good_stripe].buf, size);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("write_data_phys returned %08x\n", Status);
+                        goto end;
+                    }
+                }
+            }
+            
             Status = STATUS_SUCCESS;
             goto end;
         }
