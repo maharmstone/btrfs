@@ -26,6 +26,8 @@ typedef struct {
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     UINT8* buf;
+    BOOL csum_error;
+    UINT32* bad_csums;
 } scrub_context_stripe;
 
 typedef struct _scrub_context {
@@ -52,10 +54,11 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
     scrub_context* context = NULL;
     CHUNK_ITEM_STRIPE* cis;
     NTSTATUS Status;
+    BOOL csum_error = FALSE;
     
     // FIXME - make work when degraded
     
-    ERR("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
+    TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
     
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context), ALLOC_TAG);
     if (!context) {
@@ -142,10 +145,68 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         Status = check_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, csum);
         if (Status == STATUS_CRC_ERROR) {
-            FIXME("FIXME - handle checksum error\n"); // FIXME
+            context->stripes[i].csum_error = TRUE;
+            csum_error = TRUE;
         } else if (!NT_SUCCESS(Status)) {
             ERR("check_csum returned %08x\n", Status);
             goto end;
+        }
+    }
+    
+    if (!csum_error) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    // handle checksum error
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (context->stripes[i].csum_error) {
+            context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+            if (!context->stripes[i].bad_csums) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            Status = calc_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, context->stripes[i].bad_csums);
+            if (!NT_SUCCESS(Status)) {
+                ERR("calc_csum returned %08x\n", Status);
+                goto end;
+            }
+        }
+    }
+    
+    if (c->chunk_item->num_stripes > 1) {
+        ULONG good_stripe = 0xffffffff;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (!context->stripes[i].csum_error) {
+                good_stripe = i;
+                break;
+            }
+        }
+        
+        if (good_stripe != 0xffffffff) {
+            // FIXME - write good data over bad
+            // FIXME - log
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+        
+        // FIXME - if csum errors on two devices, check sector by sector
+    }
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        ULONG j;
+        
+        for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+            if (context->stripes[i].bad_csums[j] != csum[j]) {
+                ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n",
+                    offset + UInt32x32To64(j, Vcb->superblock.sector_size), context->stripes[i].bad_csums[j], csum[j]);
+                // FIXME - blank sector
+                // FIXME - log address, disk number, filename, and offset within file
+            }
         }
     }
     
@@ -165,6 +226,9 @@ end:
                 
                 if (context->stripes[i].buf)
                     ExFreePool(context->stripes[i].buf);
+                
+                if (context->stripes[i].bad_csums)
+                    ExFreePool(context->stripes[i].bad_csums);
             }
             
             ExFreePool(context->stripes);
