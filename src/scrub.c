@@ -48,7 +48,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
     KEY searchkey;
     traverse_ptr tp;
     UINT64 dir;
-    BOOL orig_subvol = TRUE;
+    BOOL orig_subvol = TRUE, not_in_tree = FALSE;
     ANSI_STRING fn;
     
     le = Vcb->roots.Flink;
@@ -75,9 +75,8 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
     while (TRUE) {
         NTSTATUS Status;
         
-        // FIXME - default subvol
         if (dir == r->root_item.objid) {
-            if (r->id == BTRFS_ROOT_FSTREE)
+            if (r == Vcb->root_fileref->fcb->subvol)
                 break;
             
             searchkey.obj_id = r->id;
@@ -113,7 +112,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
                 
                 pp->name.Buffer = rr->name;
                 pp->name.Length = pp->name.MaximumLength = rr->n;
-                pp->orig_subvol = orig_subvol;
+                pp->orig_subvol = FALSE;
                 
                 InsertTailList(&parts, &pp->list_entry);
                 
@@ -139,8 +138,8 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
                 dir = rr->dir;
                 orig_subvol = FALSE;
             } else {
-                ERR("could not find ROOT_BACKREF for subvol %llx\n", r->id);
-                goto end;
+                not_in_tree = TRUE;
+                break;
             }
         } else {
             searchkey.obj_id = dir;
@@ -187,13 +186,29 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
                 
                 dir = tp.item->key.offset;
             } else {
-                ERR("could not find INODE_REF for inode %llx in subvol %llx\n", dir, subvol);
+                ERR("could not find INODE_REF for inode %llx in subvol %llx\n", dir, r->id);
                 goto end;
             }
         }
     }
     
     fn.MaximumLength = 0;
+    
+    if (not_in_tree) {
+        le = parts.Blink;
+        while (le != &parts) {
+            path_part* pp = CONTAINING_RECORD(le, path_part, list_entry);
+            LIST_ENTRY* le2 = le->Blink;
+            
+            if (pp->orig_subvol)
+                break;
+            
+            RemoveTailList(&parts);
+            ExFreePool(pp);
+            
+            le = le2;
+        }
+    }
     
     le = parts.Flink;
     while (le != &parts) {
@@ -225,7 +240,10 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
         le = le->Blink;
     }
     
-    ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
+    if (not_in_tree)
+        ERR("subvol %llx, %.*s, offset %llx\n", subvol, fn.Length, fn.Buffer, offset);
+    else
+        ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
     
     ExFreePool(fn.Buffer);
     
