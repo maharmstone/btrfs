@@ -436,7 +436,7 @@ static NTSTATUS STDCALL scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT32* csum) {
+static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT32* csum) {
     ULONG i;
     scrub_context* context = NULL;
     CHUNK_ITEM_STRIPE* cis;
@@ -529,14 +529,33 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
     }
     
     // FIXME - if first stripe is okay, we only need to check that the others are identical to it
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        Status = check_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, csum);
-        if (Status == STATUS_CRC_ERROR) {
-            context->stripes[i].csum_error = TRUE;
-            csum_error = TRUE;
-        } else if (!NT_SUCCESS(Status)) {
-            ERR("check_csum returned %08x\n", Status);
-            goto end;
+    
+    if (csum) {
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            Status = check_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, csum);
+            if (Status == STATUS_CRC_ERROR) {
+                context->stripes[i].csum_error = TRUE;
+                csum_error = TRUE;
+            } else if (!NT_SUCCESS(Status)) {
+                ERR("check_csum returned %08x\n", Status);
+                goto end;
+            }
+        }
+    } else {
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            ULONG j;
+            
+            for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                
+                // FIXME - check tree address is what was expected
+            
+                if (crc32 != *((UINT32*)th->csum)) {
+                    context->stripes[i].csum_error = TRUE;
+                    csum_error = TRUE;
+                }
+            }
         }
     }
     
@@ -549,17 +568,36 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (context->stripes[i].csum_error) {
-            context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
-            if (!context->stripes[i].bad_csums) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            Status = calc_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, context->stripes[i].bad_csums);
-            if (!NT_SUCCESS(Status)) {
-                ERR("calc_csum returned %08x\n", Status);
-                goto end;
+            if (csum) {
+                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                if (!context->stripes[i].bad_csums) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                Status = calc_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, context->stripes[i].bad_csums);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("calc_csum returned %08x\n", Status);
+                    goto end;
+                }
+            } else {
+                ULONG j;
+                
+                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.node_size, ALLOC_TAG);
+                if (!context->stripes[i].bad_csums) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                    
+                    if (crc32 != *((UINT32*)th->csum))
+                        context->stripes[i].bad_csums[j] = crc32;
+                }
             }
         }
     }
@@ -581,11 +619,23 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
                 if (context->stripes[i].csum_error) {
                     ULONG j;
                     
-                    for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
-                        if (context->stripes[i].bad_csums[j] != csum[j]) {
-                            UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                    if (csum) {
+                        for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                            if (context->stripes[i].bad_csums[j] != csum[j]) {
+                                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                                
+                                ERR("recovering from data checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                            }
+                        }
+                    } else {
+                        for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                            tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                             
-                            ERR("recovering from checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                            if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
+                                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
+                                
+                                ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                            }
                         }
                     }
                 }
@@ -613,32 +663,68 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             ULONG j;
-                    
-            for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
-                if (context->stripes[i].bad_csums[j] != csum[j]) {
-                    ULONG k;
-                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
-                    BOOL recovered = FALSE;
-                    
-                    for (k = 0; k < c->chunk_item->num_stripes; k++) {
-                        if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
-                            ERR("recovering from checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+            
+            if (csum) {
+                for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                    if (context->stripes[i].bad_csums[j] != csum[j]) {
+                        ULONG k;
+                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                        BOOL recovered = FALSE;
+                        
+                        for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                            if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
+                                ERR("recovering from data checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                
+                                RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
+                                            context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                
+                                recovered = TRUE;
+                                break;
+                            }
+                        }
+                        
+                        if (!recovered) {
+                            ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                                context->stripes[i].bad_csums[j], csum[j]);
                             
-                            RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
-                                          context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            // FIXME - blank sector
                             
-                            recovered = TRUE;
-                            break;
+                            log_unrecoverable_error(Vcb, addr);
                         }
                     }
+                }
+            } else {
+                for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     
-                    if (!recovered) {
-                        ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                            context->stripes[i].bad_csums[j], csum[j]);
+                    if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
+                        ULONG k;
+                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
+                        BOOL recovered = FALSE;
                         
-                        // FIXME - blank sector
+                        for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                            if (i != k) {
+                                tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
+                                
+                                if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum)) {
+                                    ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                    
+                                    RtlCopyMemory(th, th2, Vcb->superblock.node_size);
+                                    
+                                    recovered = TRUE;
+                                    break;
+                                }
+                            }
+                        }
                         
-                        log_unrecoverable_error(Vcb, addr);
+                        if (!recovered) {
+                            ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                                context->stripes[i].bad_csums[j], *((UINT32*)th->csum));
+                            
+                            // FIXME - blank tree
+                            
+                            log_unrecoverable_error(Vcb, addr);
+                        }
                     }
                 }
             }
@@ -662,16 +748,33 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         ULONG j;
         
-        for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
-            if (context->stripes[i].bad_csums[j] != csum[j]) {
-                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+        if (csum) {
+            for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                if (context->stripes[i].bad_csums[j] != csum[j]) {
+                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                    
+                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                        context->stripes[i].bad_csums[j], csum[j]);
+                    
+                    // FIXME - blank sector
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
+            }
+        } else {
+            for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                 
-                ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                    context->stripes[i].bad_csums[j], csum[j]);
-                
-                // FIXME - blank sector
-                
-                log_unrecoverable_error(Vcb, addr);
+                if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
+                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
+                    
+                    ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                        context->stripes[i].bad_csums[j], *((UINT32*)th->csum));
+                    
+                    // FIXME - blank tree
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
             }
         }
     }
@@ -710,11 +813,6 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
     NTSTATUS Status;
     ULONG runlength, index;
     
-    if (!csum) {
-        FIXME("FIXME - scrub trees\n");
-        return STATUS_SUCCESS;
-    }
-    
     runlength = RtlFindFirstRunClear(bmp, &index);
         
     while (runlength != 0) {
@@ -727,7 +825,7 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
                 rl = runlength;
             
             if (type == BLOCK_FLAG_DUPLICATE) {
-                Status = scrub_data_extent_dup(Vcb, c, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
+                Status = scrub_extent_dup(Vcb, c, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent_dup returned %08x\n", Status);
                     return Status;
@@ -744,13 +842,29 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS scrub_tree_run(device_extension* Vcb, chunk* c, UINT8 type, UINT64 start, UINT64 length) {
+    NTSTATUS Status;
+    
+    TRACE("(%p, %p, %llx, %llx)\n", Vcb, c, start, length);
+    
+    if (type == BLOCK_FLAG_DUPLICATE) {
+        Status = scrub_extent_dup(Vcb, c, start, length, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_data_extent_dup returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    BOOL b = FALSE;
+    BOOL b = FALSE, tree_run = FALSE;
     ULONG type, num_extents = 0;
-    UINT64 total_data = 0;
+    UINT64 total_data = 0, tree_run_start, tree_run_end;
     
     TRACE("chunk %llx\n", c->offset);
     
@@ -891,9 +1005,29 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                 }
             }
             
-            if (is_tree) {
-                FIXME("FIXME - scrub trees\n");
-            } else {
+            if (tree_run) {
+                if (!is_tree || tp.item->key.obj_id > tree_run_end + Vcb->superblock.node_size) {
+                    Status = scrub_tree_run(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("scrub_tree_run returned %08x\n", Status);
+                        goto end;
+                    }
+                    
+                    if (!is_tree)
+                        tree_run = FALSE;
+                    else {
+                        tree_run_start = tp.item->key.obj_id;
+                        tree_run_end = tp.item->key.obj_id + Vcb->superblock.node_size;
+                    }
+                } else
+                    tree_run_end = tp.item->key.obj_id + Vcb->superblock.node_size;
+            } else if (is_tree) {
+                tree_run = TRUE;
+                tree_run_start = tp.item->key.obj_id;
+                tree_run_end = tp.item->key.obj_id + Vcb->superblock.node_size;
+            }
+            
+            if (!is_tree) {
                 Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, size, type, csum, &bmp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent returned %08x\n", Status);
@@ -906,7 +1040,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                 ExFreePool(bmparr);
             }
             
-            *offset += size;
+            *offset = tp.item->key.obj_id + size;
             *changed = TRUE;
             
             total_data += size;
@@ -922,6 +1056,14 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
         if (b)
             tp = next_tp;
     } while (b);
+    
+    if (tree_run) {
+        Status = scrub_tree_run(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_tree_run returned %08x\n", Status);
+            goto end;
+        }
+    }
     
     Status = STATUS_SUCCESS;
     
