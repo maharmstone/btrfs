@@ -1030,7 +1030,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
             }
             
             if (tree_run) {
-                if (!is_tree || tp.item->key.obj_id > tree_run_end + Vcb->superblock.node_size) {
+                if (!is_tree || tp.item->key.obj_id > tree_run_end) {
                     Status = scrub_tree_run(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start);
                     if (!NT_SUCCESS(Status)) {
                         ERR("scrub_tree_run returned %08x\n", Status);
