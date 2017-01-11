@@ -285,6 +285,40 @@ end:
     }
 }
 
+static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeaddr, UINT64 addr, UINT64 extent) {
+    tree_header* tree;
+    NTSTATUS Status;
+    leaf_node* ln;
+    ULONG i;
+    
+    tree = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    if (!tree) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    Status = read_data(Vcb, treeaddr, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("read_data returned %08x\n", Status);
+        goto end;
+    }
+    
+    ln = (leaf_node*)&tree[1];
+    
+    for (i = 0; i < tree->num_items; i++) {
+        if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+            EXTENT_DATA* ed = (EXTENT_DATA*)((UINT8*)tree + sizeof(tree_header) + ln[i].offset);
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
+            if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0 && ed2->address == addr)
+                log_file_checksum_error(Vcb, tree->tree_id, ln[i].key.obj_id, ln[i].key.offset + addr - extent);
+        }
+    }
+    
+end:
+    ExFreePool(tree);
+}
+
 static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
     KEY searchkey;
     traverse_ptr tp;
@@ -363,7 +397,21 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
         } else if (type == TYPE_SHARED_BLOCK_REF) {
             FIXME("FIXME - SHARED_BLOCK_REF\n"); // FIXME
         } else if (type == TYPE_SHARED_DATA_REF) {
-            FIXME("FIXME - SHARED_DATA_REF\n"); // FIXME
+            SHARED_DATA_REF* sdr;
+            
+            if (len < sizeof(SHARED_DATA_REF)) {
+                ERR("SHARED_DATA_REF takes up %u bytes, but only %u remaining\n", sizeof(SHARED_DATA_REF), len);
+                break;
+            }
+            
+            sdr = (SHARED_DATA_REF*)ptr;
+            
+            log_file_checksum_error_shared(Vcb, sdr->offset, address, tp.item->key.obj_id);
+            
+            rc += sdr->count;
+            
+            ptr += sizeof(SHARED_DATA_REF);
+            len -= sizeof(SHARED_DATA_REF);
         } else {
             ERR("unknown extent type %x\n", type);
             break;
