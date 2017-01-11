@@ -327,6 +327,42 @@ static void log_tree_checksum_error(device_extension* Vcb, UINT64 root, UINT8 le
         ERR("root %llx, level %u\n", root, level);
 }
 
+static void log_tree_checksum_error_shared(device_extension* Vcb, UINT64 offset, UINT64 address) {
+    tree_header* tree;
+    NTSTATUS Status;
+    internal_node* in;
+    ULONG i;
+    
+    tree = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    if (!tree) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    Status = read_data(Vcb, offset, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("read_data returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (tree->level == 0) {
+        ERR("tree level was 0\n");
+        goto end;
+    }
+    
+    in = (internal_node*)&tree[1];
+    
+    for (i = 0; i < tree->num_items; i++) {
+        if (in[i].address == address) {
+            log_tree_checksum_error(Vcb, tree->tree_id, tree->level - 1, &in[i].key);
+            break;
+        }
+    }
+    
+end:
+    ExFreePool(tree);
+}
+
 static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
     KEY searchkey;
     traverse_ptr tp;
@@ -420,7 +456,21 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             ptr += sizeof(EXTENT_DATA_REF);
             len -= sizeof(EXTENT_DATA_REF);
         } else if (type == TYPE_SHARED_BLOCK_REF) {
-            FIXME("FIXME - SHARED_BLOCK_REF\n"); // FIXME
+            SHARED_BLOCK_REF* sbr;
+            
+            if (len < sizeof(SHARED_BLOCK_REF)) {
+                ERR("SHARED_BLOCK_REF takes up %u bytes, but only %u remaining\n", sizeof(SHARED_BLOCK_REF), len);
+                break;
+            }
+            
+            sbr = (SHARED_BLOCK_REF*)ptr;
+            
+            log_tree_checksum_error_shared(Vcb, sbr->offset, address);
+            
+            rc++;
+            
+            ptr += sizeof(SHARED_BLOCK_REF);
+            len -= sizeof(SHARED_BLOCK_REF);
         } else if (type == TYPE_SHARED_DATA_REF) {
             SHARED_DATA_REF* sdr;
             
