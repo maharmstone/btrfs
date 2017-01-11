@@ -319,11 +319,20 @@ end:
     ExFreePool(tree);
 }
 
+static void log_tree_checksum_error(device_extension* Vcb, UINT64 root, UINT8 level, KEY* firstitem) {
+    if (firstitem) {
+        ERR("root %llx, level %u, first item (%llx,%x,%llx)\n", root, level, firstitem->obj_id,
+                                                                firstitem->obj_type, firstitem->offset);
+    } else
+        ERR("root %llx, level %u\n", root, level);
+}
+
 static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     EXTENT_ITEM* ei;
+    EXTENT_ITEM2* ei2 = NULL;
     UINT8* ptr;
     ULONG len;
     UINT64 rc;
@@ -364,6 +373,8 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             return;
         }
         
+        ei2 = (EXTENT_ITEM2*)ptr;
+        
         ptr += sizeof(EXTENT_ITEM2);
         len -= sizeof(EXTENT_ITEM2);
     }
@@ -377,7 +388,21 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
         len--;
         
         if (type == TYPE_TREE_BLOCK_REF) {
-            FIXME("FIXME - TREE_BLOCK_REF\n"); // FIXME
+            TREE_BLOCK_REF* tbr;
+            
+            if (len < sizeof(TREE_BLOCK_REF)) {
+                ERR("TREE_BLOCK_REF takes up %u bytes, but only %u remaining\n", sizeof(TREE_BLOCK_REF), len);
+                break;
+            }
+            
+            tbr = (TREE_BLOCK_REF*)ptr;
+            
+            log_tree_checksum_error(Vcb, tbr->offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+            
+            rc++;
+            
+            ptr += sizeof(TREE_BLOCK_REF);
+            len -= sizeof(TREE_BLOCK_REF);
         } else if (type == TYPE_EXTENT_DATA_REF) {
             EXTENT_DATA_REF* edr;
             
