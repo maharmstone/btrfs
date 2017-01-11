@@ -929,12 +929,10 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
             else
                 rl = runlength;
             
-            if (type == BLOCK_FLAG_DUPLICATE) {
-                Status = scrub_extent(Vcb, c, type, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("scrub_data_extent_dup returned %08x\n", Status);
-                    return Status;
-                }
+            Status = scrub_extent(Vcb, c, type, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
+            if (!NT_SUCCESS(Status)) {
+                ERR("scrub_data_extent_dup returned %08x\n", Status);
+                return Status;
             }
 
             runlength -= rl;
