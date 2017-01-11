@@ -561,7 +561,54 @@ static NTSTATUS scrub_data_extent_dup(device_extension* Vcb, chunk* c, UINT64 of
             goto end;
         }
         
-        // FIXME - if csum errors on two devices, check sector by sector
+        // if csum errors on all stripes, check sector by sector
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            ULONG j;
+                    
+            for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                if (context->stripes[i].bad_csums[j] != csum[j]) {
+                    ULONG k;
+                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                    BOOL recovered = FALSE;
+                    
+                    for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                        if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
+                            ERR("recovering from checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                            
+                            RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
+                                          context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            
+                            recovered = TRUE;
+                            break;
+                        }
+                    }
+                    
+                    if (!recovered) {
+                        ERR("unrecoverable checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                            context->stripes[i].bad_csums[j], csum[j]);
+                        
+                        // FIXME - blank sector
+                        
+                        log_unrecoverable_error(Vcb, addr);
+                    }
+                }
+            }
+        }
+                   
+        // write good data over bad
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
+                                        context->stripes[i].buf, size);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_phys returned %08x\n", Status);
+                goto end;
+            }
+        }
+        
+        Status = STATUS_SUCCESS;
+        goto end;
     }
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
