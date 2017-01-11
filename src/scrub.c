@@ -766,11 +766,81 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offset, UINT32 length, UINT16 startoffstripe, UINT32* csum, scrub_context* context) {
+    ULONG j;
+    UINT16 stripe;
+    UINT32 pos, *stripeoff;
+    
+    // FIXME - work with metadata
+    
+    pos = 0;
+    stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(stripeoff, sizeof(UINT32) * c->chunk_item->num_stripes);
+    
+    stripe = startoffstripe;
+    while (pos < length) {
+        if (pos == 0) {
+            UINT32 readlen = min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
+            
+            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + j, Vcb->superblock.sector_size);
+                
+                if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
+                    UINT64 addr = offset + pos;
+                    
+                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                        crc32, csum[pos / Vcb->superblock.sector_size]);
+                    
+                    // FIXME - blank sector
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
+                
+                pos += Vcb->superblock.sector_size;
+            }
+            
+            stripeoff[stripe] += readlen;
+        } else {
+            UINT32 readlen = min(length - pos, c->chunk_item->stripe_length);
+            
+            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, &context->stripes[stripe].buf[stripeoff[stripe]], Vcb->superblock.sector_size);
+                
+                if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
+                    UINT64 addr = offset + pos;
+                    
+                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                        crc32, csum[pos / Vcb->superblock.sector_size]);
+                    
+                    // FIXME - blank sector
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
+                
+                pos += Vcb->superblock.sector_size;
+                stripeoff[stripe] += Vcb->superblock.sector_size;
+            }
+        }
+        
+        stripe = (stripe + 1) % c->chunk_item->num_stripes;
+    }
+    
+    ExFreePool(stripeoff);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
     ULONG i;
     scrub_context* context = NULL;
     CHUNK_ITEM_STRIPE* cis;
     NTSTATUS Status;
+    UINT16 startoffstripe;
     
     // FIXME - make work when degraded
     
@@ -796,6 +866,30 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
+    if (type == BLOCK_FLAG_RAID0) {
+        UINT64 startoff, endoff;
+        UINT16 endoffstripe;
+        
+        get_raid0_offset(offset - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &startoff, &startoffstripe);
+        get_raid0_offset(offset + size - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &endoff, &endoffstripe);
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (startoffstripe > i)
+                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+            else if (startoffstripe == i)
+                context->stripes[i].start = startoff;
+            else
+                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
+            
+            if (endoffstripe > i)
+                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context->stripes[i].start;
+            else if (endoffstripe == i)
+                context->stripes[i].length = endoff + 1 - context->stripes[i].start;
+            else
+                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context->stripes[i].start;
+        }
+    }
+    
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
@@ -804,7 +898,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
         if (type == BLOCK_FLAG_DUPLICATE) {
             context->stripes[i].start = offset - c->offset;
             context->stripes[i].length = size;
-        } else {
+        } else if (type != BLOCK_FLAG_RAID0) {
             ERR("unexpected chunk type %x\n", type);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
@@ -884,6 +978,12 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             ERR("scrub_extent_dup returned %08x\n", Status);
             goto end;
         }
+    } else if (type == BLOCK_FLAG_RAID0) {
+        Status = scrub_extent_raid0(Vcb, c, offset, size, startoffstripe, csum, context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_extent_raid0 returned %08x\n", Status);
+            goto end;
+        }
     }
     
 end:
@@ -959,11 +1059,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
     
     if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
         type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
         type = BLOCK_FLAG_RAID0;
-        ERR("RAID0 not yet supported\n");
-        goto end;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
         type = BLOCK_FLAG_DUPLICATE;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
         type = BLOCK_FLAG_RAID10;
