@@ -947,22 +947,6 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS scrub_tree_run(device_extension* Vcb, chunk* c, UINT8 type, UINT64 start, UINT64 length) {
-    NTSTATUS Status;
-    
-    TRACE("(%p, %p, %llx, %llx)\n", Vcb, c, start, length);
-    
-    if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = scrub_extent(Vcb, c, type, start, length, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("scrub_data_extent_dup returned %08x\n", Status);
-            return Status;
-        }
-    }
-    
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
     NTSTATUS Status;
     KEY searchkey;
@@ -1112,9 +1096,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
             
             if (tree_run) {
                 if (!is_tree || tp.item->key.obj_id > tree_run_end) {
-                    Status = scrub_tree_run(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start);
+                    Status = scrub_extent(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start, NULL);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("scrub_tree_run returned %08x\n", Status);
+                        ERR("scrub_extent returned %08x\n", Status);
                         goto end;
                     }
                     
@@ -1163,9 +1147,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
     } while (b);
     
     if (tree_run) {
-        Status = scrub_tree_run(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start);
+        Status = scrub_extent(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_tree_run returned %08x\n", Status);
+            ERR("scrub_extent returned %08x\n", Status);
             goto end;
         }
     }
