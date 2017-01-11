@@ -24,6 +24,8 @@ struct _scrub_context;
 typedef struct {
     struct _scrub_context* context;
     PIRP Irp;
+    UINT64 start;
+    UINT64 length;
     IO_STATUS_BLOCK iosb;
     UINT8* buf;
     BOOL csum_error;
@@ -511,116 +513,30 @@ static NTSTATUS STDCALL scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, UINT32* csum) {
-    ULONG i;
-    scrub_context* context = NULL;
-    CHUNK_ITEM_STRIPE* cis;
+static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset, UINT32* csum, scrub_context* context) {
     NTSTATUS Status;
     BOOL csum_error = FALSE;
-    
-    // FIXME - make work when degraded
-    
-    TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
-    
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context), ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlZeroMemory(context->stripes, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes);
-    
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-    
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        PIO_STACK_LOCATION IrpSp;
-        
-        context->stripes[i].context = (struct _scrub_context*)context;
-        context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, size, ALLOC_TAG);
-        
-        if (!context->stripes[i].buf) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        context->stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
-        
-        if (!context->stripes[i].Irp) {
-            ERR("IoAllocateIrp failed\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
-        IrpSp->MajorFunction = IRP_MJ_READ;
-        
-        if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO)
-            FIXME("FIXME - buffered IO\n");
-        else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
-            context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, size, FALSE, FALSE, NULL);
-            if (!context->stripes[i].Irp->MdlAddress) {
-                ERR("IoAllocateMdl failed\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
-        } else
-            context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
-
-        IrpSp->Parameters.Read.Length = size;
-        IrpSp->Parameters.Read.ByteOffset.QuadPart = c->devices[i]->offset + offset - c->offset + cis[i].offset;
-        
-        context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
-        
-        IoSetCompletionRoutine(context->stripes[i].Irp, scrub_read_completion, &context->stripes[i], TRUE, TRUE, TRUE);
-    }
-    
-    context->stripes_left = c->chunk_item->num_stripes;
-    
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
-    
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        IoCallDriver(c->devices[i]->devobj, context->stripes[i].Irp);
-    }
-    
-    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-    
-    // return an error if any of the stripes returned an error
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (!NT_SUCCESS(context->stripes[i].iosb.Status)) {
-            Status = context->stripes[i].iosb.Status;
-            goto end;
-        }
-    }
+    ULONG i;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     // FIXME - if first stripe is okay, we only need to check that the others are identical to it
     
     if (csum) {
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            Status = check_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, csum);
+            Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
             if (Status == STATUS_CRC_ERROR) {
                 context->stripes[i].csum_error = TRUE;
                 csum_error = TRUE;
             } else if (!NT_SUCCESS(Status)) {
                 ERR("check_csum returned %08x\n", Status);
-                goto end;
+                return Status;
             }
         }
     } else {
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             ULONG j;
             
-            for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+            for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                 tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                 
@@ -634,39 +550,35 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         }
     }
     
-    if (!csum_error) {
-        Status = STATUS_SUCCESS;
-        goto end;
-    }
+    if (!csum_error)
+        return STATUS_SUCCESS;
     
     // handle checksum error
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (context->stripes[i].csum_error) {
             if (csum) {
-                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, context->stripes[i].length * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
                 if (!context->stripes[i].bad_csums) {
                     ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                Status = calc_csum(Vcb, context->stripes[i].buf, size / Vcb->superblock.sector_size, context->stripes[i].bad_csums);
+                Status = calc_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, context->stripes[i].bad_csums);
                 if (!NT_SUCCESS(Status)) {
                     ERR("calc_csum returned %08x\n", Status);
-                    goto end;
+                    return Status;
                 }
             } else {
                 ULONG j;
                 
-                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, size * sizeof(UINT32) / Vcb->superblock.node_size, ALLOC_TAG);
+                context->stripes[i].bad_csums = ExAllocatePoolWithTag(PagedPool, context->stripes[i].length * sizeof(UINT32) / Vcb->superblock.node_size, ALLOC_TAG);
                 if (!context->stripes[i].bad_csums) {
                     ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                     tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                     
@@ -694,7 +606,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     ULONG j;
                     
                     if (csum) {
-                        for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                        for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
                             if (context->stripes[i].bad_csums[j] != csum[j]) {
                                 UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                                 
@@ -702,7 +614,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             }
                         }
                     } else {
-                        for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                        for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                             tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                             
                             if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
@@ -720,17 +632,16 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
             for (i = 0; i < c->chunk_item->num_stripes; i++) {
                 if (context->stripes[i].csum_error) {
                     Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
-                                             context->stripes[good_stripe].buf, size);
+                                             context->stripes[good_stripe].buf, context->stripes[i].length);
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08x\n", Status);
-                        goto end;
+                        return Status;
                     }
                 }
             }
             
-            Status = STATUS_SUCCESS;
-            goto end;
+            return STATUS_SUCCESS;
         }
         
         // if csum errors on all stripes, check sector by sector
@@ -739,7 +650,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
             ULONG j;
             
             if (csum) {
-                for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
                     if (context->stripes[i].bad_csums[j] != csum[j]) {
                         ULONG k;
                         UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
@@ -768,7 +679,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     }
                 }
             } else {
-                for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                     tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     
                     if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
@@ -808,22 +719,21 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
-                                        context->stripes[i].buf, size);
+                                        context->stripes[i].buf, context->stripes[i].length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
-                goto end;
+                return Status;
             }
         }
         
-        Status = STATUS_SUCCESS;
-        goto end;
+        return STATUS_SUCCESS;
     }
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         ULONG j;
         
         if (csum) {
-            for (j = 0; j < size / Vcb->superblock.sector_size; j++) {
+            for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
                 if (context->stripes[i].bad_csums[j] != csum[j]) {
                     UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                     
@@ -836,7 +746,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                 }
             }
         } else {
-            for (j = 0; j < size / Vcb->superblock.node_size; j++) {
+            for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                 tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                 
                 if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
@@ -853,7 +763,128 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         }
     }
     
-    Status = STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
+    ULONG i;
+    scrub_context* context = NULL;
+    CHUNK_ITEM_STRIPE* cis;
+    NTSTATUS Status;
+    
+    // FIXME - make work when degraded
+    
+    TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
+    
+    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    RtlZeroMemory(context->stripes, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes);
+    
+    context->stripes_left = 0;
+    
+    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        PIO_STACK_LOCATION IrpSp;
+        
+        context->stripes[i].context = (struct _scrub_context*)context;
+        
+        if (type == BLOCK_FLAG_DUPLICATE) {
+            context->stripes[i].start = offset - c->offset;
+            context->stripes[i].length = size;
+        } else {
+            ERR("unexpected chunk type %x\n", type);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        if (context->stripes[i].length > 0) {
+            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context->stripes[i].length, ALLOC_TAG);
+            
+            if (!context->stripes[i].buf) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            context->stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
+            
+            if (!context->stripes[i].Irp) {
+                ERR("IoAllocateIrp failed\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+            IrpSp->MajorFunction = IRP_MJ_READ;
+            
+            if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO)
+                FIXME("FIXME - buffered IO\n");
+            else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, context->stripes[i].length, FALSE, FALSE, NULL);
+                if (!context->stripes[i].Irp->MdlAddress) {
+                    ERR("IoAllocateMdl failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+            } else
+                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+
+            IrpSp->Parameters.Read.Length = context->stripes[i].length;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = c->devices[i]->offset + context->stripes[i].start + cis[i].offset;
+            
+            context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+            
+            IoSetCompletionRoutine(context->stripes[i].Irp, scrub_read_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            
+            context->stripes_left++;
+        }
+    }
+    
+    if (context->stripes_left == 0) {
+        ERR("error - not reading any stripes\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (context->stripes[i].length > 0)
+            IoCallDriver(c->devices[i]->devobj, context->stripes[i].Irp);
+    }
+    
+    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+    
+    // return an error if any of the stripes returned an error
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (!NT_SUCCESS(context->stripes[i].iosb.Status)) {
+            Status = context->stripes[i].iosb.Status;
+            goto end;
+        }
+    }
+    
+    if (type == BLOCK_FLAG_DUPLICATE) {
+        Status = scrub_extent_dup(Vcb, c, offset, csum, context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_extent_dup returned %08x\n", Status);
+            goto end;
+        }
+    }
     
 end:
     if (context) {
@@ -899,7 +930,7 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
                 rl = runlength;
             
             if (type == BLOCK_FLAG_DUPLICATE) {
-                Status = scrub_extent_dup(Vcb, c, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
+                Status = scrub_extent(Vcb, c, type, offset + UInt32x32To64(index, Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index]);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent_dup returned %08x\n", Status);
                     return Status;
@@ -922,7 +953,7 @@ static NTSTATUS scrub_tree_run(device_extension* Vcb, chunk* c, UINT8 type, UINT
     TRACE("(%p, %p, %llx, %llx)\n", Vcb, c, start, length);
     
     if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = scrub_extent_dup(Vcb, c, start, length, NULL);
+        Status = scrub_extent(Vcb, c, type, start, length, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_data_extent_dup returned %08x\n", Status);
             return Status;
