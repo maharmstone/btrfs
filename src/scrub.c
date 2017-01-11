@@ -620,8 +620,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                     
-                    if (crc32 != *((UINT32*)th->csum))
-                        context->stripes[i].bad_csums[j] = crc32;
+                    context->stripes[i].bad_csums[j] = crc32;
                 }
             }
         }
