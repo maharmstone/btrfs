@@ -784,47 +784,29 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
     
     stripe = startoffstripe;
     while (pos < length) {
-        if (pos == 0) {
-            UINT32 readlen = min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
+        UINT32 readlen;
+        
+        if (pos == 0)
+            readlen = min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
+        else
+            readlen = min(length - pos, c->chunk_item->stripe_length);
             
-            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + j, Vcb->superblock.sector_size);
+        for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + stripeoff[stripe], Vcb->superblock.sector_size);
+            
+            if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
+                UINT64 addr = offset + pos;
                 
-                if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
-                    UINT64 addr = offset + pos;
-                    
-                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                        crc32, csum[pos / Vcb->superblock.sector_size]);
-                    
-                    // FIXME - blank sector
-                    
-                    log_unrecoverable_error(Vcb, addr);
-                }
+                ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                    crc32, csum[pos / Vcb->superblock.sector_size]);
                 
-                pos += Vcb->superblock.sector_size;
+                // FIXME - blank sector
+                
+                log_unrecoverable_error(Vcb, addr);
             }
             
-            stripeoff[stripe] += readlen;
-        } else {
-            UINT32 readlen = min(length - pos, c->chunk_item->stripe_length);
-            
-            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, &context->stripes[stripe].buf[stripeoff[stripe]], Vcb->superblock.sector_size);
-                
-                if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
-                    UINT64 addr = offset + pos;
-                    
-                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                        crc32, csum[pos / Vcb->superblock.sector_size]);
-                    
-                    // FIXME - blank sector
-                    
-                    log_unrecoverable_error(Vcb, addr);
-                }
-                
-                pos += Vcb->superblock.sector_size;
-                stripeoff[stripe] += Vcb->superblock.sector_size;
-            }
+            pos += Vcb->superblock.sector_size;
+            stripeoff[stripe] += Vcb->superblock.sector_size;
         }
         
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
