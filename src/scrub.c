@@ -635,7 +635,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
             // write good data over bad
             
             for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                if (context->stripes[i].csum_error) {
+                if (context->stripes[i].csum_error && !c->devices[i]->readonly) {
                     Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
                                              context->stripes[good_stripe].buf, context->stripes[i].length);
                     
@@ -723,11 +723,13 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         // write good data over bad
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
-                                        context->stripes[i].buf, context->stripes[i].length);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data_phys returned %08x\n", Status);
-                return Status;
+            if (!c->devices[i]->readonly) {
+                Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
+                                         context->stripes[i].buf, context->stripes[i].length);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("write_data_phys returned %08x\n", Status);
+                    return Status;
+                }
             }
         }
         
