@@ -305,6 +305,11 @@ static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeadd
         goto end;
     }
     
+    if (tree->level != 0) {
+        ERR("tree level was %x, expected 0\n", tree->level);
+        goto end;
+    }
+    
     ln = (leaf_node*)&tree[1];
     
     for (i = 0; i < tree->num_items; i++) {
