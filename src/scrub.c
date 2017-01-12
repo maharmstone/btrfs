@@ -790,23 +790,45 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
             readlen = min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
         else
             readlen = min(length - pos, c->chunk_item->stripe_length);
-            
-        for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + stripeoff[stripe], Vcb->superblock.sector_size);
-            
-            if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
-                UINT64 addr = offset + pos;
+        
+        if (csum) {
+            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + stripeoff[stripe], Vcb->superblock.sector_size);
                 
-                ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                    crc32, csum[pos / Vcb->superblock.sector_size]);
+                if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
+                    UINT64 addr = offset + pos;
+                    
+                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
+                        crc32, csum[pos / Vcb->superblock.sector_size]);
+                    
+                    // FIXME - blank sector
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
                 
-                // FIXME - blank sector
-                
-                log_unrecoverable_error(Vcb, addr);
+                pos += Vcb->superblock.sector_size;
+                stripeoff[stripe] += Vcb->superblock.sector_size;
             }
+        } else {
+            for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
+                tree_header* th = (tree_header*)(context->stripes[stripe].buf + stripeoff[stripe]);
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                
+                // FIXME - check tree address is what was expected
             
-            pos += Vcb->superblock.sector_size;
-            stripeoff[stripe] += Vcb->superblock.sector_size;
+                if (crc32 != *((UINT32*)th->csum)) {
+                    UINT64 addr = offset + pos;
+                    
+                    ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr, crc32, *((UINT32*)th->csum));
+                            
+                    // FIXME - blank tree
+                    
+                    log_unrecoverable_error(Vcb, addr);
+                }
+                
+                pos += Vcb->superblock.node_size;
+                stripeoff[stripe] += Vcb->superblock.node_size;
+            }
         }
         
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
