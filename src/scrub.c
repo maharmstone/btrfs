@@ -778,8 +778,6 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
     UINT16 stripe;
     UINT32 pos, *stripeoff;
     
-    // FIXME - work with metadata
-    
     pos = 0;
     stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * c->chunk_item->num_stripes, ALLOC_TAG);
     if (!stripeoff) {
@@ -846,6 +844,130 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offset, UINT32 length, UINT16 startoffstripe, UINT32* csum, scrub_context* context) {
+    ULONG j;
+    UINT16 stripe, sub_stripes = max(c->chunk_item->sub_stripes, 1);
+    UINT32 pos, *stripeoff;
+    BOOL csum_error = FALSE;
+    
+    // FIXME - do metadata
+    
+    pos = 0;
+    stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * c->chunk_item->num_stripes / sub_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(stripeoff, sizeof(UINT32) * c->chunk_item->num_stripes / sub_stripes);
+    
+    stripe = startoffstripe;
+    while (pos < length) {
+        UINT32 readlen;
+        
+        if (pos == 0)
+            readlen = min(context->stripes[stripe * sub_stripes].length,
+                          c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
+        else
+            readlen = min(length - pos, c->chunk_item->stripe_length);
+        
+        if (csum) {
+            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+                UINT16 k;
+                
+                for (k = 0; k < sub_stripes; k++) {
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe], Vcb->superblock.sector_size);
+                    
+                    if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
+                        csum_error = TRUE;
+                        context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                    }
+                }
+                
+                pos += Vcb->superblock.sector_size;
+                stripeoff[stripe] += Vcb->superblock.sector_size;
+            }
+        }
+        
+        stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
+    }
+    
+    if (!csum_error)
+        goto end;
+    
+    for (j = 0; j < c->chunk_item->num_stripes; j += sub_stripes) {
+        ULONG goodstripe = 0xffffffff;
+        UINT16 k;
+        BOOL hasbadstripe = FALSE;
+        
+        if (context->stripes[j].length == 0)
+            continue;
+        
+        for (k = 0; k < sub_stripes; k++) {
+            if (!context->stripes[j + k].csum_error)
+                goodstripe = k;
+            else
+                hasbadstripe = TRUE;
+        }
+        
+        if (hasbadstripe) {
+            if (goodstripe != 0xffffffff) {
+                for (k = 0; k < sub_stripes; k++) {
+                    if (context->stripes[j + k].csum_error) {
+                        UINT32 so = 0;
+                        
+                        pos = 0;
+                        
+                        stripe = startoffstripe;
+                        while (pos < length) {
+                            UINT32 readlen;
+                            
+                            if (pos == 0)
+                                readlen = min(context->stripes[stripe * sub_stripes].length,
+                                              c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
+                            else
+                                readlen = min(length - pos, c->chunk_item->stripe_length);
+                            
+                            if (stripe == j) {
+                                ULONG l;
+                                
+                                for (l = 0; l < readlen; l += Vcb->superblock.sector_size) {
+                                    if (RtlCompareMemory(context->stripes[(stripe * sub_stripes) + k].buf + so,
+                                                         context->stripes[(stripe * sub_stripes) + goodstripe].buf + so,
+                                                         Vcb->superblock.sector_size) != Vcb->superblock.sector_size) {
+                                        UINT64 addr = offset + pos;
+
+                                        ERR("recovering from data checksum error at %llx on device %llx\n",
+                                            addr, c->devices[(stripe * sub_stripes) + k]->devitem.dev_id);
+                                    
+                                        RtlCopyMemory(context->stripes[(stripe * sub_stripes) + k].buf + so,
+                                                      context->stripes[(stripe * sub_stripes) + goodstripe].buf + so, Vcb->superblock.sector_size);
+                                    }
+                                    
+                                    pos += Vcb->superblock.sector_size;
+                                    so += Vcb->superblock.sector_size;
+                                }
+                            } else
+                                pos += readlen;
+                            
+                            stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
+                        }
+                        
+                        // FIXME - write good data over bad
+                    }
+                }
+            } else {
+                // FIXME - check sector by sector
+            }
+        }
+    }
+    
+end:
+    ExFreePool(stripeoff);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
     ULONG i;
     scrub_context* context = NULL;
@@ -899,6 +1021,44 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             else
                 context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context->stripes[i].start;
         }
+    } else if (type == BLOCK_FLAG_RAID10) {
+        UINT64 startoff, endoff;
+        UINT16 endoffstripe, j, sub_stripes = max(c->chunk_item->sub_stripes, 1);
+        
+        get_raid0_offset(offset - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &startoff, &startoffstripe);
+        get_raid0_offset(offset + size - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &endoff, &endoffstripe);
+        
+        if ((c->chunk_item->num_stripes % sub_stripes) != 0) {
+            ERR("chunk %llx: num_stripes %x was not a multiple of sub_stripes %x!\n", c->offset, c->chunk_item->num_stripes, sub_stripes);
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+        
+        startoffstripe *= sub_stripes;
+        endoffstripe *= sub_stripes;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i += sub_stripes) {
+            if (startoffstripe > i)
+                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+            else if (startoffstripe == i)
+                context->stripes[i].start = startoff;
+            else
+                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
+            
+            if (endoffstripe > i)
+                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context->stripes[i].start;
+            else if (endoffstripe == i)
+                context->stripes[i].length = endoff + 1 - context->stripes[i].start;
+            else
+                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context->stripes[i].start;
+            
+            for (j = 1; j < sub_stripes; j++) {
+                context->stripes[i+j].start = context->stripes[i].start;
+                context->stripes[i+j].length = context->stripes[i].length;
+            }
+        }
+        
+        startoffstripe /= sub_stripes;
     }
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -909,7 +1069,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
         if (type == BLOCK_FLAG_DUPLICATE) {
             context->stripes[i].start = offset - c->offset;
             context->stripes[i].length = size;
-        } else if (type != BLOCK_FLAG_RAID0) {
+        } else if (type != BLOCK_FLAG_RAID0 && type != BLOCK_FLAG_RAID10) {
             ERR("unexpected chunk type %x\n", type);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
@@ -995,6 +1155,12 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             ERR("scrub_extent_raid0 returned %08x\n", Status);
             goto end;
         }
+    } else if (type == BLOCK_FLAG_RAID10) {
+        Status = scrub_extent_raid10(Vcb, c, offset, size, startoffstripe, csum, context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_extent_raid10 returned %08x\n", Status);
+            goto end;
+        }
     }
     
 end:
@@ -1074,11 +1240,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
         type = BLOCK_FLAG_RAID0;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
         type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
         type = BLOCK_FLAG_RAID10;
-        ERR("RAID10 not yet supported\n");
-        goto end;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
         type = BLOCK_FLAG_RAID5;
         ERR("RAID5 not yet supported\n");
         goto end;
