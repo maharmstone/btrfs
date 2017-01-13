@@ -849,6 +849,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
     UINT16 stripe, sub_stripes = max(c->chunk_item->sub_stripes, 1);
     UINT32 pos, *stripeoff;
     BOOL csum_error = FALSE;
+    NTSTATUS Status;
     
     // FIXME - do metadata
     
@@ -892,8 +893,10 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
         stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
     }
     
-    if (!csum_error)
+    if (!csum_error) {
+        Status = STATUS_SUCCESS;
         goto end;
+    }
     
     for (j = 0; j < c->chunk_item->num_stripes; j += sub_stripes) {
         ULONG goodstripe = 0xffffffff;
@@ -915,6 +918,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                 for (k = 0; k < sub_stripes; k++) {
                     if (context->stripes[j + k].csum_error) {
                         UINT32 so = 0;
+                        BOOL recovered = FALSE;
                         
                         pos = 0;
                         
@@ -939,9 +943,8 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
 
                                         ERR("recovering from data checksum error at %llx on device %llx\n",
                                             addr, c->devices[(stripe * sub_stripes) + k]->devitem.dev_id);
-                                    
-                                        RtlCopyMemory(context->stripes[(stripe * sub_stripes) + k].buf + so,
-                                                      context->stripes[(stripe * sub_stripes) + goodstripe].buf + so, Vcb->superblock.sector_size);
+                                        
+                                        recovered = TRUE;
                                     }
                                     
                                     pos += Vcb->superblock.sector_size;
@@ -953,7 +956,23 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                             stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
                         }
                         
-                        // FIXME - write good data over bad
+                        if (recovered) {
+                            // write good data over bad
+                            
+                            if (!c->devices[(stripe * sub_stripes) + k]->readonly) {
+                                CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                                
+                                Status = write_data_phys(c->devices[(stripe * sub_stripes) + k]->devobj,
+                                                         c->devices[(stripe * sub_stripes) + k]->offset + cis[(stripe * sub_stripes) + k].offset + offset - c->offset,
+                                                         context->stripes[(stripe * sub_stripes) + goodstripe].buf,
+                                                         context->stripes[(stripe * sub_stripes) + goodstripe].length);
+                        
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("write_data_phys returned %08x\n", Status);
+                                    goto end;
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -962,10 +981,12 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
         }
     }
     
+    Status = STATUS_SUCCESS;
+    
 end:
     ExFreePool(stripeoff);
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
