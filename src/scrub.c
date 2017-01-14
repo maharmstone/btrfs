@@ -1862,6 +1862,10 @@ NTSTATUS start_scrub(device_extension* Vcb) {
 
 NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
     btrfs_query_scrub* bqs = (btrfs_query_scrub*)data;
+    ULONG len;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    btrfs_scrub_error* bse = NULL;
     
     if (length < offsetof(btrfs_query_scrub, errors))
         return STATUS_BUFFER_TOO_SMALL;
@@ -1877,11 +1881,66 @@ NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
     bqs->finish_time.QuadPart = Vcb->scrub.finish_time.QuadPart;
     bqs->chunks_left = Vcb->scrub.chunks_left;
     bqs->total_chunks = Vcb->scrub.total_chunks;
-    bqs->num_errors = 0; // FIXME
+    bqs->num_errors = Vcb->scrub.num_errors;
     
+    len = length - offsetof(btrfs_query_scrub, errors);
+    
+    le = Vcb->scrub.errors.Flink;
+    while (le != &Vcb->scrub.errors) {
+        scrub_error* err = CONTAINING_RECORD(le, scrub_error, list_entry);
+        ULONG errlen;
+        
+        if (err->is_metadata)
+            errlen = offsetof(btrfs_scrub_error, metadata.firstitem) + sizeof(KEY);
+        else
+            errlen = offsetof(btrfs_scrub_error, data.filename) + err->data.filename_length;
+
+        if (len < errlen) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        }
+        
+        if (!bse)
+            bse = &bqs->errors;
+        else {
+            ULONG lastlen;
+            
+            if (bse->is_metadata)
+                lastlen = offsetof(btrfs_scrub_error, metadata.firstitem) + sizeof(KEY);
+            else
+                lastlen = offsetof(btrfs_scrub_error, data.filename) + bse->data.filename_length;
+            
+            bse->next_entry = lastlen;
+            bse = (btrfs_scrub_error*)(((UINT8*)bse) + lastlen);
+        }
+        
+        bse->next_entry = 0;
+        bse->address = err->address;
+        bse->device = err->device;
+        bse->recovered = err->recovered;
+        bse->is_metadata = err->is_metadata;
+        
+        if (err->is_metadata) {
+            bse->metadata.root = err->metadata.root;
+            bse->metadata.level = err->metadata.level;
+            bse->metadata.firstitem = err->metadata.firstitem;
+        } else {
+            bse->data.subvol = err->data.subvol;
+            bse->data.offset = err->data.offset;
+            bse->data.filename_length = err->data.filename_length;
+            RtlCopyMemory(bse->data.filename, err->data.filename, err->data.filename_length);
+        }
+        
+        len -= errlen;
+        le = le->Flink;
+    }
+    
+    Status = STATUS_SUCCESS;
+    
+end:
     ExReleaseResourceLite(&Vcb->scrub.stats_lock);
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS pause_scrub(device_extension* Vcb) {
