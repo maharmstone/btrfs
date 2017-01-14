@@ -78,10 +78,30 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
         
         SetDlgItemTextW(hwndDlg, IDC_SCRUB_STATUS, s);
         
-        // FIXME - progress bar
-        // FIXME - textbox
+        if (first_time || status != bqs.status) {
+            EnableWindow(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), bqs.status != BTRFS_SCRUB_STOPPED);
+            
+            if (bqs.status != BTRFS_SCRUB_STOPPED) {
+                SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)bqs.total_chunks);
+                SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, (WPARAM)(bqs.total_chunks - bqs.chunks_left), 0);
+                
+                if (bqs.status == BTRFS_SCRUB_PAUSED)
+                    SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETSTATE, PBST_PAUSED, 0);
+                else
+                    SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETSTATE, PBST_NORMAL, 0);
+            } else
+                SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, 0, 0);
+                        
+            status = bqs.status;
+            chunks_left = bqs.chunks_left;
+        }
         
-        status = bqs.status;
+        // FIXME - textbox
+    }
+           
+    if (bqs.status != BTRFS_SCRUB_STOPPED && chunks_left != bqs.chunks_left) {
+        SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, (WPARAM)(bqs.total_chunks - bqs.chunks_left), 0);
+        chunks_left = bqs.chunks_left;
     }
 }
 

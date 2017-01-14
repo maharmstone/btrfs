@@ -33,4 +33,5 @@ private:
     
     WCHAR fn[MAX_PATH];
     UINT32 status;
+    UINT64 chunks_left;
 };
