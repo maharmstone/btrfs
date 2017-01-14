@@ -507,7 +507,6 @@ typedef struct {
     btrfs_balance_opts opts[3];
     BOOL paused;
     BOOL stopping;
-    BOOL cancelling;
     BOOL removing;
     BOOL dev_readonly;
     NTSTATUS status;

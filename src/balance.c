@@ -2389,7 +2389,6 @@ static void balance_thread(void* context) {
     NTSTATUS Status;
     
     Vcb->balance.stopping = FALSE;
-    Vcb->balance.cancelling = FALSE;
     KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, FALSE);
     
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
@@ -2899,7 +2898,6 @@ NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     
     Vcb->balance.paused = FALSE;
     Vcb->balance.stopping = TRUE;
-    Vcb->balance.cancelling = TRUE;
     Vcb->balance.status = STATUS_SUCCESS;
     KeSetEvent(&Vcb->balance.event, 0, FALSE);
     
