@@ -201,6 +201,8 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             CloseHandle(h);
             return;
         }
+        
+        CloseHandle(h);
     } else {
         ShowError(hwndDlg, GetLastError());
         return;
