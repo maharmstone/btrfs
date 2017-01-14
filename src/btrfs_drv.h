@@ -515,6 +515,29 @@ typedef struct {
 } balance_info;
 
 typedef struct {
+    UINT64 address;
+    UINT64 device;
+    BOOL recovered;
+    BOOL is_metadata;
+    LIST_ENTRY list_entry;
+    
+    union {
+        struct {
+            UINT64 subvol;
+            UINT64 offset;
+            UINT16 filename_length;
+            WCHAR filename[1];
+        } data;
+        
+        struct {
+            UINT64 root;
+            UINT8 level;
+            KEY firstitem;
+        } metadata;
+    };
+} scrub_error;
+
+typedef struct {
     HANDLE thread;
     ERESOURCE stats_lock;
     KEVENT event;
@@ -524,6 +547,8 @@ typedef struct {
     LARGE_INTEGER finish_time;
     UINT64 total_chunks;
     UINT64 chunks_left;
+    ULONG num_errors;
+    LIST_ENTRY errors;
 } scrub_info;
 
 typedef struct _device_extension {

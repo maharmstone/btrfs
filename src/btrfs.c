@@ -1980,6 +1980,14 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         ExFreePool(dev);
     }
     
+    ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+    while (!IsListEmpty(&Vcb->scrub.errors)) {
+        scrub_error* err = CONTAINING_RECORD(RemoveHeadList(&Vcb->scrub.errors), scrub_error, list_entry);
+        
+        ExFreePool(err);
+    }
+    ExReleaseResourceLite(&Vcb->scrub.stats_lock);
+    
     ExDeleteResourceLite(&Vcb->fcb_lock);
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
@@ -3905,6 +3913,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializeResourceLite(&Vcb->scrub.stats_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
+    InitializeListHead(&Vcb->scrub.errors);
 
     FsRtlNotifyInitializeSync(&Vcb->NotifySync);
     

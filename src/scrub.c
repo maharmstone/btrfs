@@ -44,7 +44,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } path_part;
 
-static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64 inode, UINT64 offset) {
+static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 devid, UINT64 subvol, UINT64 inode, UINT64 offset) {
     LIST_ENTRY *le, parts;
     root* r = NULL;
     KEY searchkey;
@@ -52,6 +52,9 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
     UINT64 dir;
     BOOL orig_subvol = TRUE, not_in_tree = FALSE;
     ANSI_STRING fn;
+    scrub_error* err;
+    NTSTATUS Status;
+    ULONG utf16len;
     
     le = Vcb->roots.Flink;
     while (le != &Vcb->roots) {
@@ -277,6 +280,41 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 subvol, UINT64
     else
         ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
     
+    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, fn.Buffer, fn.Length);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+        goto end;
+    }
+    
+    err = ExAllocatePoolWithTag(PagedPool, offsetof(scrub_error, data.filename[0]) + utf16len, ALLOC_TAG);
+    if (!err) {
+        ERR("out of memory\n");
+        goto end;
+    }
+    
+    err->address = addr;
+    err->device = devid;
+    err->recovered = FALSE;
+    err->is_metadata = FALSE;
+    
+    err->data.subvol = not_in_tree ? subvol : 0;
+    err->data.offset = offset;
+    err->data.filename_length = utf16len;
+    
+    Status = RtlUTF8ToUnicodeN(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+        ExFreePool(err);
+        goto end;
+    }
+
+    ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+    
+    Vcb->scrub.num_errors++;
+    InsertTailList(&Vcb->scrub.errors, &err->list_entry);
+    
+    ExReleaseResourceLite(&Vcb->scrub.stats_lock);
+    
     ExFreePool(fn.Buffer);
     
 end:
@@ -287,7 +325,7 @@ end:
     }
 }
 
-static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeaddr, UINT64 addr, UINT64 extent) {
+static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeaddr, UINT64 addr, UINT64 devid, UINT64 extent) {
     tree_header* tree;
     NTSTATUS Status;
     leaf_node* ln;
@@ -318,7 +356,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeadd
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
             if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0 && ed2->address == addr)
-                log_file_checksum_error(Vcb, tree->tree_id, ln[i].key.obj_id, ln[i].key.offset + addr - extent);
+                log_file_checksum_error(Vcb, addr, devid, tree->tree_id, ln[i].key.obj_id, ln[i].key.offset + addr - extent);
         }
     }
     
@@ -326,15 +364,43 @@ end:
     ExFreePool(tree);
 }
 
-static void log_tree_checksum_error(device_extension* Vcb, UINT64 root, UINT8 level, KEY* firstitem) {
+static void log_tree_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 devid, UINT64 root, UINT8 level, KEY* firstitem) {
+    scrub_error* err;
+        
+    err = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_error), ALLOC_TAG);
+    if (!err) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    err->address = addr;
+    err->device = devid;
+    err->recovered = FALSE;
+    err->is_metadata = TRUE;
+    
+    err->metadata.root = root;
+    err->metadata.level = level;
+        
     if (firstitem) {
         ERR("root %llx, level %u, first item (%llx,%x,%llx)\n", root, level, firstitem->obj_id,
                                                                 firstitem->obj_type, firstitem->offset);
-    } else
+        
+        err->metadata.firstitem = *firstitem;
+    } else {
         ERR("root %llx, level %u\n", root, level);
+        
+        RtlZeroMemory(&err->metadata.firstitem, sizeof(KEY));
+    }
+    
+    ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+
+    Vcb->scrub.num_errors++;
+    InsertTailList(&Vcb->scrub.errors, &err->list_entry);
+    
+    ExReleaseResourceLite(&Vcb->scrub.stats_lock);
 }
 
-static void log_tree_checksum_error_shared(device_extension* Vcb, UINT64 offset, UINT64 address) {
+static void log_tree_checksum_error_shared(device_extension* Vcb, UINT64 offset, UINT64 address, UINT64 devid) {
     tree_header* tree;
     NTSTATUS Status;
     internal_node* in;
@@ -361,7 +427,7 @@ static void log_tree_checksum_error_shared(device_extension* Vcb, UINT64 offset,
     
     for (i = 0; i < tree->num_items; i++) {
         if (in[i].address == address) {
-            log_tree_checksum_error(Vcb, tree->tree_id, tree->level - 1, &in[i].key);
+            log_tree_checksum_error(Vcb, address, devid, tree->tree_id, tree->level - 1, &in[i].key);
             break;
         }
     }
@@ -370,7 +436,7 @@ end:
     ExFreePool(tree);
 }
 
-static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
+static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT64 devid) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -380,7 +446,6 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
     ULONG len;
     UINT64 rc;
     
-    // FIXME - make log accessible from userspace
     // FIXME - still log even if rest of this function fails
     
     searchkey.obj_id = address;
@@ -440,7 +505,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             
             tbr = (TREE_BLOCK_REF*)ptr;
             
-            log_tree_checksum_error(Vcb, tbr->offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
             
             rc++;
             
@@ -456,7 +521,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             
             edr = (EXTENT_DATA_REF*)ptr;
             
-            log_file_checksum_error(Vcb, edr->root, edr->objid, edr->offset + address - tp.item->key.obj_id);
+            log_file_checksum_error(Vcb, address, devid, edr->root, edr->objid, edr->offset + address - tp.item->key.obj_id);
             
             rc += edr->count;
             
@@ -472,7 +537,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             
             sbr = (SHARED_BLOCK_REF*)ptr;
             
-            log_tree_checksum_error_shared(Vcb, sbr->offset, address);
+            log_tree_checksum_error_shared(Vcb, sbr->offset, address, devid);
             
             rc++;
             
@@ -488,7 +553,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
             
             sdr = (SHARED_DATA_REF*)ptr;
             
-            log_file_checksum_error_shared(Vcb, sdr->offset, address, tp.item->key.obj_id);
+            log_file_checksum_error_shared(Vcb, sdr->offset, address, devid, tp.item->key.obj_id);
             
             rc += sdr->count;
             
@@ -502,6 +567,47 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address) {
     
     if (rc < ei->refcount) {
         // FIXME - non-inline extents
+    }
+}
+
+static void log_error(device_extension* Vcb, UINT64 addr, UINT64 devid, BOOL metadata, BOOL recoverable) {
+    if (recoverable) {
+        scrub_error* err;
+        
+        if (metadata)
+            ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, devid);
+        else
+            ERR("recovering from data checksum error at %llx on device %llx\n", addr, devid);
+        
+        err = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_error), ALLOC_TAG);
+        if (!err) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        err->address = addr;
+        err->device = devid;
+        err->recovered = TRUE;
+        err->is_metadata = metadata;
+        
+        if (metadata)
+            RtlZeroMemory(&err->metadata, sizeof(err->metadata));
+        else
+            RtlZeroMemory(&err->data, sizeof(err->data));
+        
+        ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+        
+        Vcb->scrub.num_errors++;
+        InsertTailList(&Vcb->scrub.errors, &err->list_entry);
+        
+        ExReleaseResourceLite(&Vcb->scrub.stats_lock);
+    } else {
+        if (metadata)
+            ERR("unrecoverable metadata checksum error at %llx\n", addr);
+        else
+            ERR("unrecoverable data checksum error at %llx\n", addr);
+        
+        log_unrecoverable_error(Vcb, addr, devid);
     }
 }
 
@@ -615,7 +721,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             if (context->stripes[i].bad_csums[j] != csum[j]) {
                                 UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                                 
-                                ERR("recovering from data checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE);
                             }
                         }
                     } else {
@@ -625,7 +731,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
                                 UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                                 
-                                ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE);
                             }
                         }
                     }
@@ -663,7 +769,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                         
                         for (k = 0; k < c->chunk_item->num_stripes; k++) {
                             if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
-                                ERR("recovering from data checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE);
                                 
                                 RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
                                             context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
@@ -674,12 +780,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                         }
                         
                         if (!recovered) {
-                            ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                                context->stripes[i].bad_csums[j], csum[j]);
-                            
                             // FIXME - blank sector
                             
-                            log_unrecoverable_error(Vcb, addr);
+                            log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE);
                         }
                     }
                 }
@@ -697,7 +800,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                 tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
                                 
                                 if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum)) {
-                                    ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, c->devices[i]->devitem.dev_id);
+                                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE);
                                     
                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
                                     
@@ -708,12 +811,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                         }
                         
                         if (!recovered) {
-                            ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                                context->stripes[i].bad_csums[j], *((UINT32*)th->csum));
-                            
                             // FIXME - blank tree
                             
-                            log_unrecoverable_error(Vcb, addr);
+                            log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE);
                         }
                     }
                 }
@@ -744,12 +844,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                 if (context->stripes[i].bad_csums[j] != csum[j]) {
                     UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                     
-                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                        context->stripes[i].bad_csums[j], csum[j]);
-                    
                     // FIXME - blank sector
                     
-                    log_unrecoverable_error(Vcb, addr);
+                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE);
                 }
             }
         } else {
@@ -759,12 +856,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                 if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
                     UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                     
-                    ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                        context->stripes[i].bad_csums[j], *((UINT32*)th->csum));
-                    
                     // FIXME - blank tree
                     
-                    log_unrecoverable_error(Vcb, addr);
+                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE);
                 }
             }
         }
@@ -803,12 +897,9 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
                 if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
                     UINT64 addr = offset + pos;
                     
-                    ERR("unrecoverable data checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                        crc32, csum[pos / Vcb->superblock.sector_size]);
-                    
                     // FIXME - blank sector
                     
-                    log_unrecoverable_error(Vcb, addr);
+                    log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, FALSE, FALSE);
                 }
                 
                 pos += Vcb->superblock.sector_size;
@@ -824,11 +915,9 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
                 if (crc32 != *((UINT32*)th->csum)) {
                     UINT64 addr = offset + pos;
                     
-                    ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr, crc32, *((UINT32*)th->csum));
-                            
                     // FIXME - blank tree
                     
-                    log_unrecoverable_error(Vcb, addr);
+                    log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, TRUE, FALSE);
                 }
                 
                 pos += Vcb->superblock.node_size;
@@ -959,8 +1048,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                                             Vcb->superblock.sector_size) != Vcb->superblock.sector_size) {
                                             UINT64 addr = offset + pos;
 
-                                            ERR("recovering from data checksum error at %llx on device %llx\n",
-                                                addr, c->devices[j + k]->devitem.dev_id);
+                                            log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, FALSE, TRUE);
                                             
                                             recovered = TRUE;
                                         }
@@ -977,8 +1065,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                                             Vcb->superblock.node_size) != Vcb->superblock.node_size) {
                                             UINT64 addr = offset + pos;
 
-                                            ERR("recovering from metadata checksum error at %llx on device %llx\n",
-                                                addr, c->devices[j + k]->devitem.dev_id);
+                                            log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, TRUE);
                                             
                                             recovered = TRUE;
                                         }
@@ -1083,8 +1170,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                             if (context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size] != crc32) {
                                                 UINT64 addr = offset + pos;
 
-                                                ERR("recovering from data checksum error at %llx on device %llx\n",
-                                                    addr, c->devices[j + k]->devitem.dev_id);
+                                                log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, FALSE, TRUE);
                                                 
                                                 recovered = TRUE;
                                                 
@@ -1096,13 +1182,9 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                         UINT64 addr = offset + pos;
                                         
                                         for (k = 0; k < sub_stripes; k++) {
-                                            ERR("unrecoverable data checksum error at %llx on device %llx: csum was %08x, expected %08x\n", addr,
-                                                c->devices[j + k]->devitem.dev_id, context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size],
-                                                crc32);
-                                            
                                             // FIXME - blank sector
                                             
-                                            log_unrecoverable_error(Vcb, addr);
+                                            log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, FALSE, FALSE);
                                         }
                                     }
                                 }
@@ -1125,7 +1207,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                                 tree_header* th2 = (tree_header*)&context->stripes[j + m].buf[so];
                                                 
                                                 if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] == *((UINT32*)th2->csum)) {
-                                                    ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, c->devices[j + k]->devitem.dev_id);
+                                                    log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, TRUE);
                                                     
                                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
                                                     
@@ -1136,12 +1218,9 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                         }
                                         
                                         if (!recovered) {
-                                            ERR("unrecoverable metadata checksum error at %llx: csum was %08x, expected %08x\n", addr,
-                                                context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size], *((UINT32*)th->csum));
-                                            
                                             // FIXME - blank tree
                                             
-                                            log_unrecoverable_error(Vcb, addr);
+                                            log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, FALSE);
                                         }
                                     }
                                 }
@@ -1675,6 +1754,12 @@ static void scrub_thread(void* context) {
     Vcb->scrub.finish_time.QuadPart = 0;
     Vcb->scrub.total_chunks = 0;
     Vcb->scrub.chunks_left = 0;
+    Vcb->scrub.num_errors = 0;
+    
+    while (!IsListEmpty(&Vcb->scrub.errors)) {
+        scrub_error* err = CONTAINING_RECORD(RemoveHeadList(&Vcb->scrub.errors), scrub_error, list_entry);
+        ExFreePool(err);
+    }
     
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
     
