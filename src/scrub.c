@@ -932,17 +932,17 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                             else
                                 readlen = min(length - pos, c->chunk_item->stripe_length);
                             
-                            if (stripe == j) {
+                            if (stripe == j / sub_stripes) {
                                 ULONG l;
                                 
                                 for (l = 0; l < readlen; l += Vcb->superblock.sector_size) {
-                                    if (RtlCompareMemory(context->stripes[(stripe * sub_stripes) + k].buf + so,
-                                                         context->stripes[(stripe * sub_stripes) + goodstripe].buf + so,
+                                    if (RtlCompareMemory(context->stripes[j + k].buf + so,
+                                                         context->stripes[j + goodstripe].buf + so,
                                                          Vcb->superblock.sector_size) != Vcb->superblock.sector_size) {
                                         UINT64 addr = offset + pos;
 
                                         ERR("recovering from data checksum error at %llx on device %llx\n",
-                                            addr, c->devices[(stripe * sub_stripes) + k]->devitem.dev_id);
+                                            addr, c->devices[j + k]->devitem.dev_id);
                                         
                                         recovered = TRUE;
                                     }
@@ -976,7 +976,107 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                     }
                 }
             } else {
-                // FIXME - check sector by sector
+                UINT32 so = 0;
+                BOOL recovered = FALSE;
+                
+                for (k = 0; k < sub_stripes; k++) {
+                    context->stripes[j + k].bad_csums = ExAllocatePoolWithTag(PagedPool, context->stripes[j + k].length * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                    if (!context->stripes[j + k].bad_csums) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    Status = calc_csum(Vcb, context->stripes[j + k].buf, context->stripes[j + k].length / Vcb->superblock.sector_size, context->stripes[j + k].bad_csums);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("calc_csum returned %08x\n", Status);
+                        goto end;
+                    }
+                }
+                
+                pos = 0;
+                
+                stripe = startoffstripe;
+                while (pos < length) {
+                    UINT32 readlen;
+                    
+                    if (pos == 0)
+                        readlen = min(context->stripes[stripe * sub_stripes].length,
+                                        c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
+                    else
+                        readlen = min(length - pos, c->chunk_item->stripe_length);
+                    
+                    if (stripe == j / sub_stripes) {
+                        ULONG l;
+                        
+                        for (l = 0; l < readlen; l += Vcb->superblock.sector_size) {
+                            UINT32 crc32 = csum[pos / Vcb->superblock.sector_size];
+                            ULONG goodstripe = 0xffffffff;
+                            BOOL has_error = FALSE;
+                            
+                            for (k = 0; k < sub_stripes; k++) {
+                                if (context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size] != crc32)
+                                    has_error = TRUE;
+                                else
+                                    goodstripe = k;
+                            }
+                            
+                            if (has_error) {
+                                if (goodstripe != 0xffffffff) {
+                                    for (k = 0; k < sub_stripes; k++) {
+                                        if (context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size] != crc32) {
+                                            UINT64 addr = offset + pos;
+
+                                            ERR("recovering from data checksum error at %llx on device %llx\n",
+                                                addr, c->devices[j + k]->devitem.dev_id);
+                                            
+                                            recovered = TRUE;
+                                            
+                                            RtlCopyMemory(context->stripes[j + k].buf + so, context->stripes[j + goodstripe].buf + so, 
+                                                          Vcb->superblock.sector_size);
+                                        }
+                                    }
+                                } else {
+                                    UINT64 addr = offset + pos;
+                                    
+                                    for (k = 0; k < sub_stripes; k++) {
+                                        ERR("unrecoverable data checksum error at %llx on device %llx: csum was %08x, expected %08x\n", addr,
+                                            c->devices[j + k]->devitem.dev_id, context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size],
+                                            crc32);
+                                        
+                                        // FIXME - blank sector
+                                        
+                                        log_unrecoverable_error(Vcb, addr);
+                                    }
+                                }
+                            }
+                            
+                            pos += Vcb->superblock.sector_size;
+                            so += Vcb->superblock.sector_size;
+                        }
+                    } else
+                        pos += readlen;
+                    
+                    stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
+                }
+                
+                if (recovered) {
+                    // write good data over bad
+                    
+                    for (k = 0; k < sub_stripes; k++) {
+                        if (!c->devices[j + k]->readonly) {
+                            CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                            
+                            Status = write_data_phys(c->devices[j + k]->devobj, c->devices[j + k]->offset + cis[j + k].offset + offset - c->offset,
+                                                        context->stripes[j + k].buf, context->stripes[j + k].length);
+                    
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("write_data_phys returned %08x\n", Status);
+                                goto end;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
