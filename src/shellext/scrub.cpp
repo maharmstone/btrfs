@@ -105,11 +105,120 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
     }
 }
 
+void BtrfsScrub::StartScrub(HWND hwndDlg) {
+    HANDLE h;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_SCRUB, NULL, 0, NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        CloseHandle(h);
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+}
+
+void BtrfsScrub::PauseScrub(HWND hwndDlg) {
+    HANDLE h;
+    btrfs_query_scrub bqs;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        if (bqs.status == BTRFS_SCRUB_PAUSED)
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESUME_SCRUB, NULL, 0, NULL, 0);
+        else
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_SCRUB, NULL, 0, NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        CloseHandle(h);
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+}
+
+void BtrfsScrub::StopScrub(HWND hwndDlg) {
+    HANDLE h;
+    
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_STOP_SCRUB, NULL, 0, NULL, 0);
+        
+        if (Status != STATUS_SUCCESS) {
+            ShowNtStatusError(hwndDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+        
+        CloseHandle(h);
+    } else {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+}
+
 INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
             RefreshScrubDlg(hwndDlg, TRUE);
             SetTimer(hwndDlg, 1, 1000, NULL);
+        break;
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                        
+                        case IDC_START_SCRUB:
+                            StartScrub(hwndDlg);
+                        return TRUE;
+                        
+                        case IDC_PAUSE_SCRUB:
+                            PauseScrub(hwndDlg);
+                        return TRUE;
+                        
+                        case IDC_CANCEL_SCRUB:
+                            StopScrub(hwndDlg);
+                        return TRUE;
+                    }
+                break;
+            }
         break;
         
         case WM_TIMER:

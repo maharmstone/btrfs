@@ -30,6 +30,9 @@ public:
     
 private:
     void RefreshScrubDlg(HWND hwndDlg, BOOL first_time);
+    void StartScrub(HWND hwndDlg);
+    void PauseScrub(HWND hwndDlg);
+    void StopScrub(HWND hwndDlg);
     
     WCHAR fn[MAX_PATH];
     UINT32 status;
