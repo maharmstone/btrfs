@@ -496,6 +496,10 @@ BEGIN
     IDS_BALANCE_FAILED_REMOVAL "Device removal failed (error %08x)"
     IDS_DISK_NUM            "Disk %u"
     IDS_DISK_PART_NUM       "Disk %u, partition %u"
+    IDS_NO_SCRUB            "Scrub not running."
+    IDS_SCRUB_RUNNING       "Scrub currently running."
+    IDS_SCRUB_FINISHED      "Scrub finished."
+    IDS_SCRUB_PAUSED        "Scrub paused."
 END
 
 #endif    // English (U.K.) resources

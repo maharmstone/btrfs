@@ -24,6 +24,8 @@
 
 #include <windows.h>
 #include <winternl.h>
+#include "../btrfs.h"
+#include "../btrfsioctl.h"
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 #define STATUS_BUFFER_OVERFLOW  (NTSTATUS)0x80000005

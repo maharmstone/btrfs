@@ -95,6 +95,10 @@
 #define IDS_BALANCE_FAILED_REMOVAL      182
 #define IDS_DISK_NUM                    183
 #define IDS_DISK_PART_NUM               184
+#define IDS_NO_SCRUB                    185
+#define IDS_SCRUB_RUNNING               186
+#define IDS_SCRUB_FINISHED              187
+#define IDS_SCRUB_PAUSED                188
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -179,7 +183,6 @@
 #define IDC_STRIPES_END                 1054
 #define IDC_UUID                        1054
 #define IDC_CONVERT                     1055
-#define IDC_EDIT1                       1055
 #define IDC_SCRUB_INFO                  1055
 #define IDC_CONVERT_COMBO               1056
 #define IDC_START_SCRUB                 1056

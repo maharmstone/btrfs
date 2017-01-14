@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <windows.h>
+#include "../btrfs.h"
 #include "../btrfsioctl.h"
 
 class BtrfsScrub {
@@ -28,5 +29,8 @@ public:
     INT_PTR CALLBACK ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
 private:
+    void RefreshScrubDlg(HWND hwndDlg, BOOL first_time);
+    
     WCHAR fn[MAX_PATH];
+    UINT32 status;
 };
