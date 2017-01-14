@@ -426,6 +426,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\shellext\scrub.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\shellext.h"
 				>
 			</File>
@@ -463,6 +467,10 @@
 			</File>
 			<File
 				RelativePath=".\src\shellext\propsheet.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\src\shellext\scrub.cpp"
 				>
 			</File>
 			<File

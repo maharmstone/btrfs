@@ -117,6 +117,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             
             ignore = FALSE;
             balance = new BtrfsBalance(fn);
+            scrub = new BtrfsScrub(fn);
 
             CloseHandle(h);
         } else
@@ -1117,6 +1118,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             
                             case IDC_VOL_DEVICES:
                                 bps->ShowDevices(hwndDlg);
+                            break;
+                            
+                            case IDC_VOL_SCRUB:
+                                bps->scrub->ShowScrub(hwndDlg);
                             break;
                         }
                     }

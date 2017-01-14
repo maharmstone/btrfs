@@ -78,6 +78,7 @@
 #define IDS_DEVLIST_READONLY_NO         167
 #define IDD_DEVICE_ADD                  167
 #define IDS_DEVLIST_ALLOC               168
+#define IDD_SCRUB                       168
 #define IDS_DEVLIST_ALLOC_PC            169
 #define IDS_BALANCE_RUNNING_REMOVAL     170
 #define IDS_BALANCE_PAUSED_REMOVAL      171
@@ -126,6 +127,8 @@
 #define IDC_PROFILES_DUP                1026
 #define IDC_VOL_DEVICES                 1026
 #define IDC_PROFILES_RAID0              1027
+#define IDC_VOL_DEVICES2                1027
+#define IDC_VOL_SCRUB                   1027
 #define IDC_PROFILES_RAID1              1028
 #define IDC_PROFILES_RAID10             1029
 #define IDC_PROFILES_RAID5              1030
@@ -176,16 +179,23 @@
 #define IDC_STRIPES_END                 1054
 #define IDC_UUID                        1054
 #define IDC_CONVERT                     1055
+#define IDC_EDIT1                       1055
+#define IDC_SCRUB_INFO                  1055
 #define IDC_CONVERT_COMBO               1056
+#define IDC_START_SCRUB                 1056
 #define IDC_SOFT                        1057
+#define IDC_PAUSE_SCRUB                 1057
+#define IDC_CANCEL_SCRUB                1058
+#define IDC_SCRUB_PROGRESS              1059
+#define IDC_SCRUB_STATUS                1060
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        168
+#define _APS_NEXT_RESOURCE_VALUE        169
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1055
+#define _APS_NEXT_CONTROL_VALUE         1061
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

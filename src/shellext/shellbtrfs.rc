@@ -154,7 +154,7 @@ BEGIN
     LTEXT           "(blank)",IDC_SIZE_LZO,63,46,142,8
 END
 
-IDD_VOL_PROP_SHEET DIALOGEX 0, 0, 235, 198
+IDD_VOL_PROP_SHEET DIALOGEX 0, 0, 235, 251
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "s"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
@@ -170,6 +170,9 @@ BEGIN
     LTEXT           "Balancing reads and rewrites data and metadata. It can be used to consolidate free space, as well as to convert between different RAID types.",IDC_STATIC,15,98,131,39
     GROUPBOX        "Devices",IDC_STATIC,7,146,221,45
     LTEXT           "Allows you to add disks or partitions to this filesystem, or remove those already present.",IDC_STATIC,14,159,131,30
+    GROUPBOX        "Scrub",IDC_STATIC,7,199,221,45
+    LTEXT           "Scrubbing verifies the data and metadata of a filesystem, and where possible will correct any errors.",IDC_STATIC,15,212,131,27
+    PUSHBUTTON      "&Scrub...",IDC_VOL_SCRUB,154,215,67,19
 END
 
 IDD_VOL_USAGE DIALOGEX 0, 0, 235, 242
@@ -273,6 +276,20 @@ BEGIN
     CONTROL         "",IDC_DEVICE_TREE,"SysTreeView32",TVS_HASBUTTONS | TVS_HASLINES | TVS_SHOWSELALWAYS | WS_BORDER | WS_HSCROLL | WS_TABSTOP,7,7,247,148
 END
 
+IDD_SCRUB DIALOGEX 0, 0, 254, 162
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Scrub"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,102,141,50,14
+    CONTROL         "",IDC_SCRUB_PROGRESS,"msctls_progress32",WS_BORDER,7,95,240,14
+    LTEXT           "Status",IDC_SCRUB_STATUS,8,81,239,8
+    PUSHBUTTON      "&Start scrub",IDC_START_SCRUB,13,117,69,14
+    PUSHBUTTON      "&Pause / resume",IDC_PAUSE_SCRUB,93,117,69,14
+    PUSHBUTTON      "&Cancel scrub",IDC_CANCEL_SCRUB,173,117,69,14
+    EDITTEXT        IDC_SCRUB_INFO,7,7,240,69,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | WS_VSCROLL
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -303,7 +320,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 228
         TOPMARGIN, 7
-        BOTTOMMARGIN, 191
+        BOTTOMMARGIN, 244
     END
 
     IDD_VOL_USAGE, DIALOG
@@ -344,6 +361,14 @@ BEGIN
         RIGHTMARGIN, 254
         TOPMARGIN, 7
         BOTTOMMARGIN, 178
+    END
+
+    IDD_SCRUB, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 247
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 155
     END
 END
 #endif    // APSTUDIO_INVOKED

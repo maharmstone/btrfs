@@ -19,6 +19,7 @@
 #include "../btrfsioctl.h"
 #include "../btrfs.h"
 #include "balance.h"
+#include "scrub.h"
 
 extern LONG objs_loaded;
 
@@ -48,6 +49,9 @@ public:
         
         if (balance)
             delete balance;
+        
+        if (scrub)
+            delete scrub;
     }
 
     // IUnknown
@@ -87,6 +91,7 @@ public:
     btrfs_device* devices;
     BOOL readonly;
     BtrfsBalance* balance;
+    BtrfsScrub* scrub;
     BTRFS_UUID uuid;
     BOOL uuid_set;
     
