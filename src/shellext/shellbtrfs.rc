@@ -287,7 +287,7 @@ BEGIN
     PUSHBUTTON      "&Start scrub",IDC_START_SCRUB,13,117,69,14
     PUSHBUTTON      "&Pause / resume",IDC_PAUSE_SCRUB,93,117,69,14
     PUSHBUTTON      "&Cancel scrub",IDC_CANCEL_SCRUB,173,117,69,14
-    EDITTEXT        IDC_SCRUB_INFO,7,7,240,69,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | WS_VSCROLL
+    EDITTEXT        IDC_SCRUB_INFO,7,7,240,69,ES_MULTILINE | ES_READONLY | WS_VSCROLL
 END
 
 
@@ -500,6 +500,24 @@ BEGIN
     IDS_SCRUB_RUNNING       "Scrub currently running."
     IDS_SCRUB_FINISHED      "Scrub finished."
     IDS_SCRUB_PAUSED        "Scrub paused."
+    IDS_SCRUB_MSG_STARTED   "Scrub started at %s."
+    IDS_SCRUB_MSG_RECOVERABLE_DATA 
+                            "Recovered from data checksum error at %llx on device %llx."
+    IDS_SCRUB_MSG_RECOVERABLE_METADATA 
+                            "Recovered from metadata checksum error at %llx on device %llx."
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_SCRUB_MSG_UNRECOVERABLE_DATA 
+                            "Unrecoverable data checksum error at %llx on device %llx (%.*s, offset %llx)"
+    IDS_SCRUB_MSG_UNRECOVERABLE_DATA_SUBVOL 
+                            "Unrecoverable data checksum error at %llx on device %llx (subvol %llx, %.*s, offset %llx)"
+    IDS_SCRUB_MSG_UNRECOVERABLE_METADATA 
+                            "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x)"
+    IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM 
+                            "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x, first item %llx,%x,%llx)"
+    IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s."
 END
 
 #endif    // English (U.K.) resources

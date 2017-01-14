@@ -30,6 +30,7 @@ public:
     
 private:
     void RefreshScrubDlg(HWND hwndDlg, BOOL first_time);
+    void UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs);
     void StartScrub(HWND hwndDlg);
     void PauseScrub(HWND hwndDlg);
     void StopScrub(HWND hwndDlg);
@@ -37,4 +38,5 @@ private:
     WCHAR fn[MAX_PATH];
     UINT32 status;
     UINT64 chunks_left;
+    UINT32 num_errors;
 };

@@ -29,6 +29,138 @@
 #include <shlwapi.h>
 #include <uxtheme.h>
 
+void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
+    btrfs_query_scrub* bqs2 = NULL;
+    BOOL alloc_bqs2 = FALSE;
+    NTSTATUS Status;
+    WCHAR s[4096];
+    
+    if (bqs->num_errors > 0) {
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        ULONG len;
+        
+        h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        len = 0;
+        
+        do {
+            len += 1024;
+            
+            if (bqs2)
+                free(bqs2);
+            
+            bqs2 = (btrfs_query_scrub*)malloc(len);
+            
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, bqs2, len);
+            
+            if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
+                ShowNtStatusError(hwndDlg, Status);
+                CloseHandle(h);
+                free(bqs2);
+                return;
+            }
+        } while (Status == STATUS_BUFFER_OVERFLOW);
+        
+        alloc_bqs2 = TRUE;
+
+        CloseHandle(h);
+    } else
+        bqs2 = bqs;
+    
+    // FIXME - "scrub started"
+    s[0] = 0;
+    
+    if (bqs2->num_errors > 0) {
+        btrfs_scrub_error* bse = &bqs2->errors;
+        
+        do {
+            WCHAR t[255], u[255];
+            
+            if (bse->is_metadata) {
+                int message;
+                
+                if (bse->recovered)
+                    message = IDS_SCRUB_MSG_RECOVERABLE_METADATA;
+                else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                    message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA;
+                else
+                    message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM;
+                
+                if (!LoadStringW(module, message, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    goto end;
+                }
+                
+                if (bse->recovered) {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                } else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0) {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device,
+                        bse->metadata.root, bse->metadata.level) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                } else {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device,
+                        bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id, bse->metadata.firstitem.obj_type,
+                        bse->metadata.firstitem.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                }
+            } else {
+                int message;
+                
+                if (bse->recovered)
+                    message = IDS_SCRUB_MSG_RECOVERABLE_DATA;
+                else if (bse->data.subvol != 0)
+                    message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA_SUBVOL;
+                else
+                    message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA;
+                
+                if (!LoadStringW(module, message, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    goto end;
+                }
+                
+                if (bse->recovered) {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                } else if (bse->data.subvol != 0) {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device, bse->data.subvol,
+                        bse->data.filename_length / sizeof(WCHAR), bse->data.filename, bse->data.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                } else {
+                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device, bse->data.filename_length / sizeof(WCHAR),
+                        bse->data.filename, bse->data.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                        goto end;
+                }
+            }
+            
+            if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+                goto end;
+            
+            if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+                goto end;
+            
+            if (bse->next_entry == 0)
+                break;
+            else
+                bse = (btrfs_scrub_error*)((UINT8*)bse + bse->next_entry);
+        } while (TRUE);
+    }
+    
+    // FIXME - "scrub finished"
+    
+    SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s);
+    
+end:
+    if (alloc_bqs2)
+        free(bqs2);
+}
+
 void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
     HANDLE h;
     btrfs_query_scrub bqs;
@@ -41,7 +173,7 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
         
-        if (Status != STATUS_SUCCESS) {
+        if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -92,17 +224,22 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
             } else
                 SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, 0, 0);
                         
-            status = bqs.status;
             chunks_left = bqs.chunks_left;
         }
-        
-        // FIXME - textbox
     }
            
     if (bqs.status != BTRFS_SCRUB_STOPPED && chunks_left != bqs.chunks_left) {
         SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, (WPARAM)(bqs.total_chunks - bqs.chunks_left), 0);
         chunks_left = bqs.chunks_left;
     }
+    
+    if (first_time || status != bqs.status || num_errors != bqs.num_errors) {
+        UpdateTextBox(hwndDlg, &bqs);
+        
+        num_errors = bqs.num_errors;
+    }
+    
+    status = bqs.status;
 }
 
 void BtrfsScrub::StartScrub(HWND hwndDlg) {
@@ -141,7 +278,7 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
         
-        if (Status != STATUS_SUCCESS) {
+        if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
