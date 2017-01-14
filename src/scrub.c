@@ -1708,6 +1708,8 @@ static void scrub_thread(void* context) {
         
         c->reloc = TRUE;
         
+        KeWaitForSingleObject(&Vcb->scrub.event, Executive, KernelMode, FALSE, NULL);
+        
         if (!Vcb->scrub.stopping) {
             do {
                 changed = FALSE;
@@ -1721,6 +1723,8 @@ static void scrub_thread(void* context) {
                 
                 if (offset == c->offset + c->chunk_item->size)
                     break;
+                
+                KeWaitForSingleObject(&Vcb->scrub.event, Executive, KernelMode, FALSE, NULL);
             } while (changed);
         }
         
@@ -1758,6 +1762,8 @@ NTSTATUS start_scrub(device_extension* Vcb) {
         return STATUS_MEDIA_WRITE_PROTECTED;
     
     Vcb->scrub.stopping = FALSE;
+    Vcb->scrub.paused = FALSE;
+    KeInitializeEvent(&Vcb->scrub.event, NotificationEvent, !Vcb->scrub.paused);
     
     Status = PsCreateSystemThread(&Vcb->scrub.thread, 0, NULL, NULL, NULL, scrub_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
@@ -1777,7 +1783,7 @@ NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
     ExAcquireResourceSharedLite(&Vcb->scrub.stats_lock, TRUE);
     
     if (Vcb->scrub.thread && Vcb->scrub.chunks_left > 0)
-        bqs->status = BTRFS_SCRUB_RUNNING; // FIXME - account for pausing
+        bqs->status = Vcb->scrub.paused ? BTRFS_SCRUB_PAUSED : BTRFS_SCRUB_RUNNING;
     else
         bqs->status = BTRFS_SCRUB_STOPPED;
     
@@ -1788,6 +1794,32 @@ NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
     bqs->num_errors = 0; // FIXME
     
     ExReleaseResourceLite(&Vcb->scrub.stats_lock);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS pause_scrub(device_extension* Vcb) {
+    if (!Vcb->scrub.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    if (Vcb->scrub.paused)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->scrub.paused = TRUE;
+    KeClearEvent(&Vcb->scrub.event);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS resume_scrub(device_extension* Vcb) {
+    if (!Vcb->scrub.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    if (!Vcb->scrub.paused)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->scrub.paused = FALSE;
+    KeSetEvent(&Vcb->scrub.event, 0, FALSE);
     
     return STATUS_SUCCESS;
 }
