@@ -1086,6 +1086,7 @@ NTSTATUS start_scrub(device_extension* Vcb);
 NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length);
 NTSTATUS pause_scrub(device_extension* Vcb);
 NTSTATUS resume_scrub(device_extension* Vcb);
+NTSTATUS stop_scrub(device_extension* Vcb);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

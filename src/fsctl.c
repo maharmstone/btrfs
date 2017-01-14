@@ -3497,6 +3497,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             Status = resume_scrub(DeviceObject->DeviceExtension);
             break;
 
+        case FSCTL_BTRFS_STOP_SCRUB:
+            Status = stop_scrub(DeviceObject->DeviceExtension);
+            break;
+
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,

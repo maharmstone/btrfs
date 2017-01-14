@@ -1721,7 +1721,7 @@ static void scrub_thread(void* context) {
                     break;
                 }
                 
-                if (offset == c->offset + c->chunk_item->size)
+                if (offset == c->offset + c->chunk_item->size || Vcb->scrub.stopping)
                     break;
                 
                 KeWaitForSingleObject(&Vcb->scrub.event, Executive, KernelMode, FALSE, NULL);
@@ -1730,7 +1730,8 @@ static void scrub_thread(void* context) {
         
         ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
         
-        Vcb->scrub.chunks_left--;
+        if (!Vcb->scrub.stopping)
+            Vcb->scrub.chunks_left--;
         
         if (IsListEmpty(&chunks))
             KeQuerySystemTime(&Vcb->scrub.finish_time);
@@ -1819,6 +1820,17 @@ NTSTATUS resume_scrub(device_extension* Vcb) {
         return STATUS_DEVICE_NOT_READY;
     
     Vcb->scrub.paused = FALSE;
+    KeSetEvent(&Vcb->scrub.event, 0, FALSE);
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS stop_scrub(device_extension* Vcb) {
+    if (!Vcb->scrub.thread)
+        return STATUS_DEVICE_NOT_READY;
+    
+    Vcb->scrub.paused = FALSE;
+    Vcb->scrub.stopping = TRUE;
     KeSetEvent(&Vcb->scrub.event, 0, FALSE);
     
     return STATUS_SUCCESS;
