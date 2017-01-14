@@ -20,6 +20,7 @@
 #define IOCTL_BTRFS_QUERY_FILESYSTEMS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x837, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_GET_UUID CTL_CODE(FILE_DEVICE_UNKNOWN, 0x838, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_START_SCRUB CTL_CODE(FILE_DEVICE_UNKNOWN, 0x839, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+#define FSCTL_BTRFS_QUERY_SCRUB CTL_CODE(FILE_DEVICE_UNKNOWN, 0x83a, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 
 typedef struct {
     UINT64 subvol;
@@ -145,5 +146,42 @@ typedef struct {
     UINT32 num_devices;
     btrfs_filesystem_device device;
 } btrfs_filesystem;
+
+#define BTRFS_SCRUB_STOPPED     0
+#define BTRFS_SCRUB_RUNNING     1
+#define BTRFS_SCRUB_PAUSED      2
+
+typedef struct {
+    UINT32 next_entry;
+    UINT64 address;
+    UINT64 device;
+    BOOL recovered;
+    BOOL is_metadata;
+    
+    union {
+        struct {
+            UINT64 subvol;
+            UINT64 offset;
+            UINT16 filename_length;
+            WCHAR filename[1];
+        } data;
+        
+        struct {
+            UINT64 root;
+            UINT8 level;
+            KEY firstitem;
+        } metadata;
+    };
+} btrfs_scrub_error;
+
+typedef struct {
+    UINT32 status;
+    LARGE_INTEGER start_time;
+    LARGE_INTEGER finish_time;
+    UINT64 chunks_left;
+    UINT64 total_chunks;
+    UINT32 num_errors;
+    btrfs_scrub_error errors;
+} btrfs_query_scrub;
 
 #endif

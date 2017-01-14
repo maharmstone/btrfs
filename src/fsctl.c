@@ -3484,6 +3484,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
         case FSCTL_BTRFS_START_SCRUB:
             Status = start_scrub(DeviceObject->DeviceExtension);
         break;
+        
+        case FSCTL_BTRFS_QUERY_SCRUB:
+            Status = query_scrub(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+        break;
 
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

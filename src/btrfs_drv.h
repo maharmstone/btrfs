@@ -517,7 +517,12 @@ typedef struct {
 
 typedef struct {
     HANDLE thread;
+    ERESOURCE stats_lock;
     BOOL stopping;
+    LARGE_INTEGER start_time;
+    LARGE_INTEGER finish_time;
+    UINT64 total_chunks;
+    UINT64 chunks_left;
 } scrub_info;
 
 typedef struct _device_extension {
@@ -1076,6 +1081,7 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
 
 // in scrub.c
 NTSTATUS start_scrub(device_extension* Vcb);
+NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

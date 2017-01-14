@@ -1669,6 +1669,13 @@ static void scrub_thread(void* context) {
     
     ExConvertExclusiveToSharedLite(&Vcb->tree_lock);
     
+    ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+    
+    KeQuerySystemTime(&Vcb->scrub.start_time);
+    Vcb->scrub.finish_time.QuadPart = 0;
+    Vcb->scrub.total_chunks = 0;
+    Vcb->scrub.chunks_left = 0;
+    
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
     
     le = Vcb->chunks.Flink;
@@ -1677,8 +1684,11 @@ static void scrub_thread(void* context) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                
-        if (!c->readonly)
+        if (!c->readonly) {
             InsertTailList(&chunks, &c->list_entry_balance);
+            Vcb->scrub.total_chunks++;
+            Vcb->scrub.chunks_left++;
+        }
 
         ExReleaseResourceLite(&c->lock);
         
@@ -1686,6 +1696,8 @@ static void scrub_thread(void* context) {
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
+    
+    ExReleaseResource(&Vcb->scrub.stats_lock);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
     
@@ -1711,6 +1723,15 @@ static void scrub_thread(void* context) {
                     break;
             } while (changed);
         }
+        
+        ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, TRUE);
+        
+        Vcb->scrub.chunks_left--;
+        
+        if (IsListEmpty(&chunks))
+            KeQuerySystemTime(&Vcb->scrub.finish_time);
+        
+        ExReleaseResource(&Vcb->scrub.stats_lock);
         
         c->reloc = FALSE;
         c->list_entry_balance.Flink = NULL;
@@ -1743,6 +1764,30 @@ NTSTATUS start_scrub(device_extension* Vcb) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         return Status;
     }
+    
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
+    btrfs_query_scrub* bqs = (btrfs_query_scrub*)data;
+    
+    if (length < offsetof(btrfs_query_scrub, errors))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    ExAcquireResourceSharedLite(&Vcb->scrub.stats_lock, TRUE);
+    
+    if (Vcb->scrub.thread && Vcb->scrub.chunks_left > 0)
+        bqs->status = BTRFS_SCRUB_RUNNING; // FIXME - account for pausing
+    else
+        bqs->status = BTRFS_SCRUB_STOPPED;
+    
+    bqs->start_time.QuadPart = Vcb->scrub.start_time.QuadPart;
+    bqs->finish_time.QuadPart = Vcb->scrub.finish_time.QuadPart;
+    bqs->chunks_left = Vcb->scrub.chunks_left;
+    bqs->total_chunks = Vcb->scrub.total_chunks;
+    bqs->num_errors = 0; // FIXME
+    
+    ExReleaseResourceLite(&Vcb->scrub.stats_lock);
     
     return STATUS_SUCCESS;
 }

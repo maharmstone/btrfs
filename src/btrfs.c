@@ -1986,6 +1986,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->chunk_lock);
     ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
     ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);
+    ExDeleteResourceLite(&Vcb->scrub.stats_lock);
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
     ExDeletePagedLookasideList(&Vcb->traverse_ptr_lookaside);
@@ -3901,6 +3902,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
     ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
+    ExInitializeResourceLite(&Vcb->scrub.stats_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
 
