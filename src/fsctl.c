@@ -2037,6 +2037,16 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     
     TRACE("FSCTL_LOCK_VOLUME\n");
     
+    if (Vcb->scrub.thread) {
+        WARN("cannot lock while scrub running\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+    
+    if (Vcb->balance.thread) {
+        WARN("cannot lock while balance running\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+    
     TRACE("locking volume\n");
     
     FsRtlNotifyVolumeEvent(IrpSp->FileObject, FSRTL_VOLUME_LOCK);
