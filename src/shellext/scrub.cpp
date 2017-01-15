@@ -496,7 +496,7 @@ INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     return FALSE;
 }
 
-static INT_PTR CALLBACK stub_BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     BtrfsScrub* bs;
     
     if (uMsg == WM_INITDIALOG) {
@@ -512,6 +512,38 @@ static INT_PTR CALLBACK stub_BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPar
         return FALSE;
 }
 
-void BtrfsScrub::ShowScrub(HWND hwndDlg) {
-    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwndDlg, stub_BalanceDlgProc, (LPARAM)this);
+void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    HANDLE token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    BtrfsScrub* scrub;
+    
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+    
+    set_dpi_aware();
+
+    scrub = new BtrfsScrub(lpszCmdLine);
+    
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)scrub);
+    
+    delete scrub;
+    
+    CloseHandle(token);
 }

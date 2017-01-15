@@ -117,7 +117,6 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             
             ignore = FALSE;
             balance = new BtrfsBalance(fn);
-            scrub = new BtrfsScrub(fn);
 
             CloseHandle(h);
         } else
@@ -1045,6 +1044,34 @@ void BtrfsVolPropSheet::ShowDevices(HWND hwndDlg) {
    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICES), hwndDlg, stub_DeviceDlgProc, (LPARAM)this);
 }
 
+void BtrfsVolPropSheet::ShowScrub(HWND hwndDlg) {
+    WCHAR t[MAX_PATH + 100];
+    SHELLEXECUTEINFOW sei;
+    
+    t[0] = '"';
+    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+    wcscat(t, L"\",ShowScrub ");
+    wcscat(t, fn);
+    
+    RtlZeroMemory(&sei, sizeof(sei));
+    
+    sei.cbSize = sizeof(sei);
+    sei.hwnd = hwndDlg;
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"rundll32.exe";
+    sei.lpParameters = t;
+    sei.nShow = SW_SHOW;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+    if (!ShellExecuteExW(&sei)) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+    
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    CloseHandle(sei.hProcess);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -1086,6 +1113,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
             } else
                 SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
+            
+            SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, TRUE);
 
             return FALSE;
         }
@@ -1121,7 +1150,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             break;
                             
                             case IDC_VOL_SCRUB:
-                                bps->scrub->ShowScrub(hwndDlg);
+                                bps->ShowScrub(hwndDlg);
                             break;
                         }
                     }

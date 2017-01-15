@@ -49,9 +49,6 @@ public:
         
         if (balance)
             delete balance;
-        
-        if (scrub)
-            delete scrub;
     }
 
     // IUnknown
@@ -87,11 +84,11 @@ public:
     void RefreshDevList(HWND devlist);
     INT_PTR CALLBACK DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDevices(HWND hwndDlg);
+    void ShowScrub(HWND hwndDlg);
     
     btrfs_device* devices;
     BOOL readonly;
     BtrfsBalance* balance;
-    BtrfsScrub* scrub;
     BTRFS_UUID uuid;
     BOOL uuid_set;
     

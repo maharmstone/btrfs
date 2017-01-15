@@ -25,7 +25,6 @@ public:
         wcscpy(fn, drive);
     }
     
-    void ShowScrub(HWND hwndDlg);
     INT_PTR CALLBACK ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
 private:
