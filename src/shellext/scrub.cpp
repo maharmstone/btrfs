@@ -525,7 +525,7 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     
     if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
 
     tp.PrivilegeCount = 1;
@@ -534,7 +534,7 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
     
     set_dpi_aware();
@@ -545,5 +545,6 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     
     delete scrub;
     
+end:
     CloseHandle(token);
 }

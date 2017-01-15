@@ -745,7 +745,7 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     
     if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
 
     tp.PrivilegeCount = 1;
@@ -754,12 +754,15 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
     
     bda = new BtrfsDeviceAdd(hinst, hwnd, lpszCmdLine);
     bda->ShowDialog();
     delete bda;
+    
+end:
+    CloseHandle(token);
 }
 
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -781,7 +784,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     
     if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
 
     tp.PrivilegeCount = 1;
@@ -790,12 +793,12 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
     
     s = wcsstr(lpszCmdLine, L"|");
     if (!s)
-        return;
+        goto end;
     
     s[0] = 0;
     
@@ -804,14 +807,14 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     
     devid = _wtoi(dev);
     if (devid == 0)
-        return;
+        goto end;
     
     h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
-        return;
+        goto end;
     }
     
     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(UINT64), NULL, 0);
@@ -822,7 +825,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             ShowNtStatusError(hwnd, Status);
         
         CloseHandle(h);
-        return;
+        goto end;
     }
     
     CloseHandle(h);
@@ -832,6 +835,9 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     bb->ShowBalance(hwnd);
     
     delete bb;
+    
+end:
+    CloseHandle(token);
 }
 
 #ifdef __cplusplus
