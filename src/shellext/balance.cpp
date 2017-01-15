@@ -1098,6 +1098,19 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_BALANCE, &bsb, sizeof(btrfs_start_balance), NULL, 0);
         
+        if (Status == STATUS_DEVICE_NOT_READY) {
+            btrfs_query_scrub bqs;
+            NTSTATUS Status2;
+            
+            Status2 = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
+            
+            if ((NT_SUCCESS(Status2) || Status2 == STATUS_BUFFER_OVERFLOW) && bqs.status != BTRFS_SCRUB_STOPPED) {
+                ShowStringError(hwnd, IDS_BALANCE_SCRUB_RUNNING);
+                CloseHandle(h);
+                return;
+            }
+        }
+        
         if (Status != STATUS_SUCCESS) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);

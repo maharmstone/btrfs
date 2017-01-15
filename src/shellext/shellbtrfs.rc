@@ -519,6 +519,7 @@ BEGIN
                             "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x, first item %llx,%x,%llx)"
     IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s %s."
     IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %llu seconds (%s/s)."
+    IDS_BALANCE_SCRUB_RUNNING "Cannot start balance while scrub running."
 END
 
 #endif    // English (U.K.) resources
