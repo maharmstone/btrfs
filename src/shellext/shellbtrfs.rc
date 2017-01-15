@@ -521,6 +521,9 @@ BEGIN
     IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %llu seconds (%s/s)."
     IDS_BALANCE_SCRUB_RUNNING "Cannot start balance while scrub running."
     IDS_SCRUB_BALANCE_RUNNING "Cannot start scrub while balance running."
+    IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE "Recovered from %llu error(s)."
+    IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE 
+                            "%llu unrecoverable error(s) found."
 END
 
 #endif    // English (U.K.) resources

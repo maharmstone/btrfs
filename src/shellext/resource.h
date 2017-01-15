@@ -110,6 +110,8 @@
 #define IDS_SCRUB_MSG_SUMMARY           197
 #define IDS_BALANCE_SCRUB_RUNNING       198
 #define IDS_SCRUB_BALANCE_RUNNING       199
+#define IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE 200
+#define IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE 201
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

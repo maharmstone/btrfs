@@ -36,6 +36,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     WCHAR s[4096], t[255], u[255], dt[255], tm[255];
     FILETIME filetime;
     SYSTEMTIME systime;
+    UINT64 recoverable_errors = 0, unrecoverable_errors = 0;
     
     if (bqs->num_errors > 0) {
         HANDLE h;
@@ -122,6 +123,11 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         btrfs_scrub_error* bse = &bqs2->errors;
         
         do {
+            if (bse->recovered)
+                recoverable_errors++;
+            else
+                unrecoverable_errors++;
+            
             if (bse->is_metadata) {
                 int message;
                 
@@ -249,6 +255,38 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         format_size((UINT64)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
         
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+            goto end;
+        
+        // recoverable errors
+        
+        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, recoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+            goto end;
+        
+        // unrecoverable errors
+        
+        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, unrecoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
         if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
