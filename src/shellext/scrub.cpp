@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <winternl.h>
+#include <string>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
@@ -33,7 +34,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = NULL;
     BOOL alloc_bqs2 = FALSE;
     NTSTATUS Status;
-    WCHAR s[4096], t[255], u[255], dt[255], tm[255];
+    std::wstring s;
+    WCHAR t[255], u[255], dt[255], tm[255];
     FILETIME filetime;
     SYSTEMTIME systime;
     UINT64 recoverable_errors = 0, unrecoverable_errors = 0;
@@ -111,11 +113,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-            goto end;
-        
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-            goto end;
+        s += u;
+        s += L"\r\n";
     }
     
     // errors
@@ -185,11 +184,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
                 }
             }
             
-            if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-                goto end;
-            
-            if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-                goto end;
+            s += u;
+            s += L"\r\n";
             
             if (bse->next_entry == 0)
                 break;
@@ -235,11 +231,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-            goto end;
-        
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-            goto end;
+        s += u;
+        s += L"\r\n";
         
         // summary
         
@@ -257,11 +250,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-            goto end;
-        
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-            goto end;
+        s += u;
+        s += L"\r\n";
         
         // recoverable errors
         
@@ -273,11 +263,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, recoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-            goto end;
-        
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-            goto end;
+        s += u;
+        s += L"\r\n";
         
         // unrecoverable errors
         
@@ -289,14 +276,11 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, unrecoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
-            goto end;
-        
-        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
-            goto end;
+        s += u;
+        s += L"\r\n";
     }
     
-    SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s);
+    SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s.c_str());
     
 end:
     if (alloc_bqs2)
