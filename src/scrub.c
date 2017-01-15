@@ -731,9 +731,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                     
-                    // FIXME - check tree address is what was expected
-                
-                    if (crc32 != *((UINT32*)th->csum)) {
+                    if (crc32 != *((UINT32*)th->csum) || th->address != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
                         context->stripes[i].csum_error = TRUE;
                         csum_error = TRUE;
                     }
@@ -811,12 +809,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     } else {
                         for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                             tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                            UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                             
-                            if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
-                                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
-                                
+                            if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr)
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE);
-                            }
                         }
                     }
                 }
@@ -870,17 +866,17 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
             } else {
                 for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                     tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                     
-                    if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
+                    if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr) {
                         ULONG k;
-                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                         BOOL recovered = FALSE;
                         
                         for (k = 0; k < c->chunk_item->num_stripes; k++) {
                             if (i != k) {
                                 tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
                                 
-                                if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum)) {
+                                if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum) && th2->address == addr) {
                                     log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE);
                                     
                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
@@ -928,12 +924,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         } else {
             for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
                 tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                 
-                if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
-                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
-                    
+                if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr)
                     log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE);
-                }
             }
         }
     }
