@@ -370,6 +370,19 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_START_SCRUB, NULL, 0, NULL, 0);
         
+        if (Status == STATUS_DEVICE_NOT_READY) {
+            btrfs_query_balance bqb;
+            NTSTATUS Status2;
+            
+            Status2 = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb, sizeof(btrfs_query_balance));
+            
+            if (NT_SUCCESS(Status2) && bqb.status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED)) {
+                ShowStringError(hwndDlg, IDS_SCRUB_BALANCE_RUNNING);
+                CloseHandle(h);
+                return;
+            }
+        }
+        
         if (Status != STATUS_SUCCESS) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);

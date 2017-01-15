@@ -520,6 +520,7 @@ BEGIN
     IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s %s."
     IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %llu seconds (%s/s)."
     IDS_BALANCE_SCRUB_RUNNING "Cannot start balance while scrub running."
+    IDS_SCRUB_BALANCE_RUNNING "Cannot start scrub while balance running."
 END
 
 #endif    // English (U.K.) resources
