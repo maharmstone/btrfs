@@ -194,7 +194,6 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     
     if (bqs2->finish_time.QuadPart > 0) {
         WCHAR d1[255], d2[255];
-        UINT64 duration;
         float speed;
         
         // "scrub finished"
@@ -245,13 +244,11 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         
         format_size(bqs2->data_scrubbed, d1, sizeof(d1) / sizeof(WCHAR), FALSE);
         
-        duration = (bqs2->finish_time.QuadPart - bqs2->start_time.QuadPart) / 10000000;
-        
-        speed = (float)bqs2->data_scrubbed / (float)duration;
+        speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
         
         format_size((UINT64)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
         
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, duration, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
         if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
