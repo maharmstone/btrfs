@@ -1736,6 +1736,8 @@ static void scrub_thread(void* context) {
     LIST_ENTRY rollback, chunks, *le;
     NTSTATUS Status;
     
+    KeInitializeEvent(&Vcb->scrub.finished, NotificationEvent, FALSE);
+    
     InitializeListHead(&rollback);
     InitializeListHead(&chunks);
     
@@ -1832,6 +1834,8 @@ static void scrub_thread(void* context) {
     
     ZwClose(Vcb->scrub.thread);
     Vcb->scrub.thread = NULL;
+    
+    KeSetEvent(&Vcb->scrub.finished, 0, FALSE);
 }
 
 NTSTATUS start_scrub(device_extension* Vcb) {

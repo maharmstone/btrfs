@@ -541,6 +541,7 @@ typedef struct {
     HANDLE thread;
     ERESOURCE stats_lock;
     KEVENT event;
+    KEVENT finished;
     BOOL stopping;
     BOOL paused;
     LARGE_INTEGER start_time;
