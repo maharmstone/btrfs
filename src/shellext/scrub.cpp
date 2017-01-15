@@ -336,8 +336,10 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
                     SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETSTATE, PBST_PAUSED, 0);
                 else
                     SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETSTATE, PBST_NORMAL, 0);
-            } else
+            } else {
+                SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETRANGE32, 0, 0);
                 SendMessageW(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), PBM_SETPOS, 0, 0);
+            }
                         
             chunks_left = bqs.chunks_left;
         }
