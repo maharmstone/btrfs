@@ -1108,11 +1108,11 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
 // in scrub.c
-NTSTATUS start_scrub(device_extension* Vcb);
-NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length);
-NTSTATUS pause_scrub(device_extension* Vcb);
-NTSTATUS resume_scrub(device_extension* Vcb);
-NTSTATUS stop_scrub(device_extension* Vcb);
+NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
+NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void* data, ULONG length);
+NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
+NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
+NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

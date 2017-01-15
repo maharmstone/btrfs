@@ -1819,8 +1819,11 @@ static void scrub_thread(void* context) {
     KeSetEvent(&Vcb->scrub.finished, 0, FALSE);
 }
 
-NTSTATUS start_scrub(device_extension* Vcb) {
+NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     NTSTATUS Status;
+    
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
     
     if (Vcb->locked) {
         WARN("cannot start scrub while locked\n");
@@ -1853,12 +1856,15 @@ NTSTATUS start_scrub(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
+NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void* data, ULONG length) {
     btrfs_query_scrub* bqs = (btrfs_query_scrub*)data;
     ULONG len;
     NTSTATUS Status;
     LIST_ENTRY* le;
     btrfs_scrub_error* bse = NULL;
+    
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
     
     if (length < offsetof(btrfs_query_scrub, errors))
         return STATUS_BUFFER_TOO_SMALL;
@@ -1937,7 +1943,10 @@ end:
     return Status;
 }
 
-NTSTATUS pause_scrub(device_extension* Vcb) {
+NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     if (!Vcb->scrub.thread)
         return STATUS_DEVICE_NOT_READY;
     
@@ -1950,7 +1959,10 @@ NTSTATUS pause_scrub(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS resume_scrub(device_extension* Vcb) {
+NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     if (!Vcb->scrub.thread)
         return STATUS_DEVICE_NOT_READY;
     
@@ -1963,7 +1975,10 @@ NTSTATUS resume_scrub(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS stop_scrub(device_extension* Vcb) {
+NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
     if (!Vcb->scrub.thread)
         return STATUS_DEVICE_NOT_READY;
     

@@ -3492,23 +3492,23 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
         
         case FSCTL_BTRFS_START_SCRUB:
-            Status = start_scrub(DeviceObject->DeviceExtension);
+            Status = start_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
         
         case FSCTL_BTRFS_QUERY_SCRUB:
-            Status = query_scrub(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = query_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
         
         case FSCTL_BTRFS_PAUSE_SCRUB:
-            Status = pause_scrub(DeviceObject->DeviceExtension);
+            Status = pause_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
 
         case FSCTL_BTRFS_RESUME_SCRUB:
-            Status = resume_scrub(DeviceObject->DeviceExtension);
+            Status = resume_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
 
         case FSCTL_BTRFS_STOP_SCRUB:
-            Status = stop_scrub(DeviceObject->DeviceExtension);
+            Status = stop_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
 
         default:
