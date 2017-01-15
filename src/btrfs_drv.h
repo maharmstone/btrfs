@@ -546,6 +546,8 @@ typedef struct {
     BOOL paused;
     LARGE_INTEGER start_time;
     LARGE_INTEGER finish_time;
+    LARGE_INTEGER resume_time;
+    LARGE_INTEGER duration;
     UINT64 total_chunks;
     UINT64 chunks_left;
     UINT64 data_scrubbed;

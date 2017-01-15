@@ -1716,6 +1716,7 @@ static void scrub_thread(void* context) {
     device_extension* Vcb = context;
     LIST_ENTRY rollback, chunks, *le;
     NTSTATUS Status;
+    LARGE_INTEGER time;
     
     KeInitializeEvent(&Vcb->scrub.finished, NotificationEvent, FALSE);
     
@@ -1737,6 +1738,8 @@ static void scrub_thread(void* context) {
     
     KeQuerySystemTime(&Vcb->scrub.start_time);
     Vcb->scrub.finish_time.QuadPart = 0;
+    Vcb->scrub.resume_time.QuadPart = Vcb->scrub.start_time.QuadPart;
+    Vcb->scrub.duration.QuadPart = 0;
     Vcb->scrub.total_chunks = 0;
     Vcb->scrub.chunks_left = 0;
     Vcb->scrub.data_scrubbed = 0;
@@ -1813,6 +1816,9 @@ static void scrub_thread(void* context) {
         c->list_entry_balance.Flink = NULL;
     }
     
+    KeQuerySystemTime(&time);
+    Vcb->scrub.duration.QuadPart += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
+    
     ZwClose(Vcb->scrub.thread);
     Vcb->scrub.thread = NULL;
     
@@ -1881,6 +1887,16 @@ NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void
     bqs->chunks_left = Vcb->scrub.chunks_left;
     bqs->total_chunks = Vcb->scrub.total_chunks;
     bqs->data_scrubbed = Vcb->scrub.data_scrubbed;
+    
+    bqs->duration = Vcb->scrub.duration.QuadPart;
+    
+    if (bqs->status == BTRFS_SCRUB_RUNNING) {
+        LARGE_INTEGER time;
+        
+        KeQuerySystemTime(&time);
+        bqs->duration += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
+    }
+    
     bqs->num_errors = Vcb->scrub.num_errors;
     
     len = length - offsetof(btrfs_query_scrub, errors);
@@ -1944,6 +1960,8 @@ end:
 }
 
 NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
+    LARGE_INTEGER time;
+    
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
     
@@ -1955,6 +1973,9 @@ NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     
     Vcb->scrub.paused = TRUE;
     KeClearEvent(&Vcb->scrub.event);
+    
+    KeQuerySystemTime(&time);
+    Vcb->scrub.duration.QuadPart += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
     
     return STATUS_SUCCESS;
 }
@@ -1971,6 +1992,8 @@ NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     
     Vcb->scrub.paused = FALSE;
     KeSetEvent(&Vcb->scrub.event, 0, FALSE);
+    
+    KeQuerySystemTime(&Vcb->scrub.resume_time);
     
     return STATUS_SUCCESS;
 }
