@@ -1822,6 +1822,11 @@ static void scrub_thread(void* context) {
 NTSTATUS start_scrub(device_extension* Vcb) {
     NTSTATUS Status;
     
+    if (Vcb->locked) {
+        WARN("cannot start scrub while locked\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+    
     if (Vcb->balance.thread) {
         WARN("cannot start scrub while balance running\n");
         return STATUS_DEVICE_NOT_READY;
