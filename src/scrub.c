@@ -975,14 +975,10 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
             for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
                 tree_header* th = (tree_header*)(context->stripes[stripe].buf + stripeoff[stripe]);
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                UINT64 addr = offset + pos;
                 
-                // FIXME - check tree address is what was expected
-            
-                if (crc32 != *((UINT32*)th->csum)) {
-                    UINT64 addr = offset + pos;
-                    
+                if (crc32 != *((UINT32*)th->csum) || th->address != addr)
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, TRUE, FALSE);
-                }
                 
                 pos += Vcb->superblock.node_size;
                 stripeoff[stripe] += Vcb->superblock.node_size;
