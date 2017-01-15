@@ -630,33 +630,57 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
     ULONG i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
-    // FIXME - if first stripe is okay, we only need to check that the others are identical to it
-    
     if (csum) {
+        ULONG good_stripe = 0xffffffff;
+        
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
-            if (Status == STATUS_CRC_ERROR) {
-                context->stripes[i].csum_error = TRUE;
-                csum_error = TRUE;
-            } else if (!NT_SUCCESS(Status)) {
-                ERR("check_csum returned %08x\n", Status);
-                return Status;
-            }
-        }
-    } else {
-        for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            ULONG j;
-            
-            for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-                
-                // FIXME - check tree address is what was expected
-            
-                if (crc32 != *((UINT32*)th->csum)) {
+            // if first stripe is okay, we only need to check that the others are identical to it
+            if (good_stripe != 0xffffffff) {
+                if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
+                                     context->stripes[good_stripe].length) != context->stripes[i].length) {
                     context->stripes[i].csum_error = TRUE;
                     csum_error = TRUE;
                 }
+            } else {
+                Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
+                if (Status == STATUS_CRC_ERROR) {
+                    context->stripes[i].csum_error = TRUE;
+                    csum_error = TRUE;
+                } else if (!NT_SUCCESS(Status)) {
+                    ERR("check_csum returned %08x\n", Status);
+                    return Status;
+                } else
+                    good_stripe = i;
+            }
+        }
+    } else {
+        ULONG good_stripe = 0xffffffff;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            ULONG j;
+            
+            // if first stripe is okay, we only need to check that the others are identical to it
+            if (good_stripe != 0xffffffff) {
+                if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
+                                     context->stripes[good_stripe].length) != context->stripes[i].length) {
+                    context->stripes[i].csum_error = TRUE;
+                    csum_error = TRUE;
+                }
+            } else {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
+                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                    
+                    // FIXME - check tree address is what was expected
+                
+                    if (crc32 != *((UINT32*)th->csum)) {
+                        context->stripes[i].csum_error = TRUE;
+                        csum_error = TRUE;
+                    }
+                }
+                
+                if (!context->stripes[i].csum_error)
+                    good_stripe = i;
             }
         }
     }
