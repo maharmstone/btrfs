@@ -2647,6 +2647,11 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
     
+    if (Vcb->scrub.thread) {
+        WARN("cannot start balance while scrub running\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+    
     if (Vcb->balance.thread) {
         WARN("balance already running\n");
         return STATUS_DEVICE_NOT_READY;
