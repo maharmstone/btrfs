@@ -33,7 +33,9 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = NULL;
     BOOL alloc_bqs2 = FALSE;
     NTSTATUS Status;
-    WCHAR s[4096];
+    WCHAR s[4096], t[255], u[255], dt[255], tm[255];
+    FILETIME filetime;
+    SYSTEMTIME systime;
     
     if (bqs->num_errors > 0) {
         HANDLE h;
@@ -73,15 +75,53 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     } else
         bqs2 = bqs;
     
-    // FIXME - "scrub started"
     s[0] = 0;
     
+    // "scrub started"
+    if (bqs2->start_time.QuadPart > 0) {
+        filetime.dwLowDateTime = bqs2->start_time.LowPart;
+        filetime.dwHighDateTime = bqs2->start_time.HighPart;
+        
+        if (!FileTimeToSystemTime(&filetime, &systime)) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+                
+        if (!SystemTimeToTzSpecificLocalTime(NULL, &systime, &systime)) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!LoadStringW(module, IDS_SCRUB_MSG_STARTED, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, NULL, dt, sizeof(dt) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, NULL, tm, sizeof(tm) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+            goto end;
+    }
+    
+    // errors
     if (bqs2->num_errors > 0) {
         btrfs_scrub_error* bse = &bqs2->errors;
         
         do {
-            WCHAR t[255], u[255];
-            
             if (bse->is_metadata) {
                 int message;
                 
@@ -152,7 +192,45 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         } while (TRUE);
     }
     
-    // FIXME - "scrub finished"
+    // "scrub finished"
+    if (bqs2->finish_time.QuadPart > 0) {
+        filetime.dwLowDateTime = bqs2->finish_time.LowPart;
+        filetime.dwHighDateTime = bqs2->finish_time.HighPart;
+        
+        if (!FileTimeToSystemTime(&filetime, &systime)) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!SystemTimeToTzSpecificLocalTime(NULL, &systime, &systime)) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!LoadStringW(module, IDS_SCRUB_MSG_FINISHED, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, NULL, dt, sizeof(dt) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, NULL, tm, sizeof(tm) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+            goto end;
+    }
     
     SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s);
     

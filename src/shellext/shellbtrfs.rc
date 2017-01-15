@@ -500,7 +500,7 @@ BEGIN
     IDS_SCRUB_RUNNING       "Scrub currently running."
     IDS_SCRUB_FINISHED      "Scrub finished."
     IDS_SCRUB_PAUSED        "Scrub paused."
-    IDS_SCRUB_MSG_STARTED   "Scrub started at %s."
+    IDS_SCRUB_MSG_STARTED   "Scrub started at %s %s."
     IDS_SCRUB_MSG_RECOVERABLE_DATA 
                             "Recovered from data checksum error at %llx on device %llx."
     IDS_SCRUB_MSG_RECOVERABLE_METADATA 
@@ -517,7 +517,7 @@ BEGIN
                             "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x)"
     IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM 
                             "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x, first item %llx,%x,%llx)"
-    IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s."
+    IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s %s."
 END
 
 #endif    // English (U.K.) resources
