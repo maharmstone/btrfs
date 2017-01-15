@@ -497,9 +497,9 @@ BEGIN
     IDS_DISK_NUM            "Disk %u"
     IDS_DISK_PART_NUM       "Disk %u, partition %u"
     IDS_NO_SCRUB            "Scrub not running."
-    IDS_SCRUB_RUNNING       "Scrub currently running."
+    IDS_SCRUB_RUNNING       "Scrub currently running (%llu out of %llu chunks processed, %1.1f%%)"
     IDS_SCRUB_FINISHED      "Scrub finished."
-    IDS_SCRUB_PAUSED        "Scrub paused."
+    IDS_SCRUB_PAUSED        "Scrub paused (%llu out of %llu chunks processed, %1.1f%%)"
     IDS_SCRUB_MSG_STARTED   "Scrub started at %s %s."
     IDS_SCRUB_MSG_RECOVERABLE_DATA 
                             "Recovered from data checksum error at %llx on device %llx."

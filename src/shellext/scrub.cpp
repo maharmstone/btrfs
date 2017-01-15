@@ -292,27 +292,35 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
         return;
     }
     
-    if (first_time || status != bqs.status) {
+    if (first_time || status != bqs.status || chunks_left != bqs.chunks_left) {
         WCHAR s[255];
-        int message;
         
         if (bqs.status == BTRFS_SCRUB_STOPPED) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), TRUE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), FALSE);
             
-            message = bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED;
+            if (!LoadStringW(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s, sizeof(s) / sizeof(WCHAR))) {
+                ShowError(hwndDlg, GetLastError());
+                return;
+            }
         } else {
+            WCHAR t[255];
+            float pc;
+            
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), TRUE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), TRUE);
             
-            message = bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING;
-        }
-        
-        if (!LoadStringW(module, message, s, sizeof(s) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
-            return;
+            if (!LoadStringW(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t, sizeof(t) / sizeof(WCHAR))) {
+                ShowError(hwndDlg, GetLastError());
+                return;
+            }
+            
+            pc = ((float)(bqs.total_chunks - bqs.chunks_left) / (float)bqs.total_chunks) * 100.0f;
+            
+            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bqs.total_chunks - bqs.chunks_left, bqs.total_chunks, pc) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                return;
         }
         
         SetDlgItemTextW(hwndDlg, IDC_SCRUB_STATUS, s);
