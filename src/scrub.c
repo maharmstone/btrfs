@@ -1067,10 +1067,9 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                     for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
                         tree_header* th = (tree_header*)(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe] + j);
                         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                        UINT64 addr = offset + pos + j;
                         
-                        // FIXME - check tree address is what was expected
-                    
-                        if (crc32 != *((UINT32*)th->csum)) {
+                        if (crc32 != *((UINT32*)th->csum) || th->address != addr) {
                             csum_error = TRUE;
                             context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
                             break;
@@ -1284,17 +1283,17 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                             for (l = 0; l < readlen; l += Vcb->superblock.node_size) {
                                 for (k = 0; k < sub_stripes; k++) {
                                     tree_header* th = (tree_header*)&context->stripes[j + k].buf[so];
+                                    UINT64 addr = offset + pos;
                         
-                                    if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] != *((UINT32*)th->csum)) {
+                                    if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] != *((UINT32*)th->csum) || th->address != addr) {
                                         ULONG m;
-                                        UINT64 addr = offset + pos;
                                         BOOL recovered = FALSE;
                                         
                                         for (m = 0; m < sub_stripes; m++) {
                                             if (m != k) {
                                                 tree_header* th2 = (tree_header*)&context->stripes[j + m].buf[so];
                                                 
-                                                if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] == *((UINT32*)th2->csum)) {
+                                                if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] == *((UINT32*)th2->csum) && th2->address == addr) {
                                                     log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, TRUE);
                                                     
                                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
