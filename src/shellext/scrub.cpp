@@ -335,9 +335,21 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), FALSE);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), FALSE);
             
-            if (!LoadStringW(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s, sizeof(s) / sizeof(WCHAR))) {
-                ShowError(hwndDlg, GetLastError());
-                return;
+            if (bqs.error != STATUS_SUCCESS) {
+                WCHAR t[255];
+                
+                if (!LoadStringW(module, IDS_SCRUB_FAILED, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return;
+                }
+                
+                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bqs.error) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return;
+            } else {
+                if (!LoadStringW(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s, sizeof(s) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return;
+                }
             }
         } else {
             WCHAR t[255];
