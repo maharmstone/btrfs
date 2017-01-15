@@ -4457,6 +4457,14 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         uninit(Vcb, TRUE);
     }
     
+#ifdef _DEBUG
+    if (comfo) {
+        ObDereferenceObject(comfo);
+        comdo = NULL;
+        comfo = NULL;
+    }
+#endif
+    
 end:
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
