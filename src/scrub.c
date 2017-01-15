@@ -970,40 +970,70 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
             readlen = min(length - pos, c->chunk_item->stripe_length);
         
         if (csum) {
-            for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
-                UINT16 k;
-                
-                for (k = 0; k < sub_stripes; k++) {
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe], Vcb->superblock.sector_size);
-                    
-                    if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
-                        csum_error = TRUE;
+            ULONG good_stripe = 0xffffffff;
+            UINT16 k;
+
+            for (k = 0; k < sub_stripes; k++) {
+                // if first stripe is okay, we only need to check that the others are identical to it
+                if (good_stripe != 0xffffffff) {
+                    if (RtlCompareMemory(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe],
+                                         context->stripes[(stripe * sub_stripes) + good_stripe].buf + stripeoff[stripe],
+                                         readlen) != readlen) {
                         context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                        csum_error = TRUE;
                     }
+                } else {
+                    for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe] + j, Vcb->superblock.sector_size);
+                        
+                        if (crc32 != csum[(pos + j) / Vcb->superblock.sector_size]) {
+                            csum_error = TRUE;
+                            context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                            break;
+                        }
+                    }
+                    
+                    if (!context->stripes[(stripe * sub_stripes) + k].csum_error)
+                        good_stripe = k;
                 }
-                
-                pos += Vcb->superblock.sector_size;
-                stripeoff[stripe] += Vcb->superblock.sector_size;
             }
+            
+            pos += readlen;
+            stripeoff[stripe] += readlen;
         } else {
-            for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
-                UINT16 k;
-                
-                for (k = 0; k < sub_stripes; k++) {
-                    tree_header* th = (tree_header*)(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe]);
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-                    
-                    // FIXME - check tree address is what was expected
-                
-                    if (crc32 != *((UINT32*)th->csum)) {
-                        csum_error = TRUE;
+            ULONG good_stripe = 0xffffffff;
+            UINT16 k;
+
+            for (k = 0; k < sub_stripes; k++) {
+                // if first stripe is okay, we only need to check that the others are identical to it
+                if (good_stripe != 0xffffffff) {
+                    if (RtlCompareMemory(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe],
+                                         context->stripes[(stripe * sub_stripes) + good_stripe].buf + stripeoff[stripe],
+                                         readlen) != readlen) {
                         context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                        csum_error = TRUE;
                     }
+                } else {
+                    for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
+                        tree_header* th = (tree_header*)(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe] + j);
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+                        
+                        // FIXME - check tree address is what was expected
+                    
+                        if (crc32 != *((UINT32*)th->csum)) {
+                            csum_error = TRUE;
+                            context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                            break;
+                        }
+                    }
+                    
+                    if (!context->stripes[(stripe * sub_stripes) + k].csum_error)
+                        good_stripe = k;
                 }
-                
-                pos += Vcb->superblock.node_size;
-                stripeoff[stripe] += Vcb->superblock.node_size;
             }
+            
+            pos += readlen;
+            stripeoff[stripe] += readlen;
         }
         
         stripe = (stripe + 1) % (c->chunk_item->num_stripes / sub_stripes);
