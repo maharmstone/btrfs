@@ -192,8 +192,13 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         } while (TRUE);
     }
     
-    // "scrub finished"
     if (bqs2->finish_time.QuadPart > 0) {
+        WCHAR d1[255], d2[255];
+        UINT64 duration;
+        float speed;
+        
+        // "scrub finished"
+        
         filetime.dwLowDateTime = bqs2->finish_time.LowPart;
         filetime.dwHighDateTime = bqs2->finish_time.HighPart;
         
@@ -223,6 +228,30 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
         }
 
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))
+            goto end;
+        
+        if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), L"\r\n")))
+            goto end;
+        
+        // summary
+        
+        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            goto end;
+        }
+        
+        format_size(bqs2->data_scrubbed, d1, sizeof(d1) / sizeof(WCHAR), FALSE);
+        
+        duration = (bqs2->finish_time.QuadPart - bqs2->start_time.QuadPart) / 10000000;
+        
+        speed = (float)bqs2->data_scrubbed / (float)duration;
+        
+        format_size((UINT64)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
+        
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, duration, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
         
         if (FAILED(StringCchCatW(s, sizeof(s) / sizeof(WCHAR), u)))

@@ -518,6 +518,7 @@ BEGIN
     IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM 
                             "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x, first item %llx,%x,%llx)"
     IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s %s."
+    IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %llu seconds (%s/s)."
 END
 
 #endif    // English (U.K.) resources
