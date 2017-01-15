@@ -547,6 +547,7 @@ typedef struct {
     LARGE_INTEGER finish_time;
     UINT64 total_chunks;
     UINT64 chunks_left;
+    UINT64 data_scrubbed;
     ULONG num_errors;
     LIST_ENTRY errors;
 } scrub_info;

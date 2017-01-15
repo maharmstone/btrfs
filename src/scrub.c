@@ -1413,6 +1413,8 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             IoSetCompletionRoutine(context->stripes[i].Irp, scrub_read_completion, &context->stripes[i], TRUE, TRUE, TRUE);
             
             context->stripes_left++;
+            
+            Vcb->scrub.data_scrubbed += context->stripes[i].length;
         }
     }
     
@@ -1754,6 +1756,7 @@ static void scrub_thread(void* context) {
     Vcb->scrub.finish_time.QuadPart = 0;
     Vcb->scrub.total_chunks = 0;
     Vcb->scrub.chunks_left = 0;
+    Vcb->scrub.data_scrubbed = 0;
     Vcb->scrub.num_errors = 0;
     
     while (!IsListEmpty(&Vcb->scrub.errors)) {
@@ -1881,6 +1884,7 @@ NTSTATUS query_scrub(device_extension* Vcb, void* data, ULONG length) {
     bqs->finish_time.QuadPart = Vcb->scrub.finish_time.QuadPart;
     bqs->chunks_left = Vcb->scrub.chunks_left;
     bqs->total_chunks = Vcb->scrub.total_chunks;
+    bqs->data_scrubbed = Vcb->scrub.data_scrubbed;
     bqs->num_errors = Vcb->scrub.num_errors;
     
     len = length - offsetof(btrfs_query_scrub, errors);
