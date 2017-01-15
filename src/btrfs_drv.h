@@ -551,6 +551,7 @@ typedef struct {
     UINT64 total_chunks;
     UINT64 chunks_left;
     UINT64 data_scrubbed;
+    NTSTATUS error;
     ULONG num_errors;
     LIST_ENTRY errors;
 } scrub_info;

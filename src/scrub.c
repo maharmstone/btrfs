@@ -1792,6 +1792,7 @@ static void scrub_thread(void* context) {
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_chunk returned %08x\n", Status);
                     Vcb->scrub.stopping = TRUE;
+                    Vcb->scrub.error = Status;
                     break;
                 }
                 
@@ -1851,6 +1852,7 @@ NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     
     Vcb->scrub.stopping = FALSE;
     Vcb->scrub.paused = FALSE;
+    Vcb->scrub.error = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->scrub.event, NotificationEvent, !Vcb->scrub.paused);
     
     Status = PsCreateSystemThread(&Vcb->scrub.thread, 0, NULL, NULL, NULL, scrub_thread, Vcb);
@@ -1896,6 +1898,8 @@ NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void
         KeQuerySystemTime(&time);
         bqs->duration += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
     }
+    
+    bqs->error = Vcb->scrub.error;
     
     bqs->num_errors = Vcb->scrub.num_errors;
     

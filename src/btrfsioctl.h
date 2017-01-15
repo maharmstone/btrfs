@@ -185,6 +185,7 @@ typedef struct {
     UINT64 total_chunks;
     UINT64 data_scrubbed;
     UINT64 duration;
+    NTSTATUS error;
     UINT32 num_errors;
     btrfs_scrub_error errors;
 } btrfs_query_scrub;
