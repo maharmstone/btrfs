@@ -779,11 +779,8 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             }
                         }
                         
-                        if (!recovered) {
-                            // FIXME - blank sector
-                            
+                        if (!recovered)
                             log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE);
-                        }
                     }
                 }
             } else {
@@ -810,11 +807,8 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             }
                         }
                         
-                        if (!recovered) {
-                            // FIXME - blank tree
-                            
+                        if (!recovered)
                             log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE);
-                        }
                     }
                 }
             }
@@ -844,8 +838,6 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                 if (context->stripes[i].bad_csums[j] != csum[j]) {
                     UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                     
-                    // FIXME - blank sector
-                    
                     log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE);
                 }
             }
@@ -855,8 +847,6 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                 
                 if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum)) {
                     UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
-                    
-                    // FIXME - blank tree
                     
                     log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE);
                 }
@@ -897,8 +887,6 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
                 if (crc32 != csum[pos / Vcb->superblock.sector_size]) {
                     UINT64 addr = offset + pos;
                     
-                    // FIXME - blank sector
-                    
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, FALSE, FALSE);
                 }
                 
@@ -914,8 +902,6 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
             
                 if (crc32 != *((UINT32*)th->csum)) {
                     UINT64 addr = offset + pos;
-                    
-                    // FIXME - blank tree
                     
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, TRUE, FALSE);
                 }
@@ -1182,8 +1168,6 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                         UINT64 addr = offset + pos;
                                         
                                         for (k = 0; k < sub_stripes; k++) {
-                                            // FIXME - blank sector
-                                            
                                             log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, FALSE, FALSE);
                                         }
                                     }
@@ -1217,11 +1201,8 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                             }
                                         }
                                         
-                                        if (!recovered) {
-                                            // FIXME - blank tree
-                                            
+                                        if (!recovered)
                                             log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, FALSE);
-                                        }
                                     }
                                 }
                                 
