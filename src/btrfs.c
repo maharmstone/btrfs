@@ -1714,7 +1714,7 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
 #endif
 }
 
-void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line) {
+void free_fileref(file_ref* fr) {
     LONG rc;
 
 // #ifdef DEBUG    
@@ -1727,11 +1727,7 @@ void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned in
     rc = InterlockedDecrement(&fr->refcount);
     
 #ifdef DEBUG_FCB_REFCOUNTS
-#ifdef DEBUG_LONG_MESSAGES
-    _debug_message(func, file, line, "fileref %p: refcount now %i\n", fr, rc);
-#else
-    _debug_message(func, "fileref %p: refcount now %i\n", fr, rc);
-#endif
+    ERR("fileref %p: refcount now %i\n", fr, rc);
 #endif
     
 #ifdef _DEBUG

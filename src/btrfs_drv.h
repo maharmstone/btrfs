@@ -757,7 +757,7 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r
 BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
-void _free_fileref(file_ref* fr, const char* func, const char* file, unsigned int line);
+void free_fileref(file_ref* fr);
 fcb* create_fcb(POOL_TYPE pool_type);
 file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
@@ -789,7 +789,6 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 
 // FIXME - we probably shouldn't be moving funcname etc. around if we're not printing debug messages
 #define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
-#define free_fileref(fileref) _free_fileref(fileref, funcname, __FILE__, __LINE__)
 
 extern BOOL have_sse2;
 
