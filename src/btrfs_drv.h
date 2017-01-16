@@ -158,6 +158,7 @@ typedef struct _fcb {
     ULONG atts;
     SHARE_ACCESS share_access;
     WCHAR* debug_desc;
+    BOOL csum_loaded;
     LIST_ENTRY extents;
     UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;

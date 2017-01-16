@@ -1160,31 +1160,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             ext->unique = unique;
             ext->ignore = FALSE;
             ext->inserted = FALSE;
-            
-            if (ed->type == EXTENT_TYPE_REGULAR && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
-                UINT64 len;
-                
-                len = (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
-                
-                ext->csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
-                if (!ext->csum) {
-                    ERR("out of memory\n");
-                    ExFreePool(ext);
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                Status = load_csum(Vcb, ext->csum, ed2->address + (ed->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("load_csum returned %08x\n", Status);
-                    ExFreePool(ext);
-                    free_fcb(fcb);
-                    return Status;
-                }
-            } else
-                ext->csum = NULL;
+            ext->csum = NULL;
             
             InsertTailList(&fcb->extents, &ext->list_entry);
         }
@@ -2820,6 +2796,47 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
     return STATUS_SUCCESS;
 }
 
+static void fcb_load_csums(fcb* fcb, PIRP Irp) {
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    
+    if (fcb->csum_loaded)
+        return;
+    
+    if (IsListEmpty(&fcb->extents) || fcb->inode_item.flags & BTRFS_INODE_NODATASUM)
+        goto end;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (ext->data->type == EXTENT_TYPE_REGULAR) {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->data->data[0];
+            UINT64 len;
+            
+            len = (ext->data->compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / fcb->Vcb->superblock.sector_size;
+            
+            ext->csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
+            if (!ext->csum) {
+                ERR("out of memory\n");
+                goto end;
+            }
+            
+            Status = load_csum(fcb->Vcb, ext->csum, ed2->address + (ext->data->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_csum returned %08x\n", Status);
+                goto end;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+end:
+    fcb->csum_loaded = TRUE;
+}
+
 static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
@@ -3440,8 +3457,16 @@ exit2:
         free_fileref(related);
     
     if (NT_SUCCESS(Status)) {
+        fcb* fcb2;
+        
         if (!FileObject->Vpb)
             FileObject->Vpb = DeviceObject->Vpb;
+        
+        fcb2 = fileref->fcb->ads ? fileref->parent->fcb : fileref->fcb;
+        
+        ExAcquireResourceExclusiveLite(fcb2->Header.Resource, TRUE);
+        fcb_load_csums(fcb2, Irp);
+        ExReleaseResourceLite(fcb2->Header.Resource);
     } else {
         if (Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
             TRACE("returning %08x\n", Status);
