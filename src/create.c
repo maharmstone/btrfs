@@ -1486,6 +1486,9 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
             return Status;
         } else {
             fcb* fcb;
+#ifdef DEBUG_STATS
+            LARGE_INTEGER time1, time2;
+#endif
             
             if (dc->fileref) {
                 if (!lastpart && dc->type != BTRFS_TYPE_DIRECTORY) {
@@ -1498,7 +1501,16 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
                 return STATUS_SUCCESS;
             }
             
+#ifdef DEBUG_STATS
+            time1 = KeQueryPerformanceCounter(NULL);
+#endif
             Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
+#ifdef DEBUG_STATS
+            time2 = KeQueryPerformanceCounter(NULL);
+            Vcb->stats.open_fcb_calls++;
+            Vcb->stats.open_fcb_time += time2.QuadPart - time1.QuadPart;
+#endif            
+            
             if (!NT_SUCCESS(Status)) {
                 ERR("open_fcb returned %08x\n", Status);
                 return Status;

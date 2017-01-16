@@ -493,6 +493,8 @@ typedef struct {
     UINT64 overwrite_total_time;
     UINT64 num_creates;
     UINT64 create_total_time;
+    UINT64 open_fcb_calls;
+    UINT64 open_fcb_time;
 } debug_stats;
 #endif
 

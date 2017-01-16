@@ -5645,6 +5645,8 @@ static void print_stats(device_extension* Vcb) {
     ERR("number of overwrites: %llu\n", Vcb->stats.num_overwrites);
     ERR("total time taken: %llu\n", Vcb->stats.overwrite_total_time);
     ERR("number of creates: %llu\n", Vcb->stats.num_creates);
+    ERR("calls to open_fcb: %llu\n", Vcb->stats.open_fcb_calls);
+    ERR("time spent in open_fcb: %llu\n", Vcb->stats.open_fcb_time);
     ERR("total time taken: %llu\n", Vcb->stats.create_total_time);
     
     RtlZeroMemory(&Vcb->stats, sizeof(debug_stats));
