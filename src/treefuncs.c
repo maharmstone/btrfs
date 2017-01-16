@@ -69,6 +69,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     t->has_new_address = FALSE;
     t->updated_extents = FALSE;
     t->write = FALSE;
+    t->uniqueness_determined = FALSE;
     
 //     ExInitializeResourceLite(&t->nonpaged->load_tree_lock);
     

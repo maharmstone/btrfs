@@ -2307,6 +2307,8 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->new_address = 0;
     nt->has_new_address = FALSE;
     nt->updated_extents = FALSE;
+    nt->uniqueness_determined = TRUE;
+    nt->is_unique = TRUE;
     nt->list_entry_hash.Flink = NULL;
     InitializeListHead(&nt->itemlist);
     
@@ -2441,6 +2443,8 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->updated_extents = FALSE;
 //     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
+    pt->uniqueness_determined = TRUE;
+    pt->is_unique = TRUE;
     pt->list_entry_hash.Flink = NULL;
     InitializeListHead(&pt->itemlist);
     
@@ -2568,55 +2572,63 @@ BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
+    BOOL ret = FALSE;
+    EXTENT_ITEM* ei;
+    UINT8* type;
     
-    do {
-        EXTENT_ITEM* ei;
-        UINT8* type;
+    if (t->uniqueness_determined)
+        return t->is_unique;
+    
+    if (t->parent && !is_tree_unique(Vcb, t->parent, Irp))
+        goto end;
+    
+    if (t->has_address) {
+        searchkey.obj_id = t->header.address;
+        searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
         
-        if (t->has_address) {
-            searchkey.obj_id = t->header.address;
-            searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
-            searchkey.offset = 0xffffffffffffffff;
-            
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
-                return FALSE;
-            }
-            
-            if (tp.item->key.obj_id != t->header.address || (tp.item->key.obj_type != TYPE_METADATA_ITEM && tp.item->key.obj_type != TYPE_EXTENT_ITEM))
-                return FALSE;
-            
-            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
-                return FALSE;
-            
-            if (tp.item->size < sizeof(EXTENT_ITEM))
-                return FALSE;
-            
-            ei = (EXTENT_ITEM*)tp.item->data;
-            
-            if (ei->refcount > 1)
-                return FALSE;
-            
-            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
-                EXTENT_ITEM2* ei2;
-                
-                if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2))
-                    return FALSE;
-                
-                ei2 = (EXTENT_ITEM2*)&ei[1];
-                type = (UINT8*)&ei2[1];
-            } else
-                type = (UINT8*)&ei[1];
-            
-            if (type >= tp.item->data + tp.item->size || *type != TYPE_TREE_BLOCK_REF)
-                return FALSE;
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            goto end;
         }
         
-        t = t->parent;
-    } while (t);
+        if (tp.item->key.obj_id != t->header.address || (tp.item->key.obj_type != TYPE_METADATA_ITEM && tp.item->key.obj_type != TYPE_EXTENT_ITEM))
+            goto end;
+        
+        if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
+            goto end;
+        
+        if (tp.item->size < sizeof(EXTENT_ITEM))
+            goto end;
+        
+        ei = (EXTENT_ITEM*)tp.item->data;
+        
+        if (ei->refcount > 1)
+            goto end;
+        
+        if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+            EXTENT_ITEM2* ei2;
+            
+            if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2))
+                goto end;
+            
+            ei2 = (EXTENT_ITEM2*)&ei[1];
+            type = (UINT8*)&ei2[1];
+        } else
+            type = (UINT8*)&ei[1];
+        
+        if (type >= tp.item->data + tp.item->size || *type != TYPE_TREE_BLOCK_REF)
+            goto end;
+    }
     
-    return TRUE;
+    ret = TRUE;
+    
+end:
+    t->is_unique = ret;
+    t->uniqueness_determined = TRUE;
+
+    return ret;
 }
 
 static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, PIRP Irp, LIST_ENTRY* rollback) {

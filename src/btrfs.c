@@ -890,6 +890,9 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
             ExFreePool(r);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
+        
+        t->is_unique = TRUE;
+        t->uniqueness_determined = TRUE;
     }
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);

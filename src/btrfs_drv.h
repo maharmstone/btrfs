@@ -291,6 +291,8 @@ typedef struct _tree {
     BOOL has_new_address;
     BOOL updated_extents;
     BOOL write;
+    BOOL is_unique;
+    BOOL uniqueness_determined;
 } tree;
 
 typedef struct {
