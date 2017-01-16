@@ -3454,7 +3454,13 @@ exit2:
         if (!FileObject->Vpb)
             FileObject->Vpb = DeviceObject->Vpb;
         
-        fcb2 = fileref->fcb->ads ? fileref->parent->fcb : fileref->fcb;
+        fcb2 = FileObject->FsContext;
+        
+        if (fcb2->ads) {
+            struct _ccb* ccb2 = FileObject->FsContext2;
+            
+            fcb2 = ccb2->fileref->parent->fcb;
+        }
         
         ExAcquireResourceExclusiveLite(fcb2->Header.Resource, TRUE);
         fcb_load_csums(fcb2, Irp);
