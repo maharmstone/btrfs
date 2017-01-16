@@ -107,7 +107,6 @@ struct _root;
 
 typedef struct {
     UINT64 offset;
-    EXTENT_DATA* data;
     ULONG datalen;
     BOOL unique;
     BOOL ignore;
@@ -115,6 +114,8 @@ typedef struct {
     UINT32* csum;
     
     LIST_ENTRY list_entry;
+    
+    EXTENT_DATA extent_data;
 } extent;
 
 typedef struct {

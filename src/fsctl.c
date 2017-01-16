@@ -1174,18 +1174,18 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
             
             if (!ext->ignore) {
-                if (ext->data->type == EXTENT_TYPE_INLINE) {
-                    bii->inline_length += ext->data->decoded_size;
+                if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                    bii->inline_length += ext->extent_data.decoded_size;
                 } else {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                     
                     // FIXME - compressed extents with a hole in them are counted more than once
                     if (ed2->size != 0) {
-                        if (ext->data->compression == BTRFS_COMPRESSION_NONE) {
+                        if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
                             bii->disk_size[0] += ed2->num_bytes;
-                        } else if (ext->data->compression == BTRFS_COMPRESSION_ZLIB) {
+                        } else if (ext->extent_data.compression == BTRFS_COMPRESSION_ZLIB) {
                             bii->disk_size[1] += ed2->size;
-                        } else if (ext->data->compression == BTRFS_COMPRESSION_LZO) {
+                        } else if (ext->extent_data.compression == BTRFS_COMPRESSION_LZO) {
                             bii->disk_size[2] += ed2->size;
                         }
                     }
@@ -1796,7 +1796,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
-    if (ext->datalen >= sizeof(EXTENT_DATA) && ext->data->type == EXTENT_TYPE_INLINE) {
+    if (ext->datalen >= sizeof(EXTENT_DATA) && ext->extent_data.type == EXTENT_TYPE_INLINE) {
         Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08x\n", Status);
@@ -1934,8 +1934,8 @@ static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FIL
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
         if (!ext->ignore) {
-            EXTENT_DATA2* ed2 = (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ext->data->data : NULL;
-            UINT64 len = ed2 ? ed2->num_bytes : ext->data->decoded_size;
+            EXTENT_DATA2* ed2 = (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ext->extent_data.data : NULL;
+            UINT64 len = ed2 ? ed2->num_bytes : ext->extent_data.decoded_size;
             
             if (ext->offset > last_end) { // first extent after a hole
                 if (last_end > last_start) {

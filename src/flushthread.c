@@ -3768,8 +3768,8 @@ static void rationalize_extents(fcb* fcb, PIRP Irp, LIST_ENTRY* rollback) {
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
-        if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+        if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
             
             if (ed2->size != 0) {
                 LIST_ENTRY* le2;
@@ -3857,8 +3857,8 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
                     
-                    if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                    if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                 
                         if (ed2->size != 0 && ed2->address == er->address) {
                             NTSTATUS Status;
@@ -3870,7 +3870,7 @@ cont:
                                 goto end;
                             }
                             
-                            ext->data->decoded_size -= er->skip_start;
+                            ext->extent_data.decoded_size -= er->skip_start;
                             ed2->size -= er->skip_start;
                             ed2->address += er->skip_start;
                             ed2->offset -= er->skip_start;
@@ -3899,8 +3899,8 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
                     
-                    if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                    if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                 
                         if (ed2->size != 0 && ed2->address == er->address) {
                             NTSTATUS Status;
@@ -3912,7 +3912,7 @@ cont:
                                 goto end;
                             }
                             
-                            ext->data->decoded_size -= er->skip_end;
+                            ext->extent_data.decoded_size -= er->skip_end;
                             ed2->size -= er->skip_end;
                             
                             add_changed_extent_ref(er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
@@ -3978,8 +3978,8 @@ cont:
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
-        if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && ext->data->compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+        if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
             
             if (ed2->size != 0) {
                 LIST_ENTRY* le2;
@@ -4001,7 +4001,7 @@ cont:
                         ed2->offset += ed2->address - er2->address;
                         ed2->address = er2->address;
                         ed2->size = er2->length;
-                        ext->data->decoded_size = ed2->size;
+                        ext->extent_data.decoded_size = ed2->size;
                         
                         add_changed_extent_ref(er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
                                                1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
@@ -4080,7 +4080,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 if (ext->csum)
                     ExFreePool(ext->csum);
                 
-                ExFreePool(ext->data);
                 ExFreePool(ext);
             }
             
@@ -4091,11 +4090,11 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
             
-            if (ext->inserted && ext->csum && ext->data->type == EXTENT_TYPE_REGULAR) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+            if (ext->inserted && ext->csum && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                 
                 if (ed2->size > 0) { // not sparse
-                    if (ext->data->compression == BTRFS_COMPRESSION_NONE)
+                    if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
                         add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
                     else
                         add_checksum_entry(fcb->Vcb, ed2->address, ed2->size / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
@@ -4115,18 +4114,18 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 LIST_ENTRY* le2 = le->Flink;
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
                 
-                if ((ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) && le->Flink != &fcb->extents) {
+                if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && le->Flink != &fcb->extents) {
                     extent* nextext = CONTAINING_RECORD(le->Flink, extent, list_entry);
                         
-                    if (ext->data->type == nextext->data->type) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
-                        EXTENT_DATA2* ned2 = (EXTENT_DATA2*)nextext->data->data;
+                    if (ext->extent_data.type == nextext->extent_data.type) {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+                        EXTENT_DATA2* ned2 = (EXTENT_DATA2*)nextext->extent_data.data;
                         
                         if (ed2->size != 0 && ed2->address == ned2->address && ed2->size == ned2->size &&
                             nextext->offset == ext->offset + ed2->num_bytes && ned2->offset == ed2->offset + ed2->num_bytes) {
                             chunk* c;
                         
-                            if (ext->data->compression == BTRFS_COMPRESSION_NONE && ext->csum) {
+                            if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
                                 ULONG len = (ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size;
                                 UINT32* csum;
                                 
@@ -4144,7 +4143,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                                 ext->csum = csum;
                             }
                             
-                            ext->data->generation = fcb->Vcb->superblock.generation;
+                            ext->extent_data.generation = fcb->Vcb->superblock.generation;
                             ed2->num_bytes += ned2->num_bytes;
                         
                             RemoveEntryList(&nextext->list_entry);
@@ -4152,7 +4151,6 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                             if (nextext->csum)
                                 ExFreePool(nextext->csum);
                         
-                            ExFreePool(nextext->data);
                             ExFreePool(nextext);
                         
                             c = get_chunk_from_address(fcb->Vcb, ed2->address);
@@ -4231,7 +4229,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 goto end;
             }
             
-            RtlCopyMemory(ed, ext->data, ext->datalen);
+            RtlCopyMemory(ed, &ext->extent_data, ext->datalen);
             
             if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset,
                                 ed, ext->datalen, Batch_Insert, Irp, rollback)) {
@@ -4688,7 +4686,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
             le3 = c->cache->extents.Flink;
             while (le3 != &c->cache->extents) {
                 extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
-                EXTENT_DATA* ed = ext->data;
+                EXTENT_DATA* ed = &ext->extent_data;
                 
                 if (!ext->ignore) {
                     if (ext->datalen < sizeof(EXTENT_DATA)) {

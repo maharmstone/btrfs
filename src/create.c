@@ -1139,23 +1139,15 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
             }
             
-            ext = ExAllocatePoolWithTag(pooltype, sizeof(extent), ALLOC_TAG);
+            ext = ExAllocatePoolWithTag(pooltype, offsetof(extent, extent_data) + tp.item->size, ALLOC_TAG);
             if (!ext) {
                 ERR("out of memory\n");
                 free_fcb(fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
-            ext->data = ExAllocatePoolWithTag(pooltype, tp.item->size, ALLOC_TAG);
-            if (!ext->data) {
-                ERR("out of memory\n");
-                ExFreePool(ext);
-                free_fcb(fcb);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
             ext->offset = tp.item->key.offset;
-            RtlCopyMemory(ext->data, tp.item->data, tp.item->size);
+            RtlCopyMemory(&ext->extent_data, tp.item->data, tp.item->size);
             ext->datalen = tp.item->size;
             ext->unique = unique;
             ext->ignore = FALSE;
@@ -2810,11 +2802,11 @@ static void fcb_load_csums(fcb* fcb, PIRP Irp) {
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
-        if (ext->data->type == EXTENT_TYPE_REGULAR) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->data->data[0];
+        if (ext->extent_data.type == EXTENT_TYPE_REGULAR) {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
             UINT64 len;
             
-            len = (ext->data->compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / fcb->Vcb->superblock.sector_size;
+            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / fcb->Vcb->superblock.sector_size;
             
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
             if (!ext->csum) {
@@ -2822,7 +2814,7 @@ static void fcb_load_csums(fcb* fcb, PIRP Irp) {
                 goto end;
             }
             
-            Status = load_csum(fcb->Vcb, ext->csum, ed2->address + (ext->data->compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
+            Status = load_csum(fcb->Vcb, ext->csum, ed2->address + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("load_csum returned %08x\n", Status);
@@ -3412,8 +3404,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             while (le != &fileref->fcb->extents) {
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
                 
-                if (ext->data->type == EXTENT_TYPE_PREALLOC) {
-                    ext->data->type = EXTENT_TYPE_REGULAR;
+                if (ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    ext->extent_data.type = EXTENT_TYPE_REGULAR;
                     changed = TRUE;
                 }
                 

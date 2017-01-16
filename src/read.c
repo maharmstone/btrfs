@@ -3025,7 +3025,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
         EXTENT_DATA2* ed2;
         
         if (!ext->ignore) {
-            ed = ext->data;
+            ed = &ext->extent_data;
             
             ed2 = (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ed->data : NULL;
             

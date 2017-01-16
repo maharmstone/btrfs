@@ -1082,8 +1082,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 re->ext->ignore = TRUE;
                 
-                if (re->ext->data->type == EXTENT_TYPE_REGULAR || re->ext->data->type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->data->data;
+                if (re->ext->extent_data.type == EXTENT_TYPE_REGULAR || re->ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
                     
                     if (ed2->size != 0) {
                         chunk* c = get_chunk_from_address(Vcb, ed2->address);
@@ -1111,8 +1111,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 
                 re->ext->ignore = FALSE;
                 
-                if (re->ext->data->type == EXTENT_TYPE_REGULAR || re->ext->data->type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->data->data;
+                if (re->ext->extent_data.type == EXTENT_TYPE_REGULAR || re->ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
                     
                     if (ed2->size != 0) {
                         chunk* c = get_chunk_from_address(Vcb, ed2->address);

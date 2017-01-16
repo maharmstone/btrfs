@@ -1672,7 +1672,6 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
         if (ext->csum)
             ExFreePool(ext->csum);
         
-        ExFreePool(ext->data);
         ExFreePool(ext);
     }
     

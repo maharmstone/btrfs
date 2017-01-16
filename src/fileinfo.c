@@ -321,7 +321,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
         if (!ext->ignore) {
-            extent* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent), ALLOC_TAG);
+            extent* ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
             
             if (!ext2) {
                 ERR("out of memory\n");
@@ -332,18 +332,8 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             ext2->offset = ext->offset;
             ext2->datalen = ext->datalen;
             
-            if (ext2->datalen > 0) {
-                ext2->data = ExAllocatePoolWithTag(PagedPool, ext2->datalen, ALLOC_TAG);
-                
-                if (!ext2->data) {
-                    ERR("out of memory\n");
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                RtlCopyMemory(ext2->data, ext->data, ext2->datalen);
-            } else
-                ext2->data = NULL;
+            if (ext2->datalen > 0)
+                RtlCopyMemory(&ext2->extent_data, &ext->extent_data, ext2->datalen);
             
             ext2->unique = FALSE;
             ext2->ignore = FALSE;
@@ -351,9 +341,9 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             
             if (ext->csum) {
                 ULONG len;
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                 
-                if (ext->data->compression == BTRFS_COMPRESSION_NONE)
+                if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
                     len = ed2->num_bytes;
                 else
                     len = ed2->size;
@@ -1022,8 +1012,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                         extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
                         
                         if (!ext->ignore && ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) &&
-                            (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC)) {
-                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                            (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                                         
                             if (ed2->size != 0) {
                                 chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ed2->address);

@@ -1783,8 +1783,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
             
             if (!ext->ignore) {
-                if (ext->data->type == EXTENT_TYPE_REGULAR || ext->data->type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data->data;
+                if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                     
                     if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->size) {
                         LIST_ENTRY* le3 = items.Flink;
