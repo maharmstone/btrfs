@@ -19,7 +19,7 @@
 
 // #define DEBUG_TREE_LOCKS
 
-NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -205,7 +205,7 @@ NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** 
     return STATUS_SUCCESS;
 }
 
-static tree* free_tree2(tree* t, const char* func, const char* file, unsigned int line) {
+static tree* free_tree2(tree* t) {
     LIST_ENTRY* le;
     tree_data* td;
     tree* par;
@@ -275,8 +275,7 @@ static tree* free_tree2(tree* t, const char* func, const char* file, unsigned in
     return NULL;
 }
 
-NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp,
-                               const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp) {
     BOOL ret;
     
     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
@@ -284,7 +283,7 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
     if (!th->tree) {
         NTSTATUS Status;
         
-        Status = _load_tree(Vcb, th->address, r, &th->tree, t, Irp, func, file, line);
+        Status = load_tree(Vcb, th->address, r, &th->tree, t, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
@@ -310,13 +309,13 @@ NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, 
     return STATUS_SUCCESS;
 }
 
-tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line) {
+tree* STDCALL free_tree(tree* t) {
     tree* ret;
     root* r = t->root;
     
     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
 
-    ret = free_tree2(t, func, file, line);
+    ret = free_tree2(t);
 
     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
     
@@ -350,8 +349,7 @@ static __inline tree_data* next_item(tree* t, tree_data* td) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp,
-                                          const char* func, const char* file, unsigned int line) {
+static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     int cmp;
     tree_data *td, *lasttd;
     KEY key2;
@@ -402,7 +400,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
             oldtp.tree = t;
             oldtp.item = td;
             
-            while (_find_prev_item(Vcb, &oldtp, tp, TRUE, Irp, func, file, line)) {
+            while (find_prev_item(Vcb, &oldtp, tp, TRUE, Irp)) {
                 if (!tp->item->ignore)
                     return STATUS_SUCCESS;
                 
@@ -414,7 +412,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
             oldtp.tree = t;
             oldtp.item = td;
             
-            while (_find_next_item(Vcb, &oldtp, tp, TRUE, Irp, func, file, line)) {
+            while (find_next_item(Vcb, &oldtp, tp, TRUE, Irp)) {
                 if (!tp->item->ignore)
                     return STATUS_SUCCESS;
                 
@@ -448,19 +446,19 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
         
-        Status = _do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, Irp, func, file, line);
+        Status = do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_load_tree returned %08x\n", Status);
             return Status;
         }
         
-        Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, level, Irp, func, file, line);
+        Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, level, Irp);
         
         return Status;
     }
 }
 
-NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
 //     KIRQL irql;
@@ -468,14 +466,14 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
     TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
     
     if (!r->treeholder.tree) {
-        Status = _do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp, func, file, line);
+        Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_load_tree returned %08x\n", Status);
             return Status;
         }
     }
 
-    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, 0, Irp, func, file, line);
+    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, 0, Irp);
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
         ERR("find_item_in_tree returned %08x\n", Status);
     }
@@ -490,22 +488,21 @@ NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, co
     return Status;
 }
 
-NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level,
-                                     PIRP Irp, const char* func, const char* file, unsigned int line) {
+NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
     
     TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
     
     if (!r->treeholder.tree) {
-        Status = _do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp, func, file, line);
+        Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_load_tree returned %08x\n", Status);
             return Status;
         }
     }
 
-    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, level, Irp, func, file, line);
+    Status = find_item_in_tree(Vcb, r->treeholder.tree, tp, searchkey, ignore, level, Irp);
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
         ERR("find_item_in_tree returned %08x\n", Status);
     }
@@ -518,8 +515,7 @@ NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_pt
     return Status;
 }
 
-BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp,
-                             const char* func, const char* file, unsigned int line) {
+BOOL STDCALL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
     tree* t;
     tree_data *td, *next;
     NTSTATUS Status;
@@ -563,7 +559,7 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
     if (!t)
         return FALSE;
     
-    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, Irp, func, file, line);
+    Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree returned %08x\n", Status);
         return FALSE;
@@ -576,7 +572,7 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
        
         fi = first_item(t);
         
-        Status = _do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, &loaded, Irp, func, file, line);
+        Status = do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_load_tree returned %08x\n", Status);
             return FALSE;
@@ -592,7 +588,7 @@ BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, trav
         traverse_ptr ntp2;
         BOOL b;
         
-        while ((b = _find_next_item(Vcb, next_tp, &ntp2, TRUE, Irp, func, file, line))) {
+        while ((b = find_next_item(Vcb, next_tp, &ntp2, TRUE, Irp))) {
             *next_tp = ntp2;
             
             if (!next_tp->item->ignore)
@@ -622,8 +618,7 @@ static __inline tree_data* last_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp,
-                             const char* func, const char* file, unsigned int line) {
+BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp) {
     tree* t;
     tree_data* td;
     NTSTATUS Status;
@@ -650,7 +645,7 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
     
     td = prev_item(t->parent, t->paritem);
     
-    Status = _do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, Irp, func, file, line);
+    Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, &loaded, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree returned %08x\n", Status);
         return FALSE;
@@ -663,7 +658,7 @@ BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trav
         
         li = last_item(t);
         
-        Status = _do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, &loaded, Irp, func, file, line);
+        Status = do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_load_tree returned %08x\n", Status);
             return FALSE;
@@ -709,7 +704,7 @@ void free_trees_root(device_extension* Vcb, root* r) {
                     
                     empty = FALSE;
                     
-                    free_tree2(t, funcname, __FILE__, __LINE__);
+                    free_tree2(t);
                     if (top && r->treeholder.tree == t)
                         r->treeholder.tree = NULL;
                     
@@ -746,7 +741,7 @@ void STDCALL free_trees(device_extension* Vcb) {
                 
                 empty = FALSE;
                 
-                free_tree2(t, funcname, __FILE__, __LINE__);
+                free_tree2(t);
                 if (top && r->treeholder.tree == t)
                     r->treeholder.tree = NULL;
                 

@@ -887,32 +887,22 @@ typedef struct {
 } rollback_item;
 
 // in treefuncs.c
-NTSTATUS STDCALL _find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
-NTSTATUS STDCALL _find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level,
-                                     PIRP Irp, const char* func, const char* file, unsigned int line);
-BOOL STDCALL _find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
-BOOL STDCALL _find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp, const char* func, const char* file, unsigned int line);
+NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp);
+NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp);
+BOOL STDCALL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
+BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp);
 void STDCALL free_trees(device_extension* Vcb);
 BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback);
 void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
-tree* STDCALL _free_tree(tree* t, const char* func, const char* file, unsigned int line);
-NTSTATUS STDCALL _load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp, const char* func, const char* file, unsigned int line);
-NTSTATUS STDCALL _do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp,
-                               const char* func, const char* file, unsigned int line);
+tree* STDCALL free_tree(tree* t);
+NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp);
+NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp);
 void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(device_extension* Vcb, LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
 void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback);
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
-
-#define find_item(Vcb, r, tp, searchkey, ignore, Irp) _find_item(Vcb, r, tp, searchkey, ignore, Irp, funcname, __FILE__, __LINE__)
-#define find_item_to_level(Vcb, r, tp, searchkey, ignore, level, Irp) _find_item_to_level(Vcb, r, tp, searchkey, ignore, level, Irp, funcname, __FILE__, __LINE__)
-#define find_next_item(Vcb, tp, next_tp, ignore, Irp) _find_next_item(Vcb, tp, next_tp, ignore, Irp, funcname, __FILE__, __LINE__)
-#define find_prev_item(Vcb, tp, prev_tp, ignore, Irp) _find_prev_item(Vcb, tp, prev_tp, ignore, Irp, funcname, __FILE__, __LINE__)
-#define free_tree(t) _free_tree(t, funcname, __FILE__, __LINE__)
-#define load_tree(t, addr, r, pt, parent, Irp) _load_tree(t, addr, r, pt, parent, Irp, funcname, __FILE__, __LINE__)
-#define do_load_tree(Vcb, th, r, t, td, loaded, Irp) _do_load_tree(Vcb, th, r, t, td, loaded, Irp, funcname, __FILE__, __LINE__)  
 
 // in search.c
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
