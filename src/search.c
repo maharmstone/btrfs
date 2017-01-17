@@ -31,6 +31,8 @@ extern LIST_ENTRY pnp_disks;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
+#define IOCTL_DISK_ARE_VOLUMES_READY CTL_CODE(IOCTL_DISK_BASE, 0x0087, METHOD_BUFFERED, FILE_READ_ACCESS) // Windows 8
+
 static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
     KEVENT Event;
@@ -223,6 +225,12 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
         return;
+    }
+    
+    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
+        Status = dev_ioctl(devobj, IOCTL_DISK_ARE_VOLUMES_READY, NULL, 0, NULL, 0, TRUE, &iosb);
+        if (!NT_SUCCESS(Status))
+            WARN("IOCTL_DISK_ARE_VOLUMES_READY returned %08x\n", Status);
     }
     
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
