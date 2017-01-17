@@ -790,7 +790,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     sdr.count = 1;
                                     
                                     Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                      t->header.address, ce->superseded, Irp, rollback);
+                                                                      t->header.address, ce ? ce->superseded : FALSE, Irp, rollback);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("decrease_extent_refcount returned %08x\n", Status);
                                         return Status;
