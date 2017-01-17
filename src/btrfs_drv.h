@@ -393,7 +393,7 @@ typedef struct {
     LIST_ENTRY deleting;
     LIST_ENTRY changed_extents;
     LIST_ENTRY range_locks;
-    KSPIN_LOCK range_locks_spinlock;
+    ERESOURCE range_locks_lock;
     KEVENT range_locks_event;
     ERESOURCE lock;
     ERESOURCE changed_extents_lock;

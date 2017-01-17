@@ -3232,7 +3232,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 InitializeListHead(&c->changed_extents);
                 
                 InitializeListHead(&c->range_locks);
-                KeInitializeSpinLock(&c->range_locks_spinlock);
+                ExInitializeResourceLite(&c->range_locks_lock);
                 KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
                 
                 c->last_alloc_set = FALSE;
@@ -4596,11 +4596,9 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
     rl->thread = PsGetCurrentThread();
     
     while (TRUE) {
-        KIRQL irql;
-        
         locked = FALSE;
         
-        KeAcquireSpinLock(&c->range_locks_spinlock, &irql);
+        ExAcquireResourceExclusiveLite(&c->range_locks_lock, TRUE);
         
         le = c->range_locks.Flink;
         while (le != &c->range_locks) {
@@ -4617,23 +4615,22 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
         if (!locked) {
             InsertTailList(&c->range_locks, &rl->list_entry);
             
-            KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+            ExReleaseResourceLite(&c->range_locks_lock);
             return;
         }
         
         KeClearEvent(&c->range_locks_event);
         
-        KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+        ExReleaseResourceLite(&c->range_locks_lock);
         
         KeWaitForSingleObject(&c->range_locks_event, UserRequest, KernelMode, FALSE, NULL);
     }
 }
 
 void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length) {
-    KIRQL irql;
     LIST_ENTRY* le;
     
-    KeAcquireSpinLock(&c->range_locks_spinlock, &irql);
+    ExAcquireResourceExclusiveLite(&c->range_locks_lock, TRUE);
     
     le = c->range_locks.Flink;
     while (le != &c->range_locks) {
@@ -4650,7 +4647,7 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
     
     KeSetEvent(&c->range_locks_event, 0, FALSE);
     
-    KeReleaseSpinLock(&c->range_locks_spinlock, irql);
+    ExReleaseResourceLite(&c->range_locks_lock);
 }
 
 #ifdef _DEBUG
