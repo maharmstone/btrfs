@@ -2726,17 +2726,30 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
 #endif
                 }
                 
+                td2->inserted = TRUE;
                 le = le->Flink;
             }
-        }
-        
-        le = next_tree->itemlist.Flink;
-        while (le != &next_tree->itemlist) {
-            tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
+        } else {
+            le = next_tree->itemlist.Flink;
             
-            td->inserted = TRUE;
-            
-            le = le->Flink;
+            while (le != &next_tree->itemlist) {
+                tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
+                
+                if (!td2->inserted && td2->data) {
+                    UINT8* data = ExAllocatePoolWithTag(PagedPool, td2->size, ALLOC_TAG);
+                    
+                    if (!data) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(data, td2->data, td2->size);
+                    td2->data = data;
+                    td2->inserted = TRUE;
+                }
+                
+                le = le->Flink;
+            }
         }
         
         t->itemlist.Blink->Flink = next_tree->itemlist.Flink;
@@ -2810,14 +2823,25 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
             if (t->size + size < Vcb->superblock.node_size - sizeof(tree_header)) {
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
-                td->inserted = TRUE;
                 
                 if (next_tree->header.level > 0 && td->treeholder.tree) {
                     td->treeholder.tree->parent = t;
 #ifdef DEBUG_PARANOID
                     if (td->treeholder.tree->parent && td->treeholder.tree->parent->header.level <= td->treeholder.tree->header.level) int3;
 #endif
+                } else if (next_tree->header.level == 0 && !td->inserted && td->size > 0) {
+                    UINT8* data = ExAllocatePoolWithTag(PagedPool, td->size, ALLOC_TAG);
+                    
+                    if (!data) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(data, td->data, td->size);
+                    td->data = data;
                 }
+                
+                td->inserted = TRUE;
                 
                 if (!td->ignore) {
                     next_tree->size -= size;
