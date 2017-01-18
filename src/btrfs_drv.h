@@ -199,6 +199,7 @@ typedef struct {
 } dirty_fcb;
 
 typedef struct {
+    ERESOURCE fileref_lock;
     ERESOURCE children_lock;
 } file_ref_nonpaged;
 

@@ -102,6 +102,7 @@ file_ref* create_fileref() {
     
     InitializeListHead(&fr->children);
     
+    ExInitializeResourceLite(&fr->nonpaged->fileref_lock);
     ExInitializeResourceLite(&fr->nonpaged->children_lock);
     
     return fr;

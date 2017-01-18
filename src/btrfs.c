@@ -1763,6 +1763,7 @@ void free_fileref(file_ref* fr) {
         ExFreePool(fr->debug_desc);
     
     ExDeleteResourceLite(&fr->nonpaged->children_lock);
+    ExDeleteResourceLite(&fr->nonpaged->fileref_lock);
     
     ExFreePool(fr->nonpaged);
     
