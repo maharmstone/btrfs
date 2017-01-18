@@ -264,6 +264,9 @@ static tree* free_tree2(tree* t) {
         RemoveEntryList(&t->list_entry_hash);
     }
     
+    if (t->buf)
+        ExFreePool(t->buf);
+    
     ExFreePool(t);
 
     return NULL;
