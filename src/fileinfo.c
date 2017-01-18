@@ -3015,10 +3015,75 @@ end:
     return Status;
 }
 
+static NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
+    file_ref* fr;
+    NTSTATUS Status;
+    ULONG reqlen = 0;
+    BOOL overflow = FALSE;
+    
+    // FIXME - we need a lock on filerefs' filepart
+    
+    if (fileref == fileref->fcb->Vcb->root_fileref) {
+        if (fn->MaximumLength >= sizeof(WCHAR)) {
+            fn->Buffer[0] = '\\';
+            fn->Length = sizeof(WCHAR);
+            
+            return STATUS_SUCCESS;
+        } else {
+            *preqlen = sizeof(WCHAR);
+            fn->Length = 0;
+            
+            return STATUS_BUFFER_OVERFLOW;
+        }
+    }
+    
+    fr = fileref;
+    
+    while (fr->parent) {
+        USHORT movelen;
+        
+        if (!overflow) {
+            if (fr->filepart.Length + sizeof(WCHAR) > fn->MaximumLength - fn->Length)
+                overflow = TRUE;
+        }
+        
+        if (overflow)
+            movelen = fn->MaximumLength - fr->filepart.Length - sizeof(WCHAR);
+        else
+            movelen = fn->Length;
+        
+        if (!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR))
+            RtlMoveMemory(&fn->Buffer[(fr->filepart.Length / sizeof(WCHAR)) + 1], fn->Buffer, movelen);
+        
+        if (fn->MaximumLength >= sizeof(WCHAR)) {
+            fn->Buffer[0] = fr->fcb->ads ? ':' : '\\';
+            fn->Length += sizeof(WCHAR);
+
+            if (fn->MaximumLength >= sizeof(WCHAR) + fr->filepart.Length) {
+                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, fr->filepart.Length);
+                fn->Length += fr->filepart.Length;
+            } else {
+                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, fn->MaximumLength - fn->Length);
+                fn->Length = fn->MaximumLength;
+            }
+        }
+         
+        reqlen += sizeof(WCHAR) + fr->filepart.Length;
+        
+        fr = fr->parent;
+    }
+
+    if (overflow) {
+        *preqlen = reqlen;
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else
+        Status = STATUS_SUCCESS;
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, file_ref* fileref, LONG* length) {
-#ifdef _DEBUG
-    ULONG retlen = 0;
-#endif
+    ULONG reqlen;
     UNICODE_STRING fn;
     NTSTATUS Status;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
@@ -3029,8 +3094,6 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
         return STATUS_INVALID_PARAMETER;
     }
    
-    RtlZeroMemory(fni, sizeof(FILE_NAME_INFORMATION));
-    
     *length -= (LONG)offsetof(FILE_NAME_INFORMATION, FileName[0]);
     
     TRACE("maximum length is %u\n", *length);
@@ -3038,53 +3101,42 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     
     fni->FileName[0] = 0;
     
-    Status = fileref_get_filename(fileref, &fn, NULL);
-    if (!NT_SUCCESS(Status)) {
+    fn.Buffer = fni->FileName;
+    fn.Length = 0;
+    fn.MaximumLength = *length;
+    
+    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
         ERR("fileref_get_filename returned %08x\n", Status);
         return Status;
     }
     
-    if (*length >= (LONG)fn.Length) {
-        RtlCopyMemory(fni->FileName, fn.Buffer, fn.Length);
-#ifdef _DEBUG
-        retlen = fn.Length;
-#endif
-        *length -= fn.Length;
-    } else {
-        if (*length > 0) {
-            RtlCopyMemory(fni->FileName, fn.Buffer, *length);
-#ifdef _DEBUG
-            retlen = *length;
-#endif
-        }
-        *length = -1;
-    }
-    
-    fni->FileNameLength = fn.Length;
-    
     if (fcb->ads) {
-        if (*length >= (LONG)datasuflen) {
-            RtlCopyMemory(&fni->FileName[fn.Length / sizeof(WCHAR)], datasuf, datasuflen);
-#ifdef _DEBUG
-            retlen += datasuflen;
-#endif
-            *length -= datasuflen;
-        } else {
-            if (*length > 0) {
-                RtlCopyMemory(&fni->FileName[fn.Length / sizeof(WCHAR)], datasuf, *length);
-#ifdef _DEBUG
-                retlen += *length;
-#endif
+        if (Status == STATUS_BUFFER_OVERFLOW)
+            reqlen += datasuflen;
+        else {
+            if (fn.Length + datasuflen > fn.MaximumLength) {
+                RtlCopyMemory(&fn.Buffer[fn.Length / sizeof(WCHAR)], datasuf, fn.MaximumLength - fn.Length);
+                reqlen += datasuflen;
+                Status = STATUS_BUFFER_OVERFLOW;
+            } else {
+                RtlCopyMemory(&fn.Buffer[fn.Length / sizeof(WCHAR)], datasuf, datasuflen);
+                fn.Length += datasuflen;
             }
-            *length = -1;
         }
     }
     
-    ExFreePool(fn.Buffer);
-    
-    TRACE("%.*S\n", retlen / sizeof(WCHAR), fni->FileName);
+    if (Status == STATUS_BUFFER_OVERFLOW) {
+        *length = -1;
+        fni->FileNameLength = reqlen;
+        TRACE("%.*S (truncated)\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+    } else {
+        *length -= fn.Length;
+        fni->FileNameLength = fn.Length;
+        TRACE("%.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+    }
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, file_ref* fileref, PIRP Irp, LONG* length) {
