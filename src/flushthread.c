@@ -2310,6 +2310,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->uniqueness_determined = TRUE;
     nt->is_unique = TRUE;
     nt->list_entry_hash.Flink = NULL;
+    nt->buf = NULL;
     InitializeListHead(&nt->itemlist);
     
 //     ExInitializeResourceLite(&nt->nonpaged->load_tree_lock);
@@ -2446,6 +2447,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->uniqueness_determined = TRUE;
     pt->is_unique = TRUE;
     pt->list_entry_hash.Flink = NULL;
+    pt->buf = NULL;
     InitializeListHead(&pt->itemlist);
     
 //     ExInitializeResourceLite(&pt->nonpaged->load_tree_lock);

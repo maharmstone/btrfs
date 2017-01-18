@@ -97,16 +97,9 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
             td->key = ln[i].key;
 //             TRACE("load_tree: leaf item %u (%x,%x,%x)\n", i, (UINT32)ln[i].key.obj_id, ln[i].key.obj_type, (UINT32)ln[i].key.offset);
             
-            if (ln[i].size > 0) {
-                td->data = ExAllocatePoolWithTag(PagedPool, ln[i].size, ALLOC_TAG);
-                if (!td->data) {
-                    ERR("out of memory\n");
-                    ExFreePool(buf);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                RtlCopyMemory(td->data, buf + sizeof(tree_header) + ln[i].offset, ln[i].size);
-            } else
+            if (ln[i].size > 0)
+                td->data = buf + sizeof(tree_header) + ln[i].offset;
+            else
                 td->data = NULL;
             
             td->size = ln[i].size;
@@ -119,6 +112,7 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
         }
         
         t->size += t->header.num_items * sizeof(leaf_node);
+        t->buf = buf;
     } else {
         internal_node* in = (internal_node*)(buf + sizeof(tree_header));
         unsigned int i;
@@ -151,9 +145,9 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
         }
         
         t->size = t->header.num_items * sizeof(internal_node);
+        t->buf = NULL;
+        ExFreePool(buf);
     }
-    
-    ExFreePool(buf);
     
     InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &t->list_entry);
@@ -238,7 +232,7 @@ static tree* free_tree2(tree* t) {
         le = RemoveHeadList(&t->itemlist);
         td = CONTAINING_RECORD(le, tree_data, list_entry);
         
-        if (t->header.level == 0 && td->data)
+        if (t->header.level == 0 && td->data && td->inserted)
             ExFreePool(td->data);
             
         ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);

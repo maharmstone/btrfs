@@ -294,6 +294,7 @@ typedef struct _tree {
     BOOL write;
     BOOL is_unique;
     BOOL uniqueness_determined;
+    UINT8* buf;
 } tree;
 
 typedef struct {
