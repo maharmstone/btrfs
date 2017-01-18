@@ -2390,6 +2390,27 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
             
             le = le->Flink;
         }
+    } else {
+        LIST_ENTRY* le = nt->itemlist.Flink;
+        
+        while (le != &nt->itemlist) {
+            tree_data* td2 = CONTAINING_RECORD(le, tree_data, list_entry);
+            
+            if (!td2->inserted && td2->data) {
+                UINT8* data = ExAllocatePoolWithTag(PagedPool, td2->size, ALLOC_TAG);
+                
+                if (!data) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(data, td2->data, td2->size);
+                td2->data = data;
+                td2->inserted = TRUE;
+            }
+            
+            le = le->Flink;
+        }
     }
     
     if (nt->parent) {
