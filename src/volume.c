@@ -466,6 +466,22 @@ static NTSTATUS vol_get_drive_geometry(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_get_gpt_attributes(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    VOLUME_GET_GPT_ATTRIBUTES_INFORMATION* vggai;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(VOLUME_GET_GPT_ATTRIBUTES_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    vggai = (VOLUME_GET_GPT_ATTRIBUTES_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    
+    vggai->GptAttributes = 0;
+    
+    Irp->IoStatus.Information = sizeof(VOLUME_GET_GPT_ATTRIBUTES_INFORMATION);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -498,8 +514,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             break;
 
         case IOCTL_VOLUME_GET_GPT_ATTRIBUTES:
-            ERR("unhandled control code IOCTL_VOLUME_GET_GPT_ATTRIBUTES\n");
-            break;
+            return vol_get_gpt_attributes(vde, Irp);
 
         case IOCTL_VOLUME_IS_DYNAMIC:
             return vol_is_dynamic(vde, Irp);
