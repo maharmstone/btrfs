@@ -1964,6 +1964,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         if (c->cache)
             free_fcb(c->cache);
         
+        ExDeleteResourceLite(&c->range_locks_lock);
         ExDeleteResourceLite(&c->lock);
         ExDeleteResourceLite(&c->changed_extents_lock);
         
