@@ -759,6 +759,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     if (!vc)
         ERR("out of memory\n");
     else {
+        UNICODE_STRING devpath2;
+        
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
         vc->generation = sb->generation;
@@ -766,11 +768,22 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         ObReferenceObject(DeviceObject);
         vc->devobj = DeviceObject;
         
-        vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath->Length;
-        vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
+        devpath2 = *devpath;
+        
+        // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
+        // so we can compare properly if the device is removed.
+        if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
+            devpath->Buffer[2] == '?' && devpath->Buffer[3] == '\\') {
+            devpath2.Buffer = &devpath2.Buffer[3];
+            devpath2.Length -= 3 * sizeof(WCHAR);
+            devpath2.MaximumLength -= 3 * sizeof(WCHAR);
+        }
+        
+        vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
+        vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
         
         if (vc->pnp_name.Buffer)
-            RtlCopyMemory(vc->pnp_name.Buffer, devpath->Buffer, devpath->Length);
+            RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
         else {
             ERR("out of memory\n");
             vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;

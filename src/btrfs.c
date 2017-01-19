@@ -71,7 +71,7 @@ tCcCopyReadEx CcCopyReadEx;
 tCcCopyWriteEx CcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 BOOL diskacc = FALSE;
-void *notification_entry = NULL, *notification_entry2 = NULL;
+void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE volume_list_lock;
 LIST_ENTRY volume_list;
 
@@ -273,6 +273,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (notification_entry2)
         IoUnregisterPlugPlayNotificationEx(notification_entry2);
+    
+    if (notification_entry3)
+        IoUnregisterPlugPlayNotificationEx(notification_entry3);
     
     if (notification_entry)
         IoUnregisterPlugPlayNotificationEx(notification_entry);
@@ -4915,6 +4918,11 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_VOLUME, DriverObject, volume_notification, DriverObject, &notification_entry2);
+    if (!NT_SUCCESS(Status))
+        ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
+    
+    Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
+                                            (PVOID)&GUID_DEVINTERFACE_HIDDEN_VOLUME, DriverObject, volume_notification, DriverObject, &notification_entry3);
     if (!NT_SUCCESS(Status))
         ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
     
