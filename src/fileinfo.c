@@ -2867,7 +2867,7 @@ static NTSTATUS STDCALL fill_in_file_access_information(FILE_ACCESS_INFORMATION*
     
     fai->AccessFlags = GENERIC_READ;
     
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED; // FIXME
 }
 
 static NTSTATUS STDCALL fill_in_file_position_information(FILE_POSITION_INFORMATION* fpi, PFILE_OBJECT FileObject, LONG* length) {
@@ -4234,7 +4234,9 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
                 goto exit;
             }
             
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
             Status = fill_in_file_attribute_information(ati, fcb, fileref, Irp, &length);
+            ExReleaseResourceLite(&Vcb->tree_lock);
             
             break;
         }
@@ -4373,7 +4375,9 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileHardLinkInformation\n");
             
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
             Status = fill_in_hard_link_information(fli, fileref, Irp, &length);
+            ExReleaseResourceLite(&Vcb->tree_lock);
             
             break;
         }
@@ -4466,15 +4470,11 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    
     fcb = IrpSp->FileObject->FsContext;
     TRACE("fcb = %p\n", fcb);
     TRACE("fcb->subvol = %p\n", fcb->subvol);
     
     Status = query_info(fcb->Vcb, IrpSp->FileObject, Irp);
-    
-    ExReleaseResourceLite(&Vcb->tree_lock);
     
 end:
     TRACE("returning %08x\n", Status);
