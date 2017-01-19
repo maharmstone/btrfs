@@ -227,11 +227,13 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         return;
     }
     
-    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
-        Status = dev_ioctl(devobj, IOCTL_DISK_ARE_VOLUMES_READY, NULL, 0, NULL, 0, TRUE, &iosb);
-        if (!NT_SUCCESS(Status))
-            WARN("IOCTL_DISK_ARE_VOLUMES_READY returned %08x\n", Status);
-    }
+    // This doesn't work! IOCTL_DISK_ARE_VOLUMES_READY leads to this function hanging
+    // on boot for disks other than the boot disk(?)
+//     if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
+//         Status = dev_ioctl(devobj, IOCTL_DISK_ARE_VOLUMES_READY, NULL, 0, NULL, 0, TRUE, &iosb);
+//         if (!NT_SUCCESS(Status))
+//             WARN("IOCTL_DISK_ARE_VOLUMES_READY returned %08x\n", Status);
+//     }
     
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject2, &mountmgr);
