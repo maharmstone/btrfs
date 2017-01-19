@@ -17,7 +17,8 @@
 
 #include "btrfs_drv.h"
 #include "btrfsioctl.h"
-#include <winioctl.h>
+#include <ntddstor.h>
+#include <ntdddisk.h>
 
 #ifndef FSCTL_CSV_CONTROL
 #define FSCTL_CSV_CONTROL CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 181, METHOD_BUFFERED, FILE_ANY_ACCESS)

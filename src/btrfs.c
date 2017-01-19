@@ -27,8 +27,15 @@
 #endif
 #include <ntddscsi.h>
 #include "btrfs.h"
-#include <winioctl.h>
 #include <ata.h>
+
+#ifndef _MSC_VER
+#include <initguid.h>
+#endif
+
+#include <ntddstor.h>
+#include <ntdddisk.h>
+#include <ntddvol.h>
 
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \

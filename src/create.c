@@ -17,7 +17,7 @@
 
 #include <sys/stat.h>
 #include "btrfs_drv.h"
-#include <winioctl.h>
+#include <ntddstor.h>
 
 extern PDEVICE_OBJECT devobj;
 
