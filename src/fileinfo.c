@@ -3058,13 +3058,15 @@ static NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USH
         if (fn->MaximumLength >= sizeof(WCHAR)) {
             fn->Buffer[0] = fr->fcb->ads ? ':' : '\\';
             fn->Length += sizeof(WCHAR);
-
-            if (fn->MaximumLength >= sizeof(WCHAR) + fr->filepart.Length) {
-                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, fr->filepart.Length);
+            
+            if (fn->MaximumLength > sizeof(WCHAR)) {
+                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, min(fr->filepart.Length, fn->MaximumLength - sizeof(WCHAR)));
                 fn->Length += fr->filepart.Length;
-            } else {
-                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, fn->MaximumLength - fn->Length);
+            }
+            
+            if (fn->Length > fn->MaximumLength) {
                 fn->Length = fn->MaximumLength;
+                overflow = TRUE;
             }
         }
          
