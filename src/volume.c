@@ -429,6 +429,43 @@ static NTSTATUS vol_get_length(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_get_drive_geometry(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+    volume_device_extension* vde = DeviceObject->DeviceExtension;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    DISK_GEOMETRY* geom;
+    UINT64 length;
+    LIST_ENTRY* le;
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(DISK_GEOMETRY))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    length = 0;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        
+        length += vc->size;
+        
+        le = le->Flink;
+    }
+    
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    geom = (DISK_GEOMETRY*)Irp->AssociatedIrp.SystemBuffer;
+    geom->BytesPerSector = DeviceObject->SectorSize == 0 ? 0x200 : DeviceObject->SectorSize;
+    geom->SectorsPerTrack = 0x3f;
+    geom->TracksPerCylinder = 0xff;
+    geom->Cylinders.QuadPart = length / (UInt32x32To64(geom->TracksPerCylinder, geom->SectorsPerTrack) * geom->BytesPerSector);
+    geom->MediaType = FixedMedia; // FIXME - should be RemovableMedia if removable?
+    
+    Irp->IoStatus.Information = sizeof(DISK_GEOMETRY);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -476,8 +513,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             break;
 
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
-            ERR("unhandled control code IOCTL_DISK_GET_DRIVE_GEOMETRY\n");
-            break;
+            return vol_get_drive_geometry(DeviceObject, Irp);
 
         case IOCTL_DISK_IS_WRITABLE:
             return vol_is_writable(vde);
