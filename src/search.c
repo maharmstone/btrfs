@@ -204,123 +204,70 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
 // }
 
 static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
-//     PFILE_OBJECT FileObject, FileObject2;
-//     PDEVICE_OBJECT devobj, mountmgr;
-//     NTSTATUS Status;
-//     STORAGE_DEVICE_NUMBER sdn;
-//     ULONG dlisize;
-//     DRIVE_LAYOUT_INFORMATION_EX* dli;
-//     IO_STATUS_BLOCK iosb;
-//     int i, num_parts = 0;
-//     UNICODE_STRING devname, num, bspus, mmdevpath;
-//     WCHAR devnamew[255], numw[20];
-//     USHORT preflen;
-//     
-//     static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
-//     static WCHAR bs_partition[] = L"\\Partition";
-//     
-//     // FIXME - work with CD-ROMs and floppies(?)
-//         
-//     Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-//         return;
-//     }
-//     
-//     // This doesn't work! IOCTL_DISK_ARE_VOLUMES_READY leads to this function hanging
-//     // on boot for disks other than the boot disk(?)
-// //     if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
-// //         Status = dev_ioctl(devobj, IOCTL_DISK_ARE_VOLUMES_READY, NULL, 0, NULL, 0, TRUE, &iosb);
-// //         if (!NT_SUCCESS(Status))
-// //             WARN("IOCTL_DISK_ARE_VOLUMES_READY returned %08x\n", Status);
-// //     }
-//     
-//     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-//     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject2, &mountmgr);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-//         ObDereferenceObject(FileObject);
-//         return;
-//     }
-//     
-//     Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
-//                        &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, &iosb);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
-//         goto end;
-//     }
-//     
-//     ExAcquireResourceExclusiveLite(&pnp_disks_lock, TRUE);
-//     add_pnp_disk(sdn.DeviceNumber, devpath);
-//     ExReleaseResourceLite(&pnp_disks_lock);
-//     
-//     dlisize = 0;
-//     
-//     do {
-//         dlisize += 1024;
-//         dli = ExAllocatePoolWithTag(PagedPool, dlisize, ALLOC_TAG);
-//     
-//         Status = dev_ioctl(devobj, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0,
-//                            dli, dlisize, TRUE, &iosb);
-//     } while (Status == STATUS_BUFFER_TOO_SMALL);
-//     
-//     if (!NT_SUCCESS(Status)) {
-//         ExFreePool(dli);
-//         goto no_parts;
-//     }
-//     
-//     wcscpy(devnamew, device_harddisk);
-//     devname.Buffer = devnamew;
-//     devname.MaximumLength = sizeof(devnamew);
-//     devname.Length = wcslen(device_harddisk) * sizeof(WCHAR);
-// 
-//     num.Buffer = numw;
-//     num.MaximumLength = sizeof(numw);
-//     RtlIntegerToUnicodeString(sdn.DeviceNumber, 10, &num);
-//     RtlAppendUnicodeStringToString(&devname, &num);
-//     
-//     bspus.Buffer = bs_partition;
-//     bspus.Length = bspus.MaximumLength = wcslen(bs_partition) * sizeof(WCHAR);
-//     RtlAppendUnicodeStringToString(&devname, &bspus);
-//     
-//     preflen = devname.Length;
-//     
-//     for (i = 0; i < dli->PartitionCount; i++) {
-//         if (dli->PartitionEntry[i].PartitionLength.QuadPart != 0 && dli->PartitionEntry[i].PartitionNumber != 0) {
-//             devname.Length = preflen;
-//             RtlIntegerToUnicodeString(dli->PartitionEntry[i].PartitionNumber, 10, &num);
-//             RtlAppendUnicodeStringToString(&devname, &num);
-//             
-//             test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, dli->PartitionEntry[i].PartitionNumber,
-//                      devpath, dli->PartitionEntry[i].StartingOffset.QuadPart, dli->PartitionEntry[i].PartitionLength.QuadPart);
-//             
-//             num_parts++;
-//         }
-//     }
-//     
-//     ExFreePool(dli);
-//     
-// no_parts:
-//     if (num_parts == 0) {
-//         GET_LENGTH_INFORMATION gli;
-//         
-//         Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-//                            &gli, sizeof(gli), TRUE, NULL);
-//         
-//         if (!NT_SUCCESS(Status))
-//             ERR("error reading length information: %08x\n", Status);
-//         else {
-//             devname.Length = preflen;
-//             devname.Buffer[devname.Length / sizeof(WCHAR)] = '0';
-//             devname.Length += sizeof(WCHAR);
-//             
-//             test_vol(DriverObject, mountmgr, devobj, &devname, sdn.DeviceNumber, 0, devpath, 0, gli.Length.QuadPart);
-//         }
-//     }
-//     
-// end:
-//     ObDereferenceObject(FileObject);
-//     ObDereferenceObject(FileObject2);
+    PFILE_OBJECT FileObject, mountmgrfo;
+    PDEVICE_OBJECT devobj, mountmgr;
+    NTSTATUS Status;
+    STORAGE_DEVICE_NUMBER sdn;
+    ULONG dlisize;
+    DRIVE_LAYOUT_INFORMATION_EX* dli;
+    IO_STATUS_BLOCK iosb;
+    GET_LENGTH_INFORMATION gli;
+    UNICODE_STRING mmdevpath;
+        
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return;
+    }
+    
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ObDereferenceObject(FileObject);
+        return;
+    }
+    
+    dlisize = 0;
+    
+    do {
+        dlisize += 1024;
+        dli = ExAllocatePoolWithTag(PagedPool, dlisize, ALLOC_TAG);
+    
+        Status = dev_ioctl(devobj, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0,
+                           dli, dlisize, TRUE, &iosb);
+    } while (Status == STATUS_BUFFER_TOO_SMALL);
+    
+    // only consider disk as a potential filesystem if it has no partitions
+    if (NT_SUCCESS(Status) && dli->PartitionCount > 0) {
+        ExFreePool(dli);
+        goto end;
+    }
+    
+    ExFreePool(dli);
+    
+    Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                        &gli, sizeof(gli), TRUE, NULL);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("error reading length information: %08x\n", Status);
+        goto end;
+    }
+
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                       &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        sdn.DeviceNumber = 0;
+        sdn.PartitionNumber = 0;
+    } else
+        TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
+
+    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, 0, gli.Length.QuadPart);
+    
+end:
+    ObDereferenceObject(FileObject);
+    ObDereferenceObject(mountmgrfo);
 }
 
 static void disk_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
