@@ -909,6 +909,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 // in search.c
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
+void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
 
 // in cache.c

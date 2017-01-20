@@ -272,7 +272,7 @@ end:
     ObDereferenceObject(mountmgrfo);
 }
 
-static void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     STORAGE_DEVICE_NUMBER sdn;
     PFILE_OBJECT FileObject, mountmgrfo;
     UNICODE_STRING mmdevpath;

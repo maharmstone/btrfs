@@ -3754,6 +3754,114 @@ static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
     return FALSE;
 }
 
+static NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name) {
+    NTSTATUS Status;
+    WCHAR *list = NULL, *s;
+    
+    Status = IoGetDeviceInterfaces((PVOID)&GUID_DEVINTERFACE_VOLUME, NULL, 0, &list);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceInterfaces returned %08x\n", Status);
+        return Status;
+    }
+    
+    s = list;
+    while (s[0] != 0) {
+        PFILE_OBJECT FileObject;
+        PDEVICE_OBJECT devobj;
+        UNICODE_STRING name;
+        
+        name.Length = name.MaximumLength = wcslen(s) * sizeof(WCHAR);
+        name.Buffer = s;
+        
+        if (NT_SUCCESS(IoGetDeviceObjectPointer(&name, FILE_READ_ATTRIBUTES, &FileObject, &devobj))) {
+            if (devobj == DeviceObject) {
+                ObDereferenceObject(FileObject);
+                
+                pnp_name->Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
+                if (!pnp_name->Buffer) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(pnp_name->Buffer, name.Buffer, name.Length);
+                pnp_name->Length = pnp_name->MaximumLength = name.Length;
+                
+                Status = STATUS_SUCCESS;
+                goto end;
+            }
+            
+            ObDereferenceObject(FileObject);
+        }
+        
+        s = &s[wcslen(s) + 1];
+    }
+    
+    pnp_name->Length = pnp_name->MaximumLength = 0;
+    pnp_name->Buffer = 0;
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (list)
+        ExFreePool(list);
+    
+    return Status;
+}
+
+static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject) {
+    NTSTATUS Status;
+    ULONG to_read;
+    superblock* sb;
+    UINT32 crc32;
+    UNICODE_STRING pnp_name;
+    
+    to_read = DeviceObject->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), DeviceObject->SectorSize);
+    
+    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    Status = sync_read_phys(DeviceObject, superblock_addrs[0], to_read, (PUCHAR)sb, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("sync_read_phys returned %08x\n", Status);
+        goto end;
+    }
+
+    if (sb->magic != BTRFS_MAGIC) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        
+    if (crc32 != *((UINT32*)sb->checksum)) {
+        WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+    
+    Status = get_device_pnp_name(DeviceObject, &pnp_name);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_device_pnp_name returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (pnp_name.Length == 0)
+        goto end;
+    
+    volume_arrival(drvobj, &pnp_name);
+    
+    ExFreePool(pnp_name.Buffer);
+
+end:
+    ExFreePool(sb);
+    
+    return Status;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3781,8 +3889,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
     
     if (!is_btrfs_volume(DeviceToMount)) {
-        // FIXME - look for superblock, in case this is a device just formatted
-        // as Btrfs. Don't mount, but add a volume object if it is.
+        Status = check_mount_device(DeviceToMount);
+        if (!NT_SUCCESS(Status))
+            WARN("check_mount_device returned %08x\n", Status);
+
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit2;
     }
