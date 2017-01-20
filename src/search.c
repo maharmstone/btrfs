@@ -31,7 +31,9 @@ extern LIST_ENTRY pnp_disks;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
-#define IOCTL_DISK_ARE_VOLUMES_READY CTL_CODE(IOCTL_DISK_BASE, 0x0087, METHOD_BUFFERED, FILE_READ_ACCESS) // Windows 8
+typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+
+extern PDEVICE_OBJECT devobj;
 
 static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
@@ -505,14 +507,70 @@ static void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath)
     ExReleaseResourceLite(&volume_list_lock);
 }
 
+typedef struct {
+    PDRIVER_OBJECT DriverObject;
+    UNICODE_STRING name;
+    pnp_callback func;
+    PIO_WORKITEM work_item;
+} pnp_callback_context;
+
+static void do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
+    pnp_callback_context* context = con;
+    
+    context->func(context->DriverObject, &context->name);
+    
+    if (context->name.Buffer)
+        ExFreePool(context->name.Buffer);
+    
+    IoFreeWorkItem(context->work_item);
+}
+
+static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING name, pnp_callback func) {
+    PIO_WORKITEM work_item;
+    pnp_callback_context* context;
+
+    work_item = IoAllocateWorkItem(devobj);
+        
+    context = ExAllocatePoolWithTag(PagedPool, sizeof(pnp_callback_context), ALLOC_TAG);
+    
+    if (!context) {
+        ERR("out of memory\n");
+        IoFreeWorkItem(work_item);
+        return;
+    }
+    
+    context->DriverObject = DriverObject;
+    
+    if (name->Length > 0) {
+        context->name.Buffer = ExAllocatePoolWithTag(PagedPool, name->Length, ALLOC_TAG);
+        if (!context->name.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(context);
+            IoFreeWorkItem(work_item);
+            return;
+        }
+        
+        RtlCopyMemory(context->name.Buffer, name->Buffer, name->Length);
+        context->name.Length = context->name.MaximumLength = name->Length;
+    } else {
+        context->name.Length = context->name.MaximumLength = 0;
+        context->name.Buffer = NULL;
+    }
+    
+    context->func = func;
+    context->work_item = work_item;
+    
+    IoQueueWorkItem(work_item, do_pnp_callback, DelayedWorkQueue, context);
+}
+
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
     
     if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
-        volume_arrival(DriverObject, dicn->SymbolicLinkName);
+        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_arrival);
     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
-        volume_removal(DriverObject, dicn->SymbolicLinkName);
+        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_removal);
     
     return STATUS_SUCCESS;
 }
@@ -522,9 +580,9 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
     
     if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
-        disk_arrival(DriverObject, dicn->SymbolicLinkName);
+        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, disk_arrival);
     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
-        volume_removal(DriverObject, dicn->SymbolicLinkName);
+        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_removal);
     
     return STATUS_SUCCESS;
 }
