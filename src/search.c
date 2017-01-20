@@ -21,9 +21,10 @@
 #include <ntifs.h>
 #include <mountmgr.h>
 #include <windef.h>
+#include <ntddstor.h>
+#include <ntdddisk.h>
 
 #include <initguid.h>
-#include <winioctl.h>
 #include <wdmguid.h>
 
 extern ERESOURCE volume_list_lock;

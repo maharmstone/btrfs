@@ -18,7 +18,6 @@
 #include "btrfs_drv.h"
 #include <ntdddisk.h>
 #include <mountdev.h>
-#include <initguid.h>
 #include <diskguid.h>
 
 extern LIST_ENTRY VcbList;
