@@ -89,12 +89,6 @@
 
 struct _device_extension;
 
-typedef struct {
-    UNICODE_STRING devpath;
-    ULONG disk_num;
-    LIST_ENTRY list_entry;
-} pnp_disk;
-
 typedef struct _fcb_nonpaged {
     FAST_MUTEX HeaderMutex;
     SECTION_OBJECT_POINTERS segment_object;

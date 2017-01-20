@@ -26,8 +26,6 @@
 #include <winioctl.h>
 #include <wdmguid.h>
 
-extern ERESOURCE pnp_disks_lock;
-extern LIST_ENTRY pnp_disks;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
@@ -167,43 +165,6 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     ExFreePool(mmps2);
     ExFreePool(mmp);
 }
-
-// static void add_pnp_disk(ULONG disk_num, PUNICODE_STRING devpath) {
-//     LIST_ENTRY* le;
-//     pnp_disk* disk;
-//     
-//     le = pnp_disks.Flink;
-//     while (le != &pnp_disks) {
-//         disk = CONTAINING_RECORD(le, pnp_disk, list_entry);
-//         
-//         if (disk->devpath.Length == devpath->Length &&
-//             RtlCompareMemory(disk->devpath.Buffer, devpath->Buffer, devpath->Length) == devpath->Length)
-//             return;
-//         
-//         le = le->Flink;
-//     }
-//     
-//     disk = ExAllocatePoolWithTag(PagedPool, sizeof(pnp_disk), ALLOC_TAG);
-//     if (!disk) {
-//         ERR("out of memory\n");
-//         return;
-//     }
-//     
-//     disk->devpath.Length = disk->devpath.MaximumLength = devpath->Length;
-//     disk->devpath.Buffer = ExAllocatePoolWithTag(PagedPool, devpath->Length, ALLOC_TAG);
-//     
-//     if (!disk->devpath.Buffer) {
-//         ERR("out of memory\n");
-//         ExFreePool(disk);
-//         return;
-//     }
-//     
-//     RtlCopyMemory(disk->devpath.Buffer, devpath->Buffer, devpath->Length);
-//     
-//     disk->disk_num = disk_num;
-//     
-//     InsertTailList(&pnp_disks, &disk->list_entry);
-// }
 
 static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     PFILE_OBJECT FileObject, mountmgrfo;

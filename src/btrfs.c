@@ -50,8 +50,6 @@ PDEVICE_OBJECT devobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list;
-ERESOURCE pnp_disks_lock;
-LIST_ENTRY pnp_disks;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
@@ -296,7 +294,6 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     }
     
     // FIXME - free volumes and their devpaths
-    // FIXME - free pnp_disks and their devpaths
     
 #ifdef _DEBUG
     if (comfo)
@@ -307,7 +304,6 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
 #endif
     
     ExDeleteResourceLite(&global_loading_lock);
-    ExDeleteResourceLite(&pnp_disks_lock);
     ExDeleteResourceLite(&volume_list_lock);
     
     if (log_device.Buffer)
@@ -5017,11 +5013,8 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
         return Status;
     }
 
-    InitializeListHead(&pnp_disks);
-    
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);
-    ExInitializeResourceLite(&pnp_disks_lock);
     ExInitializeResourceLite(&volume_list_lock);
     
     InitializeListHead(&volume_list);
