@@ -2487,6 +2487,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
     PFILE_OBJECT fileobj, mountmgrfo;
+    PDEVICE_OBJECT DeviceObject;
     HANDLE h;
     LIST_ENTRY rollback, *le;
     device* dev;
@@ -2534,24 +2535,36 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
         return Status;
     }
+
+    DeviceObject = fileobj->DeviceObject;
     
-    Status = is_device_part_of_mounted_btrfs_raid(fileobj->DeviceObject);
+    Status = get_device_pnp_name(DeviceObject, &pnp_name, &pnp_guid);
     if (!NT_SUCCESS(Status)) {
-        ERR("is_device_part_of_mounted_btrfs_raid returned %08x\n", Status);
+        ERR("get_device_pnp_name returned %08x\n", Status);
         ObDereferenceObject(fileobj);
         return Status;
     }
     
-    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
+    // If this is a disk, we have been handed the PDO, so need to go up to find something we can use
+    if (RtlCompareMemory(pnp_guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID) && DeviceObject->AttachedDevice) {
+        PDEVICE_OBJECT obj = DeviceObject->AttachedDevice;
+        
+        ObReferenceObject(DeviceObject->AttachedDevice);
+        ObDereferenceObject(DeviceObject);
+        
+        DeviceObject = obj;
+    }
+    
+    Status = dev_ioctl(DeviceObject, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("IOCTL_DISK_IS_WRITABLE returned %08x\n", Status);
         ObDereferenceObject(fileobj);
         return Status;
     }
     
-    Status = get_device_pnp_name(fileobj->DeviceObject, &pnp_name, &pnp_guid);
+    Status = is_device_part_of_mounted_btrfs_raid(DeviceObject);
     if (!NT_SUCCESS(Status)) {
-        ERR("get_device_pnp_name returned %08x\n", Status);
+        ERR("is_device_part_of_mounted_btrfs_raid returned %08x\n", Status);
         ObDereferenceObject(fileobj);
         return Status;
     }
@@ -2576,7 +2589,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
                 goto end2;
             }
         
-            Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0, dli, dlisize, TRUE, NULL);
+            Status = dev_ioctl(DeviceObject, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0, dli, dlisize, TRUE, NULL);
         } while (Status == STATUS_BUFFER_TOO_SMALL);
         
         if (NT_SUCCESS(Status) && dli->PartitionCount > 0) {
@@ -2589,7 +2602,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         ExFreePool(dli);
     }
     
-    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+    Status = dev_ioctl(DeviceObject, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
                        &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
     if (NT_SUCCESS(Status)) {
         if (sdn.DeviceType != FILE_DEVICE_DISK) { // FIXME - accept floppies and CDs?
@@ -2602,7 +2615,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         sdn.PartitionNumber = 0xffffffff;
     }
     
-    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+    Status = dev_ioctl(DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
                         &gli, sizeof(gli), TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("error reading length information: %08x\n", Status);
@@ -2646,7 +2659,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     RtlZeroMemory(dev, sizeof(device));
 
-    dev->devobj = fileobj->DeviceObject;
+    dev->devobj = DeviceObject;
     dev->seeding = FALSE;
     dev->length = size;
     init_device(Vcb, dev, TRUE);
@@ -2747,7 +2760,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     RtlZeroMemory(mb, 0x100000);
     
-    Status = write_data_phys(fileobj->DeviceObject, 0, mb, 0x100000);
+    Status = write_data_phys(DeviceObject, 0, mb, 0x100000);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data_phys returned %08x\n", Status);
         goto end;
@@ -2767,7 +2780,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->uuid = dev->devitem.device_uuid;
     vc->devid = dev_id;
     vc->generation = Vcb->superblock.generation;
-    vc->devobj = fileobj->DeviceObject;
+    vc->devobj = DeviceObject;
     
     pnp_name2 = pnp_name;
     
@@ -2820,7 +2833,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     // FIXME - send notification that volume size has increased
     
-    ObReferenceObject(fileobj->DeviceObject);
+    ObReferenceObject(DeviceObject);
     
     do_write(Vcb, Irp, &rollback);
 
