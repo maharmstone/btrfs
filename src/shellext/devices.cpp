@@ -25,6 +25,7 @@
 #include <uxtheme.h>
 #include <setupapi.h>
 #include <strsafe.h>
+#include <mountmgr.h>
 #include <algorithm>
 #include <string>
 #include "../btrfs.h"
@@ -32,6 +33,7 @@
 typedef struct {
     std::wstring pnp_name;
     std::wstring friendly_name;
+    std::wstring drive;
     ULONG disk_num;
     ULONG part_num;
     UINT64 size;
@@ -39,8 +41,10 @@ typedef struct {
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
 
-void find_devices(HWND hwnd, const GUID* guid, std::vector<device>* device_list) {
+void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<device>* device_list) {
     HDEVINFO h;
+    
+    static WCHAR dosdevices[] = L"\\DosDevices\\";
 
     h = SetupDiGetClassDevs(guid, NULL, 0, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
     
@@ -109,6 +113,7 @@ void find_devices(HWND hwnd, const GUID* guid, std::vector<device>* device_list)
                 }
                 
                 dev.friendly_name = L"";
+                dev.drive = L"";
                 
                 if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
                     STORAGE_PROPERTY_QUERY spq;
@@ -159,10 +164,57 @@ void find_devices(HWND hwnd, const GUID* guid, std::vector<device>* device_list)
                         
                         free(sdd2);
                     }
+                } else {
+                    ULONG mmpsize;
+                    MOUNTMGR_MOUNT_POINT* mmp;
+                    MOUNTMGR_MOUNT_POINTS mmps;
+                    
+                    mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + path.Length;
+ 
+                    mmp = (MOUNTMGR_MOUNT_POINT*)malloc(mmpsize);
+
+                    RtlZeroMemory(mmp, sizeof(MOUNTMGR_MOUNT_POINT));
+                    mmp->DeviceNameOffset = sizeof(MOUNTMGR_MOUNT_POINT);
+                    mmp->DeviceNameLength = path.Length;
+                    RtlCopyMemory(&mmp[1], path.Buffer, path.Length);
+
+                    Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                                                   mmp, mmpsize, &mmps, sizeof(MOUNTMGR_MOUNT_POINTS));
+                    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
+                        MOUNTMGR_MOUNT_POINTS* mmps2;
+
+                        mmps2 = (MOUNTMGR_MOUNT_POINTS*)malloc(mmps.Size);
+                        
+                        Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                                                    mmp, mmpsize, mmps2, mmps.Size);
+                        
+                        if (NT_SUCCESS(Status)) {
+                            ULONG i;
+                        
+                            for (i = 0; i < mmps2->NumberOfMountPoints; i++) {
+                                WCHAR* symlink = (WCHAR*)((UINT8*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset);
+                                
+                                if (mmps2->MountPoints[i].SymbolicLinkNameLength == 0x1c &&
+                                    RtlCompareMemory(symlink, dosdevices, wcslen(dosdevices) * sizeof(WCHAR)) == wcslen(dosdevices) * sizeof(WCHAR) &&
+                                    symlink[13] == ':'
+                                ) {
+                                    WCHAR dr[3];
+                                    
+                                    dr[0] = symlink[12];
+                                    dr[1] = ':';
+                                    dr[2] = 0;
+                                    
+                                    dev.drive = dr;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    free(mmp);
                 }
                 
                 // FIXME - if disk, check for partitions
-                // FIXME - if disk, get name
                 // FIXME - get existing filesystem
                 // FIXME - exclude Btrfs volumes
                 
@@ -201,10 +253,29 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     unsigned int i;
     ULONG last_disk_num = 0xffffffff;
     HTREEITEM diskitem;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES attr;
+    UNICODE_STRING us;
+    IO_STATUS_BLOCK iosb;
+    HANDLE mountmgr;
     
-    find_devices(hwnd, &GUID_DEVINTERFACE_DISK, &device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, &device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, &device_list);
+    // FIXME - mountmgr
+    
+    RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
+    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+    if (!NT_SUCCESS(Status)) {
+        MessageBoxW(hwnd, L"Could not get handle to mount manager.", L"Error", MB_ICONERROR);
+        return;
+    }
+    
+    find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, &device_list);
+    find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, &device_list);
+    find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, mountmgr, &device_list);
+    
+    NtClose(mountmgr);
     
     std::sort(device_list.begin(), device_list.end(), sort_devices);
     
@@ -212,6 +283,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         TVINSERTSTRUCTW tis;
         HTREEITEM item;
         std::wstring name;
+        WCHAR size[255];
         
         if (device_list[i].disk_num != 0xffffffff && device_list[i].disk_num == last_disk_num)
             tis.hParent = diskitem;
@@ -224,7 +296,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         tis.itemex.stateMask = TVIS_EXPANDED;
         
         if (device_list[i].disk_num != 0xffffffff) {
-            WCHAR t[255], u[255], size[255];
+            WCHAR t[255], u[255];
             
             if (!LoadStringW(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t, sizeof(t) / sizeof(WCHAR))) {
                 ShowError(hwnd, GetLastError());
@@ -235,33 +307,28 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                 return;
             
             name = u;
-            
-            // FIXME - drive letter
-            // FIXME - FS type
-            // FIXME - Btrfs devices
-            
-            name += L" (";
-            
-            if (device_list[i].friendly_name != L"") {
-                name += device_list[i].friendly_name;
-                name += L", ";
-            }
-            
-            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
-            name += size;
-            
-            name += L")";
-        } else {
-            WCHAR size[255];
-            
+        } else
             name = device_list[i].pnp_name;
-            
-            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
-            
-            name += L" (";
-            name += size;
-            name += L")";
+        
+        // FIXME - FS type
+        // FIXME - Btrfs devices
+        
+        name += L" (";
+        
+        if (device_list[i].friendly_name != L"") {
+            name += device_list[i].friendly_name;
+            name += L", ";
         }
+        
+        if (device_list[i].drive != L"") {
+            name += device_list[i].drive;
+            name += L", ";
+        }
+        
+        format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
+        name += size;
+        
+        name += L")";
         
         tis.itemex.pszText = (WCHAR*)name.c_str();
         tis.itemex.cchTextMax = name.length();
