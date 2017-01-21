@@ -42,11 +42,42 @@ typedef struct {
     BOOL has_parts;
     BTRFS_UUID fs_uuid;
     BTRFS_UUID dev_uuid;
+    BOOL ignore;
 } device;
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
 
-void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<device>* device_list) {
+static std::wstring get_mountdev_name(HANDLE h) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    MOUNTDEV_NAME mdn, *mdn2;
+    ULONG mdnsize;
+    std::wstring name;
+    
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+                                   NULL, 0, &mdn, sizeof(MOUNTDEV_NAME));
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+        return L"";
+    
+    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    
+    mdn2 = (MOUNTDEV_NAME*)malloc(mdnsize);
+
+    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+                                   NULL, 0, mdn2, mdnsize);
+    if (!NT_SUCCESS(Status)) {
+        free(mdn2);
+        return L"";
+    }
+    
+    name = std::wstring(mdn2->Name, mdn2->NameLength / sizeof(WCHAR));
+    
+    free(mdn2);
+    
+    return name;
+}
+
+static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<device>* device_list) {
     HDEVINFO h;
     
     static WCHAR dosdevices[] = L"\\DosDevices\\";
@@ -122,6 +153,7 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                 dev.drive = L"";
                 dev.fstype = L"";
                 dev.has_parts = FALSE;
+                dev.ignore = FALSE;
                 
                 if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
                     STORAGE_PROPERTY_QUERY spq;
@@ -271,9 +303,17 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                         
                         i++;
                     }
+                    
+                    if (dev.fstype == L"Btrfs" && RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) != sizeof(GUID)) {
+                        std::wstring name;
+                        std::wstring pref = L"\\Device\\Btrfs{";
+                        
+                        name = get_mountdev_name(file);
+                        
+                        if (name.length() > pref.length() && RtlCompareMemory(name.c_str(), pref.c_str(), pref.length() * sizeof(WCHAR)) == pref.length() * sizeof(WCHAR))
+                            dev.ignore = TRUE;
+                    }
                 }
-                
-                // FIXME - exclude Btrfs volumes
                 
                 device_list->push_back(dev);
                 
@@ -369,109 +409,111 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     std::sort(device_list.begin(), device_list.end(), sort_devices);
     
     for (i = 0; i < device_list.size(); i++) {
-        TVINSERTSTRUCTW tis;
-        HTREEITEM item;
-        std::wstring name;
-        WCHAR size[255];
-        
-        if (device_list[i].disk_num != 0xffffffff && device_list[i].disk_num == last_disk_num)
-            tis.hParent = diskitem;
-        else
-            tis.hParent = TVI_ROOT;
-        
-        tis.hInsertAfter = TVI_LAST;
-        tis.itemex.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
-        tis.itemex.state = TVIS_EXPANDED;
-        tis.itemex.stateMask = TVIS_EXPANDED;
-        
-        if (device_list[i].disk_num != 0xffffffff) {
-            WCHAR t[255], u[255];
+        if (!device_list[i].ignore) {
+            TVINSERTSTRUCTW tis;
+            HTREEITEM item;
+            std::wstring name;
+            WCHAR size[255];
             
-            if (!LoadStringW(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t, sizeof(t) / sizeof(WCHAR))) {
-                ShowError(hwnd, GetLastError());
-                return;
-            }
+            if (device_list[i].disk_num != 0xffffffff && device_list[i].disk_num == last_disk_num)
+                tis.hParent = diskitem;
+            else
+                tis.hParent = TVI_ROOT;
             
-            if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, device_list[i].part_num != 0 ? device_list[i].part_num : device_list[i].disk_num) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return;
+            tis.hInsertAfter = TVI_LAST;
+            tis.itemex.mask = TVIF_TEXT | TVIF_STATE | TVIF_PARAM;
+            tis.itemex.state = TVIS_EXPANDED;
+            tis.itemex.stateMask = TVIS_EXPANDED;
             
-            name = u;
-        } else
-            name = device_list[i].pnp_name;
-        
-        // match child Btrfs devices to their parent
-        if (bfs && device_list[i].drive == L"" && device_list[i].fstype == L"Btrfs") {
-            btrfs_filesystem* bfs2 = bfs;
-            
-            while (TRUE) {
-                if (RtlCompareMemory(&bfs2->uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                    ULONG j, k;
-                    btrfs_filesystem_device* dev;
-                    
-                    for (j = 0; j < bfs2->num_devices; j++) {
-                        if (j == 0)
-                            dev = &bfs2->device;
-                        else
-                            dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
-                        
-                        if (RtlCompareMemory(&device_list[i].dev_uuid, &device_list[i].dev_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                            for (k = 0; k < device_list.size(); k++) {
-                                if (k != i && device_list[k].fstype == L"Btrfs" && device_list[k].drive != L"" &&
-                                    RtlCompareMemory(&device_list[k].fs_uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                                    device_list[i].drive = device_list[k].drive;
-                                    break;
-                                }
-                            }
-                            
-                            break;
-                        }
-                    }
-                    
-                    break;
+            if (device_list[i].disk_num != 0xffffffff) {
+                WCHAR t[255], u[255];
+                
+                if (!LoadStringW(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwnd, GetLastError());
+                    return;
                 }
                 
-                if (bfs2->next_entry != 0)
-                    bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
-                else
-                    break;
+                if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, device_list[i].part_num != 0 ? device_list[i].part_num : device_list[i].disk_num) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return;
+                
+                name = u;
+            } else
+                name = device_list[i].pnp_name;
+            
+            // match child Btrfs devices to their parent
+            if (bfs && device_list[i].drive == L"" && device_list[i].fstype == L"Btrfs") {
+                btrfs_filesystem* bfs2 = bfs;
+                
+                while (TRUE) {
+                    if (RtlCompareMemory(&bfs2->uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                        ULONG j, k;
+                        btrfs_filesystem_device* dev;
+                        
+                        for (j = 0; j < bfs2->num_devices; j++) {
+                            if (j == 0)
+                                dev = &bfs2->device;
+                            else
+                                dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+                            
+                            if (RtlCompareMemory(&device_list[i].dev_uuid, &device_list[i].dev_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                                for (k = 0; k < device_list.size(); k++) {
+                                    if (k != i && device_list[k].fstype == L"Btrfs" && device_list[k].drive != L"" &&
+                                        RtlCompareMemory(&device_list[k].fs_uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                                        device_list[i].drive = device_list[k].drive;
+                                        break;
+                                    }
+                                }
+                                
+                                break;
+                            }
+                        }
+                        
+                        break;
+                    }
+                    
+                    if (bfs2->next_entry != 0)
+                        bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+                    else
+                        break;
+                }
             }
-        }
-        
-        name += L" (";
-        
-        if (device_list[i].friendly_name != L"") {
-            name += device_list[i].friendly_name;
-            name += L", ";
-        }
-        
-        if (device_list[i].drive != L"") {
-            name += device_list[i].drive;
-            name += L", ";
-        }
-        
-        if (device_list[i].fstype != L"") {
-            name += device_list[i].fstype;
-            name += L", ";
-        }
-        
-        format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
-        name += size;
-        
-        name += L")";
-        
-        tis.itemex.pszText = (WCHAR*)name.c_str();
-        tis.itemex.cchTextMax = name.length();
-        tis.itemex.lParam = 0;
-        
-        item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
-        if (!item) {
-            MessageBoxW(hwnd, L"TVM_INSERTITEM failed", L"Error", MB_ICONERROR);
-            return;
-        }
-        
-        if (device_list[i].part_num == 0) {
-            diskitem = item;
-            last_disk_num = device_list[i].disk_num;
+            
+            name += L" (";
+            
+            if (device_list[i].friendly_name != L"") {
+                name += device_list[i].friendly_name;
+                name += L", ";
+            }
+            
+            if (device_list[i].drive != L"") {
+                name += device_list[i].drive;
+                name += L", ";
+            }
+            
+            if (device_list[i].fstype != L"") {
+                name += device_list[i].fstype;
+                name += L", ";
+            }
+            
+            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
+            name += size;
+            
+            name += L")";
+            
+            tis.itemex.pszText = (WCHAR*)name.c_str();
+            tis.itemex.cchTextMax = name.length();
+            tis.itemex.lParam = 0;
+            
+            item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
+            if (!item) {
+                MessageBoxW(hwnd, L"TVM_INSERTITEM failed", L"Error", MB_ICONERROR);
+                return;
+            }
+            
+            if (device_list[i].part_num == 0) {
+                diskitem = item;
+                last_disk_num = device_list[i].disk_num;
+            }
         }
     }
 }
