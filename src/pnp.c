@@ -244,6 +244,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         vde->mounted_device = NULL;
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+        Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
         
         if (Vcb->open_files == 0)
             uninit(Vcb, FALSE);
@@ -270,6 +271,7 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         vde->mounted_device = NULL;
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+        Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
         
         if (Vcb->open_files == 0)
             uninit(Vcb, FALSE);
