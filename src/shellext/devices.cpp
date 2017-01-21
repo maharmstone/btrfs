@@ -166,14 +166,21 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                             
                             desc2 = "";
                             
-                            if (sdd2->VendorIdOffset != 0)
+                            if (sdd2->VendorIdOffset != 0) {
                                 desc2 += (char*)((UINT8*)sdd2 + sdd2->VendorIdOffset);
+                                
+                                while (desc2.length() > 0 && desc2[desc2.length() - 1] == ' ')
+                                    desc2 = desc2.substr(0, desc2.length() - 1);
+                            }
                             
                             if (sdd2->ProductIdOffset != 0) {
                                 if (sdd2->VendorIdOffset != 0 && desc2.length() != 0 && desc2[desc2.length() - 1] != ' ')
                                     desc2 += " ";
                                 
                                 desc2 += (char*)((UINT8*)sdd2 + sdd2->ProductIdOffset);
+                                
+                                while (desc2.length() > 0 && desc2[desc2.length() - 1] == ' ')
+                                    desc2 = desc2.substr(0, desc2.length() - 1);
                             }
                             
                             if (sdd2->VendorIdOffset != 0 || sdd2->ProductIdOffset != 0) {
