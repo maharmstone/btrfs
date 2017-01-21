@@ -34,6 +34,7 @@ typedef struct {
     std::wstring pnp_name;
     std::wstring friendly_name;
     std::wstring drive;
+    std::wstring fstype;
     ULONG disk_num;
     ULONG part_num;
     UINT64 size;
@@ -80,6 +81,8 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                 UNICODE_STRING path;
                 OBJECT_ATTRIBUTES attr;
                 GET_LENGTH_INFORMATION gli;
+                ULONG i;
+                UINT8 sb[4096];
                 
                 path.Buffer = detail->DevicePath;
                 path.Length = path.MaximumLength = wcslen(detail->DevicePath) * sizeof(WCHAR);
@@ -114,6 +117,27 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                 
                 dev.friendly_name = L"";
                 dev.drive = L"";
+                dev.fstype = L"";
+                
+                i = 0;
+                while (fs_ident[i].name) {
+                    if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
+                        LARGE_INTEGER off;
+                        
+                        off.QuadPart = fs_ident[i].kboff * 1024;
+                        Status = NtReadFile(file, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
+                    }
+                    
+                    if (NT_SUCCESS(Status)) {
+                        if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
+                            dev.fstype = fs_ident[i].name;
+                            break;
+                        }
+                        // FIXME - Btrfs
+                    }
+                    
+                    i++;
+                }
                 
                 if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
                     STORAGE_PROPERTY_QUERY spq;
@@ -215,7 +239,6 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                 }
                 
                 // FIXME - if disk, check for partitions
-                // FIXME - get existing filesystem
                 // FIXME - exclude Btrfs volumes
                 
                 device_list->push_back(dev);
@@ -258,8 +281,6 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     UNICODE_STRING us;
     IO_STATUS_BLOCK iosb;
     HANDLE mountmgr;
-    
-    // FIXME - mountmgr
     
     RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
     InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
@@ -310,7 +331,6 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         } else
             name = device_list[i].pnp_name;
         
-        // FIXME - FS type
         // FIXME - Btrfs devices
         
         name += L" (";
@@ -322,6 +342,11 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         
         if (device_list[i].drive != L"") {
             name += device_list[i].drive;
+            name += L", ";
+        }
+        
+        if (device_list[i].fstype != L"") {
+            name += device_list[i].fstype;
             name += L", ";
         }
         
