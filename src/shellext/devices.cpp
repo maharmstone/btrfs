@@ -264,7 +264,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                     free(mmp);
                 }
                 
-                if (dev.is_disk || !dev.has_parts) {
+                if (!dev.is_disk || !dev.has_parts) {
                     i = 0;
                     while (fs_ident[i].name) {
                         if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
