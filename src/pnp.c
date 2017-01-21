@@ -242,11 +242,10 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         vde = Vcb->Vpb->RealDevice->DeviceExtension;
         vde->mounted_device = NULL;
+        Vcb->removing = TRUE;
+        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
         
-        if (Vcb->open_files > 0) {
-            Vcb->removing = TRUE;
-            Vcb->Vpb->Flags &= ~VPB_MOUNTED;
-        } else
+        if (Vcb->open_files == 0)
             uninit(Vcb, FALSE);
     }
 
@@ -269,11 +268,10 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         
         vde = Vcb->Vpb->RealDevice->DeviceExtension;
         vde->mounted_device = NULL;
+        Vcb->removing = TRUE;
+        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
         
-        if (Vcb->open_files > 0) {
-            Vcb->removing = TRUE;
-            Vcb->Vpb->Flags &= ~VPB_MOUNTED;
-        } else
+        if (Vcb->open_files == 0)
             uninit(Vcb, FALSE);
     }
 
