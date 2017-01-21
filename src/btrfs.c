@@ -3965,6 +3965,9 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
+    ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
+    ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
+    ExInitializeResourceLite(&Vcb->scrub.stats_lock);
 
     ExInitializeResourceLite(&Vcb->load_lock);
     ExAcquireResourceExclusiveLite(&Vcb->load_lock, TRUE);
@@ -4063,10 +4066,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
-    
-    ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
-    ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
-    ExInitializeResourceLite(&Vcb->scrub.stats_lock);
     
     InitializeListHead(&Vcb->DirNotifyList);
     InitializeListHead(&Vcb->scrub.errors);
@@ -4350,6 +4349,9 @@ exit2:
             ExDeleteResourceLite(&Vcb->load_lock);
             ExDeleteResourceLite(&Vcb->fcb_lock);
             ExDeleteResourceLite(&Vcb->chunk_lock);
+            ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
+            ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);
+            ExDeleteResourceLite(&Vcb->scrub.stats_lock);
 
             if (Vcb->devices.Flink) {
                 while (!IsListEmpty(&Vcb->devices)) {
