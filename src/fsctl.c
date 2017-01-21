@@ -2546,14 +2546,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     }
     
     // If this is a disk, we have been handed the PDO, so need to go up to find something we can use
-    if (RtlCompareMemory(pnp_guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID) && DeviceObject->AttachedDevice) {
-        PDEVICE_OBJECT obj = DeviceObject->AttachedDevice;
-        
-        ObReferenceObject(DeviceObject->AttachedDevice);
-        ObDereferenceObject(DeviceObject);
-        
-        DeviceObject = obj;
-    }
+    if (RtlCompareMemory(pnp_guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID) && DeviceObject->AttachedDevice)
+        DeviceObject = DeviceObject->AttachedDevice;
     
     Status = dev_ioctl(DeviceObject, IOCTL_DISK_IS_WRITABLE, NULL, 0, NULL, 0, TRUE, NULL);
     if (!NT_SUCCESS(Status)) {
