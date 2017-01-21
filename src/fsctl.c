@@ -2833,7 +2833,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     // FIXME - send notification that volume size has increased
     
-    ObReferenceObject(DeviceObject);
+    ObReferenceObject(DeviceObject); // once for vde
+    ObReferenceObject(DeviceObject); // and again for Vcb
     
     do_write(Vcb, Irp, &rollback);
 
