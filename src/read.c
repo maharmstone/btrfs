@@ -3468,7 +3468,7 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
         
-        goto exit3;
+        goto exit2;
     }
     
     wait = IoIsOperationSynchronous(Irp);
@@ -3501,7 +3501,6 @@ exit:
     if (Irp->UserIosb)
         *Irp->UserIosb = Irp->IoStatus;
     
-exit2:
     Irp->IoStatus.Status = Status;
     
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
@@ -3515,7 +3514,7 @@ exit2:
             do_read_job(Irp);
     }
     
-exit3:
+exit2:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
