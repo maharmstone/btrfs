@@ -3686,6 +3686,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
+    if (!(Vcb->Vpb->Flags & VPB_MOUNTED)) {
+        Status = STATUS_DEVICE_NOT_READY;
+        goto exit;
+    }
+    
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("verify_vcb returned %08x\n", Status);
