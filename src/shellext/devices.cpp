@@ -114,7 +114,6 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                     dev.disk_num = 0xffffffff;
                     dev.part_num = 0xffffffff;
                 } else {
-                    // FIXME - exclude floppies etc.
                     dev.disk_num = sdn.DeviceNumber;
                     dev.part_num = sdn.PartitionNumber;
                 }
