@@ -4,7 +4,7 @@ INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
 CFLAGS = -Wall $(INCLUDES) -fvtable-verify=none
 
-LIBS = -lole32 -luuid -lntdll -luxtheme -lshlwapi -lcomctl32
+LIBS = -lole32 -luuid -lntdll -luxtheme -lshlwapi -lcomctl32 -lsetupapi
 
 CC = i686-w64-mingw32-g++
 

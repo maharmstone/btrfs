@@ -132,8 +132,6 @@ public:
     
 private:
     void populate_device_tree(HWND tree);
-    void add_device_to_tree(HWND tree, UNICODE_STRING* us, HANDLE mountmgr, btrfs_filesystem* bfs);
-    void add_partition_to_tree(HWND tree, HTREEITEM parent, WCHAR* s, UINT32 partnum, HANDLE mountmgr, btrfs_filesystem* bfs);
     
     HINSTANCE hinst;
     HWND hwnd;
