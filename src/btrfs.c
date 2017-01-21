@@ -3006,8 +3006,8 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
         
         if (!NT_SUCCESS(Status)) {
             WARN("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
-            dev->disk_num = 0;
-            dev->part_num = 0;
+            dev->disk_num = 0xffffffff;
+            dev->part_num = 0xffffffff;
         } else {
             dev->disk_num = sdn.DeviceNumber;
             dev->part_num = sdn.PartitionNumber;
