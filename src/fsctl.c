@@ -2808,6 +2808,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
     InsertTailList(&vde->children, &vc->list_entry);
+    vde->num_children++;
+    vde->children_loaded++;
     ExReleaseResourceLite(&vde->child_lock);
     
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
