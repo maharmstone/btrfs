@@ -569,7 +569,23 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
 
     Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
     if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwndDlg, Status);
+        WCHAR t[255], u[255];
+                
+        if (!LoadStringW(module, IDS_LOCK_FAILED, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwnd, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+        
+        if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        MessageBoxW(hwndDlg, u, title, MB_ICONERROR);
+        
         NtClose(h2);
         CloseHandle(h);
         return;
