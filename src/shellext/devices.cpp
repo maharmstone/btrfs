@@ -34,6 +34,7 @@ typedef struct {
     std::wstring friendly_name;
     ULONG disk_num;
     ULONG part_num;
+    UINT64 size;
 } device;
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
@@ -72,16 +73,30 @@ void find_devices(HWND hwnd, const GUID* guid, std::vector<device>* device_list)
                 device dev;
                 STORAGE_DEVICE_NUMBER sdn;
                 IO_STATUS_BLOCK iosb;
+                UNICODE_STRING path;
+                OBJECT_ATTRIBUTES attr;
+                GET_LENGTH_INFORMATION gli;
                 
-                file = CreateFileW(detail->DevicePath, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+                path.Buffer = detail->DevicePath;
+                path.Length = path.MaximumLength = wcslen(detail->DevicePath) * sizeof(WCHAR);
+                
+                if (path.Length > 4 * sizeof(WCHAR) && path.Buffer[0] == '\\' && path.Buffer[1] == '\\'  && path.Buffer[2] == '?'  && path.Buffer[3] == '\\')
+                    path.Buffer[1] = '?';
+                
+                InitializeObjectAttributes(&attr, &path, 0, NULL, NULL);
     
-                if (file == INVALID_HANDLE_VALUE) {
-                    ShowError(hwnd, GetLastError());
-                    return;
-                }
+                Status = NtOpenFile(&file, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
+                
+                if (!NT_SUCCESS(Status))
+                    goto nextitem2;
                 
                 dev.pnp_name = detail->DevicePath;
+                
+                Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
+                if (!NT_SUCCESS(Status))
+                    goto nextitem;
+                
+                dev.size = gli.Length.QuadPart;
                 
                 Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0, &sdn, sizeof(STORAGE_DEVICE_NUMBER));
                 if (!NT_SUCCESS(Status)) {
@@ -148,15 +163,16 @@ void find_devices(HWND hwnd, const GUID* guid, std::vector<device>* device_list)
                 
                 // FIXME - if disk, check for partitions
                 // FIXME - if disk, get name
-                // FIXME - get length
                 // FIXME - get existing filesystem
                 // FIXME - exclude Btrfs volumes
                 
-                CloseHandle(file);
-                
                 device_list->push_back(dev);
+                
+nextitem:
+                NtClose(file);
             }
 
+nextitem2:
             free(detail);
             
             index++;
@@ -208,7 +224,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         tis.itemex.stateMask = TVIS_EXPANDED;
         
         if (device_list[i].disk_num != 0xffffffff) {
-            WCHAR t[255], u[255];
+            WCHAR t[255], u[255], size[255];
             
             if (!LoadStringW(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t, sizeof(t) / sizeof(WCHAR))) {
                 ShowError(hwnd, GetLastError());
@@ -222,15 +238,30 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             
             // FIXME - drive letter
             // FIXME - FS type
-            // FIXME - length
             // FIXME - Btrfs devices
+            
+            name += L" (";
+            
             if (device_list[i].friendly_name != L"") {
-                name += L" (";
                 name += device_list[i].friendly_name;
-                name += L")";
+                name += L", ";
             }
-        } else
+            
+            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
+            name += size;
+            
+            name += L")";
+        } else {
+            WCHAR size[255];
+            
             name = device_list[i].pnp_name;
+            
+            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
+            
+            name += L" (";
+            name += size;
+            name += L")";
+        }
         
         tis.itemex.pszText = (WCHAR*)name.c_str();
         tis.itemex.cchTextMax = name.length();
