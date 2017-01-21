@@ -170,7 +170,11 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     dev_size = 0;
     
     while (TRUE) {
-        if (bd->partition_number == 0) {
+        if (bd->device_number == 0xffffffff) {
+            devs[k].name = (WCHAR*)malloc(bd->namelen + sizeof(WCHAR));
+            memcpy(devs[k].name, bd->name, bd->namelen);
+            devs[k].name[bd->namelen / sizeof(WCHAR)] = 0;
+        } else if (bd->partition_number == 0) {
             if (!LoadStringW(module, IDS_DISK_NUM, u, sizeof(u) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
                 goto end;
@@ -178,6 +182,9 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
             
             if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
                 goto end;
+            
+            devs[k].name = (WCHAR*)malloc((wcslen(t) + 1) * sizeof(WCHAR));
+            wcscpy(devs[k].name, t);
         } else {
             if (!LoadStringW(module, IDS_DISK_PART_NUM, u, sizeof(u) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
@@ -186,10 +193,10 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
             
             if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
                 goto end;
+            
+            devs[k].name = (WCHAR*)malloc((wcslen(t) + 1) * sizeof(WCHAR));
+            wcscpy(devs[k].name, t);
         }
-        
-        devs[k].name = (WCHAR*)malloc((wcslen(t) + 1) * sizeof(WCHAR));
-        wcscpy(devs[k].name, t);
         
         devs[k].dev_id = bd->dev_id;
         devs[k].alloc = 0;
