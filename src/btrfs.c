@@ -3757,11 +3757,11 @@ static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
     return FALSE;
 }
 
-static NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name) {
+static NTSTATUS get_device_pnp_name_guid(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID* guid) {
     NTSTATUS Status;
     WCHAR *list = NULL, *s;
     
-    Status = IoGetDeviceInterfaces((PVOID)&GUID_DEVINTERFACE_VOLUME, NULL, 0, &list);
+    Status = IoGetDeviceInterfaces((PVOID)guid, NULL, 0, &list);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceInterfaces returned %08x\n", Status);
         return Status;
@@ -3777,7 +3777,7 @@ static NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING
         name.Buffer = s;
         
         if (NT_SUCCESS(IoGetDeviceObjectPointer(&name, FILE_READ_ATTRIBUTES, &FileObject, &devobj))) {
-            if (devobj == DeviceObject) {
+            if (DeviceObject == devobj || DeviceObject == FileObject->DeviceObject) {
                 ObDereferenceObject(FileObject);
                 
                 pnp_name->Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
@@ -3803,7 +3803,7 @@ static NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING
     pnp_name->Length = pnp_name->MaximumLength = 0;
     pnp_name->Buffer = 0;
     
-    Status = STATUS_SUCCESS;
+    Status = STATUS_NOT_FOUND;
     
 end:
     if (list)
@@ -3812,12 +3812,37 @@ end:
     return Status;
 }
 
+NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid) {
+    NTSTATUS Status;
+    
+    Status = get_device_pnp_name_guid(DeviceObject, pnp_name, &GUID_DEVINTERFACE_VOLUME);
+    if (NT_SUCCESS(Status)) {
+        *guid = &GUID_DEVINTERFACE_VOLUME;
+        return Status;
+    }
+    
+    Status = get_device_pnp_name_guid(DeviceObject, pnp_name, &GUID_DEVINTERFACE_HIDDEN_VOLUME);
+    if (NT_SUCCESS(Status)) {
+        *guid = &GUID_DEVINTERFACE_HIDDEN_VOLUME;
+        return Status;
+    }
+    
+    Status = get_device_pnp_name_guid(DeviceObject, pnp_name, &GUID_DEVINTERFACE_DISK);
+    if (NT_SUCCESS(Status)) {
+        *guid = &GUID_DEVINTERFACE_DISK;
+        return Status;
+    }
+    
+    return STATUS_NOT_FOUND;
+}
+
 static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
     UINT32 crc32;
     UNICODE_STRING pnp_name;
+    const GUID* guid;
     
     to_read = DeviceObject->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), DeviceObject->SectorSize);
     
@@ -3846,7 +3871,7 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject) {
         goto end;
     }
     
-    Status = get_device_pnp_name(DeviceObject, &pnp_name);
+    Status = get_device_pnp_name(DeviceObject, &pnp_name, &guid);
     if (!NT_SUCCESS(Status)) {
         ERR("get_device_pnp_name returned %08x\n", Status);
         goto end;

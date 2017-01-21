@@ -30,6 +30,7 @@
 
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
+extern PDRIVER_OBJECT drvobj;
 
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
@@ -2490,16 +2491,20 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     LIST_ENTRY rollback, *le;
     device* dev;
     DEV_ITEM* di;
-    UINT64 dev_id, offset, size;
+    UINT64 dev_id, size;
     UINT8* mb;
     UINT64* stats;
-    UNICODE_STRING mmdevpath, volname;
+    UNICODE_STRING mmdevpath, pnp_name, pnp_name2;
     volume_child* vc;
     PDEVICE_OBJECT mountmgr;
     KEY searchkey;
     traverse_ptr tp;
     STORAGE_DEVICE_NUMBER sdn;
     volume_device_extension* vde;
+    const GUID* pnp_guid;
+    GET_LENGTH_INFORMATION gli;
+    
+    pnp_name.Buffer = NULL;
     
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
@@ -2544,162 +2549,76 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         return Status;
     }
     
-    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
-                       &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
+    Status = get_device_pnp_name(fileobj->DeviceObject, &pnp_name, &pnp_guid);
     if (!NT_SUCCESS(Status)) {
-        ERR("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        ERR("get_device_pnp_name returned %08x\n", Status);
         ObDereferenceObject(fileobj);
         return Status;
     }
-    
-    if (sdn.DeviceType != FILE_DEVICE_DISK) { // FIXME - accept floppies and CDs?
-        WARN("device was not disk\n"); 
-        ObDereferenceObject(fileobj);
-        return STATUS_INVALID_PARAMETER;
-    }
-    
-    volname.Buffer = NULL;
-    volname.Length = volname.MaximumLength = 0;
 
-    if (sdn.PartitionNumber != 0) { // if this is a partition, open the disk device instead
-        static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
-        static WCHAR bs_dr[] = L"\\DR";
-        
-        WCHAR devnamew[255], numw[20];
-        UNICODE_STRING devname, num, bsdrus;
-        PFILE_OBJECT fileobj2;
-        PDEVICE_OBJECT devobj;
-        DRIVE_LAYOUT_INFORMATION_EX* dli;
-        ULONG dlisize, i;
-        BOOL found = FALSE;
-        MOUNTDEV_NAME mdn1;
+    // if disk, check it has no partitions
+    if (RtlCompareMemory(pnp_guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
+        ULONG dlisize;
+        DRIVE_LAYOUT_INFORMATION_EX* dli = NULL;
         
         dlisize = 0;
         
         do {
             dlisize += 1024;
+            
+            if (dli)
+                ExFreePool(dli);
+            
             dli = ExAllocatePoolWithTag(PagedPool, dlisize, ALLOC_TAG);
             if (!dli) {
                 ERR("out of memory\n");
-                ObDereferenceObject(fileobj);
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end2;
             }
         
-            Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0,
-                               dli, dlisize, TRUE, NULL);
+            Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0, dli, dlisize, TRUE, NULL);
         } while (Status == STATUS_BUFFER_TOO_SMALL);
         
-        if (!NT_SUCCESS(Status)) {
+        if (NT_SUCCESS(Status) && dli->PartitionCount > 0) {
             ExFreePool(dli);
-            ERR("IOCTL_DISK_GET_DRIVE_LAYOUT_EX returned %08x\n", Status);
-            ObDereferenceObject(fileobj);
-            return Status;
-        }
-        
-        for (i = 0; i < dli->PartitionCount; i++) {
-            if (dli->PartitionEntry[i].PartitionNumber == sdn.PartitionNumber) {
-                offset = dli->PartitionEntry[i].StartingOffset.QuadPart;
-                size = dli->PartitionEntry[i].PartitionLength.QuadPart;
-
-                found = TRUE;
-                break;
-            }
+            ERR("not adding disk which has partitions\n");
+            Status = STATUS_DEVICE_NOT_READY;
+            goto end2;
         }
         
         ExFreePool(dli);
-        
-        if (!found) {
-            ERR("could not find partition %u in DRIVE_LAYOUT_INFORMATION_EX\n");
-            Status = STATUS_INVALID_PARAMETER;
-            ObDereferenceObject(fileobj);
-            return Status;
-        }
-        
-        // get name of partition
-        
-        Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
-                           &mdn1, sizeof(MOUNTDEV_NAME), TRUE, NULL);
-        
-        if (Status == STATUS_BUFFER_OVERFLOW || NT_SUCCESS(Status)) {
-            MOUNTDEV_NAME* mdn2;
-            
-            mdn2 = ExAllocatePoolWithTag(PagedPool, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, ALLOC_TAG);
-            if (!mdn2) {
-                ERR("out of memory\n");
-                ObDereferenceObject(fileobj);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            Status = dev_ioctl(fileobj->DeviceObject, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0,
-                               mdn2, offsetof(MOUNTDEV_NAME, Name[0]) + mdn1.NameLength, TRUE, NULL);
-            
-            if (!NT_SUCCESS(Status))
-                WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-            else if (mdn2->NameLength == 0)
-                WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned zero-length name\n");
-            else {
-                volname.Length = volname.MaximumLength = mdn2->NameLength;
-                volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG);
-                if (!volname.Buffer) {
-                    ERR("out of memory\n");
-                    ObDereferenceObject(fileobj);
-                    ExFreePool(mdn2);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                RtlCopyMemory(volname.Buffer, mdn2->Name, mdn2->NameLength);
-            }
-            
-            ExFreePool(mdn2);
-        } else
-            WARN("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-
-        wcscpy(devnamew, device_harddisk);
-        devname.Buffer = devnamew;
-        devname.MaximumLength = sizeof(devnamew);
-        devname.Length = wcslen(device_harddisk) * sizeof(WCHAR);
-
-        num.Buffer = numw;
-        num.MaximumLength = sizeof(numw);
-        RtlIntegerToUnicodeString(sdn.DeviceNumber, 10, &num);
-        RtlAppendUnicodeStringToString(&devname, &num);
-
-        bsdrus.Buffer = bs_dr;
-        bsdrus.Length = bsdrus.MaximumLength = wcslen(bs_dr) * sizeof(WCHAR);
-        RtlAppendUnicodeStringToString(&devname, &bsdrus);
-        
-        RtlAppendUnicodeStringToString(&devname, &num);
-        
-        Status = IoGetDeviceObjectPointer(&devname, FILE_READ_ATTRIBUTES, &fileobj2, &devobj);
-        if (!NT_SUCCESS(Status)) {
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-            ObDereferenceObject(fileobj);
-            return Status;
-        }
-        
-        ObDereferenceObject(fileobj);
-        fileobj = fileobj2;
-    } else {
-        GET_LENGTH_INFORMATION gli;
-        
-        offset = 0;
-        
-        Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
-                           &gli, sizeof(gli), TRUE, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error reading length information: %08x\n", Status);
-            ObDereferenceObject(fileobj);
-            return Status;
-        }
-        
-        size = gli.Length.QuadPart;
     }
+    
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                       &sdn, sizeof(STORAGE_DEVICE_NUMBER), TRUE, NULL);
+    if (NT_SUCCESS(Status)) {
+        if (sdn.DeviceType != FILE_DEVICE_DISK) { // FIXME - accept floppies and CDs?
+            WARN("device was not disk\n"); 
+            ObDereferenceObject(fileobj);
+            return STATUS_INVALID_PARAMETER;
+        }
+    } else {
+        sdn.DeviceNumber = 0xffffffff;
+        sdn.PartitionNumber = 0xffffffff;
+    }
+    
+    Status = dev_ioctl(fileobj->DeviceObject, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                        &gli, sizeof(gli), TRUE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error reading length information: %08x\n", Status);
+        ObDereferenceObject(fileobj);
+        return Status;
+    }
+    
+    size = gli.Length.QuadPart;
     
     if (size < 0x100000) {
         ERR("device was not large enough to hold FS (%llx bytes, need at least 1 MB)\n", size);
         ObDereferenceObject(fileobj);
         return STATUS_INTERNAL_ERROR;
     }
+    
+    volume_removal(drvobj, &pnp_name);
     
     InitializeListHead(&rollback);
     
@@ -2731,7 +2650,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     dev->seeding = FALSE;
     dev->length = size;
     init_device(Vcb, dev, TRUE);
-    dev->offset = offset;
+    dev->offset = 0;
     
     InitializeListHead(&dev->space);
     
@@ -2828,7 +2747,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
     RtlZeroMemory(mb, 0x100000);
     
-    Status = write_data_phys(fileobj->DeviceObject, offset, mb, 0x100000);
+    Status = write_data_phys(fileobj->DeviceObject, 0, mb, 0x100000);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data_phys returned %08x\n", Status);
         goto end;
@@ -2850,12 +2769,31 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->generation = Vcb->superblock.generation;
     vc->devobj = fileobj->DeviceObject;
     
-    vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
-    vc->pnp_name.Buffer = NULL;
+    pnp_name2 = pnp_name;
     
-    // FIXME - get PNP name
+    if (pnp_name.Length > 4 * sizeof(WCHAR) && pnp_name.Buffer[0] == '\\' && (pnp_name.Buffer[1] == '\\' || pnp_name.Buffer[1] == '?') &&
+        pnp_name.Buffer[2] == '?' && pnp_name.Buffer[3] == '\\') {
+        pnp_name2.Buffer = &pnp_name2.Buffer[3];
+        pnp_name2.Length -= 3 * sizeof(WCHAR);
+        pnp_name2.MaximumLength -= 3 * sizeof(WCHAR);
+    }
     
-    vc->offset = offset;
+    vc->pnp_name.Length = vc->pnp_name.MaximumLength = pnp_name2.Length;
+    
+    if (pnp_name2.Length == 0)
+        vc->pnp_name.Buffer = NULL;
+    else {
+        vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, pnp_name2.Length, ALLOC_TAG);
+        if (!vc->pnp_name.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(vc->pnp_name.Buffer, pnp_name2.Buffer, pnp_name2.Length);
+    }
+    
+    vc->offset = 0;
     vc->size = size;
     vc->seeding = FALSE;
     vc->disk_num = sdn.DeviceNumber;
@@ -2865,22 +2803,22 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     InsertTailList(&vde->children, &vc->list_entry);
     ExReleaseResourceLite(&vde->child_lock);
     
-    if (volname.Length > 0) {
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-        if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            remove_drive_letter(mountmgr, &volname);
-            
-            ObDereferenceObject(mountmgrfo);
-        }
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status))
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+    else {
+        remove_drive_letter(mountmgr, &pnp_name);
+        
+        ObDereferenceObject(mountmgrfo);
     }
     
     Vcb->superblock.num_devices++;
     Vcb->superblock.total_bytes += size;
     Vcb->devices_loaded++;
     InsertTailList(&Vcb->devices, &dev->list_entry);
+    
+    // FIXME - send notification that volume size has increased
     
     ObReferenceObject(fileobj->DeviceObject);
     
@@ -2894,10 +2832,12 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     
 end:
     ExReleaseResourceLite(&Vcb->tree_lock);
+    
+end2:
     ObDereferenceObject(fileobj);
     
-    if (volname.Buffer)
-        ExFreePool(volname.Buffer);
+    if (pnp_name.Buffer)
+        ExFreePool(pnp_name.Buffer);
     
     return Status;
 }

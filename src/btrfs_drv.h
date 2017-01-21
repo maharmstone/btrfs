@@ -782,6 +782,7 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
 void init_device(device_extension* Vcb, device* dev, BOOL get_nums);
 void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
+NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -904,6 +905,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
 
 // in cache.c

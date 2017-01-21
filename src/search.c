@@ -372,7 +372,7 @@ end:
     ObDereferenceObject(FileObject);
 }
 
-static void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     UNICODE_STRING devpath2;
