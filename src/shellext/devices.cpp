@@ -22,6 +22,7 @@
 #include "devices.h"
 #include "resource.h"
 #include "balance.h"
+#include <stddef.h>
 #include <uxtheme.h>
 #include <setupapi.h>
 #include <strsafe.h>
@@ -38,6 +39,8 @@ typedef struct {
     ULONG disk_num;
     ULONG part_num;
     UINT64 size;
+    BTRFS_UUID fs_uuid;
+    BTRFS_UUID dev_uuid;
 } device;
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
@@ -131,9 +134,16 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                     if (NT_SUCCESS(Status)) {
                         if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
                             dev.fstype = fs_ident[i].name;
+                            
+                            if (dev.fstype == L"Btrfs") {
+                                superblock* bsb = (superblock*)sb;
+                                
+                                RtlCopyMemory(&dev.fs_uuid, &bsb->uuid, sizeof(BTRFS_UUID));
+                                RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID));
+                            }
+                            
                             break;
                         }
-                        // FIXME - Btrfs
                     }
                     
                     i++;
@@ -280,7 +290,10 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     OBJECT_ATTRIBUTES attr;
     UNICODE_STRING us;
     IO_STATUS_BLOCK iosb;
-    HANDLE mountmgr;
+    HANDLE mountmgr, btrfsh;
+    btrfs_filesystem* bfs = NULL;
+    
+    static WCHAR btrfs[] = L"\\Btrfs";
     
     RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
     InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
@@ -291,6 +304,37 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         MessageBoxW(hwnd, L"Could not get handle to mount manager.", L"Error", MB_ICONERROR);
         return;
     }
+    
+    us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+    us.Buffer = btrfs;
+    
+    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    
+    Status = NtOpenFile(&btrfsh, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &iosb,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
+    if (NT_SUCCESS(Status)) {
+        ULONG bfssize = 0;
+        
+        do {
+            bfssize += 1024;
+            
+            if (bfs) free(bfs);
+            bfs = (btrfs_filesystem*)malloc(bfssize);
+            
+            Status = NtDeviceIoControlFile(btrfsh, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, NULL, 0, bfs, bfssize);
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                free(bfs);
+                bfs = NULL;
+                break;
+            }
+        } while (Status == STATUS_BUFFER_OVERFLOW);
+        
+        if (bfs && bfs->num_devices == 0) { // no mounted filesystems found
+            free(bfs);
+            bfs = NULL;
+        }
+    }
+    NtClose(btrfsh);
     
     find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, &device_list);
     find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, &device_list);
@@ -331,7 +375,43 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         } else
             name = device_list[i].pnp_name;
         
-        // FIXME - Btrfs devices
+        // match child Btrfs devices to their parent
+        if (bfs && device_list[i].drive == L"" && device_list[i].fstype == L"Btrfs") {
+            btrfs_filesystem* bfs2 = bfs;
+            
+            while (TRUE) {
+                if (RtlCompareMemory(&bfs2->uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    ULONG j, k;
+                    btrfs_filesystem_device* dev;
+                    
+                    for (j = 0; j < bfs2->num_devices; j++) {
+                        if (j == 0)
+                            dev = &bfs2->device;
+                        else
+                            dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+                        
+                        if (RtlCompareMemory(&device_list[i].dev_uuid, &device_list[i].dev_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                            for (k = 0; k < device_list.size(); k++) {
+                                if (k != i && device_list[k].fstype == L"Btrfs" && device_list[k].drive != L"" &&
+                                    RtlCompareMemory(&device_list[k].fs_uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                                    device_list[i].drive = device_list[k].drive;
+                                    break;
+                                }
+                            }
+                            
+                            break;
+                        }
+                    }
+                    
+                    break;
+                }
+                
+                if (bfs2->next_entry != 0)
+                    bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+                else
+                    break;
+            }
+        }
         
         name += L" (";
         
