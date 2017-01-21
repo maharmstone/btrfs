@@ -19,13 +19,24 @@
 #include <winternl.h>
 #include <shlobj.h>
 #include <vector>
+#include <string>
 #include "../btrfsioctl.h"
 
 typedef struct {
-    WCHAR* path;
+    std::wstring pnp_name;
+    std::wstring friendly_name;
+    std::wstring drive;
+    std::wstring fstype;
+    ULONG disk_num;
+    ULONG part_num;
+    UINT64 size;
+    BOOL has_parts;
+    BTRFS_UUID fs_uuid;
+    BTRFS_UUID dev_uuid;
+    BOOL ignore;
     BOOL multi_device;
-    const WCHAR* fstype;
-} device_info;
+    BOOL is_disk;
+} device;
 
 typedef struct {
     const WCHAR* name;
@@ -115,16 +126,6 @@ const static fs_identifier fs_ident[] = {
 
 class BtrfsDeviceAdd {
 public:
-    ~BtrfsDeviceAdd() {
-        unsigned int i;
-        
-        for (i = 0; i < devpaths.size(); i++) {
-            free(devpaths[i].path);
-        }
-        
-        devpaths.clear();
-    }
-    
     INT_PTR CALLBACK DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDialog();
     void AddDevice(HWND hwndDlg);
@@ -136,6 +137,6 @@ private:
     HINSTANCE hinst;
     HWND hwnd;
     WCHAR* cmdline;
-    device_info* sel;
-    std::vector<device_info> devpaths;
+    device* sel;
+    std::vector<device> device_list;
 };

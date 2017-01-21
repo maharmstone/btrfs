@@ -28,22 +28,7 @@
 #include <strsafe.h>
 #include <mountmgr.h>
 #include <algorithm>
-#include <string>
 #include "../btrfs.h"
-
-typedef struct {
-    std::wstring pnp_name;
-    std::wstring friendly_name;
-    std::wstring drive;
-    std::wstring fstype;
-    ULONG disk_num;
-    ULONG part_num;
-    UINT64 size;
-    BOOL has_parts;
-    BTRFS_UUID fs_uuid;
-    BTRFS_UUID dev_uuid;
-    BOOL ignore;
-} device;
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
 
@@ -154,8 +139,11 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                 dev.fstype = L"";
                 dev.has_parts = FALSE;
                 dev.ignore = FALSE;
+                dev.multi_device = FALSE;
                 
-                if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
+                dev.is_disk = RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID);
+                
+                if (dev.is_disk) {
                     STORAGE_PROPERTY_QUERY spq;
                     STORAGE_DEVICE_DESCRIPTOR sdd, *sdd2;
                     ULONG dlisize;
@@ -276,7 +264,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                     free(mmp);
                 }
                 
-                if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) != sizeof(GUID) || !dev.has_parts) {
+                if (dev.is_disk || !dev.has_parts) {
                     i = 0;
                     while (fs_ident[i].name) {
                         if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
@@ -346,7 +334,6 @@ static bool sort_devices(device i, device j) {
 
 void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     HWND hwnd = GetParent(tree);
-    std::vector<device> device_list;
     unsigned int i;
     ULONG last_disk_num = 0xffffffff;
     HTREEITEM diskitem;
@@ -358,6 +345,8 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     btrfs_filesystem* bfs = NULL;
     
     static WCHAR btrfs[] = L"\\Btrfs";
+    
+    device_list.clear();
     
     RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
     InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
@@ -464,6 +453,8 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                                     }
                                 }
                                 
+                                device_list[i].multi_device = bfs2->num_devices > 1;
+                                
                                 break;
                             }
                         }
@@ -502,7 +493,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             
             tis.itemex.pszText = (WCHAR*)name.c_str();
             tis.itemex.cchTextMax = name.length();
-            tis.itemex.lParam = 0;
+            tis.itemex.lParam = (LPARAM)&device_list[i];
             
             item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
             if (!item) {
@@ -531,7 +522,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         return;
     }
     
-    if (sel->fstype) {
+    if (sel->fstype != L"") {
         WCHAR s[255];
         
         if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s, sizeof(s) / sizeof(WCHAR))) {
@@ -539,7 +530,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
             return;
         }
         
-        if (StringCchPrintfW(mess, sizeof(mess) / sizeof(WCHAR), s, sel->fstype) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        if (StringCchPrintfW(mess, sizeof(mess) / sizeof(WCHAR), s, sel->fstype.c_str()) == STRSAFE_E_INSUFFICIENT_BUFFER)
             return;
     } else {
         if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
@@ -564,8 +555,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         return;
     }
     
-    vn.Length = vn.MaximumLength = wcslen(sel->path) * sizeof(WCHAR);
-    vn.Buffer = sel->path;
+    vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
+    vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
 
     InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -645,12 +636,12 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     tvi.mask = TVIF_PARAM | TVIF_HANDLE;
                     
                     if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel = tvi.lParam == 0 ? NULL : &devpaths[tvi.lParam - 1];
+                        sel = tvi.lParam == 0 ? NULL : (device*)tvi.lParam;
                     else
                         sel = NULL;
                     
                     if (sel)
-                        enable = !sel->multi_device;
+                        enable = (!sel->is_disk || !sel->has_parts) && !sel->multi_device;
                     
                     EnableWindow(GetDlgItem(hwndDlg, IDOK), enable);
                     break;
