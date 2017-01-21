@@ -39,6 +39,7 @@ typedef struct {
     ULONG disk_num;
     ULONG part_num;
     UINT64 size;
+    BOOL has_parts;
     BTRFS_UUID fs_uuid;
     BTRFS_UUID dev_uuid;
 } device;
@@ -121,37 +122,13 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                 dev.friendly_name = L"";
                 dev.drive = L"";
                 dev.fstype = L"";
-                
-                i = 0;
-                while (fs_ident[i].name) {
-                    if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
-                        LARGE_INTEGER off;
-                        
-                        off.QuadPart = fs_ident[i].kboff * 1024;
-                        Status = NtReadFile(file, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
-                    }
-                    
-                    if (NT_SUCCESS(Status)) {
-                        if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
-                            dev.fstype = fs_ident[i].name;
-                            
-                            if (dev.fstype == L"Btrfs") {
-                                superblock* bsb = (superblock*)sb;
-                                
-                                RtlCopyMemory(&dev.fs_uuid, &bsb->uuid, sizeof(BTRFS_UUID));
-                                RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID));
-                            }
-                            
-                            break;
-                        }
-                    }
-                    
-                    i++;
-                }
+                dev.has_parts = FALSE;
                 
                 if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
                     STORAGE_PROPERTY_QUERY spq;
                     STORAGE_DEVICE_DESCRIPTOR sdd, *sdd2;
+                    ULONG dlisize;
+                    DRIVE_LAYOUT_INFORMATION_EX* dli;
                     
                     spq.PropertyId = StorageDeviceProperty;
                     spq.QueryType = PropertyStandardQuery;
@@ -198,6 +175,26 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                         
                         free(sdd2);
                     }
+                    
+                    dlisize = 0;
+                    dli = NULL;
+    
+                    do {
+                        dlisize += 1024;
+                        
+                        if (dli)
+                            free(dli);
+                        
+                        dli = (DRIVE_LAYOUT_INFORMATION_EX*)malloc(dlisize);
+                    
+                        Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                                                       NULL, 0, dli, dlisize);
+                    } while (Status == STATUS_BUFFER_TOO_SMALL);
+                    
+                    if (NT_SUCCESS(Status) && dli->PartitionCount > 0)
+                        dev.has_parts = TRUE;
+                    
+                    free(dli);
                 } else {
                     ULONG mmpsize;
                     MOUNTMGR_MOUNT_POINT* mmp;
@@ -248,7 +245,35 @@ void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<devi
                     free(mmp);
                 }
                 
-                // FIXME - if disk, check for partitions
+                if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) != sizeof(GUID) || !dev.has_parts) {
+                    i = 0;
+                    while (fs_ident[i].name) {
+                        if (i == 0 || fs_ident[i].kboff != fs_ident[i-1].kboff) {
+                            LARGE_INTEGER off;
+                            
+                            off.QuadPart = fs_ident[i].kboff * 1024;
+                            Status = NtReadFile(file, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
+                        }
+                        
+                        if (NT_SUCCESS(Status)) {
+                            if (RtlCompareMemory(sb + fs_ident[i].sboff, fs_ident[i].magic, fs_ident[i].magiclen) == fs_ident[i].magiclen) {
+                                dev.fstype = fs_ident[i].name;
+                                
+                                if (dev.fstype == L"Btrfs") {
+                                    superblock* bsb = (superblock*)sb;
+                                    
+                                    RtlCopyMemory(&dev.fs_uuid, &bsb->uuid, sizeof(BTRFS_UUID));
+                                    RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID));
+                                }
+                                
+                                break;
+                            }
+                        }
+                        
+                        i++;
+                    }
+                }
+                
                 // FIXME - exclude Btrfs volumes
                 
                 device_list->push_back(dev);
