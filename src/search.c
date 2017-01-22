@@ -330,6 +330,22 @@ static void remove_volume_child(volume_device_extension* vde, volume_child* vc) 
             
             ObDereferenceObject(FileObject);
         }
+        
+        if (vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
+            vde->device->Characteristics &= ~FILE_REMOVABLE_MEDIA;
+            
+            le = vde->children.Flink;
+            while (le != &vde->children) {
+                volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+                
+                if (vc->devobj->Characteristics & FILE_REMOVABLE_MEDIA) {
+                    vde->device->Characteristics |= FILE_REMOVABLE_MEDIA;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+        }
     }
     
     if (vde->children_loaded == 0) { // remove volume device
