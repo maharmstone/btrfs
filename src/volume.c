@@ -775,15 +775,13 @@ static __inline WCHAR hex_digit(UINT8 n) {
 
 static NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = (TARGET_DEVICE_REMOVAL_NOTIFICATION*)NotificationStructure;
-    
-    ERR("(%p, %p)\n", NotificationStructure, Context);
+    volume_device_extension* vde = (volume_device_extension*)Context;
     
     if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_QUERY_REMOVE, sizeof(GUID)) == sizeof(GUID)) {
-        ERR("GUID_TARGET_DEVICE_QUERY_REMOVE\n");
-    } else if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_REMOVE_COMPLETE, sizeof(GUID)) == sizeof(GUID)) {
-        ERR("GUID_TARGET_DEVICE_REMOVE_COMPLETE\n");
-    } else if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_REMOVE_CANCELLED, sizeof(GUID)) == sizeof(GUID)) {
-        ERR("GUID_TARGET_DEVICE_REMOVE_CANCELLED\n");
+        TRACE("GUID_TARGET_DEVICE_QUERY_REMOVE\n");
+        
+        if (vde->mounted_device)
+            return pnp_query_remove_device(vde->mounted_device, NULL);
     }
     
     return STATUS_SUCCESS;
@@ -922,7 +920,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vc->generation = sb->generation;
         
         Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
-                                                drvobj, pnp_removal, vc, &vc->notification_entry);
+                                                drvobj, pnp_removal, vde, &vc->notification_entry);
         if (!NT_SUCCESS(Status))
             WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
         
