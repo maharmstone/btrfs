@@ -252,6 +252,9 @@ end:
 static void remove_volume_child(volume_device_extension* vde, volume_child* vc) {
     NTSTATUS Status;
     
+    if (vc->notification_entry)
+        IoUnregisterPlugPlayNotificationEx(vc->notification_entry);
+    
     ObDereferenceObject(vc->devobj);
     ExFreePool(vc->pnp_name.Buffer);
     RemoveEntryList(&vc->list_entry);

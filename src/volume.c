@@ -20,6 +20,7 @@
 #include <ntddvol.h>
 #include <ntddstor.h>
 #include <ntdddisk.h>
+#include <wdmguid.h>
 
 #define IOCTL_VOLUME_IS_DYNAMIC     CTL_CODE(IOCTL_VOLUME_BASE, 18, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_VOLUME_POST_ONLINE    CTL_CODE(IOCTL_VOLUME_BASE, 25, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
@@ -772,6 +773,22 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
+static NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
+    TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = (TARGET_DEVICE_REMOVAL_NOTIFICATION*)NotificationStructure;
+    
+    ERR("(%p, %p)\n", NotificationStructure, Context);
+    
+    if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_QUERY_REMOVE, sizeof(GUID)) == sizeof(GUID)) {
+        ERR("GUID_TARGET_DEVICE_QUERY_REMOVE\n");
+    } else if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_REMOVE_COMPLETE, sizeof(GUID)) == sizeof(GUID)) {
+        ERR("GUID_TARGET_DEVICE_REMOVE_COMPLETE\n");
+    } else if (RtlCompareMemory(&tdrn->Event, &GUID_TARGET_DEVICE_REMOVE_CANCELLED, sizeof(GUID)) == sizeof(GUID)) {
+        ERR("GUID_TARGET_DEVICE_REMOVE_CANCELLED\n");
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num,
                        ULONG part_num, PUNICODE_STRING partname) {
     NTSTATUS Status;
@@ -903,6 +920,11 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
         vc->generation = sb->generation;
+        
+        Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
+                                                drvobj, pnp_removal, vc, &vc->notification_entry);
+        if (!NT_SUCCESS(Status))
+            WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
         
         ObReferenceObject(DeviceObject);
         vc->devobj = DeviceObject;

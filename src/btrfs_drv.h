@@ -637,6 +637,7 @@ typedef struct {
     UINT64 size;
     BOOL seeding;
     BOOL had_drive_letter;
+    void* notification_entry;
     ULONG disk_num;
     ULONG part_num;
     LIST_ENTRY list_entry;
