@@ -801,7 +801,10 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.mask = LVIF_TEXT;
         lvi.iSubItem = 1;
         
-        if (bd->partition_number == 0) {
+        if (bd->device_number == 0xffffffff) {
+            memcpy(s, bd->name, bd->namelen);
+            s[bd->namelen / sizeof(WCHAR)] = 0;
+        } else if (bd->partition_number == 0) {
             if (!LoadStringW(module, IDS_DISK_NUM, u, sizeof(u) / sizeof(WCHAR))) {
                 ShowError(GetParent(devlist), GetLastError());
                 break;
