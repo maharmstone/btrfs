@@ -38,6 +38,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
                              DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
+    PIO_STACK_LOCATION IrpSp;
     IO_STATUS_BLOCK IoStatusBlock;
     NTSTATUS Status;
     LARGE_INTEGER Offset;
@@ -92,6 +93,9 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         ERR("IoBuildSynchronousFsdRequest failed\n");
         goto deref;
     }
+    
+    IrpSp = IoGetNextIrpStackLocation(Irp);
+    IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
 
     Status = IoCallDriver(DeviceObject, Irp);
 
@@ -109,6 +113,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         else {
             TRACE("volume found\n");
             
+            DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
             add_volume_device(sb, mountmgr, pnp_name, length, disk_num, part_num, devpath);
         }
     }
