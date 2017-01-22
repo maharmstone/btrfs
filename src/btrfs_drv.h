@@ -636,6 +636,7 @@ typedef struct {
     UNICODE_STRING pnp_name;
     UINT64 size;
     BOOL seeding;
+    BOOL had_drive_letter;
     ULONG disk_num;
     ULONG part_num;
     LIST_ENTRY list_entry;
@@ -900,7 +901,7 @@ void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, L
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 
 // in search.c
-void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
+NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);

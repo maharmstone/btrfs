@@ -118,7 +118,7 @@ deref:
         ExFreePool(data);
 }
 
-void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
+NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     MOUNTMGR_MOUNT_POINT* mmp;
     ULONG mmpsize;
@@ -129,7 +129,7 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
     if (!mmp) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     RtlZeroMemory(mmp, mmpsize);
@@ -143,19 +143,19 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
         ERR("IOCTL_MOUNTMGR_DELETE_POINTS 1 returned %08x\n", Status);
         ExFreePool(mmp);
-        return;
+        return Status;
     }
     
     if (Status != STATUS_BUFFER_OVERFLOW || mmps1.Size == 0) {
         ExFreePool(mmp);
-        return;
+        return STATUS_NOT_FOUND;
     }
     
     mmps2 = ExAllocatePoolWithTag(PagedPool, mmps1.Size, ALLOC_TAG);
     if (!mmps2) {
         ERR("out of memory\n");
         ExFreePool(mmp);
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, mmps2, mmps1.Size, FALSE, NULL);
@@ -165,6 +165,8 @@ void remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
 
     ExFreePool(mmps2);
     ExFreePool(mmp);
+    
+    return Status;
 }
 
 static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {

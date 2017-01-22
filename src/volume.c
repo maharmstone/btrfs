@@ -857,6 +857,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
         vc->disk_num = disk_num;
         vc->part_num = part_num;
+        vc->had_drive_letter = FALSE;
         
         InsertTailList(&vde->children, &vc->list_entry); // FIXME - these should be in order
         
@@ -874,7 +875,11 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         ExReleaseResourceLite(&volume_list_lock);
     }
     
-    remove_drive_letter(mountmgr, partname);
+    Status = remove_drive_letter(mountmgr, partname);
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+        WARN("remove_drive_letter returned %08x\n", Status);
+    
+    vc->had_drive_letter = NT_SUCCESS(Status);
     
 end:
     ObDereferenceObject(FileObject);

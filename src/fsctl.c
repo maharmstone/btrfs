@@ -2803,6 +2803,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->seeding = FALSE;
     vc->disk_num = sdn.DeviceNumber;
     vc->part_num = sdn.PartitionNumber;
+    vc->had_drive_letter = FALSE;
     
     ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
     InsertTailList(&vde->children, &vc->list_entry);
@@ -2815,7 +2816,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     if (!NT_SUCCESS(Status))
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
     else {
-        remove_drive_letter(mountmgr, &pnp_name);
+        Status = remove_drive_letter(mountmgr, &pnp_name);
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+            WARN("remove_drive_letter returned %08x\n", Status);
+        
+        vc->had_drive_letter = NT_SUCCESS(Status);
         
         ObDereferenceObject(mountmgrfo);
     }
