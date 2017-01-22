@@ -773,7 +773,7 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-static NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
+NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = (TARGET_DEVICE_REMOVAL_NOTIFICATION*)NotificationStructure;
     volume_device_extension* vde = (volume_device_extension*)Context;
     
@@ -918,6 +918,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
         vc->generation = sb->generation;
+        vc->notification_entry = NULL;
         
         Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
                                                 drvobj, pnp_removal, vde, &vc->notification_entry);

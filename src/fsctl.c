@@ -2776,6 +2776,12 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     vc->devid = dev_id;
     vc->generation = Vcb->superblock.generation;
     vc->devobj = DeviceObject;
+    vc->notification_entry = NULL;
+    
+    Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj,
+                                            drvobj, pnp_removal, vde, &vc->notification_entry);
+    if (!NT_SUCCESS(Status))
+        WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
     
     pnp_name2 = pnp_name;
     
