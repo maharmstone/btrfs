@@ -180,7 +180,7 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     STORAGE_DEVICE_NUMBER sdn;
     ULONG dlisize;
-    DRIVE_LAYOUT_INFORMATION_EX* dli;
+    DRIVE_LAYOUT_INFORMATION_EX* dli = NULL;
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
     UNICODE_STRING mmdevpath;
@@ -203,7 +203,15 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     
     do {
         dlisize += 1024;
+        
+        if (dli)
+            ExFreePool(dli);
+        
         dli = ExAllocatePoolWithTag(PagedPool, dlisize, ALLOC_TAG);
+        if (!dli) {
+            ERR("out of memory\n");
+            goto end;
+        }
     
         Status = dev_ioctl(devobj, IOCTL_DISK_GET_DRIVE_LAYOUT_EX, NULL, 0,
                            dli, dlisize, TRUE, &iosb);
