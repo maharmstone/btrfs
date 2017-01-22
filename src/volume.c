@@ -360,22 +360,18 @@ static NTSTATUS vol_get_disk_extents(volume_device_extension* vde, PIRP Irp) {
     le = vde->children.Flink;
     while (le != &vde->children) {
         volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        VOLUME_DISK_EXTENTS ext2;
+            
+        Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &ext2, sizeof(VOLUME_DISK_EXTENTS), FALSE, NULL);
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+            ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
+            goto end;
+        }
         
-        if (vc->offset == 0) { // passthrough
-            VOLUME_DISK_EXTENTS ext2;
-            
-            Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &ext2, sizeof(VOLUME_DISK_EXTENTS), FALSE, NULL);
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
-                goto end;
-            }
-            
-            num_extents += ext2.NumberOfDiskExtents;
-            
-            if (ext2.NumberOfDiskExtents > max_extents)
-                max_extents = ext2.NumberOfDiskExtents;
-        } else
-            num_extents++;
+        num_extents += ext2.NumberOfDiskExtents;
+        
+        if (ext2.NumberOfDiskExtents > max_extents)
+            max_extents = ext2.NumberOfDiskExtents;
         
         le = le->Flink;
     }
@@ -403,30 +399,23 @@ static NTSTATUS vol_get_disk_extents(volume_device_extension* vde, PIRP Irp) {
     while (le != &vde->children) {
         volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
         
-        if (vc->offset == 0) { // passthrough
-            Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, ext3,
-                               offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), FALSE, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
-                ExFreePool(ext3);
-                goto end;
-            }
-            
-            if (i + ext3->NumberOfDiskExtents > num_extents) {
-                Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]);
-                ext->NumberOfDiskExtents = i + ext3->NumberOfDiskExtents;
-                Status = STATUS_BUFFER_OVERFLOW;
-                goto end;
-            }
-            
-            RtlCopyMemory(&ext->Extents[i], ext3->Extents, sizeof(DISK_EXTENT) * ext3->NumberOfDiskExtents);
-            i += ext3->NumberOfDiskExtents;
-        } else {
-            ext->Extents[i].DiskNumber = vc->disk_num;
-            ext->Extents[i].StartingOffset.QuadPart = vc->offset;
-            ext->Extents[i].ExtentLength.QuadPart = vc->size;
-            i++;
+        Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, ext3,
+                            offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
+            ExFreePool(ext3);
+            goto end;
         }
+        
+        if (i + ext3->NumberOfDiskExtents > num_extents) {
+            Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]);
+            ext->NumberOfDiskExtents = i + ext3->NumberOfDiskExtents;
+            Status = STATUS_BUFFER_OVERFLOW;
+            goto end;
+        }
+        
+        RtlCopyMemory(&ext->Extents[i], ext3->Extents, sizeof(DISK_EXTENT) * ext3->NumberOfDiskExtents);
+        i += ext3->NumberOfDiskExtents;
         
         le = le->Flink;
     }
