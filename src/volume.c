@@ -853,7 +853,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
         }
         
-        vc->offset = 0;
         vc->size = length;
         vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
         vc->disk_num = disk_num;

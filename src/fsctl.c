@@ -2800,7 +2800,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
         RtlCopyMemory(vc->pnp_name.Buffer, pnp_name2.Buffer, pnp_name2.Length);
     }
     
-    vc->offset = 0;
     vc->size = size;
     vc->seeding = FALSE;
     vc->disk_num = sdn.DeviceNumber;

@@ -635,7 +635,6 @@ typedef struct {
     UINT64 generation;
     PDEVICE_OBJECT devobj;
     UNICODE_STRING pnp_name;
-    UINT64 offset;
     UINT64 size;
     BOOL seeding;
     ULONG disk_num;
