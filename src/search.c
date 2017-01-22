@@ -264,6 +264,66 @@ static void remove_volume_child(volume_device_extension* vde, volume_child* vc) 
             ERR("pnp_surprise_removal returned %08x\n", Status);
     }
     
+    Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+    if (!NT_SUCCESS(Status))
+        WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+    
+    if (vde->children_loaded > 0) {
+        UNICODE_STRING mmdevpath;
+        PFILE_OBJECT FileObject;
+        PDEVICE_OBJECT mountmgr;
+        LIST_ENTRY* le;
+        
+        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+        if (!NT_SUCCESS(Status))
+            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        else {
+            le = vde->children.Flink;
+            
+            while (le != &vde->children) {
+                volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+                
+                if (vc->had_drive_letter) { // re-add entry to mountmgr
+                    MOUNTDEV_NAME mdn;
+                    
+                    Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                    else {
+                        MOUNTDEV_NAME* mdn2;
+                        ULONG mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+                        
+                        mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+                        if (!mdn2)
+                            ERR("out of memory\n");
+                        else {
+                            Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+                            if (!NT_SUCCESS(Status))
+                                ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                            else {
+                                UNICODE_STRING name;
+                                
+                                name.Buffer = mdn2->Name;
+                                name.Length = name.MaximumLength = mdn2->NameLength;
+                                
+                                Status = mountmgr_add_drive_letter(mountmgr, &name);
+                                if (!NT_SUCCESS(Status))
+                                    WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                            }
+                            
+                            ExFreePool(mdn2);
+                        }
+                    }
+                }
+                
+                le = le->Flink;
+            }
+            
+            ObDereferenceObject(FileObject);
+        }
+    }
+    
     if (vde->children_loaded == 0) { // remove volume device
         UNICODE_STRING mmdevpath;
         PDEVICE_OBJECT mountmgr;
