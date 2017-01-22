@@ -627,7 +627,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             ffdi->DeviceType = FILE_DEVICE_DISK;
             
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-            ffdi->Characteristics = first_device(Vcb)->devobj->Characteristics;
+            ffdi->Characteristics = Vcb->Vpb->RealDevice->Characteristics;
             ExReleaseResourceLite(&Vcb->tree_lock);
             
             if (Vcb->readonly)
