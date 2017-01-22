@@ -980,7 +980,7 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
                 else
                     readlen = firststripesize;
                 
-                Status = make_read_irp(Irp, &read_stripes[j], start + c->devices[stripenum]->offset + cis[stripenum].offset, stripes[stripenum].data, readlen);
+                Status = make_read_irp(Irp, &read_stripes[j], start + cis[stripenum].offset, stripes[stripenum].data, readlen);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("make_read_irp returned %08x\n", Status);
@@ -1008,11 +1008,11 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
                     read_stripes[j].master = master;
                 
                     if (stripes[i].start == stripes[i].end) {
-                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + c->devices[stripenum]->offset + cis[stripenum].offset,
+                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + cis[stripenum].offset,
                                                &stripes[stripenum].data[firststripesize], laststripesize);
                         stripes[stripenum].skip_end = laststripesize;
                     } else {
-                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + c->devices[stripenum]->offset + cis[stripenum].offset,
+                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset,
                                                &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
                         stripes[stripenum].skip_end = end - stripes[i].end;
                     }
@@ -1314,7 +1314,7 @@ static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* da
                 else
                     readlen = firststripesize;
                 
-                Status = make_read_irp(Irp, &read_stripes[j], start + c->devices[stripenum]->offset + cis[stripenum].offset, stripes[stripenum].data, readlen);
+                Status = make_read_irp(Irp, &read_stripes[j], start + cis[stripenum].offset, stripes[stripenum].data, readlen);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("make_read_irp returned %08x\n", Status);
@@ -1342,11 +1342,11 @@ static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* da
                     read_stripes[j].master = master;
                 
                     if (stripes[i].start == stripes[i].end) {
-                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + c->devices[stripenum]->offset + cis[stripenum].offset,
+                        Status = make_read_irp(Irp, &read_stripes[j], start + firststripesize + cis[stripenum].offset,
                                                &stripes[stripenum].data[firststripesize], laststripesize);
                         stripes[stripenum].skip_end = laststripesize;
                     } else {
-                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + c->devices[stripenum]->offset + cis[stripenum].offset,
+                        Status = make_read_irp(Irp, &read_stripes[j], stripes[i].end + cis[stripenum].offset,
                                                &stripes[stripenum].data[stripes[i].end - start], end - stripes[i].end);
                         stripes[stripenum].skip_end = end - stripes[i].end;
                     }
@@ -1690,7 +1690,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
 #endif
 
             IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
-            IrpSp->Parameters.Write.ByteOffset.QuadPart = c->devices[i]->offset + stripes[i].start + cis[i].offset + stripes[i].skip_start;
+            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset + stripes[i].skip_start;
             
             stripe->Irp->UserIosb = &stripe->iosb;
             wtc->stripes_left++;

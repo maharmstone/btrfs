@@ -822,7 +822,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
             
             for (i = 0; i < c->chunk_item->num_stripes; i++) {
                 if (context->stripes[i].csum_error && !c->devices[i]->readonly) {
-                    Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
+                    Status = write_data_phys(c->devices[i]->devobj, cis[i].offset + offset - c->offset,
                                              context->stripes[good_stripe].buf, context->stripes[i].length);
                     
                     if (!NT_SUCCESS(Status)) {
@@ -898,7 +898,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (!c->devices[i]->readonly) {
-                Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->offset + cis[i].offset + offset - c->offset,
+                Status = write_data_phys(c->devices[i]->devobj, cis[i].offset + offset - c->offset,
                                          context->stripes[i].buf, context->stripes[i].length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
@@ -1175,7 +1175,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                             if (!c->devices[j + k]->readonly) {
                                 CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                                 
-                                Status = write_data_phys(c->devices[j + k]->devobj, c->devices[j + k]->offset + cis[j + k].offset + offset - c->offset,
+                                Status = write_data_phys(c->devices[j + k]->devobj, cis[j + k].offset + offset - c->offset,
                                                          context->stripes[j + goodstripe].buf, context->stripes[j + goodstripe].length);
                         
                                 if (!NT_SUCCESS(Status)) {
@@ -1326,7 +1326,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                         if (!c->devices[j + k]->readonly) {
                             CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                             
-                            Status = write_data_phys(c->devices[j + k]->devobj, c->devices[j + k]->offset + cis[j + k].offset + offset - c->offset,
+                            Status = write_data_phys(c->devices[j + k]->devobj, cis[j + k].offset + offset - c->offset,
                                                         context->stripes[j + k].buf, context->stripes[j + k].length);
                     
                             if (!NT_SUCCESS(Status)) {
@@ -1490,7 +1490,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
                 context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
 
             IrpSp->Parameters.Read.Length = context->stripes[i].length;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = c->devices[i]->offset + context->stripes[i].start + cis[i].offset;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = context->stripes[i].start + cis[i].offset;
             
             context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
             

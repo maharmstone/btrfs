@@ -361,7 +361,6 @@ typedef struct {
     BOOL ssd;
     BOOL trim;
     ULONG change_count;
-    UINT64 offset;
     UINT64 length;
     ULONG disk_num;
     ULONG part_num;

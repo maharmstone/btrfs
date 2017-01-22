@@ -2657,7 +2657,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG le
     dev->seeding = FALSE;
     dev->length = size;
     init_device(Vcb, dev, TRUE);
-    dev->offset = 0;
     
     InitializeListHead(&dev->space);
     

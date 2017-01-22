@@ -1734,7 +1734,7 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
         TRACE("crc32 is %08x\n", crc32);
         RtlCopyMemory(&Vcb->superblock.checksum, &crc32, sizeof(UINT32));
         
-        Status = write_data_phys(device->devobj, device->offset + superblock_addrs[i], &Vcb->superblock, sizeof(superblock));
+        Status = write_data_phys(device->devobj, superblock_addrs[i], &Vcb->superblock, sizeof(superblock));
         
         if (!NT_SUCCESS(Status))
             break;

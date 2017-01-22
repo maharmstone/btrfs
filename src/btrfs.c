@@ -2932,7 +2932,6 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->removable = FALSE;
                 dev->disk_num = vc->disk_num;
                 dev->part_num = vc->part_num;
-                dev->offset = 0;
                 dev->length = vc->size;
                 add_device_to_list(Vcb, dev);
                 Vcb->devices_loaded++;
@@ -3146,7 +3145,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, FALSE);
 
-                                dev->offset = 0;
                                 dev->length = vc->size;
                                 dev->disk_num = vc->disk_num;
                                 dev->part_num = vc->part_num;
@@ -4021,7 +4019,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     dev->devobj = vc->devobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     dev->length = vc->size;
-    dev->offset = 0;
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
@@ -4431,7 +4428,7 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        Status = sync_read_phys(dev->devobj, dev->offset + superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+        Status = sync_read_phys(dev->devobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
         if (!NT_SUCCESS(Status)) {
             ERR("Failed to read superblock: %08x\n", Status);
             ExFreePool(sb);
