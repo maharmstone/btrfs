@@ -109,7 +109,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         else {
             TRACE("volume found\n");
             
-            add_volume_device(sb, mountmgr, pnp_name, 0, length, disk_num, part_num, devpath);
+            add_volume_device(sb, mountmgr, pnp_name, length, disk_num, part_num, devpath);
         }
     }
     

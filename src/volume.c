@@ -699,7 +699,7 @@ static __inline WCHAR hex_digit(UINT8 n) {
         return n - 0xa + 'a';
 }
 
-void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 offset, UINT64 length, ULONG disk_num,
+void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num,
                        ULONG part_num, PUNICODE_STRING partname) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -864,7 +864,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
         }
         
-        vc->offset = offset;
+        vc->offset = 0;
         vc->size = length;
         vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
         vc->disk_num = disk_num;
