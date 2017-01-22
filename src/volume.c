@@ -931,6 +931,46 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->children_loaded++;
     }
     
+    if (vde->num_children == vde->children_loaded) {
+        if (vde->num_children == 1) {
+            Status = remove_drive_letter(mountmgr, partname);
+            if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+                WARN("remove_drive_letter returned %08x\n", Status);
+            
+            vc->had_drive_letter = NT_SUCCESS(Status);
+        } else {
+            le = vde->children.Flink;
+            
+            while (le != &vde->children) {
+                UNICODE_STRING name;
+                
+                vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+                
+                name.Length = name.MaximumLength = vc->pnp_name.Length + (3 * sizeof(WCHAR));
+                name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
+                
+                if (!name.Buffer) {
+                    ERR("out of memory\n");
+                    goto end;
+                }
+                
+                RtlCopyMemory(name.Buffer, L"\\??", 3 * sizeof(WCHAR));
+                RtlCopyMemory(&name.Buffer[3], vc->pnp_name.Buffer, vc->pnp_name.Length);
+                
+                Status = remove_drive_letter(mountmgr, &name);
+                
+                if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+                    WARN("remove_drive_letter returned %08x\n", Status);
+                
+                ExFreePool(name.Buffer);
+                
+                vc->had_drive_letter = NT_SUCCESS(Status);
+                
+                le = le->Flink;
+            }
+        }
+    }
+    
     if (!new_vde) {
         ExReleaseResourceLite(&vde->child_lock);
         ExReleaseResourceLite(&volume_list_lock);
@@ -941,12 +981,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         
         ExReleaseResourceLite(&volume_list_lock);
     }
-    
-    Status = remove_drive_letter(mountmgr, partname);
-    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
-        WARN("remove_drive_letter returned %08x\n", Status);
-    
-    vc->had_drive_letter = NT_SUCCESS(Status);
     
 end:
     ObDereferenceObject(FileObject);
