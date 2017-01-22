@@ -590,7 +590,7 @@ static NTSTATUS vol_get_drive_geometry(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     geom->SectorsPerTrack = 0x3f;
     geom->TracksPerCylinder = 0xff;
     geom->Cylinders.QuadPart = length / (UInt32x32To64(geom->TracksPerCylinder, geom->SectorsPerTrack) * geom->BytesPerSector);
-    geom->MediaType = FixedMedia; // FIXME - should be RemovableMedia if removable?
+    geom->MediaType = DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA ? RemovableMedia : FixedMedia;
     
     Irp->IoStatus.Information = sizeof(DISK_GEOMETRY);
     
