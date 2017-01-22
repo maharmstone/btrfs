@@ -613,6 +613,48 @@ static NTSTATUS vol_get_gpt_attributes(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    volume_child* vc;
+    STORAGE_DEVICE_NUMBER* sdn;
+    
+    // If only one device, return its disk number. This is needed for ejection to work.
+    
+    if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(STORAGE_DEVICE_NUMBER))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    if (IsListEmpty(&vde->children)) {
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+    
+    vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+    
+    if (vc->list_entry.Flink != &vde->children) { // more than once device
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+    
+    if (vc->disk_num == 0xffffffff) {
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+    
+    sdn = (STORAGE_DEVICE_NUMBER*)Irp->AssociatedIrp.SystemBuffer;
+    
+    sdn->DeviceType = FILE_DEVICE_DISK;
+    sdn->DeviceNumber = vc->disk_num;
+    sdn->PartitionNumber = vc->part_num;
+    
+    ExReleaseResourceLite(&vde->child_lock);
+    
+    Irp->IoStatus.Information = sizeof(STORAGE_DEVICE_NUMBER);
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -629,8 +671,7 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             return vol_query_unique_id(vde, Irp);
             
         case IOCTL_STORAGE_GET_DEVICE_NUMBER:
-            TRACE("unhandled control code IOCTL_STORAGE_GET_DEVICE_NUMBER\n");
-            break;
+            return vol_get_device_number(vde, Irp);
 
         case IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME:
             TRACE("unhandled control code IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME\n");
