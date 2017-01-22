@@ -350,6 +350,8 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 
                 ExDeleteResourceLite(&vde->child_lock);
                 
+                IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+                
                 IoDetachDevice(vde->pdo);
                 
                 IoDeleteDevice(vde->device);
@@ -463,6 +465,8 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 ExFreePool(vde->name.Buffer);
             
             ExDeleteResourceLite(&vde->child_lock);
+            
+            IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
             
             IoDetachDevice(vde->pdo);
             
