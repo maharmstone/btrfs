@@ -922,6 +922,9 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->children_loaded++;
     }
     
+    if (DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA)
+        voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
+    
     if (vde->num_children == vde->children_loaded) {
         if (vde->num_children == 1) {
             Status = remove_drive_letter(mountmgr, partname);
