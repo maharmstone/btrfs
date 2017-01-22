@@ -793,7 +793,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     
     if (!vde) {
         PDEVICE_OBJECT pdo = NULL;
-        BOOL registered = FALSE;
         
         Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF,
                                         NULL, NULL, 0, &pdo);
@@ -855,18 +854,10 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         Status = IoRegisterDeviceInterface(pdo, &GUID_DEVINTERFACE_VOLUME, NULL, &vde->bus_name);
         if (!NT_SUCCESS(Status))
             WARN("IoRegisterDeviceInterface returned %08x\n", Status);
-        else
-            registered = TRUE;
         
         vde->attached_device = IoAttachDeviceToDeviceStack(voldev, pdo);
         
         pdo->Flags &= ~DO_DEVICE_INITIALIZING;
-        
-        if (registered) {
-            Status = IoSetDeviceInterfaceState(&vde->bus_name, TRUE);
-            if (!NT_SUCCESS(Status))
-                WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
-        }
     } else {
         ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
         ExConvertExclusiveToSharedLite(&volume_list_lock);
@@ -944,7 +935,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             while (le != &vde->children) {
                 UNICODE_STRING name;
                 
-                vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+                vc = CONTAINING_RECORD(le, volume_child, list_entry);
                 
                 name.Length = name.MaximumLength = vc->pnp_name.Length + (3 * sizeof(WCHAR));
                 name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
@@ -969,6 +960,10 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
                 le = le->Flink;
             }
         }
+        
+        Status = IoSetDeviceInterfaceState(&vde->bus_name, TRUE);
+        if (!NT_SUCCESS(Status))
+            WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
     }
     
     if (!new_vde) {
