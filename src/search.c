@@ -249,7 +249,7 @@ end:
     ObDereferenceObject(mountmgrfo);
 }
 
-static void remove_volume_child(volume_device_extension* vde, volume_child* vc) {
+void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock) {
     NTSTATUS Status;
     
     if (vc->notification_entry)
@@ -379,7 +379,7 @@ static void remove_volume_child(volume_device_extension* vde, volume_child* vc) 
         IoDetachDevice(vde->pdo);
         
         IoDeleteDevice(vde->device);
-    } else
+    } else if (!no_release_lock)
         ExReleaseResourceLite(&vde->child_lock);
 }
 
@@ -441,7 +441,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 if (vc->disk_num == sdn.DeviceNumber && vc->part_num == 0) {
                     TRACE("removing device\n");
                     
-                    remove_volume_child(vde, vc);
+                    remove_volume_child(vde, vc, FALSE);
                     changed = TRUE;
 
                     break;
@@ -509,7 +509,7 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             if (vc->pnp_name.Length == devpath2.Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length) == devpath2.Length) {
                 TRACE("removing device\n");
                 
-                remove_volume_child(vde, vc);
+                remove_volume_child(vde, vc, FALSE);
                 changed = TRUE;
                 
                 break;

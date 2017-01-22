@@ -907,6 +907,7 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
+void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock);
 
 // in cache.c
 NTSTATUS STDCALL init_cache();

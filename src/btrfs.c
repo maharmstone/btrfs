@@ -3888,6 +3888,44 @@ end:
     return Status;
 }
 
+static BOOL still_has_superblock(PDEVICE_OBJECT device) {
+    NTSTATUS Status;
+    ULONG to_read;
+    superblock* sb;
+    
+    to_read = device->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), device->SectorSize);
+    
+    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+    
+    Status = sync_read_phys(device, superblock_addrs[0], to_read, (PUCHAR)sb, FALSE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("Failed to read superblock: %08x\n", Status);
+        ExFreePool(sb);
+        return FALSE;
+    }
+    
+    if (sb->magic != BTRFS_MAGIC) {
+        TRACE("not a BTRFS volume\n");
+        ExFreePool(sb);
+        return FALSE;
+    } else {
+        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        
+        if (crc32 != *((UINT32*)sb->checksum)) {
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+            ExFreePool(sb);
+            return FALSE;
+        }
+    }
+    
+    ExFreePool(sb);
+    return TRUE;
+}
+
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -3930,7 +3968,26 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit2;
     }
     
-    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+    
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        LIST_ENTRY* le2 = le->Flink;
+        
+        vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+        
+        if (!still_has_superblock(vc->devobj)) {
+            remove_volume_child(vde, vc, TRUE);
+            
+            if (vde->num_children == 0) {
+                ERR("error - number of devices is zero\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto exit2;
+            }
+        }
+        
+        le = le2;
+    }
     
     if (vde->children_loaded < vde->num_children) { // devices missing
         Status = STATUS_DEVICE_NOT_READY;
@@ -3942,6 +3999,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
     }
+    
+    ExConvertExclusiveToSharedLite(&vde->child_lock);
     
     vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
 
