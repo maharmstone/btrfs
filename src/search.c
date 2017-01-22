@@ -35,7 +35,7 @@ typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpat
 extern PDEVICE_OBJECT devobj;
 
 static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
-                             DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 offset, UINT64 length) {
+                             DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -77,7 +77,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
     
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
-    Offset.QuadPart = offset + superblock_addrs[0];
+    Offset.QuadPart = superblock_addrs[0];
     
     toread = sector_align(sizeof(superblock), sector_size);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
@@ -109,7 +109,7 @@ static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmg
         else {
             TRACE("volume found\n");
             
-            add_volume_device(sb, mountmgr, pnp_name, offset, length, disk_num, part_num, devpath);
+            add_volume_device(sb, mountmgr, pnp_name, 0, length, disk_num, part_num, devpath);
         }
     }
     
@@ -227,7 +227,7 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     } else
         TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
-    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, 0, gli.Length.QuadPart);
+    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
     
 end:
     ObDereferenceObject(FileObject);
@@ -364,7 +364,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         goto end;
     }
 
-    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, 0, gli.Length.QuadPart);
+    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
     
     ObDereferenceObject(mountmgrfo);
     
