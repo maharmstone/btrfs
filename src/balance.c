@@ -2314,41 +2314,44 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
             
             // re-add entry to mountmgr
             
-            if (vc->part_num != 0) {
-                RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-                Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
-                if (!NT_SUCCESS(Status))
-                    ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            // FIXME - only do this if it was there in the first place
+            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            else {
+                MOUNTDEV_NAME mdn;
+                
+                Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                 else {
-                    static WCHAR device_harddisk[] = L"\\Device\\Harddisk";
-                    static WCHAR bs_partition[] = L"\\Partition";
+                    MOUNTDEV_NAME* mdn2;
+                    ULONG mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
                     
-                    WCHAR devnamew[255], numw[20];
-                    UNICODE_STRING devname, num, bspus;
-
-                    wcscpy(devnamew, device_harddisk);
-                    devname.Buffer = devnamew;
-                    devname.MaximumLength = sizeof(devnamew);
-                    devname.Length = wcslen(device_harddisk) * sizeof(WCHAR);
-
-                    num.Buffer = numw;
-                    num.MaximumLength = sizeof(numw);
-                    RtlIntegerToUnicodeString(vc->disk_num, 10, &num);
-                    RtlAppendUnicodeStringToString(&devname, &num);
-
-                    bspus.Buffer = bs_partition;
-                    bspus.Length = bspus.MaximumLength = wcslen(bs_partition) * sizeof(WCHAR);
-                    RtlAppendUnicodeStringToString(&devname, &bspus);
-                    
-                    RtlIntegerToUnicodeString(vc->part_num, 10, &num);
-                    RtlAppendUnicodeStringToString(&devname, &num);
-                    
-                    Status = mountmgr_add_drive_letter(mountmgr, &devname);
-                    if (!NT_SUCCESS(Status))
-                        WARN("mountmgr_add_drive_letter returned %08x\n", Status);
-                    
-                    ObDereferenceObject(FileObject);
+                    mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+                    if (!mdn2)
+                        ERR("out of memory\n");
+                    else {
+                        Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+                        if (!NT_SUCCESS(Status))
+                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                        else {
+                            UNICODE_STRING name;
+                            
+                            name.Buffer = mdn2->Name;
+                            name.Length = name.MaximumLength = mdn2->NameLength;
+                            
+                            Status = mountmgr_add_drive_letter(mountmgr, &name);
+                            if (!NT_SUCCESS(Status))
+                                WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                        }
+                        
+                        ExFreePool(mdn2);
+                    }
                 }
+                
+                ObDereferenceObject(FileObject);
             }
             
             ExFreePool(vc->pnp_name.Buffer);
