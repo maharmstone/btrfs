@@ -2499,7 +2499,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 offset, UINT64 length) {
+static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
     unsigned int i, to_read;
@@ -2528,7 +2528,7 @@ static NTSTATUS STDCALL read_superblock(device_extension* Vcb, PDEVICE_OBJECT de
         if (i > 0 && superblock_addrs[i] + to_read > length)
             break;
         
-        Status = sync_read_phys(device, offset + superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
+        Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("Failed to read superblock %u: %08x\n", i, Status);
             ExFreePool(sb);
@@ -4031,7 +4031,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     DeviceToMount->Flags |= DO_DIRECT_IO;
 
-    Status = read_superblock(Vcb, vc->devobj, 0, vc->size);
+    Status = read_superblock(Vcb, vc->devobj, vc->size);
     if (!NT_SUCCESS(Status)) {
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
