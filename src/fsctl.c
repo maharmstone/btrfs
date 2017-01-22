@@ -2376,10 +2376,12 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
     
-    flush_fcb_caches(Vcb);
-    
-    if (Vcb->need_write && !Vcb->readonly)
-        do_write(Vcb, Irp, &rollback);
+    if (!Vcb->locked) {
+        flush_fcb_caches(Vcb);
+        
+        if (Vcb->need_write && !Vcb->readonly)
+            do_write(Vcb, Irp, &rollback);
+    }
     
     free_trees(Vcb);
     
