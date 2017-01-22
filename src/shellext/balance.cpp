@@ -541,7 +541,10 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             while (TRUE) {
                 WCHAR t[255], v[255];
                 
-                if (bd->partition_number == 0) {
+                if (bd->device_number == 0xffffffff) {
+                    memcpy(s, bd->name, bd->namelen);
+                    s[bd->namelen / sizeof(WCHAR)] = 0;
+                } else if (bd->partition_number == 0) {
                     if (!LoadStringW(module, IDS_DISK_NUM, v, sizeof(v) / sizeof(WCHAR))) {
                         ShowError(hwndDlg, GetLastError());
                         return TRUE;
