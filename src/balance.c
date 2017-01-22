@@ -2363,7 +2363,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         le = le->Flink;
     }
     
-    if (vde->children_loaded > 0) {
+    if (vde->children_loaded > 0 && vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
         vde->device->Characteristics &= ~FILE_REMOVABLE_MEDIA;
         
         le = vde->children.Flink;
