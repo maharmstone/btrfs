@@ -3984,6 +3984,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 Status = STATUS_INTERNAL_ERROR;
                 goto exit2;
             }
+            
+            if (vde->children_loaded == 0) { // just removed last device
+                Status = STATUS_DEVICE_NOT_READY;
+                goto exit2;
+            }
         }
         
         le = le2;
