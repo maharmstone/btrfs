@@ -1116,7 +1116,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
     return STATUS_SUCCESS;
 }
 
-static void add_rollback_space(device_extension* Vcb, LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c) {
+static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c) {
     rollback_space* rs;
     
     rs = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_space), ALLOC_TAG);
@@ -1131,7 +1131,7 @@ static void add_rollback_space(device_extension* Vcb, LIST_ENTRY* rollback, BOOL
     rs->length = length;
     rs->chunk = c;
     
-    add_rollback(Vcb, rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
+    add_rollback(rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
 }
 
 void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback, const char* func) {
@@ -1158,7 +1158,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
             InsertTailList(list_size, &s->list_entry_size);
         
         if (rollback)
-            add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, length, c);
+            add_rollback_space(rollback, TRUE, list, list_size, address, length, c);
         
         return;
     }
@@ -1175,7 +1175,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
         if (address <= s2->address && address + length >= s2->address + s2->size) {
             if (address < s2->address) {
                 if (rollback)
-                    add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, s2->address - address, c);
+                    add_rollback_space(rollback, TRUE, list, list_size, address, s2->address - address, c);
                 
                 s2->size += s2->address - address;
                 s2->address = address;
@@ -1200,7 +1200,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
             
             if (length > s2->size) {
                 if (rollback)
-                    add_rollback_space(Vcb, rollback, TRUE, list, list_size, s2->address + s2->size, address + length - s2->address - s2->size, c);
+                    add_rollback_space(rollback, TRUE, list, list_size, s2->address + s2->size, address + length - s2->address - s2->size, c);
                 
                 s2->size = length;
                 
@@ -1232,7 +1232,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
         // new entry overlaps start of old one
         if (address < s2->address && address + length >= s2->address) {
             if (rollback)
-                add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, s2->address - address, c);
+                add_rollback_space(rollback, TRUE, list, list_size, address, s2->address - address, c);
             
             s2->size += s2->address - address;
             s2->address = address;
@@ -1265,7 +1265,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
         // new entry overlaps end of old one
         if (address <= s2->address + s2->size && address + length > s2->address + s2->size) {
             if (rollback)
-                add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, s2->address + s2->size - address, c);
+                add_rollback_space(rollback, TRUE, list, list_size, address, s2->address + s2->size - address, c);
             
             s2->size = address + length - s2->address;
             
@@ -1303,7 +1303,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
             }
             
             if (rollback)
-                add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, length, c);
+                add_rollback_space(rollback, TRUE, list, list_size, address, length, c);
             
             s->address = address;
             s->size = length;
@@ -1346,7 +1346,7 @@ void _space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_
         order_space_entry(s, list_size);
     
     if (rollback)
-        add_rollback_space(Vcb, rollback, TRUE, list, list_size, address, length, c);
+        add_rollback_space(rollback, TRUE, list, list_size, address, length, c);
 }
 
 static void space_list_merge(device_extension* Vcb, LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
@@ -1545,7 +1545,7 @@ void _space_list_subtract2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* 
         
         if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
             if (rollback)
-                add_rollback_space(Vcb, rollback, FALSE, list, list_size, s2->address, s2->size, c);
+                add_rollback_space(rollback, FALSE, list, list_size, s2->address, s2->size, c);
             
             RemoveEntryList(&s2->list_entry);
             
@@ -1556,7 +1556,7 @@ void _space_list_subtract2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* 
         } else if (address + length > s2->address && address + length < s2->address + s2->size) {
             if (address > s2->address) { // cut out hole
                 if (rollback)
-                    add_rollback_space(Vcb, rollback, FALSE, list, list_size, address, length, c);
+                    add_rollback_space(rollback, FALSE, list, list_size, address, length, c);
                 
                 s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
@@ -1581,7 +1581,7 @@ void _space_list_subtract2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* 
                 return;
             } else { // remove start of entry
                 if (rollback)
-                    add_rollback_space(Vcb, rollback, FALSE, list, list_size, s2->address, address + length - s2->address, c);
+                    add_rollback_space(rollback, FALSE, list, list_size, s2->address, address + length - s2->address, c);
                 
                 s2->size -= address + length - s2->address;
                 s2->address = address + length;
@@ -1593,7 +1593,7 @@ void _space_list_subtract2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* 
             }
         } else if (address > s2->address && address < s2->address + s2->size) { // remove end of entry
             if (rollback)
-                add_rollback_space(Vcb, rollback, FALSE, list, list_size, address, s2->address + s2->size - address, c);
+                add_rollback_space(rollback, FALSE, list, list_size, address, s2->address + s2->size - address, c);
             
             s2->size = address - s2->address;
             

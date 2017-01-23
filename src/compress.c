@@ -241,7 +241,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+static NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
     NTSTATUS Status;
     UINT32 extlen, partlen, inoff, outoff;
     lzo_stream stream;
@@ -346,7 +346,7 @@ NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT6
     if (type == BTRFS_COMPRESSION_ZLIB)
         return zlib_decompress(inbuf, inlen, outbuf, outlen);
     else if (type == BTRFS_COMPRESSION_LZO)
-        return lzo_decompress(inbuf, inlen, outbuf, outlen);
+        return lzo_decompress(inbuf, inlen, outbuf);
     else {
         ERR("unsupported compression type %x\n", type);
         return STATUS_NOT_SUPPORTED;

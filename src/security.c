@@ -695,7 +695,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
     ExFreePool(groupsid);
 }
 
-static NTSTATUS STDCALL get_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
+static NTSTATUS STDCALL get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
     NTSTATUS Status;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -786,7 +786,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     buflen = IrpSp->Parameters.QuerySecurity.Length;
     
-    Status = get_file_security(Vcb, IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
+    Status = get_file_security(IrpSp->FileObject, sd, &buflen, IrpSp->Parameters.QuerySecurity.SecurityInformation);
     
     if (NT_SUCCESS(Status))
         Irp->IoStatus.Information = IrpSp->Parameters.QuerySecurity.Length;

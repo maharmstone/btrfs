@@ -34,7 +34,7 @@ typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpat
 
 extern PDEVICE_OBJECT devobj;
 
-static void STDCALL test_vol(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
+static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 length) {
     KEVENT Event;
     PIRP Irp;
@@ -242,7 +242,7 @@ static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     } else
         TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
-    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
+    test_vol(mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
     
 end:
     ObDereferenceObject(FileObject);
@@ -468,7 +468,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         goto end;
     }
 
-    test_vol(DriverObject, mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
+    test_vol(mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, devpath, gli.Length.QuadPart);
     
     ObDereferenceObject(mountmgrfo);
     

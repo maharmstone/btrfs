@@ -41,7 +41,7 @@ typedef struct {
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                   void* data, UINT16 datalen, enum batch_operation operation, PIRP Irp, LIST_ENTRY* rollback);
+                                   void* data, UINT16 datalen, enum batch_operation operation);
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -138,7 +138,7 @@ exit2:
     return Status;
 }
 
-static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
+static void clean_space_cache_chunk(chunk* c) {
     // FIXME - loop through c->deleting and do TRIM if device supports it
     // FIXME - also find way of doing TRIM of dropped chunks
     
@@ -160,7 +160,7 @@ static void clean_space_cache(device_extension* Vcb) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        clean_space_cache_chunk(Vcb, c);
+        clean_space_cache_chunk(c);
         RemoveEntryList(&c->list_entry_changed);
         c->list_entry_changed.Flink = NULL;
         
@@ -168,7 +168,7 @@ static void clean_space_cache(device_extension* Vcb) {
     }
 }
 
-static BOOL trees_consistent(device_extension* Vcb, LIST_ENTRY* rollback) {
+static BOOL trees_consistent(device_extension* Vcb) {
     ULONG maxsize = Vcb->superblock.node_size - sizeof(tree_header);
     LIST_ENTRY* le;
     
@@ -278,7 +278,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollbac
     return STATUS_SUCCESS;
 }
 
-static void add_parents_to_cache(device_extension* Vcb, tree* t) {
+static void add_parents_to_cache(tree* t) {
     while (t->parent) {
         t = t->parent;
         t->write = TRUE;
@@ -313,7 +313,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
 
     ExReleaseResourceLite(&c->lock);
     
-    add_parents_to_cache(Vcb, insert_tp.tree);
+    add_parents_to_cache(insert_tp.tree);
     
     return TRUE;
 }
@@ -440,7 +440,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
     
     ExReleaseResourceLite(&c->lock);
 
-    add_parents_to_cache(Vcb, insert_tp.tree);
+    add_parents_to_cache(insert_tp.tree);
     
     *new_address = address;
     
@@ -3226,7 +3226,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     NTSTATUS Status;
     
     if (!th->tree) {
-        Status = load_tree(Vcb, th->address, r, &th->tree, NULL, NULL);
+        Status = load_tree(Vcb, th->address, r, &th->tree, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree(%llx) returned %08x\n", th->address, Status);
@@ -3575,7 +3575,7 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
 }
 
 static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32,
-                                  UINT8* data, UINT16 datalen, PIRP Irp, LIST_ENTRY* rollback) {
+                                  UINT8* data, UINT16 datalen) {
     ULONG xasize;
     DIR_ITEM* xa;
     
@@ -3599,7 +3599,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     RtlCopyMemory(xa->name, name, strlen(name));
     RtlCopyMemory(xa->name + strlen(name), data, datalen);
     
-    if (!insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_SetXattr, Irp, rollback))
+    if (!insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_SetXattr))
         return STATUS_INTERNAL_ERROR;
     
     return STATUS_SUCCESS;
@@ -3732,7 +3732,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP
 }
 
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                   void* data, UINT16 datalen, enum batch_operation operation, PIRP Irp, LIST_ENTRY* rollback) {
+                                   void* data, UINT16 datalen, enum batch_operation operation) {
     LIST_ENTRY* le;
     batch_root* br = NULL;
     batch_item* bi;
@@ -4088,7 +4088,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         if (fcb->deleted)
             delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp, rollback);
         else {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length, Irp, rollback);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4098,7 +4098,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     }
     
     if (fcb->deleted) {
-        if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0xffffffffffffffff, NULL, 0, Batch_DeleteInode, Irp, rollback))
+        if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0xffffffffffffffff, NULL, 0, Batch_DeleteInode))
             ERR("insert_tree_item_batch failed\n");
         
         goto end;
@@ -4279,7 +4279,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             RtlCopyMemory(ed, &ext->extent_data, ext->datalen);
             
             if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, ext->offset,
-                                ed, ext->datalen, Batch_Insert, Irp, rollback)) {
+                                ed, ext->datalen, Batch_Insert)) {
                 ERR("insert_tree_item_batch failed\n");
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
@@ -4409,7 +4409,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
         
         if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM),
-                                    Batch_Insert, Irp, rollback)) {
+                                    Batch_Insert)) {
             ERR("insert_tree_item_batch failed\n");
             goto end;
         }
@@ -4418,7 +4418,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     }
     
     if (fcb->sd_dirty) {
-        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd), Irp, rollback);
+        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
         }
@@ -4447,7 +4447,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             val2--;
             *val2 = '0';
             
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2, Irp, rollback);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4461,7 +4461,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     
     if (fcb->reparse_xattr_changed) {
         if (fcb->reparse_xattr.Buffer && fcb->reparse_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length, Irp, rollback);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4474,7 +4474,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     
     if (fcb->ea_changed) {
         if (fcb->ea_xattr.Buffer && fcb->ea_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length, Irp, rollback);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -5080,13 +5080,13 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         RtlCopyMemory(di2, di, disize);
 
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index,
-                                    di, disize, Batch_Insert, Irp, rollback)) {
+                                    di, disize, Batch_Insert)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM, crc32,
-                                    di2, disize, Batch_DirItem, Irp, rollback)) {
+                                    di2, disize, Batch_DirItem)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5105,7 +5105,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             RtlCopyMemory(ir->name, fileref->utf8.Buffer, ir->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_InodeRef, Irp, rollback)) {
+                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_InodeRef)) {
                 ERR("insert_tree_item_batch failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -5167,7 +5167,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_ITEM (0x54)
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
-                                    crc32, di, sizeof(DIR_ITEM) - 1 + name->Length, Batch_DeleteDirItem, Irp, rollback)) {
+                                    crc32, di, sizeof(DIR_ITEM) - 1 + name->Length, Batch_DeleteDirItem)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5188,7 +5188,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             RtlCopyMemory(ir->name, name->Buffer, name->Length);
 
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF,
-                                        fileref->parent->fcb->inode, ir, sizeof(INODE_REF) - 1 + name->Length, Batch_DeleteInodeRef, Irp, rollback)) {
+                                        fileref->parent->fcb->inode, ir, sizeof(INODE_REF) - 1 + name->Length, Batch_DeleteInodeRef)) {
                 ERR("insert_tree_item_batch failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -5209,7 +5209,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_INDEX (0x60)
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                    fileref->index, NULL, 0, Batch_Delete, Irp, rollback)) {
+                                    fileref->index, NULL, 0, Batch_Delete)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5244,7 +5244,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_ITEM (0x54)
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
-                                    oldcrc32, olddi, sizeof(DIR_ITEM) - 1 + oldutf8->Length, Batch_DeleteDirItem, Irp, rollback)) {
+                                    oldcrc32, olddi, sizeof(DIR_ITEM) - 1 + oldutf8->Length, Batch_DeleteDirItem)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5284,7 +5284,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         RtlCopyMemory(di2, di, disize);
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM, crc32,
-                                    di, disize, Batch_DirItem, Irp, rollback)) {
+                                    di, disize, Batch_DirItem)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5305,7 +5305,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             RtlCopyMemory(ir->name, oldutf8->Buffer, ir->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_DeleteInodeRef, Irp, rollback)) {
+                                        ir, sizeof(INODE_REF) - 1 + ir->n, Batch_DeleteInodeRef)) {
                 ERR("insert_tree_item_batch failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -5323,7 +5323,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             RtlCopyMemory(ir2->name, fileref->utf8.Buffer, ir2->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                        ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef, Irp, rollback)) {
+                                        ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef)) {
                 ERR("insert_tree_item_batch failed\n");
                 return STATUS_INTERNAL_ERROR;
             }
@@ -5367,7 +5367,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_INDEX (0x60)
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                    fileref->index, NULL, 0, Batch_Delete, Irp, rollback)) {
+                                    fileref->index, NULL, 0, Batch_Delete)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5375,7 +5375,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // add DIR_INDEX (0x60)
         
         if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                    fileref->index, di2, disize, Batch_Insert, Irp, rollback)) {
+                                    fileref->index, di2, disize, Batch_Insert)) {
             ERR("insert_tree_item_batch failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5590,7 +5590,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (cache_changed)
             ERR("cache has changed, looping again\n");
 #endif
-    } while (cache_changed || !trees_consistent(Vcb, rollback));
+    } while (cache_changed || !trees_consistent(Vcb));
     
 #ifdef DEBUG_WRITE_LOOPS
     ERR("%u loops\n", loops);

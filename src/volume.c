@@ -354,7 +354,7 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS vol_is_dynamic(volume_device_extension* vde, PIRP Irp) {
+static NTSTATUS vol_is_dynamic(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     UINT8* buf;
     
@@ -580,7 +580,7 @@ static NTSTATUS vol_get_drive_geometry(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS vol_get_gpt_attributes(volume_device_extension* vde, PIRP Irp) {
+static NTSTATUS vol_get_gpt_attributes(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     VOLUME_GET_GPT_ATTRIBUTES_INFORMATION* vggai;
     
@@ -669,10 +669,10 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             break;
 
         case IOCTL_VOLUME_GET_GPT_ATTRIBUTES:
-            return vol_get_gpt_attributes(vde, Irp);
+            return vol_get_gpt_attributes(Irp);
 
         case IOCTL_VOLUME_IS_DYNAMIC:
-            return vol_is_dynamic(vde, Irp);
+            return vol_is_dynamic(Irp);
 
         case IOCTL_VOLUME_ONLINE:
             TRACE("unhandled control code IOCTL_VOLUME_ONLINE\n");

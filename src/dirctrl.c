@@ -211,7 +211,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
                         
                         BOOL dotfile = de->name.Length > sizeof(WCHAR) && de->name.Buffer[0] == '.';
 
-                        atts = get_file_attributes(fcb->Vcb, &ii, r, inode, de->type, dotfile, FALSE, Irp);
+                        atts = get_file_attributes(fcb->Vcb, r, inode, de->type, dotfile, FALSE, Irp);
                     }
                     
                     if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation || 
@@ -464,7 +464,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc, PIRP Irp) {
+static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
     
@@ -542,7 +542,7 @@ next:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status, status2;
     fcb* fcb;
@@ -585,8 +585,8 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_ACCESS_DENIED;
     }
     
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceSharedLite(&fcb->Vcb->fcb_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
     
     TRACE("%S\n", file_desc(IrpSp->FileObject));
     
@@ -679,7 +679,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
     
-    Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
+    Status = next_dir_entry(fileref, &newoffset, &de, &dc);
     
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_NO_MORE_FILES && initial)
@@ -779,7 +779,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else if (has_wildcard) {
         while (!FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
             newoffset = ccb->query_dir_offset;
-            Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
+            Status = next_dir_entry(fileref, &newoffset, &de, &dc);
             
             if (NT_SUCCESS(Status))
                 ccb->query_dir_offset = newoffset;
@@ -822,7 +822,7 @@ static NTSTATUS STDCALL query_directory(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             if (length > 0) {
                 newoffset = ccb->query_dir_offset;
-                Status = next_dir_entry(fileref, &newoffset, &de, &dc, Irp);
+                Status = next_dir_entry(fileref, &newoffset, &de, &dc);
                 if (NT_SUCCESS(Status)) {
                     if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
                         curitem = (UINT8*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
@@ -861,8 +861,8 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
     
 end2:
-    ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     TRACE("returning %08x\n", Status);
     
@@ -960,7 +960,7 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
             break;
             
         case IRP_MN_QUERY_DIRECTORY:
-            Status = query_directory(DeviceObject, Irp);
+            Status = query_directory(Vcb, Irp);
             break;
             
         default:

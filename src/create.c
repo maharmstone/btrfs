@@ -108,8 +108,7 @@ file_ref* create_fileref() {
     return fr;
 }
 
-static NTSTATUS STDCALL find_file_in_dir(device_extension* Vcb, PUNICODE_STRING filename, fcb* fcb,
-                                         root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive, PIRP Irp) {
+static NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
     UINT32 hash;
@@ -1183,7 +1182,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     }
     
     if (!atts_set)
-        fcb->atts = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', TRUE, Irp);
+        fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', TRUE, Irp);
     
     if (!sd_set)
         fcb_get_sd(fcb, parent, FALSE, Irp);
@@ -1445,7 +1444,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
         UINT64 inode;
         dir_child* dc;
         
-        Status = find_file_in_dir(Vcb, name, sf->fcb, &subvol, &inode, &dc, case_sensitive, Irp);
+        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             TRACE("could not find %.*S\n", name->Length / sizeof(WCHAR), name->Buffer);
 
@@ -1728,7 +1727,7 @@ NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp) {
     }
     
     if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
-        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, FALSE, Irp))
+        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, Irp))
             tp = prev_tp;
     }
     
@@ -3380,7 +3379,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             
             oldatts = fileref->fcb->atts;
             
-            defda = get_file_attributes(Vcb, &fileref->fcb->inode_item, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
+            defda = get_file_attributes(Vcb, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
                                         fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
             
             if (RequestedDisposition == FILE_SUPERSEDE)

@@ -226,7 +226,7 @@ end:
     return Status;
 }
 
-static void flush_subvol_fcbs(root* subvol, LIST_ENTRY* rollback) {
+static void flush_subvol_fcbs(root* subvol) {
     LIST_ENTRY* le = subvol->fcbs.Flink;
     
     if (IsListEmpty(&subvol->fcbs))
@@ -275,7 +275,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // flush open files on this subvol
     
-    flush_subvol_fcbs(subvol, &rollback);
+    flush_subvol_fcbs(subvol);
 
     // flush metadata
     
@@ -922,7 +922,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     rootfcb->inode_item.st_atime = rootfcb->inode_item.st_ctime = rootfcb->inode_item.st_mtime = rootfcb->inode_item.otime = now;
     rootfcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     
-    rootfcb->atts = get_file_attributes(Vcb, &rootfcb->inode_item, rootfcb->subvol, rootfcb->inode, rootfcb->type, FALSE, TRUE, Irp);
+    rootfcb->atts = get_file_attributes(Vcb, rootfcb->subvol, rootfcb->inode, rootfcb->type, FALSE, TRUE, Irp);
     
     SeCaptureSubjectContext(&subjcont);
     
@@ -1543,7 +1543,7 @@ static NTSTATUS is_volume_mounted(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS fs_get_statistics(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, ULONG_PTR* retlen) {
+static NTSTATUS fs_get_statistics(void* buffer, DWORD buflen, ULONG_PTR* retlen) {
     FILESYSTEM_STATISTICS* fss;
     
     WARN("STUB: FSCTL_FILESYSTEM_GET_STATISTICS\n");
@@ -1626,7 +1626,7 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
         fcb->atts &= ~FILE_ATTRIBUTE_SPARSE_FILE;
         fcb->atts_changed = TRUE;
         
-        defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type,
+        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type,
                                     fileref && fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
         
         fcb->atts_deleted = defda == fcb->atts;
@@ -1653,10 +1653,10 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     if (compress) {
         start_data = start & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
         end_data = min(sector_align(start + length, COMPRESSED_EXTENT_SIZE),
-                       sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size));
+                       sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size));
     } else {
-        start_data = start & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
-        end_data = sector_align(start + length, fcb->Vcb->superblock.sector_size);
+        start_data = start & ~(UINT64)(Vcb->superblock.sector_size - 1);
+        end_data = sector_align(start + length, Vcb->superblock.sector_size);
     }
 
     data = ExAllocatePoolWithTag(PagedPool, end_data - start_data, ALLOC_TAG);
@@ -1880,7 +1880,7 @@ end:
     return Status;
 }
 
-static NTSTATUS query_ranges(device_extension* Vcb, PFILE_OBJECT FileObject, FILE_ALLOCATED_RANGE_BUFFER* inbuf, ULONG inbuflen, void* outbuf, ULONG outbuflen, ULONG_PTR* retlen) {
+static NTSTATUS query_ranges(PFILE_OBJECT FileObject, FILE_ALLOCATED_RANGE_BUFFER* inbuf, ULONG inbuflen, void* outbuf, ULONG outbuflen, ULONG_PTR* retlen) {
     NTSTATUS Status;
     fcb* fcb;
     LIST_ENTRY* le;
@@ -2300,7 +2300,7 @@ static NTSTATUS is_volume_dirty(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS get_compression(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS get_compression(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     USHORT* compression;
     
@@ -2485,7 +2485,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
+static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE processor_mode) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
     PFILE_OBJECT fileobj, mountmgrfo;
@@ -2965,7 +2965,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_GET_COMPRESSION:
-            Status = get_compression(DeviceObject->DeviceExtension, Irp);
+            Status = get_compression(Irp);
             break;
 
         case FSCTL_SET_COMPRESSION:
@@ -2998,8 +2998,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_FILESYSTEM_GET_STATISTICS:
-            Status = fs_get_statistics(DeviceObject, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                       IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
+            Status = fs_get_statistics(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_GET_NTFS_VOLUME_DATA:
@@ -3104,7 +3103,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
 
         case FSCTL_QUERY_ALLOCATED_RANGES:
-            Status = query_ranges(DeviceObject->DeviceExtension, IrpSp->FileObject, IrpSp->Parameters.FileSystemControl.Type3InputBuffer,
+            Status = query_ranges(IrpSp->FileObject, IrpSp->Parameters.FileSystemControl.Type3InputBuffer,
                                   IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->UserBuffer,
                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
@@ -3414,7 +3413,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
             break;
             
         case FSCTL_BTRFS_ADD_DEVICE:
-            Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+            Status = add_device(DeviceObject->DeviceExtension, Irp, Irp->RequestorMode);
             break;
             
         case FSCTL_BTRFS_REMOVE_DEVICE:

@@ -103,7 +103,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         LARGE_INTEGER time;
         BTRFS_TIME now;
         
-        defda = get_file_attributes(Vcb, &fcb->inode_item, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
+        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
         
         if (fcb->type == BTRFS_TYPE_DIRECTORY)
             fbi->FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
@@ -997,7 +997,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->fcb->inode = InterlockedIncrement64(&destdir->fcb->subvol->lastinode);
                     me->fileref->fcb->inode_item.st_nlink = 1;
                     
-                    defda = get_file_attributes(me->fileref->fcb->Vcb, &me->fileref->fcb->inode_item, me->fileref->fcb->subvol, me->fileref->fcb->inode,
+                    defda = get_file_attributes(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode,
                                                 me->fileref->fcb->type, me->fileref->filepart.Length > 0 && me->fileref->filepart.Buffer[0] == '.', TRUE, Irp);
                     
                     me->fileref->fcb->sd_dirty = !!me->fileref->fcb->sd;
@@ -2024,7 +2024,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, PFILE_OBJECT FileObject, BOOL advance_only, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, PFILE_OBJECT FileObject, BOOL advance_only) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
     CC_FILE_SIZES ccfs;
@@ -2131,7 +2131,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     }
     
     if (fcb->ads) {
-        Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, FileObject, advance_only, &rollback);
+        Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, FileObject, advance_only);
         goto end;
     }
     
@@ -2223,7 +2223,7 @@ end:
 //     return STATUS_NOT_IMPLEMENTED;
 // }
 
-static NTSTATUS STDCALL set_position_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+static NTSTATUS STDCALL set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
     
     TRACE("setting the position on %S to %llx\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
@@ -2708,7 +2708,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         {
             TRACE("FilePositionInformation\n");
             
-            Status = set_position_information(Vcb, Irp, IrpSp->FileObject);
+            Status = set_position_information(IrpSp->FileObject, Irp);
             
             break;
         }

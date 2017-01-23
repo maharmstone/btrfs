@@ -246,7 +246,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     return TRUE;
 }
 
-static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, UINT16 type) {
+static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size) {
     UINT64 k, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
     LIST_ENTRY* le;
@@ -453,7 +453,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
             num_stripes = max_stripes;
     } else {
         for (i = 0; i < max_stripes; i++) {
-            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, type))
+            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size))
                 break;
             else
                 num_stripes++;
@@ -2420,7 +2420,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
     re->fcb = fcb;
     re->ext = ext;
     
-    add_rollback(fcb->Vcb, rollback, ROLLBACK_INSERT_EXTENT, re);
+    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
 static BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
@@ -2479,7 +2479,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
         re->fcb = fcb;
         re->ext = ext;
         
-        add_rollback(fcb->Vcb, rollback, ROLLBACK_DELETE_EXTENT, re);
+        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
     }
 }
 
@@ -2910,7 +2910,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
     TRACE("(%p, %p, %x, %u)\n", fcb, fileref, end, prealloc);
 
     if (fcb->ads)
-        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE, rollback);
+        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE);
     else {
         extent* ext = NULL;
         LIST_ENTRY* le;

@@ -39,7 +39,7 @@ static NTSTATUS mountdev_query_stable_guid(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS is_writable(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS is_writable(device_extension* Vcb) {
     TRACE("IOCTL_DISK_IS_WRITABLE\n");
     
     return Vcb->readonly ? STATUS_MEDIA_WRITE_PROTECTED : STATUS_SUCCESS;
@@ -207,7 +207,7 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             goto end;
 
         case IOCTL_DISK_IS_WRITABLE:
-            Status = is_writable(Vcb, Irp);
+            Status = is_writable(Vcb);
             goto end;
             
         default:

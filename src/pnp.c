@@ -161,7 +161,7 @@ end2:
     return Status;
 }
 
-static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
 device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     
@@ -223,7 +223,7 @@ end:
     return Status;
 }
 
-static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     
@@ -253,7 +253,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS pnp_start_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS pnp_start_device() {
     FIXME("STUB\n");
 
     return STATUS_NOT_IMPLEMENTED;
@@ -301,7 +301,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     switch (IrpSp->MinorFunction) {
         case IRP_MN_CANCEL_REMOVE_DEVICE:
-            Status = pnp_cancel_remove_device(DeviceObject, Irp);
+            Status = pnp_cancel_remove_device(DeviceObject);
             break;
 
         case IRP_MN_QUERY_REMOVE_DEVICE:
@@ -309,11 +309,11 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             break;
 
         case IRP_MN_REMOVE_DEVICE:
-            Status = pnp_remove_device(DeviceObject, Irp);
+            Status = pnp_remove_device(DeviceObject);
             break;
 
         case IRP_MN_START_DEVICE:
-            Status = pnp_start_device(DeviceObject, Irp);
+            Status = pnp_start_device();
             break;
 
         case IRP_MN_SURPRISE_REMOVAL:

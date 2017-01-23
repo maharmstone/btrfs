@@ -19,7 +19,7 @@
 
 // #define DEBUG_TREE_LOCKS
 
-NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, tree* parent, PIRP Irp) {
+NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, PIRP Irp) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -280,7 +280,7 @@ NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, t
     if (!th->tree) {
         NTSTATUS Status;
         
-        Status = load_tree(Vcb, th->address, r, &th->tree, t, Irp);
+        Status = load_tree(Vcb, th->address, r, &th->tree, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
@@ -397,7 +397,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
             oldtp.tree = t;
             oldtp.item = td;
             
-            while (find_prev_item(Vcb, &oldtp, tp, TRUE, Irp)) {
+            while (find_prev_item(Vcb, &oldtp, tp, Irp)) {
                 if (!tp->item->ignore)
                     return STATUS_SUCCESS;
                 
@@ -615,7 +615,7 @@ static __inline tree_data* last_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, BOOL ignore, PIRP Irp) {
+BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
     tree* t;
     tree_data* td;
     NTSTATUS Status;
@@ -755,7 +755,7 @@ void STDCALL free_trees(device_extension* Vcb) {
     }
 }
 
-void add_rollback(device_extension* Vcb, LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
+void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     rollback_item* ri;
     
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
@@ -919,7 +919,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     tp2->tree = tp.tree;
     tp2->item = td;
     
-    add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
     success = TRUE;
 
@@ -992,7 +992,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     tp2->tree = tp->tree;
     tp2->item = tp->item;
 
-    add_rollback(Vcb, rollback, ROLLBACK_DELETE_ITEM, tp2);
+    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
 }
 
 void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
@@ -1769,7 +1769,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 tp2->tree = t;
                 tp2->item = td;
     
-                add_rollback(Vcb, rollback, ROLLBACK_DELETE_ITEM, tp2);
+                add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
             }
         }
 
@@ -1938,7 +1938,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     tp2->tree = tp.tree;
                     tp2->item = td;
 
-                    add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
                 }
                 
                 listhead = &td->list_entry;
@@ -2027,7 +2027,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                                 tp2->tree = tp.tree;
                                 tp2->item = td;
                                 
-                                add_rollback(Vcb, rollback, ROLLBACK_INSERT_ITEM, tp2);
+                                add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
                             }
                             
                             listhead = &td->list_entry;

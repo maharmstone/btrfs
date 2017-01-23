@@ -1573,7 +1573,7 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset, UINT64 size, ULONG type, UINT32* csum, RTL_BITMAP* bmp) {
+static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset, ULONG type, UINT32* csum, RTL_BITMAP* bmp) {
     NTSTATUS Status;
     ULONG runlength, index;
     
@@ -1770,7 +1770,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
             }
             
             if (!is_tree) {
-                Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, size, type, csum, &bmp);
+                Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, type, csum, &bmp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent returned %08x\n", Status);
                     goto end;

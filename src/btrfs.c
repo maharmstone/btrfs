@@ -345,7 +345,7 @@ static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
         return TRUE;
     }
     
-    while (find_prev_item(Vcb, &tp, &prev_tp, FALSE, Irp)) {
+    while (find_prev_item(Vcb, &tp, &prev_tp, Irp)) {
         tp = prev_tp;
         
         TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -2334,12 +2334,10 @@ BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts) {
     return FALSE;
 }
 
-ULONG STDCALL get_file_attributes(device_extension* Vcb, INODE_ITEM* ii, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp) {
+ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp) {
     ULONG att;
     char* eaval;
     UINT16 ealen;
-    
-    // ii can be NULL
     
     if (!ignore_xa && get_xattr(Vcb, r, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8**)&eaval, &ealen, Irp)) {
         ULONG dosnum = 0;
@@ -4293,7 +4291,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     fcb_get_sd(root_fcb, NULL, TRUE, Irp);
     
-    root_fcb->atts = get_file_attributes(Vcb, &root_fcb->inode_item, root_fcb->subvol, root_fcb->inode, root_fcb->type, FALSE, FALSE, Irp);
+    root_fcb->atts = get_file_attributes(Vcb, root_fcb->subvol, root_fcb->inode, root_fcb->type, FALSE, FALSE, Irp);
     
     Vcb->root_fileref = create_fileref();
     if (!Vcb->root_fileref) {
