@@ -3901,7 +3901,7 @@ static BOOL still_has_superblock(PDEVICE_OBJECT device) {
         return FALSE;
     }
     
-    Status = sync_read_phys(device, superblock_addrs[0], to_read, (PUCHAR)sb, FALSE);
+    Status = sync_read_phys(device, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("Failed to read superblock: %08x\n", Status);
         ExFreePool(sb);
@@ -3921,6 +3921,8 @@ static BOOL still_has_superblock(PDEVICE_OBJECT device) {
             return FALSE;
         }
     }
+    
+    device->Flags &= ~DO_VERIFY_VOLUME;
     
     ExFreePool(sb);
     return TRUE;
