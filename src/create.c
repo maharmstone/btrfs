@@ -26,7 +26,7 @@ static WCHAR datastring[] = L"::$DATA";
 fcb* create_fcb(POOL_TYPE pool_type) {
     fcb* fcb;
     
-    fcb = ExAllocatePoolWithTag(PagedPool, sizeof(struct _fcb), ALLOC_TAG);
+    fcb = ExAllocatePoolWithTag(pool_type, sizeof(struct _fcb), ALLOC_TAG);
     if (!fcb) {
         ERR("out of memory\n");
         return NULL;
