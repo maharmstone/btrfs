@@ -3605,7 +3605,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp, LIST_ENTRY* rollback) {
+static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* xa;
@@ -3650,7 +3650,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     
                     newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    delete_tree_item(Vcb, &tp, NULL);
                     
                     if (newsize == 0) {
                         TRACE("xattr %s deleted\n", name);
@@ -3675,7 +3675,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
                         RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
                     
-                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp, rollback);
+                    insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp, NULL);
                     
                         
                     return TRUE;
@@ -4086,7 +4086,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
     
     if (fcb->ads) {
         if (fcb->deleted)
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp);
         else {
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
             if (!NT_SUCCESS(Status)) {
@@ -4453,7 +4453,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp);
         
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -4467,7 +4467,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp);
         
         fcb->reparse_xattr_changed = FALSE;
     }
@@ -4480,7 +4480,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp, rollback);
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp);
         
         fcb->ea_changed = FALSE;
     }
