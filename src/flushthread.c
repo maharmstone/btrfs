@@ -205,7 +205,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
     return TRUE;
 }
 
-static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
     UINT8 level;
     LIST_ENTRY* le;
     
@@ -258,9 +258,9 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollbac
                         
                         RtlCopyMemory(ri, &t->root->root_item, sizeof(ROOT_ITEM));
                         
-                        delete_tree_item(Vcb, &tp, rollback);
+                        delete_tree_item(Vcb, &tp, NULL);
                         
-                        if (!insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, rollback)) {
+                        if (!insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL)) {
                             ERR("insert_tree_item failed\n");
                             return STATUS_INTERNAL_ERROR;
                         }
@@ -5554,7 +5554,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
     
     do {
-        Status = add_parents(Vcb, Irp, rollback);
+        Status = add_parents(Vcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("add_parents returned %08x\n", Status);
             goto end;
