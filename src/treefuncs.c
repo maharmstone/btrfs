@@ -993,7 +993,8 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     tp2->tree = tp->tree;
     tp2->item = tp->item;
 
-    add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
+    if (rollback)
+        add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
 }
 
 void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
