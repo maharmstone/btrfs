@@ -769,7 +769,7 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     InsertTailList(rollback, &ri->list_entry);
 }
 
-BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -780,7 +780,6 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
     traverse_ptr* tp2;
-    BOOL success = FALSE;
     NTSTATUS Status;
     
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
@@ -815,6 +814,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
                 tp.item = NULL;
             } else {
                 ERR("error: unable to load tree for root %llx\n", r->id);
+                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
         } else {
@@ -835,6 +835,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
         if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
             int3;
+            Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
     } else
@@ -843,6 +844,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
     if (!td) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
@@ -913,6 +915,7 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
     if (!tp2) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
@@ -922,10 +925,10 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     if (rollback)
         add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
-    success = TRUE;
+    Status = STATUS_SUCCESS;
 
 end:
-    return success;
+    return Status;
 }
 
 static __inline tree_data* first_valid_item(tree* t) {

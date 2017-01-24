@@ -256,6 +256,7 @@ static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* ite
 }
 
 static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_reloc* mr, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     UINT64 rc = 0;
     UINT16 inline_len;
@@ -338,16 +339,14 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
         le = le->Flink;
     }
     
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_METADATA_ITEM, mr->data->level, ei, inline_len, NULL, NULL, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else {
-        if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, ei, inline_len, NULL, NULL, rollback)) {
-            ERR("insert_tree_item failed\n");
-            return STATUS_INTERNAL_ERROR;
-        }
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
+        Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_METADATA_ITEM, mr->data->level, ei, inline_len, NULL, NULL, rollback);
+    else
+        Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, ei, inline_len, NULL, NULL, rollback);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!all_inline) {
@@ -367,9 +366,10 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                 
                 tbr->offset = ref->tbr.offset;
                 
-                if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_TREE_BLOCK_REF, tbr->offset, tbr, sizeof(TREE_BLOCK_REF), NULL, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_TREE_BLOCK_REF, tbr->offset, tbr, sizeof(TREE_BLOCK_REF), NULL, NULL, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
                 }
             } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
                 SHARED_BLOCK_REF* sbr;
@@ -382,9 +382,10 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                 
                 sbr->offset = ref->parent->new_address;
                 
-                if (!insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_SHARED_BLOCK_REF, sbr->offset, sbr, sizeof(SHARED_BLOCK_REF), NULL, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_SHARED_BLOCK_REF, sbr->offset, sbr, sizeof(SHARED_BLOCK_REF), NULL, NULL, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
                 }
             }
             
@@ -853,9 +854,9 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                                 
                                 delete_tree_item(Vcb, &tp, rollback);
                                 
-                                if (!insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL, rollback)) {
-                                    ERR("insert_tree_item failed\n");
-                                    Status = STATUS_INTERNAL_ERROR;
+                                Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL, rollback);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("insert_tree_item returned %08x\n", Status);
                                     goto end;
                                 }
                             }
@@ -1397,6 +1398,7 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
 }
 
 static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     UINT64 rc = 0;
     UINT16 inline_len;
@@ -1469,9 +1471,10 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
         le = le->Flink;
     }
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_ITEM, dr->size, ei, inline_len, NULL, NULL, rollback)) {
-        ERR("insert_tree_item failed\n");
-        return STATUS_INTERNAL_ERROR;
+    Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_ITEM, dr->size, ei, inline_len, NULL, NULL, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08x\n", Status);
+        return Status;
     }
     
     if (!all_inline) {
@@ -1494,9 +1497,10 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
                 
                 off = get_extent_data_ref_hash2(ref->edr.root, ref->edr.objid, ref->edr.offset);
                 
-                if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, off, edr, sizeof(EXTENT_DATA_REF), NULL, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, off, edr, sizeof(EXTENT_DATA_REF), NULL, NULL, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
                 }
             } else if (ref->type == TYPE_SHARED_DATA_REF) {
                 SHARED_DATA_REF* sdr;
@@ -1510,9 +1514,10 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
                 sdr->offset = ref->parent->new_address;
                 sdr->count = ref->sdr.count;
                 
-                if (!insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, sdr->offset, sdr, sizeof(SHARED_DATA_REF), NULL, NULL, rollback)) {
-                    ERR("insert_tree_item failed\n");
-                    return STATUS_INTERNAL_ERROR;
+                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, sdr->offset, sdr, sizeof(SHARED_DATA_REF), NULL, NULL, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
                 }
             }
             
@@ -2071,9 +2076,9 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
     }
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL, &rollback)) {
-        ERR("insert_tree_item failed\n");
-        Status = STATUS_INTERNAL_ERROR;
+    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08x\n", Status);
         goto end;
     }
     

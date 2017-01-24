@@ -919,11 +919,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         fsi->key.obj_type = TYPE_INODE_ITEM;
         fsi->key.offset = 0;
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp, rollback)) {
-            ERR("insert_tree_item failed\n");
+        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08x\n", Status);
             free_fcb(c->cache);
             c->cache = NULL;
-            return STATUS_INTERNAL_ERROR;
+            return Status;
         }
         
         // allocate space
@@ -1039,9 +1040,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
             RtlCopyMemory(ii, &c->cache->inode_item, sizeof(INODE_ITEM));
             
-            if (!insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
-                ERR("insert_tree_item failed\n");
-                return STATUS_INTERNAL_ERROR;
+            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_tree_item returned %08x\n", Status);
+                return Status;
             }
             
             *changed = TRUE;

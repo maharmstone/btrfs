@@ -877,6 +877,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 // }
 
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     root* r;
     tree* t;
     ROOT_ITEM* ri;
@@ -936,8 +937,9 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     // We ask here for a traverse_ptr to the item we're inserting, so we can
     // copy some of the tree's variables
     
-    if (!insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, Irp, rollback)) {
-        ERR("insert_tree_item failed\n");
+    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, Irp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(ri);
         
         if (!no_tree)
@@ -945,7 +947,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
         
         ExFreePool(r->nonpaged);
         ExFreePool(r);
-        return STATUS_INTERNAL_ERROR;
+        return Status;
     }
         
     ExInitializeResourceLite(&r->nonpaged->load_tree_lock);
@@ -2754,6 +2756,7 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
             do_rollback(Vcb, &rollback);
             goto end;
         }
@@ -2770,12 +2773,18 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         ii->st_ctime = now;
         ii->st_mtime = now;
         
-        insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, &rollback);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08x\n", Status);
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
 
         irlen = offsetof(INODE_REF, name[0]) + 2;
         ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
             do_rollback(Vcb, &rollback);
             goto end;
         }
@@ -2785,7 +2794,12 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         ir->name[0] = '.';
         ir->name[1] = '.';
         
-        insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp, &rollback);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08x\n", Status);
+            do_rollback(Vcb, &rollback);
+            goto end;
+        }
         
         clear_rollback(Vcb, &rollback);
         
@@ -2793,8 +2807,10 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         Vcb->need_write = TRUE;
     }
     
+    Status = STATUS_SUCCESS;
+    
 end:
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
