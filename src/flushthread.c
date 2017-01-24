@@ -4873,7 +4873,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -4904,15 +4904,15 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
         ExFreePool(rr);
         
-        delete_tree_item(Vcb, &tp, rollback);
+        delete_tree_item(Vcb, &tp, NULL);
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp, NULL)) {
             ERR("error - failed to insert item\n");
             ExFreePool(rr2);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp, NULL)) {
             ERR("error - failed to insert item\n");
             ExFreePool(rr);
             return STATUS_INTERNAL_ERROR;
@@ -5126,7 +5126,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             rr->n = fileref->utf8.Length;
             RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
             
-            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp, rollback);
+            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_ref returned %08x\n", Status);
                 return Status;
@@ -5351,7 +5351,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             rr->n = fileref->utf8.Length;
             RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
             
-            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp, rollback);
+            Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_ref returned %08x\n", Status);
                 return Status;
