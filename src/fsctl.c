@@ -2719,7 +2719,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     stats = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * 5, ALLOC_TAG);
     if (!stats) {
         ERR("out of memory\n");
-        Status = STATUS_INTERNAL_ERROR;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
