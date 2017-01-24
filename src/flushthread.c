@@ -38,7 +38,7 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
 
-static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback);
+static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
                                    void* data, UINT16 datalen, enum batch_operation operation);
@@ -2156,7 +2156,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
         // This is usually done by update_chunks, but we have to check again in case any new chunks
         // have been allocated since.
         if (c->created) {
-            Status = create_chunk(Vcb, c, Irp, rollback);
+            Status = create_chunk(Vcb, c, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("create_chunk returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
@@ -3455,7 +3455,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     BLOCK_GROUP_ITEM* bgi;
@@ -3470,7 +3470,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENT
     
     RtlCopyMemory(ci, c->chunk_item, c->size);
     
-    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, Irp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, Irp, NULL)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ci);
         return STATUS_INTERNAL_ERROR;
@@ -3496,7 +3496,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENT
     bgi->chunk_tree = 0x100;
     bgi->flags = c->chunk_item->type;
     
-    if (!insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp, NULL)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -3532,7 +3532,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENT
         de->length = c->chunk_item->size / factor;
         de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        if (!insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp, NULL)) {
             ERR("insert_tree_item failed\n");
             ExFreePool(de);
             return STATUS_INTERNAL_ERROR;
@@ -4769,7 +4769,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 return Status;
             }
         } else if (c->created) {
-            Status = create_chunk(Vcb, c, Irp, rollback);
+            Status = create_chunk(Vcb, c, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("create_chunk returned %08x\n", Status);
                 ExReleaseResourceLite(&c->lock);
