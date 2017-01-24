@@ -946,7 +946,7 @@ static __inline tree_data* first_valid_item(tree* t) {
     return NULL;
 }
 
-void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
     tree* t;
     UINT64 gen;
     traverse_ptr* tp2;
@@ -962,6 +962,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     if (tp->item->ignore) {
         ERR("trying to delete already-deleted item %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
         int3;
+        return STATUS_INTERNAL_ERROR;
     }
 #endif
 
@@ -990,7 +991,7 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
     tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
     if (!tp2) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     tp2->tree = tp->tree;
@@ -998,6 +999,8 @@ void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTR
 
     if (rollback)
         add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
+    
+    return STATUS_SUCCESS;
 }
 
 void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {

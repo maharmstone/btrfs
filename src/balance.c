@@ -65,6 +65,7 @@ typedef struct {
 } data_reloc_ref;
 
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
     UINT16 len;
@@ -83,7 +84,12 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     mr->system = FALSE;
     InitializeListHead(&mr->refs);
     
-    delete_tree_item(Vcb, tp, rollback);
+    Status = delete_tree_item(Vcb, tp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        ExFreePool(mr);
+        return Status;
+    }
     
     if (!c)
         c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
@@ -173,7 +179,11 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
                     
-                    delete_tree_item(Vcb, &tp2, rollback);
+                    Status = delete_tree_item(Vcb, &tp2, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                 } else if (tp2.item->key.obj_type == TYPE_SHARED_BLOCK_REF && tp2.item->size >= sizeof(SHARED_BLOCK_REF)) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                     if (!ref) {
@@ -187,7 +197,11 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
                     
-                    delete_tree_item(Vcb, &tp2, rollback);
+                    Status = delete_tree_item(Vcb, &tp2, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                 }
             } else
                 break;
@@ -852,7 +866,11 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                                 
                                 RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
                                 
-                                delete_tree_item(Vcb, &tp, rollback);
+                                Status = delete_tree_item(Vcb, &tp, rollback);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("delete_tree_item returned %08x\n", Status);
+                                    goto end;
+                                }
                                 
                                 Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL, rollback);
                                 if (!NT_SUCCESS(Status)) {
@@ -1152,6 +1170,7 @@ end:
 }
 
 static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* metadata_items, traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     data_reloc* dr;
     EXTENT_ITEM* ei;
     UINT16 len;
@@ -1169,7 +1188,11 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
     dr->ei = (EXTENT_ITEM*)tp->item->data;
     InitializeListHead(&dr->refs);
     
-    delete_tree_item(Vcb, tp, rollback);
+    Status = delete_tree_item(Vcb, tp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        return Status;
+    }
     
     if (!c)
         c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
@@ -1364,7 +1387,11 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
                     ref->parent = mr;
                     InsertTailList(&dr->refs, &ref->list_entry);
                     
-                    delete_tree_item(Vcb, &tp2, rollback);
+                    Status = delete_tree_item(Vcb, &tp2, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                 } else if (tp2.item->key.obj_type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(SHARED_DATA_REF)) {
                     data_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
                     if (!ref) {
@@ -1385,7 +1412,11 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
                     ref->parent = mr;
                     InsertTailList(&dr->refs, &ref->list_entry);
                     
-                    delete_tree_item(Vcb, &tp2, rollback);
+                    Status = delete_tree_item(Vcb, &tp2, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                 }
             } else
                 break;
@@ -2049,8 +2080,13 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
         goto end;
     }
     
-    if (!keycmp(tp.item->key, searchkey))
-        delete_tree_item(Vcb, &tp, &rollback);
+    if (!keycmp(tp.item->key, searchkey)) {
+        Status = delete_tree_item(Vcb, &tp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            goto end;
+        }
+    }
     
     bi = ExAllocatePoolWithTag(PagedPool, sizeof(BALANCE_ITEM), ALLOC_TAG);
     if (!bi) {
@@ -2119,7 +2155,11 @@ static NTSTATUS remove_balance_item(device_extension* Vcb) {
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        delete_tree_item(Vcb, &tp, &rollback);
+        Status = delete_tree_item(Vcb, &tp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            goto end;
+        }
         
         do_write(Vcb, NULL, &rollback);
         free_trees(Vcb);
@@ -2260,8 +2300,14 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         return Status;
     }
 
-    if (!keycmp(searchkey, tp.item->key))
+    if (!keycmp(searchkey, tp.item->key)) {
         delete_tree_item(Vcb, &tp, &rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
+    }
     
     // remove stats entry in device tree
     
@@ -2275,8 +2321,14 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         return Status;
     }
 
-    if (!keycmp(searchkey, tp.item->key))
-        delete_tree_item(Vcb, &tp, &rollback);
+    if (!keycmp(searchkey, tp.item->key)) {
+        Status = delete_tree_item(Vcb, &tp, &rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
+    }
     
     // update superblock
     

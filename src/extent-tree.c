@@ -393,7 +393,11 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL t
     
     size = tp.item->key.offset;
     
-    delete_tree_item(Vcb, &tp, rollback);
+    Status = delete_tree_item(Vcb, &tp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        return Status;
+    }
     
     while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
         tp = next_tp;
@@ -423,7 +427,11 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, UINT64 address, BOOL t
                 }
             }
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                goto end;
+            }
         }
 
         if (tp.item->key.obj_id > address || tp.item->key.obj_type > TYPE_EXTENT_REF_V0)
@@ -596,7 +604,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     sectedr2 = (EXTENT_DATA_REF*)((UINT8*)newei + ((UINT8*)sectedr - tp.item->data));
                     sectedr2->count += rc;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -641,7 +653,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     sectsdr2 = (SHARED_DATA_REF*)((UINT8*)newei + ((UINT8*)sectsdr - tp.item->data));
                     sectsdr2->count += rc;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -708,7 +724,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         *ptr = type;
         RtlCopyMemory(ptr + 1, data, datalen);
         
-        delete_tree_item(Vcb, &tp, rollback);
+        Status = delete_tree_item(Vcb, &tp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
         
         Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size + sizeof(UINT8) + datalen, NULL, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -761,7 +781,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return STATUS_INTERNAL_ERROR;
             }
             
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, data2, tp2.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -774,7 +798,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             
             newei->refcount += get_extent_data_refcount(type, data);
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -802,7 +830,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     
     newei->refcount += get_extent_data_refcount(type, data);
     
-    delete_tree_item(Vcb, &tp, rollback);
+    Status = delete_tree_item(Vcb, &tp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        return Status;
+    }
     
     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
@@ -946,7 +978,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
                     if (ei->refcount == edr->count) {
-                        delete_tree_item(Vcb, &tp, rollback);
+                        Status = delete_tree_item(Vcb, &tp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08x\n", Status);
+                            return Status;
+                        }
                         
                         if (!superseded)
                             add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
@@ -985,7 +1021,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     
                     newei->refcount -= rc;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -1003,7 +1043,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 if (sectsdr->offset == sdr->offset) {
                     if (ei->refcount == sectsdr->count) {
-                        delete_tree_item(Vcb, &tp, rollback);
+                        Status = delete_tree_item(Vcb, &tp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08x\n", Status);
+                            return Status;
+                        }
                         
                         if (!superseded)
                             add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
@@ -1042,7 +1086,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
                     newei->refcount -= rc;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -1060,7 +1108,12 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 if (secttbr->offset == tbr->offset) {
                     if (ei->refcount == 1) {
-                        delete_tree_item(Vcb, &tp, rollback);
+                        Status = delete_tree_item(Vcb, &tp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08x\n", Status);
+                            return Status;
+                        }
+                        
                         return STATUS_SUCCESS;
                     }
 
@@ -1079,7 +1132,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     
                     newei->refcount--;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -1097,7 +1154,12 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 
                 if (sectsbr->offset == sbr->offset) {
                     if (ei->refcount == 1) {
-                        delete_tree_item(Vcb, &tp, rollback);
+                        Status = delete_tree_item(Vcb, &tp, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08x\n", Status);
+                            return Status;
+                        }
+                        
                         return STATUS_SUCCESS;
                     }
                     
@@ -1116,7 +1178,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                     
                     newei->refcount--;
                     
-                    delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, neweilen, NULL, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -1169,8 +1235,17 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         
         if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
             if (ei->refcount == edr->count) {
-                delete_tree_item(Vcb, &tp, rollback);
-                delete_tree_item(Vcb, &tp2, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
+                Status = delete_tree_item(Vcb, &tp2, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
                 
                 if (!superseded)
                     add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
@@ -1183,7 +1258,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return STATUS_INTERNAL_ERROR;
             }
             
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             if (sectedr->count > edr->count) {
                 EXTENT_DATA_REF* newedr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
@@ -1214,7 +1293,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
             newei->refcount -= rc;
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -1234,8 +1317,17 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         
         if (sectsdr->offset == sdr->offset) {
             if (ei->refcount == sdr->count) {
-                delete_tree_item(Vcb, &tp, rollback);
-                delete_tree_item(Vcb, &tp2, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
+                Status = delete_tree_item(Vcb, &tp2, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
                 
                 if (!superseded)
                     add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
@@ -1248,7 +1340,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return STATUS_INTERNAL_ERROR;
             }
             
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             if (sectsdr->count > sdr->count) {
                 SHARED_DATA_REF* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
@@ -1279,7 +1375,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
             newei->refcount -= rc;
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -1299,12 +1399,26 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         
         if (sectsbr->offset == sbr->offset) {
             if (ei->refcount == 1) {
-                delete_tree_item(Vcb, &tp, rollback);
-                delete_tree_item(Vcb, &tp2, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
+                Status = delete_tree_item(Vcb, &tp2, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
                 return STATUS_SUCCESS;
             }
             
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!newei) {
@@ -1316,7 +1430,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
             newei->refcount -= rc;
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -1336,12 +1454,26 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         
         if (secttbr->offset == tbr->offset) {
             if (ei->refcount == 1) {
-                delete_tree_item(Vcb, &tp, rollback);
-                delete_tree_item(Vcb, &tp2, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
+                Status = delete_tree_item(Vcb, &tp2, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+                
                 return STATUS_SUCCESS;
             }
             
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
             if (!newei) {
@@ -1353,7 +1485,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
             newei->refcount -= rc;
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -1371,8 +1507,17 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         EXTENT_ITEM* newei;
         
         if (ei->refcount == erv0->count) {
-            delete_tree_item(Vcb, &tp, rollback);
-            delete_tree_item(Vcb, &tp2, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
+            
+            Status = delete_tree_item(Vcb, &tp2, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             if (!superseded)
                 add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
@@ -1380,7 +1525,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             return STATUS_SUCCESS;
         }
         
-        delete_tree_item(Vcb, &tp2, rollback);
+        Status = delete_tree_item(Vcb, &tp2, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
         
         newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
         if (!newei) {
@@ -1392,7 +1541,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
         newei->refcount -= rc;
         
-        delete_tree_item(Vcb, &tp, rollback);
+        Status = delete_tree_item(Vcb, &tp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
         
         Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newei, tp.item->size, NULL, Irp, rollback);
         if (!NT_SUCCESS(Status)) {

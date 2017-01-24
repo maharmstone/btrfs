@@ -76,7 +76,11 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
             break;
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            delete_tree_item(Vcb, &tp, &rollback);
+            Status = delete_tree_item(Vcb, &tp, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             if (tp.item->size >= sizeof(FREE_SPACE_ITEM)) {
                 FREE_SPACE_ITEM* fsi = (FREE_SPACE_ITEM*)tp.item->data;
@@ -607,7 +611,12 @@ clearcache:
     
     InitializeListHead(&rollback);
     
-    delete_tree_item(Vcb, &tp, &rollback);
+    Status = delete_tree_item(Vcb, &tp, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        do_rollback(Vcb, &rollback);
+        return Status;
+    }
     
     Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
@@ -912,8 +921,16 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             return Status;
         }
         
-        if (!keycmp(searchkey, tp.item->key))
-            delete_tree_item(Vcb, &tp, rollback);
+        if (!keycmp(searchkey, tp.item->key)) {
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                ExFreePool(fsi);
+                free_fcb(c->cache);
+                c->cache = NULL;
+                return Status;
+            }
+        }
         
         fsi->key.obj_id = c->cache->inode;
         fsi->key.obj_type = TYPE_INODE_ITEM;

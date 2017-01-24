@@ -258,7 +258,11 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                         
                         RtlCopyMemory(ri, &t->root->root_item, sizeof(ROOT_ITEM));
                         
-                        delete_tree_item(Vcb, &tp, NULL);
+                        Status = delete_tree_item(Vcb, &tp, NULL);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08x\n", Status);
+                            return Status;
+                        }
                         
                         Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL);
                         if (!NT_SUCCESS(Status)) {
@@ -1901,7 +1905,11 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                     return Status;
                 }
                 
-                delete_tree_item(Vcb, &tp, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
             }
         } else if (cer->type == TYPE_SHARED_DATA_REF) {
             le2 = ce->old_refs.Flink;
@@ -2068,7 +2076,11 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                     RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
                 }
                 
-                delete_tree_item(Vcb, &tp, NULL);
+                Status = delete_tree_item(Vcb, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return;
+                }
             }
             
             if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
@@ -2212,7 +2224,13 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             
             TRACE("adjusting usage of chunk %llx to %llx\n", c->offset, c->used);
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                ExFreePool(bgi);
+                ExReleaseResourceLite(&c->lock);
+                goto end;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -2927,7 +2945,12 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             } else
                 eism = NULL;
             
-            delete_tree_item(Vcb, &tp, NULL);
+            Status = delete_tree_item(Vcb, &tp, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                ExFreePool(eism);
+                return Status;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp, NULL);
             if (!NT_SUCCESS(Status)) {
@@ -2967,7 +2990,12 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         
         RtlCopyMemory(eit, tp.item->data, tp.item->size);
         
-        delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            ExFreePool(eit);
+            return Status;
+        }
         
         eit->level = level;
         
@@ -3305,9 +3333,13 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
             if (!NT_SUCCESS(Status)) {
                 WARN("find_item returned %08x\n", Status);
             } else {
-                if (!keycmp(tp.item->key, searchkey))
-                    delete_tree_item(Vcb, &tp, rollback);
-                else
+                if (!keycmp(tp.item->key, searchkey)) {
+                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
+                } else
                     WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             }
         }
@@ -3325,9 +3357,14 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
         return Status;
     }
     
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-        delete_tree_item(Vcb, &tp, rollback);
-    else
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        Status = delete_tree_item(Vcb, &tp, rollback);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
+    } else
         WARN("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
     
     // delete items in tree cache
@@ -3379,7 +3416,11 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp)
         return STATUS_INTERNAL_ERROR;
     }
     
-    delete_tree_item(Vcb, &tp, NULL);
+    Status = delete_tree_item(Vcb, &tp, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08x\n", Status);
+        return Status;
+    }
     
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
     if (!di) {
@@ -3664,7 +3705,11 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     
                     newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
                     
-                    delete_tree_item(Vcb, &tp, NULL);
+                    Status = delete_tree_item(Vcb, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return FALSE;
+                    }
                     
                     if (newsize == 0) {
                         TRACE("xattr %s deleted\n", name);
@@ -4255,8 +4300,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             }
             
             do {
-                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-                    delete_tree_item(fcb->Vcb, &tp, NULL);
+                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+                    Status = delete_tree_item(fcb->Vcb, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        goto end;
+                    }
+                }
                 
                 b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
                 
@@ -4387,9 +4437,13 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             ii_offset = tp.item->key.offset;
         }
         
-        if (!cache)
-            delete_tree_item(fcb->Vcb, &tp, NULL);
-        else {
+        if (!cache) {
+            Status = delete_tree_item(fcb->Vcb, &tp, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                goto end;
+            }
+        } else {
             searchkey.obj_id = fcb->inode;
             searchkey.obj_type = TYPE_INODE_ITEM;
             searchkey.offset = ii_offset;
@@ -4543,7 +4597,11 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
 
         if (!keycmp(tp.item->key, searchkey)) {
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
         }
     }
     
@@ -4569,7 +4627,11 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             }
             
             if (!keycmp(tp.item->key, searchkey)) {
-                delete_tree_item(Vcb, &tp, rollback);
+                Status = delete_tree_item(Vcb, &tp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
                 
                 if (tp.item->size >= sizeof(DEV_EXTENT)) {
                     DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
@@ -4609,7 +4671,11 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 return STATUS_INTERNAL_ERROR;
             }
             
-            delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
             
             di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
             if (!di) {
@@ -4644,9 +4710,14 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             return Status;
         }
         
-        if (!keycmp(tp.item->key, searchkey))
-            delete_tree_item(Vcb, &tp, rollback);
-        else
+        if (!keycmp(tp.item->key, searchkey)) {
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
+        } else
             WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
         
         // remove BLOCK_GROUP_ITEM from extent tree
@@ -4660,9 +4731,14 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             return Status;
         }
         
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            delete_tree_item(Vcb, &tp, rollback);
-        else
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            Status = delete_tree_item(Vcb, &tp, rollback);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
+        } else
             WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
     }
     
@@ -4849,7 +4925,11 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                 if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
                     ULONG newlen = tp.item->size - itemlen;
                     
-                    delete_tree_item(Vcb, &tp, NULL);
+                    Status = delete_tree_item(Vcb, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08x\n", Status);
+                        return Status;
+                    }
                     
                     if (newlen == 0) {
                         TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
@@ -4929,7 +5009,12 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
         ExFreePool(rr);
         
-        delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            ExFreePool(rr2);
+            return Status;
+        }
         
         Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp, NULL);
         if (!NT_SUCCESS(Status)) {
@@ -4994,8 +5079,17 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
         return Status;
     }
     
-    if (!keycmp(tp.item->key, searchkey))
-        delete_tree_item(Vcb, &tp, NULL);
+    if (!keycmp(tp.item->key, searchkey)) {
+        Status = delete_tree_item(Vcb, &tp, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            
+            if (datalen > 0)
+                ExFreePool(data);
+            
+            return Status;
+        }
+    }
     
     if (datalen > 0) {
         Status = insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, Irp, NULL);
@@ -5042,7 +5136,11 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
         
         RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
         
-        delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
         
         Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL);
         if (!NT_SUCCESS(Status)) {

@@ -2731,11 +2731,18 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
+        ExFreePool(stats);
         goto end;
     }
     
-    if (!keycmp(tp.item->key, searchkey))
-        delete_tree_item(Vcb, &tp, &rollback);
+    if (!keycmp(tp.item->key, searchkey)) {
+        Status = delete_tree_item(Vcb, &tp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            ExFreePool(stats);
+            goto end;
+        }
+    }
     
     Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {

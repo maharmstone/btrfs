@@ -890,7 +890,7 @@ BOOL STDCALL find_next_item(device_extension* Vcb, const traverse_ptr* tp, trave
 BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void STDCALL free_trees(device_extension* Vcb);
 NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback);
-void STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
+NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
 tree* STDCALL free_tree(tree* t);
 NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, PIRP Irp);
 NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp);
