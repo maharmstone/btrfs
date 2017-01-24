@@ -4137,7 +4137,7 @@ end:
     }
 }
 
-void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
+NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
@@ -4158,6 +4158,8 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         }
+        
+        Status = STATUS_SUCCESS;
         goto end;
     }
     
@@ -4165,6 +4167,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0xffffffffffffffff, NULL, 0, Batch_DeleteInode))
             ERR("insert_tree_item_batch failed\n");
         
+        Status = STATUS_SUCCESS;
         goto end;
     }
     
@@ -4243,6 +4246,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                                 csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
                                 if (!csum) {
                                     ERR("out of memory\n");
+                                    Status = STATUS_INSUFFICIENT_RESOURCES;
                                     goto end;
                                 }
                                 
@@ -4410,6 +4414,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
                 if (!ii) {
                     ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
                 
@@ -4425,6 +4430,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             } else {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
                 int3;
+                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
         } else {
@@ -4457,6 +4463,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             if (keycmp(tp.item->key, searchkey)) {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
                 int3;
+                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             } else
                 RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(INODE_ITEM)));
@@ -4477,6 +4484,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
         
@@ -4485,6 +4493,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM),
                                     Batch_Insert)) {
             ERR("insert_tree_item_batch failed\n");
+            Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
         
@@ -4495,6 +4504,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
+            goto end;
         }
         
         fcb->sd_dirty = FALSE;
@@ -4559,8 +4569,12 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->ea_changed = FALSE;
     }
     
+    Status = STATUS_SUCCESS;
+    
 end:
     fcb->dirty = FALSE;
+    
+    return Status;
 }
 
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
@@ -4582,9 +4596,14 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             return Status;
         }
         
-        flush_fcb(c->cache, TRUE, batchlist, Irp);
+        Status = flush_fcb(c->cache, TRUE, batchlist, Irp);
         
         free_fcb(c->cache);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_fcb returned %08x\n", Status);
+            return Status;
+        }
         
         searchkey.obj_id = FREE_SPACE_CACHE_ID;
         searchkey.obj_type = 0;
@@ -5585,11 +5604,16 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             RemoveEntryList(le);
             
             ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
+            Status = flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(dirt->fcb->Header.Resource);
             
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("flush_fcb returned %08x\n", Status);
+                return Status;
+            }
 
 #ifdef DEBUG_FLUSH_TIMES
             fcbs++;
@@ -5610,10 +5634,15 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             RemoveEntryList(le);
             
             ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
+            Status = flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(dirt->fcb->Header.Resource);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("flush_fcb returned %08x\n", Status);
+                return Status;
+            }
 
 #ifdef DEBUG_FLUSH_TIMES
             fcbs++;
