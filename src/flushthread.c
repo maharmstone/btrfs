@@ -80,7 +80,7 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
     
     if (!Irp) {
         ERR("IoAllocateIrp failed\n");
-        Status = STATUS_INTERNAL_ERROR;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto exit2;
     }
     
