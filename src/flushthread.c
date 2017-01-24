@@ -3698,7 +3698,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
     }
 }
 
-static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP Irp) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
     
@@ -3723,7 +3723,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, Irp, rollback)) {
+    if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, Irp, NULL)) {
         ERR("insert_tree_item failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -4262,7 +4262,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             ext->inserted = FALSE;
             
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
-                Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp, rollback);
+                Status = insert_sparse_extent(fcb, last_end, ext->offset - last_end, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
@@ -4306,7 +4306,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         
         if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
             sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
-            Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp, rollback);
+            Status = insert_sparse_extent(fcb, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
                 goto end;
