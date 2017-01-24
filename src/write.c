@@ -1647,7 +1647,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             
                 if (!stripe->Irp) {
                     ERR("IoAllocateIrp failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
             } else {
@@ -1655,7 +1655,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
                 
                 if (!stripe->Irp) {
                     ERR("IoMakeAssociatedIrp failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
             }
@@ -1672,7 +1672,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
                                                         stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
                 if (!stripe->Irp->MdlAddress) {
                     ERR("IoAllocateMdl failed\n");
-                    Status = STATUS_INTERNAL_ERROR;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
                 
