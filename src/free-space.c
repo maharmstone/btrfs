@@ -45,7 +45,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIS
     
     fcb->deleted = TRUE;
     
-    flush_fcb(fcb, FALSE, batchlist, Irp, rollback);
+    flush_fcb(fcb, FALSE, batchlist, Irp);
     
     free_fcb(fcb);
 
@@ -939,7 +939,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->extents_changed = TRUE;
         InsertTailList(&Vcb->all_fcbs, &c->cache->list_entry_all);
         
-        flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
+        flush_fcb(c->cache, TRUE, batchlist, Irp);
         
         *changed = TRUE;
     } else if (realloc_extents) {
@@ -1014,7 +1014,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         c->cache->inode_item.st_size = new_cache_size;
         c->cache->inode_item.st_blocks = new_cache_size;
         
-        flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
+        flush_fcb(c->cache, TRUE, batchlist, Irp);
     
         *changed = TRUE;
     } else {
@@ -1415,7 +1415,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     c->cache->inode_item.sequence++;
     c->cache->inode_item.st_ctime = *now;
     
-    flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
+    flush_fcb(c->cache, TRUE, batchlist, Irp);
     
     // update free_space item
     

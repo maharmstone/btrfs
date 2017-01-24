@@ -4073,7 +4073,7 @@ end:
     }
 }
 
-void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
@@ -4237,7 +4237,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
             
             do {
                 if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-                    delete_tree_item(fcb->Vcb, &tp, rollback);
+                    delete_tree_item(fcb->Vcb, &tp, NULL);
                 
                 b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
                 
@@ -4346,7 +4346,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 
                 RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
                 
-                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback)) {
+                if (!insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, NULL)) {
                     ERR("insert_tree_item failed\n");
                     goto end;
                 }
@@ -4368,7 +4368,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         }
         
         if (!cache)
-            delete_tree_item(fcb->Vcb, &tp, rollback);
+            delete_tree_item(fcb->Vcb, &tp, NULL);
         else {
             searchkey.obj_id = fcb->inode;
             searchkey.obj_type = TYPE_INODE_ITEM;
@@ -4508,7 +4508,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             return Status;
         }
         
-        flush_fcb(c->cache, TRUE, batchlist, Irp, rollback);
+        flush_fcb(c->cache, TRUE, batchlist, Irp);
         
         free_fcb(c->cache);
         
@@ -5458,7 +5458,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             RemoveEntryList(le);
             
             ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
+            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(dirt->fcb->Header.Resource);
             
             free_fcb(dirt->fcb);
@@ -5483,7 +5483,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             RemoveEntryList(le);
             
             ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp, rollback);
+            flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(dirt->fcb->Header.Resource);
             free_fcb(dirt->fcb);
             ExFreePool(dirt);
