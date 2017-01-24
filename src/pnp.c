@@ -253,12 +253,6 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS pnp_start_device() {
-    FIXME("STUB\n");
-
-    return STATUS_NOT_IMPLEMENTED;
-}
-
 NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     
@@ -310,10 +304,6 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         case IRP_MN_REMOVE_DEVICE:
             Status = pnp_remove_device(DeviceObject);
-            break;
-
-        case IRP_MN_START_DEVICE:
-            Status = pnp_start_device();
             break;
 
         case IRP_MN_SURPRISE_REMOVAL:
