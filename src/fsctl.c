@@ -2666,7 +2666,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         Status = add_space_entry(&dev->space, NULL, 0x100000, size - 0x100000);
         if (!NT_SUCCESS(Status)) {
             ERR("add_space_entry returned %08x\n", Status);
-            Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
     }
