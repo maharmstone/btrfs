@@ -3802,7 +3802,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_range;
 
-static void rationalize_extents(fcb* fcb, PIRP Irp, LIST_ENTRY* rollback) {
+static void rationalize_extents(fcb* fcb, PIRP Irp) {
     LIST_ENTRY* le;
     LIST_ENTRY extent_ranges;
     extent_range* er;
@@ -4152,7 +4152,7 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
         }
         
         if (!IsListEmpty(&fcb->extents)) {
-            rationalize_extents(fcb, Irp, rollback);
+            rationalize_extents(fcb, Irp);
             
             // merge together adjacent EXTENT_DATAs pointing to same extent
             
