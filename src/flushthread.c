@@ -2888,7 +2888,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree* t, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree* t, UINT8 level, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -2919,9 +2919,9 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             } else
                 eism = NULL;
             
-            delete_tree_item(Vcb, &tp, rollback);
+            delete_tree_item(Vcb, &tp, NULL);
             
-            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp, rollback)) {
+            if (!insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp, NULL)) {
                 ERR("insert_tree_item failed\n");
                 ExFreePool(eism);
                 return STATUS_INTERNAL_ERROR;
@@ -2958,11 +2958,11 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         
         RtlCopyMemory(eit, tp.item->data, tp.item->size);
         
-        delete_tree_item(Vcb, &tp, rollback);
+        delete_tree_item(Vcb, &tp, NULL);
         
         eit->level = level;
         
-        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, Irp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, Irp, NULL)) {
             ERR("insert_tree_item failed\n");
             ExFreePool(eit);
             return STATUS_INTERNAL_ERROR;
@@ -3074,7 +3074,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                         free_tree(t);
                     } else if (t->header.level != 0) {
                         if (t->has_new_address) {
-                            Status = update_extent_level(Vcb, t->new_address, t, 0, Irp, rollback);
+                            Status = update_extent_level(Vcb, t->new_address, t, 0, Irp);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_extent_level returned %08x\n", Status);
