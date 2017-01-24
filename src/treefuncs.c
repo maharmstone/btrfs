@@ -919,7 +919,8 @@ BOOL STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UIN
     tp2->tree = tp.tree;
     tp2->item = td;
     
-    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
+    if (rollback)
+        add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
     success = TRUE;
 
