@@ -4981,7 +4981,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -5014,9 +5014,9 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
         
         RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
         
-        delete_tree_item(Vcb, &tp, rollback);
+        delete_tree_item(Vcb, &tp, NULL);
         
-        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, rollback)) {
+        if (!insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL)) {
             ERR("insert_tree_item failed\n");
             return STATUS_INTERNAL_ERROR;
         }
@@ -5547,7 +5547,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
     
     // make sure we always update the extent tree
-    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp, rollback);
+    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_item_to_cache returned %08x\n", Status);
         return Status;
