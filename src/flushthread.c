@@ -5027,7 +5027,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp) {
     NTSTATUS Status;
     
     // if fileref created and then immediately deleted, do nothing
@@ -5421,7 +5421,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         
         dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
         
-        flush_fileref(dirt->fileref, &batchlist, Irp, rollback);
+        flush_fileref(dirt->fileref, &batchlist, Irp);
         free_fileref(dirt->fileref);
         ExFreePool(dirt);
 
