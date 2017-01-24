@@ -1937,7 +1937,7 @@ end:
     return STATUS_SUCCESS;
 }
 
-void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp, LIST_ENTRY* rollback) {
+void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     UINT32* data;
@@ -1974,7 +1974,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                 RtlCopyMemory(checksums, data, il * sizeof(UINT32));
                 
                 if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
-                                        il * sizeof(UINT32), NULL, Irp, rollback)) {
+                                      il * sizeof(UINT32), NULL, Irp, NULL)) {
                     ERR("insert_tree_item failed\n");
                     ExFreePool(checksums);
                     return;
@@ -2061,7 +2061,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                     RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
                 }
                 
-                delete_tree_item(Vcb, &tp, rollback);
+                delete_tree_item(Vcb, &tp, NULL);
             }
             
             if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
@@ -2101,7 +2101,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                 
                 off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
                 
-                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, rollback)) {
+                if (!insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, NULL)) {
                     ERR("insert_tree_item failed\n");
                     ExFreePool(data);
                     ExFreePool(bmparr);
@@ -3931,7 +3931,7 @@ cont:
                 }
                 
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address, er->skip_start / fcb->Vcb->superblock.sector_size, NULL, NULL, rollback);
+                    add_checksum_entry(fcb->Vcb, er->address, er->skip_start / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
                 decrease_chunk_usage(er->chunk, er->skip_start);
                 
@@ -3971,7 +3971,7 @@ cont:
                 }
                 
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, er->skip_end / fcb->Vcb->superblock.sector_size, NULL, NULL, rollback);
+                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, er->skip_end / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
                 decrease_chunk_usage(er->chunk, er->skip_end);
                 
@@ -4142,9 +4142,9 @@ void flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY
                 
                 if (ed2->size > 0) { // not sparse
                     if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
+                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, ext->csum, Irp);
                     else
-                        add_checksum_entry(fcb->Vcb, ed2->address, ed2->size / fcb->Vcb->superblock.sector_size, ext->csum, Irp, rollback);
+                        add_checksum_entry(fcb->Vcb, ed2->address, ed2->size / fcb->Vcb->superblock.sector_size, ext->csum, Irp);
                 }
             }
             

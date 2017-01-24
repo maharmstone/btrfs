@@ -941,7 +941,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                         delete_tree_item(Vcb, &tp, rollback);
                         
                         if (!superseded)
-                            add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
+                            add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
                         
                         return STATUS_SUCCESS;
                     }
@@ -997,7 +997,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                         delete_tree_item(Vcb, &tp, rollback);
                         
                         if (!superseded)
-                            add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
+                            add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
                         
                         return STATUS_SUCCESS;
                     }
@@ -1161,7 +1161,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 delete_tree_item(Vcb, &tp2, rollback);
                 
                 if (!superseded)
-                    add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
+                    add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
                 
                 return STATUS_SUCCESS;
             }
@@ -1224,7 +1224,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 delete_tree_item(Vcb, &tp2, rollback);
                 
                 if (!superseded)
-                    add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
+                    add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
                 
                 return STATUS_SUCCESS;
             }
@@ -1357,7 +1357,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             delete_tree_item(Vcb, &tp2, rollback);
             
             if (!superseded)
-                add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp, rollback);
+                add_checksum_entry(Vcb, address, size / Vcb->superblock.sector_size, NULL, Irp);
             
             return STATUS_SUCCESS;
         }

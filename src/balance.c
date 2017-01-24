@@ -1691,8 +1691,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         Status = load_csum(Vcb, csum, dr->address, dr->size / Vcb->superblock.sector_size, NULL);
 
         if (NT_SUCCESS(Status)) {
-            add_checksum_entry(Vcb, dr->new_address, dr->size / Vcb->superblock.sector_size, csum, NULL, &rollback);
-            add_checksum_entry(Vcb, dr->address, dr->size / Vcb->superblock.sector_size, NULL, NULL, &rollback);
+            add_checksum_entry(Vcb, dr->new_address, dr->size / Vcb->superblock.sector_size, csum, NULL);
+            add_checksum_entry(Vcb, dr->address, dr->size / Vcb->superblock.sector_size, NULL, NULL);
         }
 
         ExFreePool(csum);
