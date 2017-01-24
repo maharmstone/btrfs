@@ -3348,7 +3348,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
@@ -3369,7 +3369,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp,
         return STATUS_INTERNAL_ERROR;
     }
     
-    delete_tree_item(Vcb, &tp, rollback);
+    delete_tree_item(Vcb, &tp, NULL);
     
     di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
     if (!di) {
@@ -3379,7 +3379,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp,
     
     RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
     
-    if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, rollback)) {
+    if (!insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, NULL)) {
         ERR("insert_tree_item failed\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -3539,7 +3539,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp, LIST_ENT
         }
         
         // FIXME - no point in calling this twice for the same device
-        Status = update_dev_item(Vcb, c->devices[i], Irp, rollback);
+        Status = update_dev_item(Vcb, c->devices[i], Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_dev_item returned %08x\n", Status);
             return Status;
