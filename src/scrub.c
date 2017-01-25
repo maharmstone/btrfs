@@ -1604,6 +1604,101 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UINT64 stripe_start, UINT64 stripe_end) {
+    ERR("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
+    
+    // FIXME
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS scrub_chunk_raid5(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    BOOL b;
+    UINT64 full_stripe_len, stripe, stripe_start, stripe_end, total_data = 0;
+    ULONG num_extents = 0;
+    
+    full_stripe_len = (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length;
+    stripe = (*offset - c->offset) / full_stripe_len;
+    
+    *offset = c->offset + (stripe * full_stripe_len);
+    
+    searchkey.obj_id = *offset;
+    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    *changed = FALSE;
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id >= c->offset + c->chunk_item->size)
+            break;
+        
+        if (tp.item->key.obj_id >= *offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
+            UINT64 size = tp.item->key.obj_type == TYPE_METADATA_ITEM ? Vcb->superblock.node_size : tp.item->key.offset;
+            
+            TRACE("%llx\n", tp.item->key.obj_id);
+            
+            if (size < Vcb->superblock.sector_size) {
+                ERR("extent %llx has size less than sector_size (%llx < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
+                return STATUS_INTERNAL_ERROR;
+            }
+            
+            stripe = (tp.item->key.obj_id - c->offset) / full_stripe_len;
+            
+            if (*changed) {
+                if (stripe > stripe_end + 1) {
+                    Status = scrub_chunk_raid5_stripe_run(Vcb, c, stripe_start, stripe_end);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("scrub_chunk_raid5_stripe_run returned %08x\n", Status);
+                        return Status;
+                    }
+                    
+                    stripe_start = stripe;
+                }
+            } else
+                stripe_start = stripe;
+            
+            stripe_end = (tp.item->key.obj_id + size - 1 - c->offset) / full_stripe_len;
+
+            *changed = TRUE;
+            
+            total_data += size;
+            num_extents++;
+            
+            // only do so much at a time
+            if (num_extents >= 64 || total_data >= 0x8000000) // 128 MB
+                break;
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
+        
+        if (b)
+            tp = next_tp;
+    } while (b);
+    
+    if (*changed) {
+        Status = scrub_chunk_raid5_stripe_run(Vcb, c, stripe_start, stripe_end);
+        if (!NT_SUCCESS(Status)) {
+            ERR("scrub_chunk_raid5_stripe_run returned %08x\n", Status);
+            return Status;
+        }
+        
+        *offset = c->offset + ((stripe_end + 1) * full_stripe_len);
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
     NTSTATUS Status;
     KEY searchkey;
@@ -1625,8 +1720,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
     else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
         type = BLOCK_FLAG_RAID10;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-        type = BLOCK_FLAG_RAID5;
-        ERR("RAID5 not yet supported\n");
+        Status = scrub_chunk_raid5(Vcb, c, offset, changed);
         goto end;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         type = BLOCK_FLAG_RAID6;
