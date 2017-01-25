@@ -1605,11 +1605,121 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
 }
 
 static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UINT64 stripe_start, UINT64 stripe_end) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    BOOL b;
+    UINT64 run_start, run_end, num_sectors, full_stripe_len;
+    ULONG arrlen, *allocarr, *csumarr, *treearr;
+    RTL_BITMAP alloc, has_csum, is_tree;
+    
     ERR("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
     
-    // FIXME
+    full_stripe_len = (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length;
+    run_start = c->offset + (stripe_start * full_stripe_len);
+    run_end = c->offset + ((stripe_end + 1) * full_stripe_len);
     
-    return STATUS_SUCCESS;
+    searchkey.obj_id = run_start;
+    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+    
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    num_sectors = (stripe_end - stripe_start + 1) * full_stripe_len / Vcb->superblock.sector_size;
+    arrlen = sector_align((num_sectors / 8) + 1, sizeof(ULONG));
+    
+    allocarr = ExAllocatePoolWithTag(PagedPool, arrlen, ALLOC_TAG);
+    if (!allocarr) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    csumarr = ExAllocatePoolWithTag(PagedPool, arrlen, ALLOC_TAG);
+    if (!csumarr) {
+        ERR("out of memory\n");
+        ExFreePool(allocarr);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    treearr = ExAllocatePoolWithTag(PagedPool, arrlen, ALLOC_TAG);
+    if (!treearr) {
+        ERR("out of memory\n");
+        ExFreePool(allocarr);
+        ExFreePool(treearr);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlInitializeBitMap(&alloc, allocarr, num_sectors);
+    RtlClearAllBits(&alloc);
+    
+    RtlInitializeBitMap(&has_csum, csumarr, num_sectors);
+    RtlClearAllBits(&has_csum);
+    
+    RtlInitializeBitMap(&is_tree, treearr, num_sectors);
+    RtlClearAllBits(&is_tree);
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id >= run_end)
+            break;
+        
+        if (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM) {
+            UINT64 size = tp.item->key.obj_type == TYPE_METADATA_ITEM ? Vcb->superblock.node_size : tp.item->key.offset;
+            
+            if (tp.item->key.obj_id + size > run_start) {
+                UINT64 extent_start = max(run_start, tp.item->key.obj_id);
+                UINT64 extent_end = min(tp.item->key.obj_id + size, run_end);
+                BOOL extent_is_tree;
+                
+                RtlSetBits(&alloc, (extent_start - run_start) / Vcb->superblock.sector_size, (extent_end - extent_start) / Vcb->superblock.sector_size);
+                
+                if (tp.item->key.obj_type == TYPE_METADATA_ITEM)
+                    extent_is_tree = TRUE;
+                else {
+                    EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                    
+                    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto end;
+                    }
+                    
+                    if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                        extent_is_tree = TRUE;
+                }
+                
+                if (extent_is_tree)
+                    RtlSetBits(&is_tree, (extent_start - run_start) / Vcb->superblock.sector_size, (extent_end - extent_start) / Vcb->superblock.sector_size);
+                else {
+                    // FIXME - csum
+                }
+            }
+        }
+        
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
+        
+        if (b)
+            tp = next_tp;
+    } while (b);
+    
+    // FIXME - acquire range lock
+    // FIXME - read
+    // FIXME - process stripe by stripe
+    // FIXME - release range lock
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExFreePool(treearr);
+    ExFreePool(csumarr);
+    ExFreePool(allocarr);
+    
+    return Status;
 }
 
 static NTSTATUS scrub_chunk_raid5(device_extension* Vcb, chunk* c, UINT64* offset, BOOL* changed) {
