@@ -1610,6 +1610,8 @@ typedef struct {
     void* context;
     IO_STATUS_BLOCK iosb;
     BOOL rewrite;
+    RTL_BITMAP error;
+    ULONG* errorarr;
 } scrub_context_raid5_stripe;
 
 typedef struct {
@@ -1648,19 +1650,21 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     RtlCopyMemory(context->parity_scratch, &context->stripes[parity].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
     
     while (stripe != parity) {
+        RtlClearAllBits(&context->stripes[stripe].error);
+        
         for (i = 0; i < sectors_per_stripe; i++) {
             if (RtlCheckBit(&context->alloc, off)) {
-                // FIXME - check trees as well
-                
-                if (RtlCheckBit(&context->has_csum, off)) {
+                if (RtlCheckBit(&context->is_tree, off)) {
+                    // FIXME
+                } else if (RtlCheckBit(&context->has_csum, off)) {
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + (stripeoff * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                     
                     if (crc32 != context->csum[off]) {
                         UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
                         ERR("checksum error at %llx (%08x != %08x)\n", addr, crc32, context->csum[off]);
+                        
+                        RtlSetBit(&context->stripes[stripe].error, i);
                     }
-                    
-                    // FIXME - set bitmap for this
                 }
             }
             
@@ -1676,20 +1680,56 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     
     // check parity
     
+    RtlClearAllBits(&context->stripes[parity].error);
+    
     for (i = 0; i < sectors_per_stripe; i++) {
         ULONG o, j;
         
         o = i * Vcb->superblock.sector_size;
-        for (j = 0; j < c->chunk_item->stripe_length; j++) {
+        for (j = 0; j < Vcb->superblock.sector_size; j++) { // FIXME - use SSE
             if (context->parity_scratch[o] != 0) {
-                ERR("parity error\n"); // FIXME
+                RtlSetBit(&context->stripes[parity].error, i);
                 break;
             }
             o++;
         }
     }
     
-    // FIXME - log and fix errors
+    // log and fix errors
+    
+    for (i = 0; i < sectors_per_stripe; i++) {
+        ULONG num_errors = 0;
+        BOOL alloc = FALSE;
+        
+        stripe = (parity + 1) % c->chunk_item->num_stripes;
+        off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
+        
+        while (stripe != parity) {
+            if (RtlCheckBit(&context->alloc, off)) {
+                alloc = TRUE;
+                
+                if (RtlCheckBit(&context->stripes[stripe].error, i))
+                    num_errors++;
+            }
+            
+            off += sectors_per_stripe;
+            stripe = (stripe + 1) % c->chunk_item->num_stripes;
+        }
+        
+        if (!alloc)
+            continue;
+        
+        if (num_errors == 0 && !RtlCheckBit(&context->stripes[parity].error, i)) // everything fine
+            continue;
+        
+        if (num_errors == 1 && !RtlCheckBit(&context->stripes[parity].error, i)) {
+            FIXME("FIXME - recover from checksum error\n"); // FIXME
+        } else if (num_errors == 0 && RtlCheckBit(&context->stripes[parity].error, i)) {
+            FIXME("FIXME - recover from parity error\n"); // FIXME
+        } else {
+            FIXME("FIXME - log unrecoverable error\n"); // FIXME
+        }
+    }
 }
 
 static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UINT64 stripe_start, UINT64 stripe_end) {
@@ -1877,6 +1917,25 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
             goto end;
         }
         
+        context.stripes[i].errorarr = ExAllocatePoolWithTag(PagedPool, sector_align(((c->chunk_item->stripe_length / Vcb->superblock.sector_size) / 8) + 1, sizeof(ULONG)), ALLOC_TAG);
+        if (!context.stripes[i].errorarr) {
+            UINT64 j;
+            
+            ERR("out of memory\n");
+            
+            ExFreePool(context.stripes[i].buf);
+            
+            for (j = 0; j < i; j++) {
+                ExFreePool(context.stripes[j].buf);
+            }
+            ExFreePool(context.stripes);
+            
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlInitializeBitMap(&context.stripes[i].error, context.stripes[i].errorarr, c->chunk_item->stripe_length / Vcb->superblock.sector_size);
+        
         context.stripes[i].context = &context;
         context.stripes[i].rewrite = FALSE;
     }
@@ -1976,6 +2035,7 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
 end2:
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         ExFreePool(context.stripes[i].buf);
+        ExFreePool(context.stripes[i].errorarr);
     }
     ExFreePool(context.stripes);
     
