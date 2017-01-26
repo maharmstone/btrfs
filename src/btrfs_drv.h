@@ -520,6 +520,7 @@ typedef struct {
     UINT64 device;
     BOOL recovered;
     BOOL is_metadata;
+    BOOL parity;
     LIST_ENTRY list_entry;
     
     union {
