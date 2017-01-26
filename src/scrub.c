@@ -2624,6 +2624,7 @@ NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void
         bse->device = err->device;
         bse->recovered = err->recovered;
         bse->is_metadata = err->is_metadata;
+        bse->parity = err->parity;
         
         if (err->is_metadata) {
             bse->metadata.root = err->metadata.root;
