@@ -1616,6 +1616,7 @@ typedef struct {
     PIRP Irp;
     void* context;
     IO_STATUS_BLOCK iosb;
+    UINT64 offset;
     BOOL rewrite;
     RTL_BITMAP error;
     ULONG* errorarr;
@@ -1739,7 +1740,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             bad_off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
             
-            // FIXME - write good data over bad
+            context->stripes[parity].rewrite = TRUE;
             
             log_error(Vcb, addr, c->devices[parity]->devitem.dev_id, FALSE, TRUE, TRUE);
         } else if (num_errors == 1) {
@@ -1755,7 +1756,10 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
             
             if (crc32 == context->csum[bad_off]) {
-                // FIXME - write good data over bad
+                RtlCopyMemory(&context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                              &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
+                
+                context->stripes[bad_stripe].rewrite = TRUE;
                 
                 log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, bad_off), TRUE, FALSE);
             } else
@@ -2030,9 +2034,11 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
                 MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
             } else
                 context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
+            
+            context.stripes[i].offset = stripe * c->chunk_item->stripe_length;
 
             IrpSp->Parameters.Read.Length = read_stripes * c->chunk_item->stripe_length;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + (stripe * c->chunk_item->stripe_length);
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + context.stripes[i].offset;
             
             context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
             
@@ -2070,10 +2076,18 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
                 }
                 IoFreeIrp(context.stripes[i].Irp);
                 context.stripes[i].Irp = NULL;
+                
+                if (context.stripes[i].rewrite) {
+                    Status = write_data_phys(c->devices[i]->devobj, cis[i].offset + context.stripes[i].offset,
+                                             context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("write_data_phys returned %08x\n", Status);
+                        return Status;
+                    }
+                }
             }
         }
-        
-        // FIXME - rewrite if necessary
     } while (stripe < stripe_end);
     
     chunk_unlock_range(Vcb, c, run_start, run_end - run_start);
