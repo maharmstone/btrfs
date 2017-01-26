@@ -1659,12 +1659,8 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 } else if (RtlCheckBit(&context->has_csum, off)) {
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + (stripeoff * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                     
-                    if (crc32 != context->csum[off]) {
-                        UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
-                        ERR("checksum error at %llx (%08x != %08x)\n", addr, crc32, context->csum[off]);
-                        
+                    if (crc32 != context->csum[off])
                         RtlSetBit(&context->stripes[stripe].error, i);
-                    }
                 }
             }
             
@@ -1699,6 +1695,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     
     for (i = 0; i < sectors_per_stripe; i++) {
         ULONG num_errors = 0;
+        UINT64 bad_stripe, bad_off;
         BOOL alloc = FALSE;
         
         stripe = (parity + 1) % c->chunk_item->num_stripes;
@@ -1708,8 +1705,11 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             if (RtlCheckBit(&context->alloc, off)) {
                 alloc = TRUE;
                 
-                if (RtlCheckBit(&context->stripes[stripe].error, i))
+                if (RtlCheckBit(&context->stripes[stripe].error, i)) {
+                    bad_stripe = stripe;
+                    bad_off = off;
                     num_errors++;
+                }
             }
             
             off += sectors_per_stripe;
@@ -1722,12 +1722,42 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         if (num_errors == 0 && !RtlCheckBit(&context->stripes[parity].error, i)) // everything fine
             continue;
         
-        if (num_errors == 1 && !RtlCheckBit(&context->stripes[parity].error, i)) {
-            FIXME("FIXME - recover from checksum error\n"); // FIXME
-        } else if (num_errors == 0 && RtlCheckBit(&context->stripes[parity].error, i)) {
+        if (num_errors == 0 && RtlCheckBit(&context->stripes[parity].error, i)) {
             FIXME("FIXME - recover from parity error\n"); // FIXME
+        } else if (num_errors == 1) {
+            UINT32 crc32;
+            UINT64 addr;
+            
+            do_xor(&context->parity_scratch[i * Vcb->superblock.sector_size],
+                   &context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                   Vcb->superblock.sector_size);
+            
+            crc32 = ~calc_crc32c(0xffffffff, &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
+            
+            addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
+            
+            if (crc32 == context->csum[bad_off]) {
+                // FIXME - write good data over bad
+                
+                log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, bad_off), TRUE);
+            } else
+                log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, bad_off), FALSE);
         } else {
-            FIXME("FIXME - log unrecoverable error\n"); // FIXME
+            stripe = (parity + 1) % c->chunk_item->num_stripes;
+            off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
+            
+            while (stripe != parity) {
+                if (RtlCheckBit(&context->alloc, off)) {
+                    if (RtlCheckBit(&context->stripes[stripe].error, i)) {
+                        UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
+
+                        log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, off), FALSE);
+                    }
+                }
+                
+                off += sectors_per_stripe;
+                stripe = (stripe + 1) % c->chunk_item->num_stripes;
+            }
         }
     }
 }
