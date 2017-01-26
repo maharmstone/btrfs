@@ -127,7 +127,15 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             else
                 unrecoverable_errors++;
             
-            if (bse->is_metadata) {
+            if (bse->parity) {
+                if (!LoadStringW(module, IDS_SCRUB_MSG_RECOVERABLE_PARITY, t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    goto end;
+                }
+                
+                if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    goto end;
+            } else if (bse->is_metadata) {
                 int message;
                 
                 if (bse->recovered)

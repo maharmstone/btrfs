@@ -526,6 +526,8 @@ BEGIN
                             "%llu unrecoverable error(s) found."
     IDS_SCRUB_FAILED        "Scrub failed with error %08x."
     IDS_LOCK_FAILED         "Unable to lock volume: error %08x. Make sure that there are no files open, and that you have closed any Explorer windows."
+    IDS_SCRUB_MSG_RECOVERABLE_PARITY 
+                            "Recovered from parity error at %llx on device %llx."
 END
 
 #endif    // English (U.K.) resources

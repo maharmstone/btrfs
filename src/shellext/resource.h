@@ -114,6 +114,7 @@
 #define IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE 201
 #define IDS_SCRUB_FAILED                202
 #define IDS_LOCK_FAILED                 203
+#define IDS_SCRUB_MSG_RECOVERABLE_PARITY 204
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
