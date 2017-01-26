@@ -1604,15 +1604,45 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, UINT64 offset
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    UINT8* buf;
+    PIRP Irp;
+    void* context;
+    IO_STATUS_BLOCK iosb;
+    BOOL rewrite;
+} scrub_context_raid5_stripe;
+
+typedef struct {
+    scrub_context_raid5_stripe* stripes;
+    LONG stripes_left;
+    KEVENT Event;
+} scrub_context_raid5;
+
+static NTSTATUS STDCALL scrub_read_completion_raid5(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+    scrub_context_raid5_stripe* stripe = conptr;
+    scrub_context_raid5* context = (scrub_context_raid5*)stripe->context;
+    LONG left = InterlockedDecrement(&context->stripes_left);
+    
+    stripe->iosb = Irp->IoStatus;
+    
+    if (left == 0)
+        KeSetEvent(&context->Event, 0, FALSE);
+    
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
 static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UINT64 stripe_start, UINT64 stripe_end) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     BOOL b;
-    UINT64 run_start, run_end, num_sectors, full_stripe_len;
+    UINT64 run_start, run_end, num_sectors, full_stripe_len, max_read, stripe;
     ULONG arrlen, *allocarr, *csumarr, *treearr;
     RTL_BITMAP alloc, has_csum, is_tree;
     UINT32* csum;
+    scrub_context_raid5 context;
+    UINT16 i;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     ERR("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
     
@@ -1753,12 +1783,132 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
             tp = next_tp;
     } while (b);
     
-    // FIXME - acquire range lock
-    // FIXME - read megabyte by megabyte
-    // FIXME - process stripe by stripe
-    // FIXME - release range lock
+    context.stripes = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_context_raid5_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!context.stripes) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    max_read = min(1048576 / c->chunk_item->stripe_length, stripe_end - stripe_start + 1); // only process 1 MB of data at a time
+    
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        context.stripes[i].buf = ExAllocatePoolWithTag(PagedPool, max_read * c->chunk_item->stripe_length, ALLOC_TAG);
+        if (!context.stripes[i].buf) {
+            UINT64 j;
+            
+            ERR("out of memory\n");
+            
+            for (j = 0; j < i; j++) {
+                ExFreePool(context.stripes[j].buf);
+            }
+            ExFreePool(context.stripes);
+            
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        context.stripes[i].context = &context;
+        context.stripes[i].rewrite = FALSE;
+    }
+    
+    stripe = stripe_start;
+    
+    chunk_lock_range(Vcb, c, run_start, run_end - run_start);
+    
+    do {
+        ULONG read_stripes;
+        
+        if (max_read < stripe_end + 1 - stripe)
+            read_stripes = max_read;
+        else
+            read_stripes = stripe_end + 1 - stripe;
+        
+        context.stripes_left = c->chunk_item->num_stripes;
+        
+        // read megabyte by megabyte
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            PIO_STACK_LOCATION IrpSp;
+
+            context.stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
+            
+            if (!context.stripes[i].Irp) {
+                ERR("IoAllocateIrp failed\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end2;
+            }
+            
+            IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
+            IrpSp->MajorFunction = IRP_MJ_READ;
+            
+            if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO)
+                FIXME("FIXME - buffered IO\n");
+            else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length, FALSE, FALSE, NULL);
+                if (!context.stripes[i].Irp->MdlAddress) {
+                    ERR("IoAllocateMdl failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+            } else
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
+
+            IrpSp->Parameters.Read.Length = read_stripes * c->chunk_item->stripe_length;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + (stripe * c->chunk_item->stripe_length);
+            
+            context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
+            
+            IoSetCompletionRoutine(context.stripes[i].Irp, scrub_read_completion_raid5, &context.stripes[i], TRUE, TRUE, TRUE);
+            
+            Vcb->scrub.data_scrubbed += read_stripes * c->chunk_item->stripe_length;
+        }
+        
+        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            IoCallDriver(c->devices[i]->devobj, context.stripes[i].Irp);
+        }
+        
+        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+        
+        // return an error if any of the stripes returned an error
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
+                Status = context.stripes[i].iosb.Status;
+                goto end2;
+            }
+        }
+        
+        for (i = 0; i < read_stripes; i++) {
+            // FIXME - process stripe by stripe
+        }
+        stripe += read_stripes;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (context.stripes[i].Irp) {
+                if (c->devices[i]->devobj->Flags & DO_DIRECT_IO && context.stripes[i].Irp->MdlAddress) {
+                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
+                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
+                }
+                IoFreeIrp(context.stripes[i].Irp);
+                context.stripes[i].Irp = NULL;
+            }
+        }
+        
+        // FIXME - rewrite if necessary
+    } while (stripe < stripe_end);
+    
+    chunk_unlock_range(Vcb, c, run_start, run_end - run_start);
     
     Status = STATUS_SUCCESS;
+    
+end2:
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        ExFreePool(context.stripes[i].buf);
+    }
+    ExFreePool(context.stripes);
     
 end:
     ExFreePool(treearr);
