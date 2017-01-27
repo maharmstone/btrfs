@@ -2694,7 +2694,7 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
     
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_tree returned %08x\n", Status);
+        ERR("error - find_item returned %08x\n", Status);
         return Status;
     }
     
@@ -2828,7 +2828,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
     
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_tree returned %08x\n", Status);
+        ERR("error - find_item returned %08x\n", Status);
         return Status;
     }
     

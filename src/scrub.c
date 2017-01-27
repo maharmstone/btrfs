@@ -90,7 +90,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
             
             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, NULL);
             if (!NT_SUCCESS(Status)) {
-                ERR("find_tree returned %08x\n", Status);
+                ERR("find_item returned %08x\n", Status);
                 goto end;
             }
             
@@ -153,7 +153,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
             
             Status = find_item(Vcb, r, &tp, &searchkey, FALSE, NULL);
             if (!NT_SUCCESS(Status)) {
-                ERR("find_tree returned %08x\n", Status);
+                ERR("find_item returned %08x\n", Status);
                 goto end;
             }
             
@@ -456,7 +456,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
     
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_tree returned %08x\n", Status);
+        ERR("find_item returned %08x\n", Status);
         return;
     }
     
@@ -1940,7 +1940,7 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
                     
                     Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, FALSE, NULL);
                     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-                        ERR("find_tree returned %08x\n", Status);
+                        ERR("find_item returned %08x\n", Status);
                         goto end;
                     }
                     
@@ -2269,7 +2269,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
     
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_tree returned %08x\n", Status);
+        ERR("error - find_item returned %08x\n", Status);
         goto end;
     }
     
@@ -2339,7 +2339,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                 
                 Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, FALSE, NULL);
                 if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-                    ERR("find_tree returned %08x\n", Status);
+                    ERR("find_item returned %08x\n", Status);
                     ExFreePool(csum);
                     ExFreePool(bmparr);
                     goto end;
