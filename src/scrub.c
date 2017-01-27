@@ -1827,7 +1827,7 @@ static NTSTATUS scrub_chunk_raid5_stripe_run(device_extension* Vcb, chunk* c, UI
     UINT16 i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
-    ERR("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
+    TRACE("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
     
     full_stripe_len = (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length;
     run_start = c->offset + (stripe_start * full_stripe_len);
