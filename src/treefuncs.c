@@ -769,7 +769,7 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     InsertTailList(rollback, &ri->list_entry);
 }
 
-NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -779,10 +779,9 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
     LIST_ENTRY* le;
     KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
-    traverse_ptr* tp2;
     NTSTATUS Status;
     
-    TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp, rollback);
+    TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp);
     
 // #ifdef DEBUG_PARANOID
 //     if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
@@ -902,28 +901,11 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
             t->paritem->ignore = FALSE;
             t->parent->header.num_items++;
             t->parent->size += sizeof(internal_node);
-            
-            // FIXME - do we need to add a rollback entry here?
         }
 
         t->header.generation = Vcb->superblock.generation;
         t = t->parent;
     }
-    
-    // FIXME - free this correctly
-    
-    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-    if (!tp2) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    tp2->tree = tp.tree;
-    tp2->item = td;
-    
-    if (rollback)
-        add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
     
     Status = STATUS_SUCCESS;
 
@@ -946,10 +928,9 @@ static __inline tree_data* first_valid_item(tree* t) {
     return NULL;
 }
 
-NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback) {
+NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     tree* t;
     UINT64 gen;
-    traverse_ptr* tp2;
 
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
     
@@ -988,18 +969,6 @@ NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_
         t = t->parent;
     }
     
-    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-    if (!tp2) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    tp2->tree = tp->tree;
-    tp2->item = tp->item;
-
-    if (rollback)
-        add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
-    
     return STATUS_SUCCESS;
 }
 
@@ -1011,11 +980,6 @@ void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
         ri = CONTAINING_RECORD(le, rollback_item, list_entry);
         
         switch (ri->type) {
-            case ROLLBACK_INSERT_ITEM:
-            case ROLLBACK_DELETE_ITEM:
-                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, ri->ptr);
-                break;
-                
             case ROLLBACK_ADD_SPACE:
             case ROLLBACK_SUBTRACT_SPACE:
             case ROLLBACK_INSERT_EXTENT:
@@ -1040,42 +1004,6 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
         ri = CONTAINING_RECORD(le, rollback_item, list_entry);
         
         switch (ri->type) {
-            case ROLLBACK_INSERT_ITEM:
-            {
-                traverse_ptr* tp = ri->ptr;
-                
-                if (!tp->item->ignore) {
-                    tp->item->ignore = TRUE;
-                    tp->tree->header.num_items--;
-                
-                    if (tp->tree->header.level == 0)
-                        tp->tree->size -= sizeof(leaf_node) + tp->item->size;
-                    else
-                        tp->tree->size -= sizeof(internal_node);
-                }
-                
-                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, tp);
-                break;
-            }
-                
-            case ROLLBACK_DELETE_ITEM:
-            {
-                traverse_ptr* tp = ri->ptr;
-                
-                if (tp->item->ignore) {
-                    tp->item->ignore = FALSE;
-                    tp->tree->header.num_items++;
-                
-                    if (tp->tree->header.level == 0)
-                        tp->tree->size += sizeof(leaf_node) + tp->item->size;
-                    else
-                        tp->tree->size += sizeof(internal_node);
-                }
-                
-                ExFreeToPagedLookasideList(&Vcb->traverse_ptr_lookaside, tp);
-                break;
-            }
-            
             case ROLLBACK_INSERT_EXTENT:
             {
                 rollback_extent* re = ri->ptr;
@@ -1274,7 +1202,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     InsertTailList(listhead, &bi2->list_entry);
 }
 
-static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, LIST_ENTRY* rollback) {
+static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead) {
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef) {
@@ -1759,26 +1687,11 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         
         // delete old item
         if (!td->ignore) {
-            traverse_ptr* tp2;
-            
             td->ignore = TRUE;
         
             t->header.num_items--;
             t->size -= sizeof(leaf_node) + td->size;
             t->write = TRUE;
-            
-            if (rollback) {
-                tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-                if (!tp2) {
-                    ERR("out of memory\n");
-                    return FALSE;
-                }
-                
-                tp2->tree = t;
-                tp2->item = td;
-    
-                add_rollback(rollback, ROLLBACK_DELETE_ITEM, tp2);
-            }
         }
 
         if (newtd) {
@@ -1794,7 +1707,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
     return FALSE;
 }
 
-static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp, LIST_ENTRY* rollback) {
+static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -1804,7 +1717,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
     while (le != &br->items) {
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
         LIST_ENTRY *le2, *listhead;
-        traverse_ptr tp, *tp2;
+        traverse_ptr tp;
         KEY tree_end;
         BOOL no_end;
         tree_data* td;
@@ -1921,7 +1834,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     }
                 }
             } else if (cmp == 0) { // item already exists
-                ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items, rollback);
+                ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items);
             } else if (td) {
                 InsertHeadList(&tp.item->list_entry, &td->list_entry);
             }
@@ -1934,20 +1847,6 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 tp.tree->header.num_items++;
                 tp.tree->size += bi->datalen + sizeof(leaf_node);
                 tp.tree->write = TRUE;
-                
-                if (rollback) {
-                    // FIXME - free this correctly
-                    tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-                    if (!tp2) {
-                        ERR("out of memory\n");
-                        return;
-                    }
-                    
-                    tp2->tree = tp.tree;
-                    tp2->item = td;
-
-                    add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
-                }
                 
                 listhead = &td->list_entry;
             } else {
@@ -1999,7 +1898,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                             cmp = keycmp(bi2->key, td2->key);
 
                             if (cmp == 0) {
-                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items, rollback);
+                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items);
                                 inserted = TRUE;
                                 break;
                             } else if (cmp == -1) {
@@ -2024,20 +1923,6 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                             tp.tree->header.num_items++;
                             tp.tree->size += bi2->datalen + sizeof(leaf_node);
                             
-                            if (rollback) {
-                                // FIXME - free this correctly
-                                tp2 = ExAllocateFromPagedLookasideList(&Vcb->traverse_ptr_lookaside);
-                                if (!tp2) {
-                                    ERR("out of memory\n");
-                                    return;
-                                }
-                                
-                                tp2->tree = tp.tree;
-                                tp2->item = td;
-                                
-                                add_rollback(rollback, ROLLBACK_INSERT_ITEM, tp2);
-                            }
-                            
                             listhead = &td->list_entry;
                         }
                     } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
@@ -2057,8 +1942,6 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     t->paritem->ignore = FALSE;
                     t->parent->header.num_items++;
                     t->parent->size += sizeof(internal_node);
-                    
-                    // FIXME - do we need to add a rollback entry here?
                 }
 
                 t->header.generation = Vcb->superblock.generation;
@@ -2081,12 +1964,12 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
     }
 }
 
-void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
     while (!IsListEmpty(batchlist)) {
         LIST_ENTRY* le = RemoveHeadList(batchlist);
         batch_root* br2 = CONTAINING_RECORD(le, batch_root, list_entry);
         
-        commit_batch_list_root(Vcb, br2, Irp, rollback);
+        commit_batch_list_root(Vcb, br2, Irp);
         
         ExFreePool(br2);
     }

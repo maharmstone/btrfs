@@ -765,7 +765,7 @@ fcb* create_fcb(POOL_TYPE pool_type);
 file_ref* create_fileref();
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
 void STDCALL uninit(device_extension* Vcb, BOOL flush);
 NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID InputBuffer,
                            ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
@@ -870,8 +870,6 @@ typedef struct {
 } rollback_extent;
 
 enum rollback_type {
-    ROLLBACK_INSERT_ITEM,
-    ROLLBACK_DELETE_ITEM,
     ROLLBACK_INSERT_EXTENT,
     ROLLBACK_DELETE_EXTENT,
     ROLLBACK_ADD_SPACE,
@@ -890,8 +888,8 @@ NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr
 BOOL STDCALL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
 BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void STDCALL free_trees(device_extension* Vcb);
-NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp, LIST_ENTRY* rollback);
+NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp);
+NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
 tree* STDCALL free_tree(tree* t);
 NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, PIRP Irp);
 NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp);
@@ -899,7 +897,7 @@ void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
-void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback);
+void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 
 // in search.c

@@ -294,7 +294,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     // create new root
     
     id = InterlockedIncrement64(&Vcb->root_root->lastinode);
-    Status = create_root(Vcb, id, &r, TRUE, Vcb->superblock.generation, Irp, &rollback);
+    Status = create_root(Vcb, id, &r, TRUE, Vcb->superblock.generation, Irp);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
@@ -308,7 +308,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         
         TRACE("uuid root doesn't exist, creating it\n");
         
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, Irp, &rollback);
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
@@ -339,7 +339,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     *root_num = r->id;
     
-    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, Irp, &rollback);
+    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(root_num);
@@ -839,7 +839,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     // FIXME - make sure rollback removes new roots from internal structures
     
     id = InterlockedIncrement64(&Vcb->root_root->lastinode);
-    Status = create_root(Vcb, id, &r, FALSE, 0, Irp, &rollback);
+    Status = create_root(Vcb, id, &r, FALSE, 0, Irp);
     
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08x\n", Status);
@@ -853,7 +853,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         
         TRACE("uuid root doesn't exist, creating it\n");
         
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, Irp, &rollback);
+        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
@@ -884,7 +884,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     *root_num = r->id;
     
-    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, Irp, &rollback);
+    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         goto end;
@@ -982,7 +982,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     ir->n = strlen(DOTDOT);
     RtlCopyMemory(ir->name, DOTDOT, ir->n);
 
-    Status = insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_REF, r->root_item.objid, ir, irsize, NULL, Irp, &rollback);
+    Status = insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_REF, r->root_item.objid, ir, irsize, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         goto end;
@@ -2712,7 +2712,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     
     RtlCopyMemory(di, &dev->devitem, sizeof(DEV_ITEM));
     
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp, NULL);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(di);
@@ -2741,7 +2741,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        Status = delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             ExFreePool(stats);
@@ -2749,7 +2749,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         }
     }
     
-    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, NULL);
+    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(stats);

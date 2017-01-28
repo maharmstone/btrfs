@@ -876,7 +876,7 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 //     }
 // }
 
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp) {
     NTSTATUS Status;
     root* r;
     tree* t;
@@ -937,7 +937,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     // We ask here for a traverse_ptr to the item we're inserting, so we can
     // copy some of the tree's variables
     
-    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, Irp, rollback);
+    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(ri);
@@ -2728,17 +2728,13 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         INODE_REF* ir;
         LARGE_INTEGER time;
         BTRFS_TIME now;
-        LIST_ENTRY rollback;
-        
-        InitializeListHead(&rollback);
         
         WARN("data reloc root doesn't exist, creating it\n");
         
-        Status = create_root(Vcb, BTRFS_ROOT_DATA_RELOC, &reloc_root, FALSE, 0, Irp, &rollback);
+        Status = create_root(Vcb, BTRFS_ROOT_DATA_RELOC, &reloc_root, FALSE, 0, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
-            do_rollback(Vcb, &rollback);
             goto end;
         }
         
@@ -2755,7 +2751,6 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         if (!ii) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            do_rollback(Vcb, &rollback);
             goto end;
         }
         
@@ -2771,10 +2766,9 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         ii->st_ctime = now;
         ii->st_mtime = now;
         
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, &rollback);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
-            do_rollback(Vcb, &rollback);
             goto end;
         }
 
@@ -2783,7 +2777,6 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         if (!ir) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            do_rollback(Vcb, &rollback);
             goto end;
         }
         
@@ -2792,14 +2785,11 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
         ir->name[0] = '.';
         ir->name[1] = '.';
         
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp, &rollback);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
-            do_rollback(Vcb, &rollback);
             goto end;
         }
-        
-        clear_rollback(Vcb, &rollback);
         
         Vcb->data_reloc_root = reloc_root;
         Vcb->need_write = TRUE;
@@ -4242,7 +4232,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp, NULL);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
     Vcb->volume_fcb = create_fcb(NonPagedPool);
     if (!Vcb->volume_fcb) {

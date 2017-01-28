@@ -258,13 +258,13 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                         
                         RtlCopyMemory(ri, &t->root->root_item, sizeof(ROOT_ITEM));
                         
-                        Status = delete_tree_item(Vcb, &tp, NULL);
+                        Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("delete_tree_item returned %08x\n", Status);
                             return Status;
                         }
                         
-                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL);
+                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_tree_item returned %08x\n", Status);
                             return Status;
@@ -307,7 +307,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
     eism->type = TYPE_TREE_BLOCK_REF;
     eism->tbr.offset = root_id;
     
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp, rollback);
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(eism);
@@ -436,7 +436,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
 //     }
 // #endif
     
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp, rollback);
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(eit2);
@@ -1899,13 +1899,13 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 } else
                     data = NULL;
                 
-                Status = insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp, rollback);
+                Status = insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     return Status;
                 }
                 
-                Status = delete_tree_item(Vcb, &tp, rollback);
+                Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("delete_tree_item returned %08x\n", Status);
                     return Status;
@@ -1988,7 +1988,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                 RtlCopyMemory(checksums, data, il * sizeof(UINT32));
                 
                 Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
-                                          il * sizeof(UINT32), NULL, Irp, NULL);
+                                          il * sizeof(UINT32), NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     ExFreePool(checksums);
@@ -2076,7 +2076,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                     RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
                 }
                 
-                Status = delete_tree_item(Vcb, &tp, NULL);
+                Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("delete_tree_item returned %08x\n", Status);
                     return;
@@ -2120,7 +2120,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                 
                 off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
                 
-                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp, NULL);
+                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(UINT32) * rl, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     ExFreePool(data);
@@ -2224,7 +2224,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             
             TRACE("adjusting usage of chunk %llx to %llx\n", c->offset, c->used);
             
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 ExFreePool(bgi);
@@ -2232,7 +2232,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
             
-            Status = insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp, rollback);
+            Status = insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
                 ExFreePool(bgi);
@@ -2945,14 +2945,14 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             } else
                 eism = NULL;
             
-            Status = delete_tree_item(Vcb, &tp, NULL);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 ExFreePool(eism);
                 return Status;
             }
             
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp, NULL);
+            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
                 ExFreePool(eism);
@@ -2990,7 +2990,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         
         RtlCopyMemory(eit, tp.item->data, tp.item->size);
         
-        Status = delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             ExFreePool(eit);
@@ -2999,7 +2999,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
         
         eit->level = level;
         
-        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, eit, tp.item->size, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(eit);
@@ -3334,7 +3334,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
                 WARN("find_item returned %08x\n", Status);
             } else {
                 if (!keycmp(tp.item->key, searchkey)) {
-                    Status = delete_tree_item(Vcb, &tp, rollback);
+                    Status = delete_tree_item(Vcb, &tp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08x\n", Status);
                         return Status;
@@ -3358,7 +3358,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
     }
     
     if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-        Status = delete_tree_item(Vcb, &tp, rollback);
+        Status = delete_tree_item(Vcb, &tp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
@@ -3416,7 +3416,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp)
         return STATUS_INTERNAL_ERROR;
     }
     
-    Status = delete_tree_item(Vcb, &tp, NULL);
+    Status = delete_tree_item(Vcb, &tp);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_tree_item returned %08x\n", Status);
         return Status;
@@ -3430,7 +3430,7 @@ static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp)
     
     RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
     
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, NULL);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         return Status;
@@ -3522,7 +3522,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     
     RtlCopyMemory(ci, c->chunk_item, c->size);
     
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, Irp, NULL);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, ci, c->size, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(ci);
@@ -3549,7 +3549,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     bgi->chunk_tree = 0x100;
     bgi->flags = c->chunk_item->type;
     
-    Status = insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp, NULL);
+    Status = insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
@@ -3586,7 +3586,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         de->length = c->chunk_item->size / factor;
         de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(de);
@@ -3705,7 +3705,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     
                     newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
                     
-                    Status = delete_tree_item(Vcb, &tp, NULL);
+                    Status = delete_tree_item(Vcb, &tp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08x\n", Status);
                         return FALSE;
@@ -3734,7 +3734,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 ino
                     if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
                         RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
                     
-                    Status = insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp, NULL);
+                    Status = insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_tree_item returned %08x\n", Status);
                         return FALSE;
@@ -3786,7 +3786,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP
     ed2->offset = 0;
     ed2->num_bytes = length;
     
-    Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, Irp, NULL);
+    Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         return Status;
@@ -4305,7 +4305,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             
             do {
                 if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                    Status = delete_tree_item(fcb->Vcb, &tp, NULL);
+                    Status = delete_tree_item(fcb->Vcb, &tp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08x\n", Status);
                         goto end;
@@ -4420,7 +4420,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 
                 RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
                 
-                Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, NULL);
+                Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     goto end;
@@ -4444,7 +4444,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
         
         if (!cache) {
-            Status = delete_tree_item(fcb->Vcb, &tp, NULL);
+            Status = delete_tree_item(fcb->Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 goto end;
@@ -4616,7 +4616,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
 
         if (!keycmp(tp.item->key, searchkey)) {
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 return Status;
@@ -4646,7 +4646,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             }
             
             if (!keycmp(tp.item->key, searchkey)) {
-                Status = delete_tree_item(Vcb, &tp, rollback);
+                Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("delete_tree_item returned %08x\n", Status);
                     return Status;
@@ -4690,7 +4690,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 return STATUS_INTERNAL_ERROR;
             }
             
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 return Status;
@@ -4704,7 +4704,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             
             RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
             
-            Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp, rollback);
+            Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
                 return Status;
@@ -4730,7 +4730,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
         
         if (!keycmp(tp.item->key, searchkey)) {
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
@@ -4751,7 +4751,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
@@ -4944,7 +4944,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                 if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
                     ULONG newlen = tp.item->size - itemlen;
                     
-                    Status = delete_tree_item(Vcb, &tp, NULL);
+                    Status = delete_tree_item(Vcb, &tp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08x\n", Status);
                         return Status;
@@ -4972,7 +4972,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                         if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
                             RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
                         
-                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, Irp, NULL);
+                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_tree_item returned %08x\n", Status);
                             return Status;
@@ -5028,21 +5028,21 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
         RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
         ExFreePool(rr);
         
-        Status = delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             ExFreePool(rr2);
             return Status;
         }
         
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr2, rrsize, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(rr2);
             return Status;
         }
     } else {
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(rr);
@@ -5099,7 +5099,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        Status = delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             
@@ -5111,7 +5111,7 @@ static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvol
     }
     
     if (datalen > 0) {
-        Status = insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->root_root, subvolid, TYPE_ROOT_BACKREF, parsubvolid, data, datalen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(data);
@@ -5155,13 +5155,13 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
         
         RtlZeroMemory(((UINT8*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
         
-        Status = delete_tree_item(Vcb, &tp, NULL);
+        Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             return Status;
         }
         
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp, NULL);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             return Status;
@@ -5578,7 +5578,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     
     ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
     
-    commit_batch_list(Vcb, &batchlist, Irp, rollback);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);
@@ -5654,7 +5654,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     
     ExReleaseResourceLite(&Vcb->dirty_fcbs_lock);
     
-    commit_batch_list(Vcb, &batchlist, Irp, rollback);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);
@@ -5680,7 +5680,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         }
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp, rollback);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
     // If only changing superblock, e.g. changing label, we still need to rewrite
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.

@@ -81,7 +81,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
             break;
         
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            Status = delete_tree_item(Vcb, &tp, &rollback);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 return Status;
@@ -616,10 +616,9 @@ clearcache:
     
     InitializeListHead(&rollback);
     
-    Status = delete_tree_item(Vcb, &tp, &rollback);
+    Status = delete_tree_item(Vcb, &tp);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_tree_item returned %08x\n", Status);
-        do_rollback(Vcb, &rollback);
         return Status;
     }
     
@@ -927,7 +926,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
         
         if (!keycmp(searchkey, tp.item->key)) {
-            Status = delete_tree_item(Vcb, &tp, rollback);
+            Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
                 ExFreePool(fsi);
@@ -941,7 +940,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         fsi->key.obj_type = TYPE_INODE_ITEM;
         fsi->key.offset = 0;
         
-        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp, rollback);
+        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             free_fcb(c->cache);
@@ -1072,7 +1071,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
             RtlCopyMemory(ii, &c->cache->inode_item, sizeof(INODE_ITEM));
             
-            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp, rollback);
+            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
                 return Status;
@@ -1145,7 +1144,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
         le = le->Flink;
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp, rollback);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
     return STATUS_SUCCESS;
 }
@@ -1544,7 +1543,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
         le = le->Flink;
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp, rollback);
+    commit_batch_list(Vcb, &batchlist, Irp);
     
     return STATUS_SUCCESS;
 }
