@@ -1906,7 +1906,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     
     for (i = 0; i < sectors_per_stripe; i++) {
         ULONG num_errors = 0;
-        UINT64 bad_stripe, bad_off;
+        UINT64 bad_stripe1, bad_stripe2, bad_off1, bad_off2;
         BOOL alloc = FALSE;
         
         stripe = (parity1 + 2) % c->chunk_item->num_stripes;
@@ -1917,8 +1917,13 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 alloc = TRUE;
                 
                 if (RtlCheckBit(&context->stripes[stripe].error, i)) {
-                    bad_stripe = stripe;
-                    bad_off = off;
+                    if (num_errors == 0) {
+                        bad_stripe1 = stripe;
+                        bad_off1 = off;
+                    } else if (num_errors == 1) {
+                        bad_stripe2 = stripe;
+                        bad_off2 = off;
+                    }
                     num_errors++;
                 }
             }
@@ -1933,30 +1938,35 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         if (num_errors == 0 && !RtlCheckBit(&context->stripes[parity1].error, i) && !RtlCheckBit(&context->stripes[parity2].error, i)) // everything fine
             continue;
         
-        FIXME("FIXME - recover from error\n"); // FIXME
-        
         if (num_errors == 0) { // parity error
-//             UINT64 addr;
-//             
+            UINT64 addr;
+            
             if (RtlCheckBit(&context->stripes[parity1].error, i)) {
-                FIXME("FIXME - fix error on parity 1\n");
+                do_xor(&context->stripes[parity1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                       &context->parity_scratch[i * Vcb->superblock.sector_size],
+                       Vcb->superblock.sector_size);
+                
+                bad_off1 = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 2)) + i;
+                addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 * Vcb->superblock.sector_size);
+                
+                context->stripes[parity1].rewrite = TRUE;
+                
+                log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
             }
             
             if (RtlCheckBit(&context->stripes[parity2].error, i)) {
-                FIXME("FIXME - fix error on parity 2\n");
+                RtlCopyMemory(&context->stripes[parity2].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                              &context->parity_scratch2[i * Vcb->superblock.sector_size],
+                              Vcb->superblock.sector_size);
+                
+                bad_off1 = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 2)) + i;
+                addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 * Vcb->superblock.sector_size);
+                
+                context->stripes[parity2].rewrite = TRUE;
+                
+                log_error(Vcb, addr, c->devices[parity2]->devitem.dev_id, FALSE, TRUE, TRUE);
             }
-            
-//             do_xor(&context->stripes[parity].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
-//                    &context->parity_scratch[i * Vcb->superblock.sector_size],
-//                    Vcb->superblock.sector_size);
-//             
-//             bad_off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
-//             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
-//             
-//             context->stripes[parity].rewrite = TRUE;
-//             
-//             log_error(Vcb, addr, c->devices[parity]->devitem.dev_id, FALSE, TRUE, TRUE);
-//         } else if (num_errors == 1) {
+        } else if (num_errors == 1) {
 //             UINT32 crc32;
 //             UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
 //             
@@ -1998,7 +2008,9 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 //                 } else
 //                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, FALSE, FALSE, FALSE);
 //             }
-//         } else {
+        } else if (num_errors == 2) {
+            // FIXME
+        } else {
 //             stripe = (parity + 1) % c->chunk_item->num_stripes;
 //             off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
 //             
