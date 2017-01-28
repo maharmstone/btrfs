@@ -1168,7 +1168,6 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
                 
                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                     ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
-                    int3;
                     return STATUS_INTERNAL_ERROR;
                 }
                 
@@ -1385,7 +1384,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 
                 if (!t->has_new_address) {
                     ERR("error - tried to write tree with no new address\n");
-                    int3;
+                    return STATUS_INTERNAL_ERROR;
                 }
                 
                 le2 = t->itemlist.Flink;
@@ -2198,7 +2197,6 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             
             if (keycmp(searchkey, tp.item->key)) {
                 ERR("could not find (%llx,%x,%llx) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-                int3;
                 Status = STATUS_INTERNAL_ERROR;
                 ExReleaseResourceLite(&c->lock);
                 goto end;
@@ -2600,7 +2598,7 @@ static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
                 ERR("(%llx,%x,%llx) in tree %llx is too large (%x > %x)\n",
                     td->key.obj_id, td->key.obj_type, td->key.offset, t->root->id,
                     ds, Vcb->superblock.node_size - sizeof(tree_header));
-                int3;
+                return STATUS_INTERNAL_ERROR;
             }
             
             // FIXME - move back if previous item was deleted item with same key
@@ -4429,7 +4427,6 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 ii_offset = 0;
             } else {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-                int3;
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
@@ -4462,7 +4459,6 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             
             if (keycmp(tp.item->key, searchkey)) {
                 ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
-                int3;
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             } else
@@ -5139,7 +5135,6 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
     
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
-        int3;
         return STATUS_INTERNAL_ERROR;
     }
     
@@ -5780,7 +5775,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
-            int3;
+            goto end;
         }
         
         if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
@@ -5791,12 +5786,13 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
             Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08x\n", Status);
-                int3;
+                goto end;
             }
             
             if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
                 ERR("error - could not find entry in extent tree for tree at %llx\n", t->header.address);
-                int3;
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
             }
         }
         
