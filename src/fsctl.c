@@ -144,7 +144,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
                     
                     if (ed2->size != 0) { // not sparse
-                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol->id, ln[i].key.obj_id, ln[i].key.offset - ed2->offset, 1, Irp, rollback);
+                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol->id, ln[i].key.obj_id, ln[i].key.offset - ed2->offset, 1, Irp);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("increase_extent_refcount_data returned %08x\n", Status);
@@ -163,7 +163,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
             
             tbr.offset = subvol->id;
             
-            Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, th->level - 1, Irp, rollback);
+            Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, th->level - 1, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("increase_extent_refcount returned %08x\n", Status);
                 goto end;

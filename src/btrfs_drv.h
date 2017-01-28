@@ -1026,14 +1026,14 @@ void _space_list_subtract2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* 
 #define space_list_subtract2(Vcb, list, list_size, address, length, rollback) _space_list_subtract2(Vcb, list, list_size, address, length, NULL, rollback, funcname)
 
 // in extent-tree.c
-NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset, UINT32 refcount, PIRP Irp);
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset,
-                                       UINT32 refcount, BOOL superseded, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT8 level, PIRP Irp, LIST_ENTRY* rollback);
+                                       UINT32 refcount, BOOL superseded, PIRP Irp);
+NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT8 level, PIRP Irp);
 void decrease_chunk_usage(chunk* c, UINT64 delta);
 UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
-NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp);
 UINT64 get_extent_flags(device_extension* Vcb, UINT64 address, PIRP Irp);
 void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PIRP Irp);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
@@ -1042,7 +1042,7 @@ void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, 
 UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);
 UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);
 NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
-                                  UINT8 level, UINT64 parent, BOOL superseded, PIRP Irp, LIST_ENTRY* rollback);
+                                  UINT8 level, UINT64 parent, BOOL superseded, PIRP Irp);
 UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset);
 
 // in worker-thread.c
