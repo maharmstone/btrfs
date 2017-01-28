@@ -1631,6 +1631,7 @@ typedef struct {
     RTL_BITMAP is_tree;
     UINT32* csum;
     UINT8* parity_scratch;
+    UINT8* parity_scratch2;
 } scrub_context_raid5;
 
 static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
@@ -1827,6 +1828,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     stripeoff = num * sectors_per_stripe;
     
     RtlCopyMemory(context->parity_scratch, &context->stripes[parity1].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+    RtlZeroMemory(context->parity_scratch2, c->chunk_item->stripe_length);
     
     while (stripe != parity1) {
         RtlClearAllBits(&context->stripes[stripe].error);
@@ -1859,7 +1861,6 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         }
         
         do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
-        // FIXME - calculate Galois parity
         
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
         stripeoff = num * sectors_per_stripe;
@@ -1882,9 +1883,24 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         }
     }
     
+    // check parity 2
+    
+    stripe = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
+    
+    while (stripe != parity2) {
+        galois_double(context->parity_scratch2, c->chunk_item->stripe_length);
+        do_xor(context->parity_scratch2, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+        
+        stripe = stripe == 0 ? (c->chunk_item->num_stripes - 1) : (stripe - 1);
+    }
+    
     RtlClearAllBits(&context->stripes[parity2].error);
     
-    // FIXME - check parity 2
+    for (i = 0; i < sectors_per_stripe; i++) {
+        if (RtlCompareMemory(&context->stripes[parity2].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                             &context->parity_scratch2[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size) != Vcb->superblock.sector_size)
+            RtlSetBit(&context->stripes[parity2].error, i);
+    }
     
     // log and fix errors
     
@@ -1918,10 +1934,18 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             continue;
         
         FIXME("FIXME - recover from error\n"); // FIXME
-//         
-//         if (num_errors == 0 && RtlCheckBit(&context->stripes[parity].error, i)) { // parity error
+        
+        if (num_errors == 0) { // parity error
 //             UINT64 addr;
 //             
+            if (RtlCheckBit(&context->stripes[parity1].error, i)) {
+                FIXME("FIXME - fix error on parity 1\n");
+            }
+            
+            if (RtlCheckBit(&context->stripes[parity2].error, i)) {
+                FIXME("FIXME - fix error on parity 2\n");
+            }
+            
 //             do_xor(&context->stripes[parity].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
 //                    &context->parity_scratch[i * Vcb->superblock.sector_size],
 //                    Vcb->superblock.sector_size);
@@ -1990,7 +2014,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 //                 off += sectors_per_stripe;
 //                 stripe = (stripe + 1) % c->chunk_item->num_stripes;
 //             }
-//         }
+        }
     }
 }
 
@@ -2071,6 +2095,23 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             ExFreePool(treearr);
             ExFreePool(context.parity_scratch);
             ExFreePool(csumarr);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        context.parity_scratch2 = ExAllocatePoolWithTag(PagedPool, c->chunk_item->stripe_length, ALLOC_TAG);
+        if (!context.parity_scratch2) {
+            ERR("out of memory\n");
+            ExFreePool(allocarr);
+            ExFreePool(treearr);
+            ExFreePool(context.parity_scratch);
+            
+            if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+                ExFreePool(csumarr);
+                ExFreePool(context.csum);
+            }
+            
             return STATUS_INSUFFICIENT_RESOURCES;
         }
     }
@@ -2321,6 +2362,9 @@ end:
     ExFreePool(treearr);
     ExFreePool(allocarr);
     ExFreePool(context.parity_scratch);
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        ExFreePool(context.parity_scratch2);
     
     if (c->chunk_item->type & BLOCK_FLAG_DATA) {
         ExFreePool(csumarr);
