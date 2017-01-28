@@ -5537,7 +5537,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
     BOOL cache_changed = FALSE;
@@ -5858,6 +5858,25 @@ end:
     return Status;
 }
 
+NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp) {
+    LIST_ENTRY rollback;
+    NTSTATUS Status;
+    
+    InitializeListHead(&rollback);
+    
+    Status = do_write2(Vcb, Irp, &rollback);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write2 returned %08x, dropping into readonly mode\n", Status);
+        Vcb->readonly = TRUE;
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
+        do_rollback(Vcb, &rollback);
+    } else
+        clear_rollback(Vcb, &rollback);
+    
+    return Status;
+}
+
 #ifdef DEBUG_STATS
 static void print_stats(device_extension* Vcb) {
     ERR("READ STATS:\n");
@@ -5883,9 +5902,7 @@ static void print_stats(device_extension* Vcb) {
 #endif
 
 static void do_flush(device_extension* Vcb) {
-    LIST_ENTRY rollback;
-    
-    InitializeListHead(&rollback);
+    NTSTATUS Status;
     
     FsRtlEnterFileSystem();
 
@@ -5896,11 +5913,14 @@ static void do_flush(device_extension* Vcb) {
 #endif
 
     if (Vcb->need_write && !Vcb->readonly)
-        do_write(Vcb, NULL, &rollback);
+        Status = do_write(Vcb, NULL);
+    else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status))
+        ERR("do_write returned %08x\n", Status);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 

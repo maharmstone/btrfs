@@ -1866,7 +1866,6 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
 void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     space* s;
     UINT64 i;
-    LIST_ENTRY rollback;
     NTSTATUS Status;
     LIST_ENTRY* le;
     LARGE_INTEGER time;
@@ -1894,17 +1893,16 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         WARN("registry_mark_volume_unmounted returned %08x\n", Status);
     
     if (flush) {
-        InitializeListHead(&rollback);
-        
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
-        if (Vcb->need_write && !Vcb->readonly)
-            do_write(Vcb, NULL, &rollback);
+        if (Vcb->need_write && !Vcb->readonly) {
+            Status = do_write(Vcb, NULL);
+            if (!NT_SUCCESS(Status))
+                ERR("do_write returned %08x\n", Status);
+        }
         
         free_trees(Vcb);
         
-        clear_rollback(Vcb, &rollback);
-
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
     

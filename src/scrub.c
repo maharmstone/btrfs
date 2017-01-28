@@ -2950,23 +2950,28 @@ end:
 
 static void scrub_thread(void* context) {
     device_extension* Vcb = context;
-    LIST_ENTRY rollback, chunks, *le;
+    LIST_ENTRY chunks, *le;
     NTSTATUS Status;
     LARGE_INTEGER time;
     
     KeInitializeEvent(&Vcb->scrub.finished, NotificationEvent, FALSE);
     
-    InitializeListHead(&rollback);
     InitializeListHead(&chunks);
     
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     if (Vcb->need_write && !Vcb->readonly)
-        do_write(Vcb, NULL, &rollback);
+        Status = do_write(Vcb, NULL);
+    else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        Vcb->scrub.error = Status;
+        goto end;
+    }
     
     ExConvertExclusiveToSharedLite(&Vcb->tree_lock);
     
@@ -3056,6 +3061,7 @@ static void scrub_thread(void* context) {
     KeQuerySystemTime(&time);
     Vcb->scrub.duration.QuadPart += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
     
+end:
     ZwClose(Vcb->scrub.thread);
     Vcb->scrub.thread = NULL;
     

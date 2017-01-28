@@ -2060,13 +2060,10 @@ static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
 }
 
 static NTSTATUS add_balance_item(device_extension* Vcb) {
-    LIST_ENTRY rollback;
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     BALANCE_ITEM* bi;
-    
-    InitializeListHead(&rollback);
     
     searchkey.obj_id = BALANCE_ITEM_ID;
     searchkey.obj_type = TYPE_TEMP_ITEM;
@@ -2081,7 +2078,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        Status = delete_tree_item(Vcb, &tp, &rollback);
+        Status = delete_tree_item(Vcb, &tp, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             goto end;
@@ -2112,7 +2109,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
     }
     
-    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL, &rollback);
+    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         goto end;
@@ -2122,12 +2119,12 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     
 end:
     if (NT_SUCCESS(Status)) {
-        do_write(Vcb, NULL, &rollback);
-        free_trees(Vcb);
+        Status = do_write(Vcb, NULL);
+        if (!NT_SUCCESS(Status))
+            ERR("do_write returned %08x\n", Status);
         
-        clear_rollback(Vcb, &rollback);
-    } else
-        do_rollback(Vcb, &rollback);
+        free_trees(Vcb);
+    }
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
@@ -2135,12 +2132,9 @@ end:
 }
 
 static NTSTATUS remove_balance_item(device_extension* Vcb) {
-    LIST_ENTRY rollback;
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    
-    InitializeListHead(&rollback);
     
     searchkey.obj_id = BALANCE_ITEM_ID;
     searchkey.obj_type = TYPE_TEMP_ITEM;
@@ -2155,24 +2149,24 @@ static NTSTATUS remove_balance_item(device_extension* Vcb) {
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        Status = delete_tree_item(Vcb, &tp, &rollback);
+        Status = delete_tree_item(Vcb, &tp, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             goto end;
         }
         
-        do_write(Vcb, NULL, &rollback);
+        Status = do_write(Vcb, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_write returned %08x\n", Status);
+            goto end;
+        }
+        
         free_trees(Vcb);
     }
 
     Status = STATUS_SUCCESS;
     
-end:
-    if (NT_SUCCESS(Status))
-        clear_rollback(Vcb, &rollback);
-    else
-        do_rollback(Vcb, &rollback);
-    
+end:   
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;
@@ -2276,17 +2270,21 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    LIST_ENTRY rollback, *le;
+    LIST_ENTRY* le;
     volume_device_extension* vde;
     
-    InitializeListHead(&rollback);
-    
-    if (Vcb->need_write)
-        do_write(Vcb, NULL, &rollback);
+    if (Vcb->need_write) {
+        Status = do_write(Vcb, NULL);
+        
+        if (!NT_SUCCESS(Status))
+            ERR("do_write returned %08x\n", Status);
+    } else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status))
+        return Status;
     
     // remove entry in chunk tree
 
@@ -2301,7 +2299,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        delete_tree_item(Vcb, &tp, &rollback);
+        delete_tree_item(Vcb, &tp, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
@@ -2322,7 +2320,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        Status = delete_tree_item(Vcb, &tp, &rollback);
+        Status = delete_tree_item(Vcb, &tp, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
@@ -2340,11 +2338,14 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     // flush
     
-    do_write(Vcb, NULL, &rollback);
+    Status = do_write(Vcb, NULL);
+    if (!NT_SUCCESS(Status))
+        ERR("do_write returned %08x\n", Status);
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status))
+        return Status;
     
     if (!dev->readonly) {
         Status = remove_superblocks(dev);
@@ -2493,13 +2494,14 @@ static void balance_thread(void* context) {
             }
         } else {
             if (Vcb->need_write) {
-                LIST_ENTRY rollback;
+                Status = do_write(Vcb, NULL);
                 
-                InitializeListHead(&rollback);
-                do_write(Vcb, NULL, &rollback);
                 free_trees(Vcb);
                 
-                clear_rollback(Vcb, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write returned %08x\n", Status);
+                    goto end;
+                }
             }
         }
     }

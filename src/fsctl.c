@@ -271,8 +271,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fileref = ccb->fileref;
     
-    InitializeListHead(&rollback);
-    
     // flush open files on this subvol
     
     flush_subvol_fcbs(subvol);
@@ -280,11 +278,16 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     // flush metadata
     
     if (Vcb->need_write)
-        do_write(Vcb, Irp, &rollback);
+        Status = do_write(Vcb, Irp);
+    else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        return Status;
+    }
     
     InitializeListHead(&rollback);
     
@@ -523,11 +526,12 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         le = le->Flink;
     }
     
-    do_write(Vcb, Irp, &rollback);
+    Status = do_write(Vcb, Irp);
     
     free_trees(Vcb);
     
-    Status = STATUS_SUCCESS;
+    if (!NT_SUCCESS(Status))
+        ERR("do_write returned %08x\n", Status);
     
 end:
     if (NT_SUCCESS(Status))
@@ -2031,7 +2035,6 @@ static void flush_fcb_caches(device_extension* Vcb) {
 static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
-    LIST_ENTRY rollback;
     KIRQL irql;
     BOOL lock_paused_balance = FALSE;
     
@@ -2064,8 +2067,6 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     
     ExReleaseResourceLite(&Vcb->fcb_lock);
     
-    InitializeListHead(&rollback);
-    
     if (Vcb->balance.thread && KeReadStateEvent(&Vcb->balance.event)) {
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
         KeClearEvent(&Vcb->balance.event);
@@ -2079,13 +2080,18 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     flush_fcb_caches(Vcb);
     
     if (Vcb->need_write && !Vcb->readonly)
-        do_write(Vcb, Irp, &rollback);
+        Status = do_write(Vcb, Irp);
+    else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
-    
     ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        goto end;
+    }
     
     IoAcquireVpbSpinLock(&irql);
 
@@ -2199,7 +2205,6 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 KIRQL irql;
                 PVPB newvpb;
                 BOOL free_newvpb = FALSE;
-                LIST_ENTRY rollback;
                 
                 newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
                 if (!newvpb) {
@@ -2214,8 +2219,6 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 devobj->Vpb->Flags &= ~VPB_MOUNTED;
                 IoReleaseVpbSpinLock(irql);
                 
-                InitializeListHead(&rollback);
-                
                 ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
                 
                 Vcb->removing = TRUE;
@@ -2229,11 +2232,17 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 flush_fcb_caches(Vcb);
                 
                 if (Vcb->need_write && !Vcb->readonly)
-                    do_write(Vcb, Irp, &rollback);
+                    Status = do_write(Vcb, Irp);
+                else
+                    Status = STATUS_SUCCESS;
                 
                 free_trees(Vcb);
                 
-                clear_rollback(Vcb, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write returned %08x\n", Status);
+                    ExReleaseResourceLite(&Vcb->tree_lock);
+                    goto end;
+                }
                 
                 flush_fcb_caches(Vcb);
                 
@@ -2354,7 +2363,6 @@ static void update_volumes(device_extension* Vcb) {
 static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     KIRQL irql;
-    LIST_ENTRY rollback;
     volume_device_extension* vde;
     
     TRACE("FSCTL_DISMOUNT_VOLUME\n");
@@ -2367,8 +2375,6 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
         return STATUS_ACCESS_DENIED;
     }
     
-    InitializeListHead(&rollback);
-    
     Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
     if (!NT_SUCCESS(Status)) {
         WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
@@ -2379,13 +2385,15 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     if (!Vcb->locked) {
         flush_fcb_caches(Vcb);
         
-        if (Vcb->need_write && !Vcb->readonly)
-            do_write(Vcb, Irp, &rollback);
+        if (Vcb->need_write && !Vcb->readonly) {
+            Status = do_write(Vcb, Irp);
+            
+            if (!NT_SUCCESS(Status))
+                ERR("do_write returned %08x\n", Status);
+        }
     }
     
     free_trees(Vcb);
-    
-    clear_rollback(Vcb, &rollback);
     
     Vcb->removing = TRUE;
     update_volumes(Vcb);
@@ -2491,7 +2499,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     PFILE_OBJECT fileobj, mountmgrfo;
     PDEVICE_OBJECT DeviceObject;
     HANDLE h;
-    LIST_ENTRY rollback, *le;
+    LIST_ENTRY* le;
     device* dev;
     DEV_ITEM* di;
     UINT64 dev_id, size;
@@ -2629,22 +2637,19 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     
     volume_removal(drvobj, &pnp_name);
     
-    InitializeListHead(&rollback);
-    
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
         
-    if (Vcb->need_write) {
-        Status = do_write(Vcb, Irp, &rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_write returned %08x\n", Status);
-            do_rollback(Vcb, &rollback);
-            goto end;
-        }
-    }
+    if (Vcb->need_write)
+        Status = do_write(Vcb, Irp);
+    else
+        Status = STATUS_SUCCESS;
     
     free_trees(Vcb);
     
-    clear_rollback(Vcb, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        goto end;
+    }
     
     dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
     if (!dev) {
@@ -2707,7 +2712,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     
     RtlCopyMemory(di, &dev->devitem, sizeof(DEV_ITEM));
     
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp, &rollback);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(di);
@@ -2736,7 +2741,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     }
     
     if (!keycmp(tp.item->key, searchkey)) {
-        Status = delete_tree_item(Vcb, &tp, &rollback);
+        Status = delete_tree_item(Vcb, &tp, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
             ExFreePool(stats);
@@ -2744,7 +2749,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         }
     }
     
-    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, &rollback);
+    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(UINT64) * 5, NULL, Irp, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(stats);
@@ -2849,15 +2854,13 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     ObReferenceObject(DeviceObject); // once for vde
     ObReferenceObject(DeviceObject); // and again for Vcb
     
-    do_write(Vcb, Irp, &rollback);
-
-    free_trees(Vcb);
-    
-    clear_rollback(Vcb, &rollback);
-    
-    Status = STATUS_SUCCESS;
+    Status = do_write(Vcb, Irp);
+    if (!NT_SUCCESS(Status))
+        ERR("do_write returned %08x\n", Status);
     
 end:
+    free_trees(Vcb);
+    
     ExReleaseResourceLite(&Vcb->tree_lock);
     
 end2:
