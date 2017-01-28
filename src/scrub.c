@@ -1967,47 +1967,140 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 log_error(Vcb, addr, c->devices[parity2]->devitem.dev_id, FALSE, TRUE, TRUE);
             }
         } else if (num_errors == 1) {
-//             UINT32 crc32;
-//             UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
-//             
-//             if (RtlCheckBit(&context->is_tree, bad_off)) {
-//                 tree_header* th;
-//                 
-//                 do_xor(&context->parity_scratch[i * Vcb->superblock.sector_size],
-//                        &context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
-//                        Vcb->superblock.node_size);
-//                 
-//                 th = (tree_header*)&context->parity_scratch[i * Vcb->superblock.sector_size];
-//                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-//                 
-//                 if (crc32 == *((UINT32*)th->csum) && th->address == addr) {
-//                     RtlCopyMemory(&context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
-//                                   &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.node_size);
-//                     
-//                     context->stripes[bad_stripe].rewrite = TRUE;
-//                     
-//                     RtlClearBits(&context->stripes[bad_stripe].error, i + 1, (Vcb->superblock.node_size / Vcb->superblock.sector_size) - 1);
-//                     
-//                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, TRUE, TRUE, FALSE);
-//                 } else
-//                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, TRUE, FALSE, FALSE);
-//             } else {
-//                 do_xor(&context->parity_scratch[i * Vcb->superblock.sector_size],
-//                        &context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
-//                        Vcb->superblock.sector_size);
-//                 
-//                 crc32 = ~calc_crc32c(0xffffffff, &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
-//                 
-//                 if (crc32 == context->csum[bad_off]) {
-//                     RtlCopyMemory(&context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
-//                                   &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
-//                     
-//                     context->stripes[bad_stripe].rewrite = TRUE;
-//                     
-//                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, FALSE, TRUE, FALSE);
-//                 } else
-//                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.dev_id, FALSE, FALSE, FALSE);
-//             }
+            UINT32 crc32a, crc32b, len, stripe_num, bad_stripe_num;
+            UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 * Vcb->superblock.sector_size);
+            UINT8* scratch;
+            
+            len = RtlCheckBit(&context->is_tree, bad_off1)? Vcb->superblock.node_size : Vcb->superblock.sector_size;
+            
+            do_xor(&context->parity_scratch[i * Vcb->superblock.sector_size],
+                   &context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)], len);
+            
+            scratch = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                return;
+            }
+            
+            RtlZeroMemory(scratch, len);
+            
+            stripe = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
+    
+            stripe_num = c->chunk_item->num_stripes - 3;
+            while (stripe != parity2) {
+                galois_double(scratch, len);
+                
+                if (stripe != bad_stripe1)
+                    do_xor(scratch, &context->stripes[stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)], len);
+                else
+                    bad_stripe_num = stripe_num;
+                
+                stripe = stripe == 0 ? (c->chunk_item->num_stripes - 1) : (stripe - 1);
+                stripe_num--;
+            }
+            
+            do_xor(scratch, &context->stripes[parity2].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)], len);
+            
+            if (bad_stripe_num != 0)
+                galois_divpower(scratch, bad_stripe_num, len);
+            
+            if (RtlCheckBit(&context->is_tree, bad_off1)) {
+                tree_header *th1, *th2;
+                
+                th1 = (tree_header*)&context->parity_scratch[i * Vcb->superblock.sector_size];
+                th2 = (tree_header*)scratch;
+                crc32a = ~calc_crc32c(0xffffffff, (UINT8*)&th1->fs_uuid, Vcb->superblock.node_size - sizeof(th1->csum));
+                crc32b = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, Vcb->superblock.node_size - sizeof(th2->csum));
+                
+                if ((crc32a == *((UINT32*)th1->csum) && th1->address == addr) || (crc32b == *((UINT32*)th2->csum) && th2->address == addr)) {
+                    if (crc32a != *((UINT32*)th1->csum) || th1->address != addr) {
+                        RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      scratch, Vcb->superblock.node_size);
+                        
+                        // fix parity 1
+                        
+                        stripe = (parity1 + 2) % c->chunk_item->num_stripes;
+                        
+                        RtlCopyMemory(&context->stripes[parity1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      &context->stripes[stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      Vcb->superblock.node_size);
+                        
+                        stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                        
+                        while (stripe != parity1) {
+                            do_xor(&context->stripes[parity1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                   &context->stripes[stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                   Vcb->superblock.node_size);
+                            
+                            stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                        }
+                        
+                        context->stripes[parity1].rewrite = TRUE;
+                    
+                        log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
+                    } else {
+                        if (crc32b != *((UINT32*)th2->csum) || th2->address != addr) {
+                            // FIXME - fix parity 2
+                        }
+                        
+                        RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.node_size);
+                    }
+                    
+                    context->stripes[bad_stripe1].rewrite = TRUE;
+                    
+                    RtlClearBits(&context->stripes[bad_stripe1].error, i + 1, (Vcb->superblock.node_size / Vcb->superblock.sector_size) - 1);
+                    
+                    log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.dev_id, TRUE, TRUE, FALSE);
+                } else
+                    log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.dev_id, TRUE, FALSE, FALSE);
+            } else {
+                crc32a = ~calc_crc32c(0xffffffff, &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
+                crc32b = ~calc_crc32c(0xffffffff, scratch, Vcb->superblock.sector_size);
+                
+                if (crc32a == context->csum[bad_off1] || crc32b == context->csum[bad_off1]) {
+                    if (crc32a != context->csum[bad_off1]) {
+                        RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      scratch, Vcb->superblock.sector_size);
+                        
+                        // fix parity 1
+                        
+                        stripe = (parity1 + 2) % c->chunk_item->num_stripes;
+                        
+                        RtlCopyMemory(&context->stripes[parity1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      &context->stripes[stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      Vcb->superblock.sector_size);
+                        
+                        stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                        
+                        while (stripe != parity1) {
+                            do_xor(&context->stripes[parity1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                   &context->stripes[stripe].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                   Vcb->superblock.sector_size);
+                            
+                            stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                        }
+                        
+                        context->stripes[parity1].rewrite = TRUE;
+                    
+                        log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
+                    } else {
+                        if (crc32b != context->csum[bad_off1]) {
+                            // FIXME - fix parity 2
+                        }
+                        
+                        RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
+                                      &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
+                    }
+                    
+                    context->stripes[bad_stripe1].rewrite = TRUE;
+                    
+                    log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.dev_id, FALSE, TRUE, FALSE);
+                } else
+                    log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.dev_id, FALSE, FALSE, FALSE);
+            }
+            
+            ExFreePool(scratch);
         } else if (num_errors == 2) {
             // FIXME
         } else {
