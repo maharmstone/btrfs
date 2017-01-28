@@ -1620,10 +1620,10 @@ typedef struct {
     BOOL rewrite;
     RTL_BITMAP error;
     ULONG* errorarr;
-} scrub_context_raid5_stripe;
+} scrub_context_raid56_stripe;
 
 typedef struct {
-    scrub_context_raid5_stripe* stripes;
+    scrub_context_raid56_stripe* stripes;
     LONG stripes_left;
     KEVENT Event;
     RTL_BITMAP alloc;
@@ -1632,11 +1632,11 @@ typedef struct {
     UINT32* csum;
     UINT8* parity_scratch;
     UINT8* parity_scratch2;
-} scrub_context_raid5;
+} scrub_context_raid56;
 
 static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    scrub_context_raid5_stripe* stripe = conptr;
-    scrub_context_raid5* context = (scrub_context_raid5*)stripe->context;
+    scrub_context_raid56_stripe* stripe = conptr;
+    scrub_context_raid56* context = (scrub_context_raid56*)stripe->context;
     LONG left = InterlockedDecrement(&context->stripes_left);
     
     stripe->iosb = Irp->IoStatus;
@@ -1647,7 +1647,7 @@ static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid5* context, UINT64 stripe_start, UINT64 bit_start, UINT64 num) {
+static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start, UINT64 num) {
     ULONG sectors_per_stripe = c->chunk_item->stripe_length / Vcb->superblock.sector_size, i;
     UINT16 stripe, parity = (bit_start + num + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     UINT64 off, stripeoff;
@@ -1817,7 +1817,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     }
 }
 
-static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid5* context, UINT64 stripe_start, UINT64 bit_start, UINT64 num) {
+static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start, UINT64 num) {
     ULONG sectors_per_stripe = c->chunk_item->stripe_length / Vcb->superblock.sector_size, i;
     UINT16 stripe, parity1 = (bit_start + num + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
     UINT16 parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
@@ -2025,7 +2025,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     BOOL b;
     UINT64 run_start, run_end, num_sectors, full_stripe_len, max_read, stripe;
     ULONG arrlen, *allocarr, *csumarr, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
-    scrub_context_raid5 context;
+    scrub_context_raid56 context;
     UINT16 i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
@@ -2195,7 +2195,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             tp = next_tp;
     } while (b);
     
-    context.stripes = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_context_raid5_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
+    context.stripes = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_context_raid56_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
     if (!context.stripes) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
