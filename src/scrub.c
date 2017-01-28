@@ -2277,21 +2277,21 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                     log_error(Vcb, addr, c->devices[bad_stripe2]->devitem.dev_id, FALSE, FALSE, FALSE);
             }
         } else {
-//             stripe = (parity + 1) % c->chunk_item->num_stripes;
-//             off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
-//             
-//             while (stripe != parity) {
-//                 if (RtlCheckBit(&context->alloc, off)) {
-//                     if (RtlCheckBit(&context->stripes[stripe].error, i)) {
-//                         UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
-// 
-//                         log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, off), FALSE, FALSE);
-//                     }
-//                 }
-//                 
-//                 off += sectors_per_stripe;
-//                 stripe = (stripe + 1) % c->chunk_item->num_stripes;
-//             }
+            stripe = (parity2 + 1) % c->chunk_item->num_stripes;
+            off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 2)) + i;
+            
+            while (stripe != parity1) {
+                if (RtlCheckBit(&context->alloc, off)) {
+                    if (RtlCheckBit(&context->stripes[stripe].error, i)) {
+                        UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
+
+                        log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, RtlCheckBit(&context->is_tree, off), FALSE, FALSE);
+                    }
+                }
+                
+                off += sectors_per_stripe;
+                stripe = (stripe + 1) % c->chunk_item->num_stripes;
+            }
         }
     }
 }
