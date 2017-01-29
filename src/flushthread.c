@@ -16,6 +16,8 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include <ata.h>
+#include <ntddscsi.h>
 
 #define MAX_CSUM_SIZE (4096 - sizeof(tree_header) - sizeof(leaf_node))
 
@@ -5533,6 +5535,33 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     return STATUS_SUCCESS;
 }
 
+static void flush_disk_caches(device_extension* Vcb) {
+    LIST_ENTRY* le;
+    ATA_PASS_THROUGH_EX apte;
+    NTSTATUS Status;
+    
+    le = Vcb->devices.Flink;
+    
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devobj && !dev->readonly && dev->can_flush) {
+            RtlZeroMemory(&apte, sizeof(ATA_PASS_THROUGH_EX));
+            
+            apte.Length = sizeof(ATA_PASS_THROUGH_EX);
+            apte.TimeOutValue = 5;
+            apte.CurrentTaskFile[6] = 0xe7; // FLUSH CACHE
+            
+            Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, &apte, sizeof(ATA_PASS_THROUGH_EX), &apte, sizeof(ATA_PASS_THROUGH_EX), TRUE, NULL);
+            
+            if (!NT_SUCCESS(Status))
+                WARN("IOCTL_ATA_PASS_THROUGH returned %08x\n", Status);
+        }
+        
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
@@ -5802,6 +5831,8 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
 #endif
     
     Vcb->superblock.cache_generation = Vcb->superblock.generation;
+    
+    flush_disk_caches(Vcb);
     
     Status = write_superblocks(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {

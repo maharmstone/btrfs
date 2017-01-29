@@ -360,6 +360,7 @@ typedef struct {
     BOOL reloc;
     BOOL ssd;
     BOOL trim;
+    BOOL can_flush;
     ULONG change_count;
     UINT64 length;
     ULONG disk_num;

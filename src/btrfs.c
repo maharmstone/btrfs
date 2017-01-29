@@ -3066,6 +3066,12 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
             TRACE("TRIM supported\n");
         } else
             TRACE("TRIM not supported\n");
+        
+        if (idd->CommandSetSupport.FlushCache) {
+            dev->can_flush = TRUE;
+            TRACE("FLUSH CACHE supported\n");
+        } else
+            TRACE("FLUSH CACHE not supported\n");
     }
     
     ExFreePool(apte);
