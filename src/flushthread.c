@@ -5550,7 +5550,7 @@ static void flush_disk_caches(device_extension* Vcb) {
             
             apte.Length = sizeof(ATA_PASS_THROUGH_EX);
             apte.TimeOutValue = 5;
-            apte.CurrentTaskFile[6] = 0xe7; // FLUSH CACHE
+            apte.CurrentTaskFile[6] = IDE_COMMAND_FLUSH_CACHE;
             
             Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, &apte, sizeof(ATA_PASS_THROUGH_EX), &apte, sizeof(ATA_PASS_THROUGH_EX), TRUE, NULL);
             
