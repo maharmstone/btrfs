@@ -1184,6 +1184,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
             }
             
             t->root->treeholder.address = t->new_address;
+            t->root->treeholder.generation = Vcb->superblock.generation;
         }
         
         le = le->Flink;
@@ -3262,7 +3263,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     NTSTATUS Status;
     
     if (!th->tree) {
-        Status = load_tree(Vcb, th->address, r, &th->tree, NULL);
+        Status = load_tree(Vcb, th->address, r, &th->tree, th->generation, NULL);
         
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree(%llx) returned %08x\n", th->address, Status);

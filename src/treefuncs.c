@@ -19,7 +19,7 @@
 
 // #define DEBUG_TREE_LOCKS
 
-NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, PIRP Irp) {
+NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -38,7 +38,7 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, &c, Irp, FALSE);
+    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, &c, Irp, FALSE, generation);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned 0x%08x\n", Status);
         ExFreePool(buf);
@@ -280,7 +280,7 @@ NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, t
     if (!th->tree) {
         NTSTATUS Status;
         
-        Status = load_tree(Vcb, th->address, r, &th->tree, Irp);
+        Status = load_tree(Vcb, th->address, r, &th->tree, th->generation, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);

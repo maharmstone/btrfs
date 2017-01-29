@@ -1159,7 +1159,7 @@ NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* 
 }
 
 static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                              CHUNK_ITEM* ci, device** devices, UINT64 *stripestart, UINT64 *stripeend) {
+                              CHUNK_ITEM* ci, device** devices, UINT64 *stripestart, UINT64 *stripeend, UINT64 generation) {
     UINT64 i;
     BOOL checksum_error = FALSE;
     UINT16 cancelled = 0;
@@ -1173,7 +1173,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                 
-                if (th->address != context->address || crc32 != *((UINT32*)th->csum)) {
+                if (th->address != context->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && th->generation != generation)) {
                     context->stripes[i].status = ReadDataStatus_CRCError;
                     checksum_error = TRUE;
                 }
@@ -1305,7 +1305,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                         
                         crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
                         
-                        if (th->address != context->address || crc32 != *((UINT32*)th->csum))
+                        if (th->address != context->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && th->generation != generation))
                             context->stripes[i].status = ReadDataStatus_CRCError;
                     } else if (context->csum) {
                         NTSTATUS Status;
@@ -1352,6 +1352,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                             return STATUS_CRC_ERROR;
                         } else if (addr != th->address) {
                             WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+                            return STATUS_CRC_ERROR;
+                        } else if (generation != th->generation) {
+                            WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
                             return STATUS_CRC_ERROR;
                         }
                     }
@@ -2462,7 +2465,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
-                           PIRP Irp, BOOL check_nocsum_parity) {
+                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -2912,7 +2915,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = read_data_dup(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend);
+        Status = read_data_dup(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08x\n", Status);
             goto exit;
@@ -3135,7 +3138,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     }
                     
                     Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE,
-                                       buf, c, NULL, Irp, check_nocsum_parity);
+                                       buf, c, NULL, Irp, check_nocsum_parity, 0);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         

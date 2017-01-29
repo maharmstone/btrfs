@@ -2608,7 +2608,7 @@ NTSTATUS STDCALL dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID
     return Status;
 }
 
-static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, traverse_ptr* tp) {
+static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, UINT64 generation, traverse_ptr* tp) {
     root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
     if (!r) {
         ERR("out of memory\n");
@@ -2619,6 +2619,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->path.Buffer = NULL;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
+    r->treeholder.generation = generation;
     InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
@@ -2707,7 +2708,7 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
             } else {
                 TRACE("root %llx - address %llx\n", tp.item->key.obj_id, ri->block_number);
                 
-                Status = add_root(Vcb, tp.item->key.obj_id, ri->block_number, &tp);
+                Status = add_root(Vcb, tp.item->key.obj_id, ri->block_number, ri->generation, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_root returned %08x\n", Status);
                     return Status;
@@ -4109,7 +4110,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->log_to_phys_loaded = FALSE;
     
-    add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, NULL);
+    add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, Vcb->superblock.chunk_root_generation, NULL);
     
     if (!Vcb->chunk_root) {
         ERR("Could not load chunk root.\n");
@@ -4199,7 +4200,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, NULL);
+    add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, Vcb->superblock.generation - 1, NULL);
     
     if (!Vcb->root_root) {
         ERR("Could not load root of roots.\n");
