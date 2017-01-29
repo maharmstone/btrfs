@@ -1437,7 +1437,7 @@ raid1write:
 }
 
 static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
-                                CHUNK_ITEM* ci, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe) {
+                                CHUNK_ITEM* ci, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe, UINT64 generation) {
     UINT64 i;
     UINT32 pos, *stripeoff;
     UINT8 stripe;
@@ -1491,6 +1491,9 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             return STATUS_CRC_ERROR;
         } else if (addr != th->address) {
             WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+            return STATUS_CRC_ERROR;
+        } else if (generation != 0 && generation != th->generation) {
+            WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
             return STATUS_CRC_ERROR;
         }
     } else if (context->csum) {
@@ -2903,7 +2906,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe);
+        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
             goto exit;
