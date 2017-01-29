@@ -879,6 +879,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         ERR("out of memory\n");
     else {
         UNICODE_STRING devpath2;
+        BOOL inserted = FALSE;
         
         vc->uuid = sb->dev_item.device_uuid;
         vc->devid = sb->dev_item.dev_id;
@@ -920,7 +921,24 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vc->part_num = part_num;
         vc->had_drive_letter = FALSE;
         
-        InsertTailList(&vde->children, &vc->list_entry); // FIXME - these should be in order
+        le = vde->children.Flink;
+        while (le != &vde->children) {
+            volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
+            
+            if (vc2->generation < vc->generation) {
+                if (le == vde->children.Flink)
+                    vde->num_children = sb->num_devices;
+                
+                InsertHeadList(vc2->list_entry.Blink, &vc->list_entry);
+                inserted = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!inserted)
+            InsertTailList(&vde->children, &vc->list_entry);
         
         vde->children_loaded++;
     }
