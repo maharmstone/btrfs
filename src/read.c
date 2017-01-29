@@ -1404,7 +1404,7 @@ raid1write:
         if (!Vcb->readonly) {
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].status == ReadDataStatus_CRCError && devices[i] && !devices[i]->readonly) {
-                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], buf, length);
+                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], buf, length, FALSE);
                     
                     if (!NT_SUCCESS(Status))
                         WARN("write_data_phys returned %08x\n", Status);
@@ -1914,7 +1914,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         if (!Vcb->readonly) {
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE);
                     
                     if (!NT_SUCCESS(Status))
                         WARN("write_data_phys returned %08x\n", Status);
@@ -2144,7 +2144,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         if (!Vcb->readonly) {
             for (i = 0; i < ci->num_stripes; i++) {
                 if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE);
                     
                     if (!NT_SUCCESS(Status))
                         WARN("write_data_phys returned %08x\n", Status);
@@ -2461,7 +2461,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i]);
+                Status = write_data_phys(devices[i]->devobj, cis[i].offset + stripestart[i], context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE);
                 
                 if (!NT_SUCCESS(Status))
                     WARN("write_data_phys returned %08x\n", Status);
