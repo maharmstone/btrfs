@@ -3042,7 +3042,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     apte->DataTransferLength = aptelen - sizeof(ATA_PASS_THROUGH_EX);
     apte->TimeOutValue = 3;
     apte->DataBufferOffset = apte->Length;
-    apte->CurrentTaskFile[6] = 0xec; // IDENTIFY DEVICE
+    apte->CurrentTaskFile[6] = IDE_COMMAND_IDENTIFY;
     
     Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, apte, aptelen,
                        apte, aptelen, TRUE, NULL);
