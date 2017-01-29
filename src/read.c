@@ -1523,7 +1523,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 }
 
 static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                                 CHUNK_ITEM* ci, device** devices, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe) {
+                                 CHUNK_ITEM* ci, device** devices, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe, UINT64 generation) {
     UINT64 i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
@@ -1603,6 +1603,10 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         } else if (addr != th->address) {
             WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+            checksum_error = TRUE;
+            stripes[startoffstripe]->status = ReadDataStatus_CRCError;
+        } else if (generation != 0 && generation != th->generation) {
+            WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
             checksum_error = TRUE;
             stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         }
@@ -1833,7 +1837,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                     
                     crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                     
-                    if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+                    if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
                         WARN("could not recover from checksum error\n");
                         ExFreePool(stripes);
                         ExFreePool(stripeoff);
@@ -2912,7 +2916,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID10) {
-        Status = read_data_raid10(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, startoffstripe);
+        Status = read_data_raid10(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid10 returned %08x\n", Status);
             goto exit;
