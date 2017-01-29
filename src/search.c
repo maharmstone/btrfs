@@ -36,12 +36,7 @@ extern PDEVICE_OBJECT devobj;
 
 static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                              DWORD disk_num, DWORD part_num, PUNICODE_STRING pnp_name, UINT64 length) {
-    KEVENT Event;
-    PIRP Irp;
-    PIO_STACK_LOCATION IrpSp;
-    IO_STATUS_BLOCK IoStatusBlock;
     NTSTATUS Status;
-    LARGE_INTEGER Offset;
     ULONG toread;
     UINT8* data = NULL;
     UINT32 sector_size;
@@ -76,42 +71,48 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObjec
         }
     }
     
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-
-    Offset.QuadPart = superblock_addrs[0];
-    
     toread = sector_align(sizeof(superblock), sector_size);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         goto deref;
     }
-
-    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, data, toread, &Offset, &Event, &IoStatusBlock);
     
-    if (!Irp) {
-        ERR("IoBuildSynchronousFsdRequest failed\n");
-        goto deref;
-    }
-    
-    IrpSp = IoGetNextIrpStackLocation(Irp);
-    IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+    Status = sync_read_phys(DeviceObject, superblock_addrs[0], toread, data, TRUE);
 
-    Status = IoCallDriver(DeviceObject, Irp);
-
-    if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-        Status = IoStatusBlock.Status;
-    }
-
-    if (NT_SUCCESS(Status) && IoStatusBlock.Information > 0 && ((superblock*)data)->magic == BTRFS_MAGIC) {
+    if (NT_SUCCESS(Status) && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-                
+
         if (crc32 != *((UINT32*)sb->checksum))
             ERR("checksum error on superblock\n");
         else {
             TRACE("volume found\n");
+            
+            if (length >= superblock_addrs[1] + toread) {
+                ULONG i = 1;
+                
+                superblock* sb2 = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
+                if (!sb2) {
+                    ERR("out of memory\n");
+                    goto deref;
+                }
+                
+                while (superblock_addrs[i] > 0 && length >= superblock_addrs[i] + toread) {
+                    Status = sync_read_phys(DeviceObject, superblock_addrs[i], toread, (PUCHAR)sb2, TRUE);
+                    
+                    if (NT_SUCCESS(Status) && sb2->magic == BTRFS_MAGIC) {
+                        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb2->uuid, (ULONG)sizeof(superblock) - sizeof(sb2->checksum));
+                        
+                        if (crc32 == *((UINT32*)sb2->checksum) && sb2->generation > sb->generation)
+                            RtlCopyMemory(sb, sb2, toread);
+                    }
+                    
+                    i++;
+                }
+                
+                ExFreePool(sb2);
+            }
             
             DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
             add_volume_device(sb, mountmgr, pnp_name, length, disk_num, part_num, devpath);
