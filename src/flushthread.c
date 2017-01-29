@@ -1748,7 +1748,7 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) 
         TRACE("crc32 is %08x\n", crc32);
         RtlCopyMemory(&Vcb->superblock.checksum, &crc32, sizeof(UINT32));
         
-        Status = write_data_phys(device->devobj, superblock_addrs[i], &Vcb->superblock, sizeof(superblock), i == 0 ? TRUE : FALSE);
+        Status = write_data_phys(device->devobj, superblock_addrs[i], &Vcb->superblock, sizeof(superblock), (i == 0 && !Vcb->options.no_barrier) ? TRUE : FALSE);
         
         if (!NT_SUCCESS(Status))
             break;
@@ -5835,7 +5835,8 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     
     Vcb->superblock.cache_generation = Vcb->superblock.generation;
     
-    flush_disk_caches(Vcb);
+    if (!Vcb->options.no_barrier)
+        flush_disk_caches(Vcb);
     
     Status = write_superblocks(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {

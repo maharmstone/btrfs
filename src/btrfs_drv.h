@@ -473,6 +473,7 @@ typedef struct {
     UINT32 raid5_recalculation;
     UINT32 raid6_recalculation;
     BOOL skip_balance;
+    BOOL no_barrier;
 } mount_options;
 
 #define VCB_TYPE_FS         1
@@ -806,6 +807,7 @@ extern UINT32 mount_max_inline;
 extern UINT32 mount_raid5_recalculation;
 extern UINT32 mount_raid6_recalculation;
 extern UINT32 mount_skip_balance;
+extern UINT32 mount_no_barrier;
 
 #ifdef _DEBUG
 

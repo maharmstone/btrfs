@@ -27,7 +27,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;
     UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus,
-                   maxinlineus, subvolidus, raid5recalcus, raid6recalcus, skipbalanceus;
+                   maxinlineus, subvolidus, raid5recalcus, raid6recalcus, skipbalanceus, nobarrierus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -44,6 +44,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->raid5_recalculation = mount_raid5_recalculation;
     options->raid6_recalculation = mount_raid6_recalculation;
     options->skip_balance = mount_skip_balance;
+    options->no_barrier = mount_no_barrier;
     options->subvol_id = 0;
     
     path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
@@ -105,6 +106,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     RtlInitUnicodeString(&raid5recalcus, L"Raid5Recalculation");
     RtlInitUnicodeString(&raid6recalcus, L"Raid6Recalculation");
     RtlInitUnicodeString(&skipbalanceus, L"SkipBalance");
+    RtlInitUnicodeString(&nobarrierus, L"NoBarrier");
     
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -165,6 +167,10 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->skip_balance = *val;
+            } else if (FsRtlAreNamesEqual(&nobarrierus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                
+                options->no_barrier = *val;
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);
@@ -656,6 +662,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     get_registry_value(h, L"Raid5Recalculation", REG_DWORD, &mount_raid5_recalculation, sizeof(mount_raid5_recalculation));
     get_registry_value(h, L"Raid6Recalculation", REG_DWORD, &mount_raid6_recalculation, sizeof(mount_raid6_recalculation));
     get_registry_value(h, L"SkipBalance", REG_DWORD, &mount_skip_balance, sizeof(mount_skip_balance));
+    get_registry_value(h, L"NoBarrier", REG_DWORD, &mount_no_barrier, sizeof(mount_no_barrier));
     
     if (mount_flush_interval == 0)
         mount_flush_interval = 1;
