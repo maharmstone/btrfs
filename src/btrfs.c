@@ -3681,46 +3681,6 @@ static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
     return STATUS_SUCCESS;
 }
 
-static BOOL raid_generations_okay(device_extension* Vcb) {
-    LIST_ENTRY* le2;
-    volume_device_extension* vde;
-    
-    // FIXME - if the difference between superblocks is small, we should try to recover
-    
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
-    
-    le2 = Vcb->devices.Flink;
-    while (le2 != &Vcb->devices) {
-        LIST_ENTRY* le;
-        device* dev = CONTAINING_RECORD(le2, device, list_entry);
-        
-        ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
-        
-        le = vde->children.Flink;
-        
-        while (le != &vde->children) {
-            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
-            
-            if (RtlCompareMemory(&dev->devitem.device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                if (vc->generation != Vcb->superblock.generation - 1) {
-                    WARN("device %llu had generation %llx, expected %llx\n", dev->devitem.dev_id, vc->generation, Vcb->superblock.generation - 1);
-                    ExReleaseResourceLite(&vde->child_lock);
-                    return FALSE;
-                } else
-                    break;
-            }
-            
-            le = le->Flink;
-        }
-        
-        ExReleaseResourceLite(&vde->child_lock);
-        
-        le2 = le2->Flink;
-    }
-    
-    return TRUE;
-}
-
 static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
     NTSTATUS Status;
     MOUNTDEV_NAME mdn, *mdn2;
@@ -4183,15 +4143,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             if (Vcb->readonly)
                 WARN("setting volume to readonly\n");
-        }
-        
-        if (!raid_generations_okay(Vcb)) {
-            ERR("could not mount as generation mismatch\n");
-            
-            IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
-
-            Status = STATUS_INTERNAL_ERROR;
-            goto exit;
         }
     } else {
         if (dev->readonly) {
