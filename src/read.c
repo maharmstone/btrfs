@@ -272,7 +272,7 @@ static BOOL raid5_decode_with_checksum(UINT64 off, UINT32 skip, read_data_contex
 }
 
 static BOOL raid5_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
-                                                UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size) {
+                                                UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size, UINT64 generation) {
     UINT16 parity, stripe;
     BOOL first = *pos == 0;
     UINT32 stripelen = first ? firststripesize : ci->stripe_length;
@@ -298,7 +298,7 @@ static BOOL raid5_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 
             
             crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
             
-            if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+            if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
                 UINT16 j, firststripe = stripe == 0 ? 1 : 0;
                 
                 RtlCopyMemory(buf + *pos, &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
@@ -311,7 +311,7 @@ static BOOL raid5_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 
                 
                 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
                 
-                if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
+                if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
                     ERR("unrecoverable checksum error\n");
                     return FALSE;
                 }
@@ -1932,7 +1932,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 }
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
-                                device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize, BOOL check_nocsum_parity) {
+                                device** devices, UINT64* stripestart, UINT64* stripeend, UINT64 offset, UINT32 firststripesize, BOOL check_nocsum_parity, UINT64 generation) {
     UINT32 pos, skip;
     NTSTATUS Status;
     int num_errors = 0;
@@ -2004,7 +2004,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         
-        if (addr != th->address || crc32 != *((UINT32*)th->csum))
+        if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation))
             checksum_error = TRUE;
     } else if (context->csum) {
 #ifdef DEBUG_STATS
@@ -2121,7 +2121,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             off = origoff;
             pos = 0;
             stripeoff = 0;
-            if (!raid5_decode_with_checksum_metadata(addr, off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size)) {
+            if (!raid5_decode_with_checksum_metadata(addr, off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size, generation)) {
                 ERR("unrecoverable metadata checksum error\n");
                 return STATUS_CRC_ERROR;
             }
@@ -2928,7 +2928,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity);
+        Status = read_data_raid5(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             goto exit;
