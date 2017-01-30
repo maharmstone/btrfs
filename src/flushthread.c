@@ -18,6 +18,7 @@
 #include "btrfs_drv.h"
 #include <ata.h>
 #include <ntddscsi.h>
+#include <ntddstor.h>
 
 #define MAX_CSUM_SIZE (4096 - sizeof(tree_header) - sizeof(leaf_node))
 
@@ -44,6 +45,10 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static BOOL insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
                                    void* data, UINT16 datalen, enum batch_operation operation);
+
+#ifndef _MSC_VER // not in mingw yet
+#define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
+#endif
 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
@@ -143,12 +148,55 @@ exit2:
     return Status;
 }
 
-static void clean_space_cache_chunk(chunk* c) {
-    // FIXME - loop through c->deleting and do TRIM if device supports it
-    // FIXME - also find way of doing TRIM of dropped chunks
+static void add_trim_entry(device* dev, UINT64 address, UINT64 size) {
+    space* s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+    if (!s) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    s->address = address;
+    s->size = size;
+    
+    InsertTailList(&dev->trim_list, &s->list_entry);
+}
+
+static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
+    ULONG type;
+    
+    if (Vcb->trim) {
+        if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
+            type = BLOCK_FLAG_DUPLICATE;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+            type = BLOCK_FLAG_RAID0;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
+            type = BLOCK_FLAG_DUPLICATE;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+            type = BLOCK_FLAG_RAID10;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+            type = BLOCK_FLAG_RAID5;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+            type = BLOCK_FLAG_RAID6;
+        else // SINGLE
+            type = BLOCK_FLAG_DUPLICATE;
+    }
     
     while (!IsListEmpty(&c->deleting)) {
         space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
+        
+        if (Vcb->trim) {
+            CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+            
+            if (type == BLOCK_FLAG_DUPLICATE) {
+                UINT16 i;
+                
+                for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                    if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim)
+                        add_trim_entry(c->devices[i], s->address - c->offset + cis[i].offset, s->size);
+                }
+            }
+            // FIXME - RAID0, RAID10, RAID5(?), RAID6(?)
+        }
         
         RemoveEntryList(&s->list_entry);
         ExFreePool(s);
@@ -156,6 +204,7 @@ static void clean_space_cache_chunk(chunk* c) {
 }
 
 static void clean_space_cache(device_extension* Vcb) {
+    NTSTATUS Status;
     chunk* c;
     
     TRACE("(%p)\n", Vcb);
@@ -165,11 +214,78 @@ static void clean_space_cache(device_extension* Vcb) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        clean_space_cache_chunk(c);
+        clean_space_cache_chunk(Vcb, c);
         RemoveEntryList(&c->list_entry_changed);
         c->list_entry_changed.Flink = NULL;
         
         ExReleaseResourceLite(&c->lock);
+    }
+    
+    if (Vcb->trim) {
+        LIST_ENTRY* le = Vcb->devices.Flink;
+        
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+            if (dev->devobj && !dev->readonly && dev->trim) {
+                LIST_ENTRY* le2 = dev->trim_list.Flink;
+                ULONG num_entries = 0;
+                
+                while (le2 != &dev->trim_list) {
+                    num_entries++;
+                    le2 = le2->Flink;
+                }
+                
+                if (num_entries > 0) {
+                    DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+                    DEVICE_DATA_SET_RANGE* ranges;
+                    ULONG datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (num_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
+                    
+                    dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+                    if (!dmdsa) {
+                        ERR("out of memory\n");
+                        goto nextdev;
+                    }
+                    
+                    dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+                    dmdsa->Action = DeviceDsmAction_Trim;
+                    dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+                    dmdsa->ParameterBlockOffset = 0;
+                    dmdsa->ParameterBlockLength = 0;
+                    dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+                    dmdsa->DataSetRangesLength = num_entries * sizeof(DEVICE_DATA_SET_RANGE);
+                    
+                    ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
+                    
+                    i = 0;
+                    
+                    le2 = dev->trim_list.Flink;
+                    while (le2 != &dev->trim_list) {
+                        space* s = CONTAINING_RECORD(le2, space, list_entry);
+                        
+                        ranges[i].StartingOffset = s->address;
+                        ranges[i].LengthInBytes = s->size;
+                        i++;
+                        
+                        le2 = le2->Flink;
+                    }
+                    
+                    Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, dmdsa, datalen, NULL, 0, TRUE, NULL);
+                    if (!NT_SUCCESS(Status))
+                        WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
+                    
+                    ExFreePool(dmdsa);
+                }
+                
+nextdev:
+                while (!IsListEmpty(&dev->trim_list)) {
+                    space* s = CONTAINING_RECORD(RemoveHeadList(&dev->trim_list), space, list_entry);
+                    ExFreePool(s);
+                }
+            }
+            
+            le = le->Flink;
+        }
     }
 }
 

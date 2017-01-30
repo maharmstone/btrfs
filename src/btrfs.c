@@ -2937,6 +2937,8 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->disk_num = vc->disk_num;
                 dev->part_num = vc->part_num;
                 dev->length = vc->size;
+                InitializeListHead(&dev->trim_list);
+                
                 add_device_to_list(Vcb, dev);
                 Vcb->devices_loaded++;
                 
@@ -3021,6 +3023,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     dev->trim = FALSE;
     dev->readonly = dev->seeding;
     dev->reloc = FALSE;
+    InitializeListHead(&dev->trim_list);
     
     if (!dev->readonly) {
         Status = dev_ioctl(dev->devobj, IOCTL_DISK_IS_WRITABLE, NULL, 0,
