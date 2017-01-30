@@ -26,6 +26,7 @@
 #include <devioctl.h>
 #include <ntdddisk.h>
 #include <ntddscsi.h>
+#include <ntddstor.h>
 #include <ata.h>
 #include <mountmgr.h>
 #include "../btrfs.h"
@@ -34,6 +35,10 @@
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DISMOUNT_VOLUME           CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  8, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#ifndef _MSC_VER // not in mingw yet
+#define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -1064,6 +1069,23 @@ end:
     free(mdn2);
 }
 
+static void do_full_trim(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    DEVICE_MANAGE_DATA_SET_ATTRIBUTES dmdsa;
+    
+    RtlZeroMemory(&dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES));
+    
+    dmdsa.Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+    dmdsa.Action = DeviceDsmAction_Trim;
+    dmdsa.Flags = DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE | DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+    dmdsa.ParameterBlockOffset = 0;
+    dmdsa.ParameterBlockLength = 0;
+    dmdsa.DataSetRangesOffset = 0;
+    dmdsa.DataSetRangesLength = 0;
+    
+    NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, &dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), NULL, 0);
+}
+
 NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                         BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
@@ -1114,6 +1136,8 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
+    
+    do_full_trim(h);
     
     Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size);
     
