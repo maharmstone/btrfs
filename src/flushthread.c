@@ -157,6 +157,7 @@ static void add_trim_entry(device* dev, UINT64 address, UINT64 size) {
     
     s->address = address;
     s->size = size;
+    dev->num_trim_entries++;
     
     InsertTailList(&dev->trim_list, &s->list_entry);
 }
@@ -227,61 +228,54 @@ static void clean_space_cache(device_extension* Vcb) {
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
         
-            if (dev->devobj && !dev->readonly && dev->trim) {
-                LIST_ENTRY* le2 = dev->trim_list.Flink;
-                ULONG num_entries = 0;
+            if (dev->devobj && !dev->readonly && dev->trim && dev->num_trim_entries > 0) {
+                LIST_ENTRY* le2;
+                DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+                DEVICE_DATA_SET_RANGE* ranges;
+                ULONG datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
                 
+                dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+                if (!dmdsa) {
+                    ERR("out of memory\n");
+                    goto nextdev;
+                }
+                
+                dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+                dmdsa->Action = DeviceDsmAction_Trim;
+                dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+                dmdsa->ParameterBlockOffset = 0;
+                dmdsa->ParameterBlockLength = 0;
+                dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+                dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
+                
+                ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
+                
+                i = 0;
+                
+                le2 = dev->trim_list.Flink;
                 while (le2 != &dev->trim_list) {
-                    num_entries++;
+                    space* s = CONTAINING_RECORD(le2, space, list_entry);
+                    
+                    ranges[i].StartingOffset = s->address;
+                    ranges[i].LengthInBytes = s->size;
+                    i++;
+                    
                     le2 = le2->Flink;
                 }
                 
-                if (num_entries > 0) {
-                    DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
-                    DEVICE_DATA_SET_RANGE* ranges;
-                    ULONG datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (num_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
-                    
-                    dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
-                    if (!dmdsa) {
-                        ERR("out of memory\n");
-                        goto nextdev;
-                    }
-                    
-                    dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
-                    dmdsa->Action = DeviceDsmAction_Trim;
-                    dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
-                    dmdsa->ParameterBlockOffset = 0;
-                    dmdsa->ParameterBlockLength = 0;
-                    dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
-                    dmdsa->DataSetRangesLength = num_entries * sizeof(DEVICE_DATA_SET_RANGE);
-                    
-                    ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
-                    
-                    i = 0;
-                    
-                    le2 = dev->trim_list.Flink;
-                    while (le2 != &dev->trim_list) {
-                        space* s = CONTAINING_RECORD(le2, space, list_entry);
-                        
-                        ranges[i].StartingOffset = s->address;
-                        ranges[i].LengthInBytes = s->size;
-                        i++;
-                        
-                        le2 = le2->Flink;
-                    }
-                    
-                    Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, dmdsa, datalen, NULL, 0, TRUE, NULL);
-                    if (!NT_SUCCESS(Status))
-                        WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
-                    
-                    ExFreePool(dmdsa);
-                }
+                Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, dmdsa, datalen, NULL, 0, TRUE, NULL);
+                if (!NT_SUCCESS(Status))
+                    WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
+                
+                ExFreePool(dmdsa);
                 
 nextdev:
                 while (!IsListEmpty(&dev->trim_list)) {
                     space* s = CONTAINING_RECORD(RemoveHeadList(&dev->trim_list), space, list_entry);
                     ExFreePool(s);
                 }
+                
+                dev->num_trim_entries = 0;
             }
             
             le = le->Flink;

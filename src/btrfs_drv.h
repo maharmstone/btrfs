@@ -367,6 +367,7 @@ typedef struct {
     ULONG part_num;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
+    ULONG num_trim_entries;
     LIST_ENTRY trim_list;
 } device;
 

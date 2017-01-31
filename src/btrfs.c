@@ -2937,6 +2937,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->disk_num = vc->disk_num;
                 dev->part_num = vc->part_num;
                 dev->length = vc->size;
+                dev->num_trim_entries = 0;
                 InitializeListHead(&dev->trim_list);
                 
                 add_device_to_list(Vcb, dev);
@@ -3023,6 +3024,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     dev->trim = FALSE;
     dev->readonly = dev->seeding;
     dev->reloc = FALSE;
+    dev->num_trim_entries = 0;
     InitializeListHead(&dev->trim_list);
     
     if (!dev->readonly) {
