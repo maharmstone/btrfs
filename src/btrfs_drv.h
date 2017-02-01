@@ -987,6 +987,7 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
 void do_unlock_volume(device_extension* Vcb);
+void trim_whole_device(device* dev);
 
 // in flushthread.c
 void STDCALL flush_thread(void* context);

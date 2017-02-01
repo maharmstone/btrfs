@@ -2497,7 +2497,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
     return STATUS_SUCCESS;
 }
 
-static void trim_whole_device(device* dev) {
+void trim_whole_device(device* dev) {
     DEVICE_MANAGE_DATA_SET_ATTRIBUTES dmdsa;
     NTSTATUS Status;
     
