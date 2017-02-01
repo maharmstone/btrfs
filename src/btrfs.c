@@ -2907,7 +2907,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
         le = le->Flink;
     }
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     
     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
     
@@ -3136,7 +3136,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 }
                 
                 if (!done) {
-                    volume_device_extension* vde = Vcb->Vpb->RealDevice->DeviceExtension;
+                    volume_device_extension* vde = Vcb->vde;
                     
                     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
                     
@@ -4000,6 +4000,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
     Vcb->type = VCB_TYPE_FS;
+    Vcb->vde = vde;
     
     ExInitializeResourceLite(&Vcb->tree_lock);
     Vcb->open_trees = 0;

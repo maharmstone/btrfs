@@ -244,7 +244,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
             WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
         }
         
-        vde = Vcb->Vpb->RealDevice->DeviceExtension;
+        vde = Vcb->vde;
         vde->mounted_device = NULL;
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;
@@ -265,7 +265,7 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
         volume_device_extension* vde;
         
-        vde = Vcb->Vpb->RealDevice->DeviceExtension;
+        vde = Vcb->vde;
         vde->mounted_device = NULL;
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;

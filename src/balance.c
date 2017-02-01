@@ -2358,7 +2358,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     // remove entry in volume list
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     
     ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
     

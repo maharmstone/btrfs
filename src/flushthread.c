@@ -6139,7 +6139,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         goto end;
     }
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
         
     le = vde->children.Flink;

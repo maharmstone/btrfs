@@ -2343,7 +2343,7 @@ static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
     volume_device_extension* vde;
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
@@ -2402,7 +2402,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     Vcb->removing = TRUE;
     update_volumes(Vcb);
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     vde->mounted_device = NULL;
     
     ExReleaseResourceLite(&Vcb->tree_lock);
@@ -2800,7 +2800,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     
     ExFreePool(mb);
     
-    vde = Vcb->Vpb->RealDevice->DeviceExtension;
+    vde = Vcb->vde;
     
     vc = ExAllocatePoolWithTag(NonPagedPool, sizeof(volume_child), ALLOC_TAG);
     if (!vc) {

@@ -562,10 +562,13 @@ typedef struct {
     LIST_ENTRY errors;
 } scrub_info;
 
+struct _volume_device_extension;
+
 typedef struct _device_extension {
     UINT32 type;
     mount_options options;
     PVPB Vpb;
+    struct _volume_device_extension* vde;
     LIST_ENTRY devices;
 #ifdef DEBUG_STATS
     debug_stats stats;
@@ -648,7 +651,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } volume_child;
 
-typedef struct {
+typedef struct _volume_device_extension {
     UINT32 type;
     BTRFS_UUID uuid;
     UNICODE_STRING name;
