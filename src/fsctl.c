@@ -28,6 +28,10 @@
 
 #define SEF_AVOID_PRIVILEGE_CHECK 0x08 // on MSDN but not in any header files(?)
 
+#ifndef _MSC_VER // not in mingw yet
+#define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
+#endif
+
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern PDRIVER_OBJECT drvobj;
@@ -2493,6 +2497,25 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
     return STATUS_SUCCESS;
 }
 
+static void trim_whole_device(device* dev) {
+    DEVICE_MANAGE_DATA_SET_ATTRIBUTES dmdsa;
+    NTSTATUS Status;
+    
+    // FIXME - avoid "bootloader area"??
+    
+    dmdsa.Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+    dmdsa.Action = DeviceDsmAction_Trim;
+    dmdsa.Flags = DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE | DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+    dmdsa.ParameterBlockOffset = 0;
+    dmdsa.ParameterBlockLength = 0;
+    dmdsa.DataSetRangesOffset = 0;
+    dmdsa.DataSetRangesLength = 0;
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, &dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), NULL, 0, TRUE, NULL);
+    if (!NT_SUCCESS(Status))
+        WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
+}
+
 static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE processor_mode) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -2755,6 +2778,9 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         ExFreePool(stats);
         goto end;
     }
+    
+    if (dev->trim && !dev->readonly)
+        trim_whole_device(dev);
     
     // We clear the first megabyte of the device, so Windows doesn't identify it as another FS
     mb = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
