@@ -185,7 +185,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     while (!IsListEmpty(&c->deleting)) {
         space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
         
-        if (Vcb->trim && !Vcb->options.no_trim) {
+        if (Vcb->trim && !Vcb->options.no_trim && (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA))) {
             CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
             
             if (type == BLOCK_FLAG_DUPLICATE) {
