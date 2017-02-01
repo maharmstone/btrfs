@@ -3023,7 +3023,6 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
         }
     }
     
-    dev->ssd = FALSE;
     dev->trim = FALSE;
     dev->readonly = dev->seeding;
     dev->reloc = FALSE;
@@ -3060,14 +3059,6 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
         TRACE("IOCTL_ATA_PASS_THROUGH returned %08x for IDENTIFY DEVICE\n", Status);
     else {
         idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
-        
-        if (idd->NominalMediaRotationRate == 1) {
-            dev->ssd = TRUE;
-            TRACE("device identified as SSD\n");
-        } else if (idd->NominalMediaRotationRate == 0)
-            TRACE("no rotational speed returned, assuming not SSD\n");
-        else
-            TRACE("rotational speed of %u RPM\n", idd->NominalMediaRotationRate);
         
         if (idd->CommandSetSupport.FlushCache) {
             dev->can_flush = TRUE;
