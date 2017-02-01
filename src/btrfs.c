@@ -3001,6 +3001,8 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
     IDENTIFY_DEVICE_DATA* idd;
+    STORAGE_PROPERTY_QUERY spq;
+    DEVICE_TRIM_DESCRIPTOR dtd;
     
     dev->removable = is_device_removable(dev->devobj);
     dev->change_count = dev->removable ? get_device_change_count(dev->devobj) : 0;
@@ -3067,13 +3069,6 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
         else
             TRACE("rotational speed of %u RPM\n", idd->NominalMediaRotationRate);
         
-        if (idd->DataSetManagementFeature.SupportsTrim) {
-            dev->trim = TRUE;
-            Vcb->trim = TRUE;
-            TRACE("TRIM supported\n");
-        } else
-            TRACE("TRIM not supported\n");
-        
         if (idd->CommandSetSupport.FlushCache) {
             dev->can_flush = TRUE;
             TRACE("FLUSH CACHE supported\n");
@@ -3082,6 +3077,22 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     }
     
     ExFreePool(apte);
+    
+    spq.PropertyId = StorageDeviceTrimProperty;
+    spq.QueryType = PropertyStandardQuery;
+    spq.AdditionalParameters[0] = 0;
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_QUERY_PROPERTY, &spq, sizeof(STORAGE_PROPERTY_QUERY),
+                       &dtd, sizeof(DEVICE_TRIM_DESCRIPTOR), TRUE, NULL);
+    
+    if (NT_SUCCESS(Status)) {
+        if (dtd.TrimEnabled) {
+            dev->trim = TRUE;
+            Vcb->trim = TRUE;
+            TRACE("TRIM supported\n");
+        } else
+            TRACE("TRIM not supported\n");
+    }
 }
 
 static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
