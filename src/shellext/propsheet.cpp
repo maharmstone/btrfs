@@ -96,7 +96,7 @@ void BtrfsPropSheet::do_search(WCHAR* fn) {
                     
                     Status = NtFsControlFile(fh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
                 
-                    if (Status == STATUS_SUCCESS) {
+                    if (NT_SUCCESS(Status)) {
                         sizes[0] += bii2.inline_length;
                         sizes[1] += bii2.disk_size[0];
                         sizes[2] += bii2.disk_size[1];
@@ -216,7 +216,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                 
                 Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
                     
-                if (Status == STATUS_SUCCESS && !bii2.top) {
+                if (NT_SUCCESS(Status) && !bii2.top) {
                     int j;
                     
                     LARGE_INTEGER filesize;
@@ -392,7 +392,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
                     
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
         
-            if (Status != STATUS_SUCCESS) {
+            if (!NT_SUCCESS(Status)) {
                 ShowNtStatusError(hDlg, Status);
                 CloseHandle(h);
                 return;
@@ -421,7 +421,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
             CloseHandle(h);
 
-            if (Status != STATUS_SUCCESS) {
+            if (!NT_SUCCESS(Status)) {
                 WCHAR s[255], t[255];
                 
                 if (!LoadStringW(module, IDS_SET_INODE_INFO_ERROR, t, sizeof(t) / sizeof(WCHAR))) {

@@ -95,7 +95,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                 if (h != INVALID_HANDLE_VALUE) {
                     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
                         
-                    if (Status == STATUS_SUCCESS && bgfi.inode == 0x100 && !bgfi.top) {
+                    if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
                         WCHAR parpath[MAX_PATH];
                         HANDLE h2;
                         
@@ -140,7 +140,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     
     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
     
-    if (Status != STATUS_SUCCESS) {
+    if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
         return E_FAIL;
     }
@@ -192,7 +192,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
     if (h != INVALID_HANDLE_VALUE) {
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
             
-        if (Status == STATUS_SUCCESS && bgfi.inode == 0x100 && !bgfi.top) {
+        if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
             WCHAR parpath[MAX_PATH], subvolname[MAX_PATH], templ[MAX_PATH], name[MAX_PATH], searchpath[MAX_PATH];
             HANDLE h2, fff;
             btrfs_create_snapshot* bcs;
@@ -266,7 +266,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             
             Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, NULL, 0, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen);
         
-            if (Status != STATUS_SUCCESS)
+            if (!NT_SUCCESS(Status))
                 ShowNtStatusError(hwnd, Status);
             
             CloseHandle(h2);
@@ -362,7 +362,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         
         free(searchpath);
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             CloseHandle(h);
             ShowNtStatusError(pici->hwnd, Status);
             return E_FAIL;

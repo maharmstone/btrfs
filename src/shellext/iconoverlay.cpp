@@ -75,7 +75,7 @@ HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) 
     
     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
     
-    if (Status != STATUS_SUCCESS) {
+    if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
         return S_FALSE;
     }

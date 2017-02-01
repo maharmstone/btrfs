@@ -196,7 +196,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb, sizeof(btrfs_query_balance));
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -1001,7 +1001,7 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
                 break;
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             CloseHandle(h);
             ShowNtStatusError(hwndDlg, Status);
             return;
@@ -1114,7 +1114,7 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             }
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);
             goto end;
@@ -1163,7 +1163,7 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         btrfs_query_balance bqb2;
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);
             goto end;
@@ -1178,7 +1178,7 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             goto end;
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);
             goto end;
@@ -1227,7 +1227,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         btrfs_query_balance bqb2;
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_BALANCE, NULL, 0, &bqb2, sizeof(btrfs_query_balance));
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);
             goto end;
@@ -1240,7 +1240,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             goto end;
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(h);
             goto end;

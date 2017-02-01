@@ -64,7 +64,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, bqs2, len);
             
-            if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
                 ShowNtStatusError(hwndDlg, Status);
                 CloseHandle(h);
                 free(bqs2);
@@ -307,7 +307,7 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
         
-        if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -422,7 +422,7 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
             }
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -447,7 +447,7 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_QUERY_SCRUB, NULL, 0, &bqs, sizeof(btrfs_query_scrub));
         
-        if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW) {
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -458,7 +458,7 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
         else
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_PAUSE_SCRUB, NULL, 0, NULL, 0);
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;
@@ -482,7 +482,7 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_STOP_SCRUB, NULL, 0, NULL, 0);
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
             CloseHandle(h);
             return;

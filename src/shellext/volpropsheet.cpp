@@ -107,7 +107,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                     break;
             }
             
-            if (Status != STATUS_SUCCESS) {
+            if (!NT_SUCCESS(Status)) {
                 CloseHandle(h);
                 return E_FAIL;
             }
@@ -501,7 +501,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
                 break;
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             CloseHandle(h);
             return;
         }
@@ -527,7 +527,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
                 break;
         }
         
-        if (Status != STATUS_SUCCESS) {
+        if (!NT_SUCCESS(Status)) {
             free(usage);
             CloseHandle(h);
             return;
@@ -586,7 +586,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                         break;
                 }
                 
-                if (Status != STATUS_SUCCESS) {
+                if (!NT_SUCCESS(Status)) {
                     free(usage);
                     CloseHandle(h);
                     break;
@@ -735,7 +735,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
             break;
     }
     
-    if (Status != STATUS_SUCCESS) {
+    if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
         return;
     }
@@ -766,7 +766,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
             break;
     }
     
-    if (Status != STATUS_SUCCESS) {
+    if (!NT_SUCCESS(Status)) {
         free(usage);
         CloseHandle(h);
         return;
