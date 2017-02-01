@@ -2441,7 +2441,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     // free dev
     
-    if (dev->trim && !dev->readonly)
+    if (dev->trim && !dev->readonly && !Vcb->options.no_trim)
         trim_whole_device(dev);
     
     ObDereferenceObject(dev->devobj);

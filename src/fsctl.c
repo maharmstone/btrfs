@@ -2779,7 +2779,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         goto end;
     }
     
-    if (dev->trim && !dev->readonly)
+    if (dev->trim && !dev->readonly && !Vcb->options.no_trim)
         trim_whole_device(dev);
     
     // We clear the first megabyte of the device, so Windows doesn't identify it as another FS

@@ -70,6 +70,7 @@ UINT32 mount_raid5_recalculation = 1;
 UINT32 mount_raid6_recalculation = 1;
 UINT32 mount_skip_balance = 0;
 UINT32 mount_no_barrier = 0;
+UINT32 mount_no_trim = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
@@ -757,7 +758,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             
             data->Flags = SSINFO_FLAGS_ALIGNED_DEVICE | SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE;
             
-            if (Vcb->trim)
+            if (Vcb->trim && !Vcb->options.no_trim)
                 data->Flags |= SSINFO_FLAGS_TRIM_ENABLED;
             
             BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);

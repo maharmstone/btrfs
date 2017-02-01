@@ -165,7 +165,7 @@ static void add_trim_entry(device* dev, UINT64 address, UINT64 size) {
 static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     ULONG type;
     
-    if (Vcb->trim) {
+    if (Vcb->trim && !Vcb->options.no_trim) {
         if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
             type = BLOCK_FLAG_DUPLICATE;
         else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
@@ -185,7 +185,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     while (!IsListEmpty(&c->deleting)) {
         space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
         
-        if (Vcb->trim) {
+        if (Vcb->trim && !Vcb->options.no_trim) {
             CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
             
             if (type == BLOCK_FLAG_DUPLICATE) {
@@ -288,7 +288,7 @@ static void clean_space_cache(device_extension* Vcb) {
         ExReleaseResourceLite(&c->lock);
     }
     
-    if (Vcb->trim) {
+    if (Vcb->trim && !Vcb->options.no_trim) {
         LIST_ENTRY* le = Vcb->devices.Flink;
         
         while (le != &Vcb->devices) {
@@ -4800,7 +4800,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         factor = 1;
     
     // do TRIM
-    if (Vcb->trim) {
+    if (Vcb->trim && !Vcb->options.no_trim) {
         UINT64 len = c->chunk_item->size / factor;
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
