@@ -270,9 +270,31 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     }
 }
 
+typedef struct {
+    DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+    PIRP Irp;
+    IO_STATUS_BLOCK iosb;
+} ioctl_context_stripe;
+
+typedef struct {
+    KEVENT Event;
+    LONG left;
+    ioctl_context_stripe* stripes;
+} ioctl_context;
+
+static NTSTATUS STDCALL ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+    ioctl_context* context = (ioctl_context*)conptr;
+    LONG left2 = InterlockedDecrement(&context->left);
+    
+    if (left2 == 0)
+        KeSetEvent(&context->Event, 0, FALSE);
+    
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
 static void clean_space_cache(device_extension* Vcb) {
-    NTSTATUS Status;
     chunk* c;
+    ULONG num;
     
     TRACE("(%p)\n", Vcb);
     
@@ -289,32 +311,64 @@ static void clean_space_cache(device_extension* Vcb) {
     }
     
     if (Vcb->trim && !Vcb->options.no_trim) {
-        LIST_ENTRY* le = Vcb->devices.Flink;
+        ioctl_context context;
+        LIST_ENTRY* le;
+        ULONG total_num;
         
+        context.left = 0;
+        
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+            if (dev->devobj && !dev->readonly && dev->trim && dev->num_trim_entries > 0)
+                context.left++;
+            
+            le = le->Flink;
+        }
+        
+        if (context.left == 0)
+            return;
+        
+        total_num = context.left;
+        num = 0;
+        
+        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+        
+        context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(ioctl_context_stripe) * context.left, ALLOC_TAG);
+        if (!context.stripes) {
+            ERR("out of memory\n");
+            return;
+        }
+        
+        RtlZeroMemory(context.stripes, sizeof(ioctl_context_stripe) * context.left);
+        
+        le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
         
             if (dev->devobj && !dev->readonly && dev->trim && dev->num_trim_entries > 0) {
                 LIST_ENTRY* le2;
-                DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+                ioctl_context_stripe* stripe = &context.stripes[num];
                 DEVICE_DATA_SET_RANGE* ranges;
                 ULONG datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
+                PIO_STACK_LOCATION IrpSp;
                 
-                dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
-                if (!dmdsa) {
+                stripe->dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+                if (!stripe->dmdsa) {
                     ERR("out of memory\n");
                     goto nextdev;
                 }
                 
-                dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
-                dmdsa->Action = DeviceDsmAction_Trim;
-                dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
-                dmdsa->ParameterBlockOffset = 0;
-                dmdsa->ParameterBlockLength = 0;
-                dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
-                dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
+                stripe->dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+                stripe->dmdsa->Action = DeviceDsmAction_Trim;
+                stripe->dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+                stripe->dmdsa->ParameterBlockOffset = 0;
+                stripe->dmdsa->ParameterBlockLength = 0;
+                stripe->dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+                stripe->dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
                 
-                ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
+                ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)stripe->dmdsa + stripe->dmdsa->DataSetRangesOffset);
                 
                 i = 0;
                 
@@ -329,11 +383,28 @@ static void clean_space_cache(device_extension* Vcb) {
                     le2 = le2->Flink;
                 }
                 
-                Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, dmdsa, datalen, NULL, 0, TRUE, NULL);
-                if (!NT_SUCCESS(Status))
-                    WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
+                stripe->Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
                 
-                ExFreePool(dmdsa);
+                if (!stripe->Irp) {
+                    ERR("IoAllocateIrp failed\n");
+                    goto nextdev;
+                }
+                
+                IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+                IrpSp->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+                
+                IrpSp->Parameters.DeviceIoControl.IoControlCode = IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES;
+                IrpSp->Parameters.DeviceIoControl.InputBufferLength = datalen;
+                IrpSp->Parameters.DeviceIoControl.OutputBufferLength = 0;
+                
+                stripe->Irp->AssociatedIrp.SystemBuffer = stripe->dmdsa;
+                stripe->Irp->Flags |= IRP_BUFFERED_IO;
+                stripe->Irp->UserBuffer = NULL;
+                stripe->Irp->UserIosb = &stripe->iosb;
+                
+                IoSetCompletionRoutine(stripe->Irp, ioctl_completion, &context, TRUE, TRUE, TRUE);
+                
+                IoCallDriver(dev->devobj, stripe->Irp);
                 
 nextdev:
                 while (!IsListEmpty(&dev->trim_list)) {
@@ -342,10 +413,21 @@ nextdev:
                 }
                 
                 dev->num_trim_entries = 0;
+                
+                num++;
             }
             
             le = le->Flink;
         }
+        
+        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+        
+        for (num = 0; num < total_num; num++) {
+            if (context.stripes[num].dmdsa)
+                ExFreePool(context.stripes[num].dmdsa);
+        }
+        
+        ExFreePool(context.stripes);
     }
 }
 
