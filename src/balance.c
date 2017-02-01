@@ -2455,6 +2455,22 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     
     ExFreePool(dev);
     
+    if (Vcb->trim) {
+        Vcb->trim = FALSE;
+        
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+            
+            if (dev2->trim) {
+                Vcb->trim = TRUE;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+    }
+    
     return STATUS_SUCCESS;
 }
 
