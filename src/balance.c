@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "btrfsioctl.h"
+#include <ntddstor.h>
 
 typedef struct {
     UINT64 address;
@@ -63,6 +64,10 @@ typedef struct {
     metadata_reloc* parent;
     LIST_ENTRY list_entry;
 } data_reloc_ref;
+
+#ifndef _MSC_VER // not in mingw yet
+#define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
+#endif
 
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -2474,6 +2479,108 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     return STATUS_SUCCESS;
 }
 
+static void trim_unalloc_space(device_extension* Vcb, device* dev) {
+    DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+    DEVICE_DATA_SET_RANGE* ranges;
+    ULONG datalen, i;
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    BOOL b;
+    UINT64 lastoff = 0;
+    LIST_ENTRY* le;
+    
+    // FIXME - avoid "bootloader area"?
+    
+    dev->num_trim_entries = 0;
+    
+    searchkey.obj_id = dev->devitem.dev_id;
+    searchkey.obj_type = TYPE_DEV_EXTENT;
+    searchkey.offset = 0;
+    
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return;
+    }
+    
+    do {
+        traverse_ptr next_tp;
+        
+        if (tp.item->key.obj_id == dev->devitem.dev_id && tp.item->key.obj_type == TYPE_DEV_EXTENT) {
+            if (tp.item->size >= sizeof(DEV_EXTENT)) {
+                DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+                
+                if (tp.item->key.offset > lastoff)
+                    add_trim_entry_avoid_sb(Vcb, dev, lastoff, tp.item->key.offset - lastoff);
+
+                lastoff = tp.item->key.offset + de->length;
+            } else {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                return;
+            }
+        }
+    
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
+        
+        if (b) {
+            tp = next_tp;
+            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+                break;
+        }
+    } while (b);
+    
+    if (lastoff < dev->length)
+        add_trim_entry_avoid_sb(Vcb, dev, lastoff, dev->length - lastoff);
+    
+    if (dev->num_trim_entries == 0)
+        return;
+    
+    datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE));
+    
+    dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+    if (!dmdsa) {
+        ERR("out of memory\n");
+        goto end;
+    }
+        
+    dmdsa->Size = sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES);
+    dmdsa->Action = DeviceDsmAction_Trim;
+    dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
+    dmdsa->ParameterBlockOffset = 0;
+    dmdsa->ParameterBlockLength = 0;
+    dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+    dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
+    
+    ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
+    
+    i = 0;
+    le = dev->trim_list.Flink;
+    while (le != &dev->trim_list) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+        
+        ranges[i].StartingOffset = s->address;
+        ranges[i].LengthInBytes = s->size;
+        i++;
+        
+        le = le->Flink;
+    }
+    
+    Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, dmdsa, datalen, NULL, 0, TRUE, NULL);
+    if (!NT_SUCCESS(Status))
+        WARN("IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES returned %08x\n", Status);
+    
+    ExFreePool(dmdsa);
+    
+end:
+    while (!IsListEmpty(&dev->trim_list)) {
+        space* s = CONTAINING_RECORD(RemoveHeadList(&dev->trim_list), space, list_entry);
+        ExFreePool(s);
+    }
+    
+    dev->num_trim_entries = 0;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
@@ -2717,6 +2824,24 @@ end:
                     }
                 } else
                     dev->reloc = FALSE;
+            }
+            
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            FsRtlExitFileSystem();
+        }
+        
+        if (Vcb->trim && !Vcb->options.no_trim) {
+            FsRtlEnterFileSystem();
+            ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+            
+            le = Vcb->devices.Flink;
+            while (le != &Vcb->devices) {
+                device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+                
+                if (dev2->devobj && !dev2->readonly && dev2->trim)
+                    trim_unalloc_space(Vcb, dev2);
+                
+                le = le->Flink;
             }
             
             ExReleaseResourceLite(&Vcb->tree_lock);

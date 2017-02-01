@@ -4837,7 +4837,7 @@ end:
     return Status;
 }
 
-static void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size) {
+void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size) {
     int i;
     ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
     

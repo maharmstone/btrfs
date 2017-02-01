@@ -1000,6 +1000,7 @@ BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp);
 NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp);
 void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp);
 BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address);
+void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
