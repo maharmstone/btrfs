@@ -4755,14 +4755,59 @@ end:
     return Status;
 }
 
+static void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size) {
+    int i;
+    ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
+    
+    i = 0;
+    while (superblock_addrs[i] != 0) {
+        if (superblock_addrs[i] + sblen >= address && superblock_addrs[i] < address + size) {
+            if (superblock_addrs[i] > address)
+                add_trim_entry(dev, address, superblock_addrs[i] - address);
+
+            if (size <= superblock_addrs[i] + sblen - address)
+                return;
+                
+            size -= superblock_addrs[i] + sblen - address;
+            address = superblock_addrs[i] + sblen;
+        } else if (superblock_addrs[i] > address + size)
+            break;
+        
+        i++;
+    }
+    
+    add_trim_entry(dev, address, size);
+}
+
 static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
     UINT64 i, factor;
-    CHUNK_ITEM_STRIPE* cis;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];;
     
     TRACE("dropping chunk %llx\n", c->offset);
+    
+    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        factor = c->chunk_item->num_stripes;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+        factor = c->chunk_item->num_stripes - 1;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        factor = c->chunk_item->num_stripes - 2;
+    else // SINGLE, DUPLICATE, RAID1
+        factor = 1;
+    
+    // do TRIM
+    if (Vcb->trim) {
+        UINT64 len = c->chunk_item->size / factor;
+        
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim)
+                add_trim_entry_avoid_sb(Vcb, c->devices[i], cis[i].offset, len);
+        }
+    }
     
     // remove free space cache
     if (c->cache) {
@@ -4802,14 +4847,6 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
     }
     
-    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
-        factor = c->chunk_item->num_stripes;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
-        factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-    else // SINGLE, DUPLICATE, RAID1
-        factor = 1;
-    
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (!c->created) {
             // remove DEV_EXTENTs from tree 4
