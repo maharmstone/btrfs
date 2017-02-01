@@ -224,8 +224,45 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
                             add_trim_entry(c->devices[i], stripestart + cis[i].offset, stripeend - stripestart);
                     }
                 }
+            } else if (type == BLOCK_FLAG_RAID10) {
+                UINT64 startoff, endoff;
+                UINT16 sub_stripes, startoffstripe, endoffstripe, i;
+                
+                sub_stripes = max(1, c->chunk_item->sub_stripes);
+                
+                get_raid0_offset(s->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &startoff, &startoffstripe);
+                get_raid0_offset(s->address - c->offset + s->size - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &endoff, &endoffstripe);
+                
+                startoffstripe *= sub_stripes;
+                endoffstripe *= sub_stripes;
+                
+                for (i = 0; i < c->chunk_item->num_stripes; i += sub_stripes) {
+                    ULONG j;
+                    UINT64 stripestart, stripeend;
+                    
+                    if (startoffstripe > i)
+                        stripestart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                    else if (startoffstripe == i)
+                        stripestart = startoff;
+                    else
+                        stripestart = startoff - (startoff % c->chunk_item->stripe_length);
+                    
+                    if (endoffstripe > i)
+                        stripeend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                    else if (endoffstripe == i)
+                        stripeend = endoff + 1;
+                    else
+                        stripeend = endoff - (endoff % c->chunk_item->stripe_length);
+
+                    if (stripestart != stripeend) {
+                        for (j = 0; j < sub_stripes; j++) {
+                            if (c->devices[i+j] && c->devices[i+j]->devobj && !c->devices[i+j]->readonly && c->devices[i+j]->trim)
+                                add_trim_entry(c->devices[i+j], stripestart + cis[i+j].offset, stripeend - stripestart);
+                        }
+                    }
+                }
             }
-            // FIXME - RAID10, RAID5(?), RAID6(?)
+            // FIXME - RAID5(?), RAID6(?)
         }
         
         RemoveEntryList(&s->list_entry);
