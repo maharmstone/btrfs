@@ -1259,7 +1259,15 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                     }
                     
                     if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                        FIXME("FIXME - buffered IO\n");
+                        context->stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                        if (!context->stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        context->stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                        context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
                     } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
                         context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
                         if (!context->stripes[i].Irp->MdlAddress) {
@@ -1736,7 +1744,15 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                     IrpSp->MajorFunction = IRP_MJ_READ;
                     
                     if (devices[other_stripe]->devobj->Flags & DO_BUFFERED_IO) {
-                        FIXME("FIXME - buffered IO\n");
+                        context->stripes[other_stripe].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, stripeend[other_stripe] - stripestart[other_stripe], ALLOC_TAG);
+                        if (!context->stripes[other_stripe].Irp->AssociatedIrp.SystemBuffer) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        context->stripes[other_stripe].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                        context->stripes[other_stripe].Irp->UserBuffer = context->stripes[other_stripe].buf;
                     } else if (devices[other_stripe]->devobj->Flags & DO_DIRECT_IO) {
                         context->stripes[other_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[other_stripe].buf, stripeend[other_stripe] - stripestart[other_stripe], FALSE, FALSE, NULL);
                         if (!context->stripes[other_stripe].Irp->MdlAddress) {
@@ -2078,7 +2094,17 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             IrpSp->MajorFunction = IRP_MJ_READ;
             
             if (devices[reconstruct_stripe]->devobj->Flags & DO_BUFFERED_IO) {
-                FIXME("FIXME - buffered IO\n");
+                context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer =
+                    ExAllocatePoolWithTag(NonPagedPool, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], ALLOC_TAG);
+                    
+                if (!context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                context->stripes[reconstruct_stripe].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                context->stripes[reconstruct_stripe].Irp->UserBuffer = context->stripes[reconstruct_stripe].buf;
             } else if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
                 context->stripes[reconstruct_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[reconstruct_stripe].buf,
                                                                                         stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], FALSE, FALSE, NULL);
@@ -2379,7 +2405,17 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             IrpSp->MajorFunction = IRP_MJ_READ;
             
             if (devices[reconstruct_stripe]->devobj->Flags & DO_BUFFERED_IO) {
-                FIXME("FIXME - buffered IO\n");
+                context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer =
+                    ExAllocatePoolWithTag(NonPagedPool, stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], ALLOC_TAG);
+                    
+                if (!context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                context->stripes[reconstruct_stripe].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                context->stripes[reconstruct_stripe].Irp->UserBuffer = context->stripes[reconstruct_stripe].buf;
             } else if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
                 context->stripes[reconstruct_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[reconstruct_stripe].buf,
                                                                                         stripeend[reconstruct_stripe] - stripestart[reconstruct_stripe], FALSE, FALSE, NULL);
@@ -2859,7 +2895,15 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             IrpSp->MajorFunction = IRP_MJ_READ;
             
             if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                FIXME("FIXME - buffered IO\n");
+                context->stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                if (!context->stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                context->stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
             } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
                 context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
                 if (!context->stripes[i].Irp->MdlAddress) {
