@@ -2256,17 +2256,6 @@ end:
     return Status;
 }
 
-// static NTSTATUS STDCALL set_allocation_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
-//     FILE_ALLOCATION_INFORMATION* fai = (FILE_ALLOCATION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
-//     fcb* fcb = FileObject->FsContext;
-//     
-//     FIXME("FIXME\n");
-//     ERR("fcb = %p (%.*S)\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
-//     ERR("AllocationSize = %llx\n", fai->AllocationSize.QuadPart);
-//     
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-
 static NTSTATUS STDCALL set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
     
