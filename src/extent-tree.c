@@ -856,12 +856,6 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
     return increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
 }
 
-void decrease_chunk_usage(chunk* c, UINT64 delta) {
-    c->used -= delta;
-    
-    TRACE("decreasing size of chunk %llx by %llx\n", c->offset, delta);
-}
-
 NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem,
                                   UINT8 level, UINT64 parent, BOOL superseded, PIRP Irp) {
     KEY searchkey;

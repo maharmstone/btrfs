@@ -102,7 +102,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     if (c) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        decrease_chunk_usage(c, Vcb->superblock.node_size);
+        c->used -= Vcb->superblock.node_size;
         
         space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
         
@@ -1203,7 +1203,7 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
     if (c) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        decrease_chunk_usage(c, tp->item->key.offset);
+        c->used -= tp->item->key.offset;
         
         space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, tp->item->key.offset, rollback);
         

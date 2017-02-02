@@ -1034,7 +1034,6 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, UINT64 address, UI
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 inode, UINT64 offset,
                                        UINT32 refcount, BOOL superseded, PIRP Irp);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT8 level, PIRP Irp);
-void decrease_chunk_usage(chunk* c, UINT64 delta);
 UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP Irp);
 NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT8 type, void* data, KEY* firstitem, UINT8 level, PIRP Irp);

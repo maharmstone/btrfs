@@ -864,7 +864,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         if (c) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
-            decrease_chunk_usage(c, Vcb->superblock.node_size);
+            c->used -= Vcb->superblock.node_size;
             
             space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
             
@@ -2204,7 +2204,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     
 end:
     if (ce->count == 0 && !ce->superseded) {
-        decrease_chunk_usage(c, ce->size);
+        c->used -= ce->size;
         space_list_add(Vcb, c, TRUE, ce->address, ce->size, rollback);
     }
 
@@ -4259,7 +4259,7 @@ cont:
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
                     add_checksum_entry(fcb->Vcb, er->address, er->skip_start / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
-                decrease_chunk_usage(er->chunk, er->skip_start);
+                er->chunk->used -= er->skip_start;
                 
                 space_list_add(fcb->Vcb, er->chunk, TRUE, er->address, er->skip_start, NULL);
                 
@@ -4299,7 +4299,7 @@ cont:
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
                     add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, er->skip_end / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
-                decrease_chunk_usage(er->chunk, er->skip_end);
+                er->chunk->used -= er->skip_end;
                 
                 space_list_add(fcb->Vcb, er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
                 
