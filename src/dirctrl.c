@@ -910,9 +910,28 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     TRACE("%S\n", file_desc(FileObject));
 
     if (ccb->filename.Length == 0) {
-        Status = fileref_get_filename(fileref, &ccb->filename, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("fileref_get_filename returned %08x\n", Status);
+        ULONG reqlen;
+        
+        ccb->filename.MaximumLength = 0;
+        
+        Status = fileref_get_filename2(fileref, &ccb->filename, NULL, &reqlen);
+        if (Status == STATUS_BUFFER_OVERFLOW) {
+            ccb->filename.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+            if (!ccb->filename.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            ccb->filename.MaximumLength = reqlen;
+            
+            Status = fileref_get_filename2(fileref, &ccb->filename, NULL, &reqlen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("fileref_get_filename2 returned %08x\n", Status);
+                goto end;
+            }
+        } else {
+            ERR("fileref_get_filename2 returned %08x\n", Status);
             goto end;
         }
     }

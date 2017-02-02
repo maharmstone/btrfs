@@ -3015,7 +3015,7 @@ end:
     return Status;
 }
 
-static NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
+NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
     file_ref* fr;
     NTSTATUS Status;
     ULONG reqlen = 0;
