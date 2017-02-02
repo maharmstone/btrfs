@@ -1436,26 +1436,33 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
 WCHAR* file_desc_fileref(file_ref* fileref) {
     NTSTATUS Status;
     UNICODE_STRING fn;
+    ULONG reqlen;
     
     if (fileref->debug_desc)
         return fileref->debug_desc;
     
-    Status = fileref_get_filename(fileref, &fn, NULL);
+    fn.MaximumLength = 0;
+    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    if (Status != STATUS_BUFFER_OVERFLOW)
+        return L"ERROR";
+    
+    fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, reqlen + sizeof(WCHAR), ALLOC_TAG);
+    if (!fileref->debug_desc)
+        return L"(memory error)";
+    
+    fn.Buffer = fileref->debug_desc;
+    fn.Length = 0;
+    fn.MaximumLength = reqlen + sizeof(WCHAR);
+    
+    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status)) {
+        ExFreePool(fileref->debug_desc);
+        fileref->debug_desc = NULL;
         return L"ERROR";
     }
     
-    fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, fn.Length + sizeof(WCHAR), ALLOC_TAG);
-    if (!fileref->debug_desc) {
-        ExFreePool(fn.Buffer);
-        return L"(memory error)";
-    }
-    
-    RtlCopyMemory(fileref->debug_desc, fn.Buffer, fn.Length);
     fileref->debug_desc[fn.Length / sizeof(WCHAR)] = 0;
-    
-    ExFreePool(fn.Buffer);
-    
+
     return fileref->debug_desc;
 }
 
