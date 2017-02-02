@@ -616,10 +616,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             break;
         }
 
-        case FileFsControlInformation:
-            FIXME("STUB: FileFsControlInformation\n");
-            break;
-
         case FileFsDeviceInformation:
         {
             FILE_FS_DEVICE_INFORMATION* ffdi = Irp->AssociatedIrp.SystemBuffer;
@@ -642,10 +638,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             
             break;
         }
-
-        case FileFsDriverPathInformation:
-            FIXME("STUB: FileFsDriverPathInformation\n");
-            break;
 
         case FileFsFullSizeInformation:
         {
