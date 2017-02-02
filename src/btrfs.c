@@ -1441,7 +1441,7 @@ WCHAR* file_desc_fileref(file_ref* fileref) {
     if (fileref->debug_desc)
         return fileref->debug_desc;
     
-    fn.MaximumLength = 0;
+    fn.Length = fn.MaximumLength = 0;
     Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
     if (Status != STATUS_BUFFER_OVERFLOW)
         return L"ERROR";
@@ -1480,12 +1480,30 @@ WCHAR* file_desc(PFILE_OBJECT FileObject) {
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
     UNICODE_STRING fn;
     NTSTATUS Status;
+    ULONG reqlen;
     USHORT name_offset;
     fcb* fcb = fileref->fcb;
     
-    Status = fileref_get_filename(fileref, &fn, &name_offset);
+    fn.Length = fn.MaximumLength = 0;
+    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    if (Status != STATUS_BUFFER_OVERFLOW) {
+        ERR("fileref_get_filename2 returned %08x\n", Status);
+        return;
+    }
+    
+    fn.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+    if (!fn.Buffer) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    fn.MaximumLength = reqlen;
+    fn.Length = 0;
+    
+    Status = fileref_get_filename2(fileref, &fn, &name_offset, &reqlen);
     if (!NT_SUCCESS(Status)) {
-        ERR("fileref_get_filename returned %08x\n", Status);
+        ERR("fileref_get_filename2 returned %08x\n", Status);
+        ExFreePool(fn.Buffer);
         return;
     }
     

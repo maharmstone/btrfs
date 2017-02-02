@@ -912,7 +912,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
     if (ccb->filename.Length == 0) {
         ULONG reqlen;
         
-        ccb->filename.MaximumLength = 0;
+        ccb->filename.MaximumLength = ccb->filename.Length = 0;
         
         Status = fileref_get_filename2(fileref, &ccb->filename, NULL, &reqlen);
         if (Status == STATUS_BUFFER_OVERFLOW) {
