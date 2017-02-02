@@ -1313,7 +1313,7 @@ void mark_fileref_dirty(file_ref* fileref) {
     fileref->fcb->Vcb->need_write = TRUE;
 }
 
-void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) {
+void free_fcb(fcb* fcb) {
     LONG rc;
 
 // #ifdef DEBUG    
@@ -1326,11 +1326,10 @@ void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line) 
     rc = InterlockedDecrement(&fcb->refcount);
     
 #ifdef DEBUG_FCB_REFCOUNTS
-//     WARN("fcb %p: refcount now %i (%.*S)\n", fcb, rc, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer);
 #ifdef DEBUG_LONG_MESSAGES
-    _debug_message(func, file, line, "fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #else
-    _debug_message(func, "fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #endif
 #endif
     

@@ -766,7 +766,7 @@ BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
-void _free_fcb(fcb* fcb, const char* func, const char* file, unsigned int line);
+void free_fcb(fcb* fcb);
 void free_fileref(file_ref* fr);
 fcb* create_fcb(POOL_TYPE pool_type);
 file_ref* create_fileref();
@@ -797,9 +797,6 @@ NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_na
 #else
 #define funcname __func__
 #endif
-
-// FIXME - we probably shouldn't be moving funcname etc. around if we're not printing debug messages
-#define free_fcb(fcb) _free_fcb(fcb, funcname, __FILE__, __LINE__)
 
 extern BOOL have_sse2;
 
