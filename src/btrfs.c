@@ -2088,30 +2088,17 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, 
 }
 
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
-    IO_STATUS_BLOCK* IoStatus;
+    IO_STATUS_BLOCK IoStatus;
     LARGE_INTEGER Offset;
     PIRP Irp;
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
-    read_context* context;
+    read_context context;
     
     num_reads++;
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlZeroMemory(context, sizeof(read_context));
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
-    
-    IoStatus = ExAllocatePoolWithTag(NonPagedPool, sizeof(IO_STATUS_BLOCK), ALLOC_TAG);
-    if (!IoStatus) {
-        ERR("out of memory\n");
-        ExFreePool(context);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    RtlZeroMemory(&context, sizeof(read_context));
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
 
     Offset.QuadPart = StartingOffset;
 
@@ -2138,7 +2125,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
             goto exit;
         }
 
-        Irp->Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+        Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
 
         Irp->UserBuffer = Buffer;
     } else if (DeviceObject->Flags & DO_DIRECT_IO) {
@@ -2156,17 +2143,17 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     IrpSp->Parameters.Read.Length = Length;
     IrpSp->Parameters.Read.ByteOffset = Offset;
     
-    Irp->UserIosb = IoStatus;
+    Irp->UserIosb = &IoStatus;
     
-    Irp->UserEvent = &context->Event;
+    Irp->UserEvent = &context.Event;
     
-    IoSetCompletionRoutine(Irp, read_completion, context, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, read_completion, &context, TRUE, TRUE, TRUE);
 
     Status = IoCallDriver(DeviceObject, Irp);
 
     if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-        Status = context->iosb.Status;
+        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+        Status = context.iosb.Status;
     }
     
     if (DeviceObject->Flags & DO_DIRECT_IO) {
@@ -2176,9 +2163,6 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     
 exit:
     IoFreeIrp(Irp);
-
-    ExFreePool(IoStatus);
-    ExFreePool(context);
     
     return Status;
 }
