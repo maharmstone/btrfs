@@ -1647,9 +1647,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         oldfn.Length = oldfn.MaximumLength = 0;
         
-        Status = fileref_get_filename2(fileref, &oldfn, &name_offset, &reqlen);
+        Status = fileref_get_filename(fileref, &oldfn, &name_offset, &reqlen);
         if (Status != STATUS_BUFFER_OVERFLOW) {
-            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08x\n", Status);
             goto end;
         }
         
@@ -1662,9 +1662,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         oldfn.MaximumLength = reqlen;
         
-        Status = fileref_get_filename2(fileref, &oldfn, &name_offset, &reqlen);
+        Status = fileref_get_filename(fileref, &oldfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
-            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08x\n", Status);
             ExFreePool(oldfn.Buffer);
             goto end;
         }
@@ -1686,9 +1686,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         newfn.Length = newfn.MaximumLength = 0;
         
-        Status = fileref_get_filename2(fileref, &newfn, &name_offset, &reqlen);
+        Status = fileref_get_filename(fileref, &newfn, &name_offset, &reqlen);
         if (Status != STATUS_BUFFER_OVERFLOW) {
-            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08x\n", Status);
             ExFreePool(oldfn.Buffer);
             goto end;
         }
@@ -1703,9 +1703,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         newfn.MaximumLength = reqlen;
         
-        Status = fileref_get_filename2(fileref, &newfn, &name_offset, &reqlen);
+        Status = fileref_get_filename(fileref, &newfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
-            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08x\n", Status);
             ExFreePool(oldfn.Buffer);
             ExFreePool(newfn.Buffer);
             goto end;
@@ -2960,7 +2960,7 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
     return STATUS_SUCCESS;
 }
 
-NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
+NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
     file_ref* fr;
     NTSTATUS Status;
     ULONG reqlen = 0;
@@ -3052,7 +3052,7 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     fn.Length = 0;
     fn.MaximumLength = *length;
     
-    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
         ERR("fileref_get_filename returned %08x\n", Status);
         return Status;

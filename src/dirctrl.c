@@ -914,7 +914,7 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
         
         ccb->filename.MaximumLength = ccb->filename.Length = 0;
         
-        Status = fileref_get_filename2(fileref, &ccb->filename, NULL, &reqlen);
+        Status = fileref_get_filename(fileref, &ccb->filename, NULL, &reqlen);
         if (Status == STATUS_BUFFER_OVERFLOW) {
             ccb->filename.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
             if (!ccb->filename.Buffer) {
@@ -925,13 +925,13 @@ static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp)
             
             ccb->filename.MaximumLength = reqlen;
             
-            Status = fileref_get_filename2(fileref, &ccb->filename, NULL, &reqlen);
+            Status = fileref_get_filename(fileref, &ccb->filename, NULL, &reqlen);
             if (!NT_SUCCESS(Status)) {
-                ERR("fileref_get_filename2 returned %08x\n", Status);
+                ERR("fileref_get_filename returned %08x\n", Status);
                 goto end;
             }
         } else {
-            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08x\n", Status);
             goto end;
         }
     }

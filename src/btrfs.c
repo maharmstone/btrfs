@@ -1442,7 +1442,7 @@ WCHAR* file_desc_fileref(file_ref* fileref) {
         return fileref->debug_desc;
     
     fn.Length = fn.MaximumLength = 0;
-    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (Status != STATUS_BUFFER_OVERFLOW)
         return L"ERROR";
     
@@ -1454,7 +1454,7 @@ WCHAR* file_desc_fileref(file_ref* fileref) {
     fn.Length = 0;
     fn.MaximumLength = reqlen + sizeof(WCHAR);
     
-    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status)) {
         ExFreePool(fileref->debug_desc);
         fileref->debug_desc = NULL;
@@ -1485,9 +1485,9 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     fcb* fcb = fileref->fcb;
     
     fn.Length = fn.MaximumLength = 0;
-    Status = fileref_get_filename2(fileref, &fn, NULL, &reqlen);
+    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("fileref_get_filename2 returned %08x\n", Status);
+        ERR("fileref_get_filename returned %08x\n", Status);
         return;
     }
     
@@ -1500,9 +1500,9 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     fn.MaximumLength = reqlen;
     fn.Length = 0;
     
-    Status = fileref_get_filename2(fileref, &fn, &name_offset, &reqlen);
+    Status = fileref_get_filename(fileref, &fn, &name_offset, &reqlen);
     if (!NT_SUCCESS(Status)) {
-        ERR("fileref_get_filename2 returned %08x\n", Status);
+        ERR("fileref_get_filename returned %08x\n", Status);
         ExFreePool(fn.Buffer);
         return;
     }
@@ -1565,7 +1565,7 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
                 
                 path.Length = path.MaximumLength = 0;
                 
-                Status = fileref_get_filename2(parfr, &path, NULL, &reqlen);
+                Status = fileref_get_filename(parfr, &path, NULL, &reqlen);
                 if (Status != STATUS_BUFFER_OVERFLOW)
                     ERR("fileref_get_filename returned %08x\n", Status);
                 else {
@@ -1577,10 +1577,10 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
                     if (!path.Buffer)
                         ERR("out of memory\n");
                     else {
-                        Status = fileref_get_filename2(parfr, &path, NULL, &reqlen);
+                        Status = fileref_get_filename(parfr, &path, NULL, &reqlen);
                         
                         if (!NT_SUCCESS(Status))
-                            ERR("fileref_get_filename2 returned %08x\n", Status);
+                            ERR("fileref_get_filename returned %08x\n", Status);
                         else {
                             name_offset = path.Length;
                             if (parfr != fileref->fcb->Vcb->root_fileref) name_offset += sizeof(WCHAR);
