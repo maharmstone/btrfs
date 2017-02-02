@@ -2115,7 +2115,6 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 
     Offset.QuadPart = StartingOffset;
 
-//     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, DeviceObject, Buffer, Length, &Offset, /*&Event*/NULL, IoStatus);
     Irp = IoAllocateIrp(DeviceObject->StackSize, FALSE);
     
     if (!Irp) {
@@ -2134,33 +2133,23 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     if (DeviceObject->Flags & DO_BUFFERED_IO) {
         FIXME("FIXME - buffered IO\n");
     } else if (DeviceObject->Flags & DO_DIRECT_IO) {
-//         TRACE("direct IO\n");
-        
         Irp->MdlAddress = IoAllocateMdl(Buffer, Length, FALSE, FALSE, NULL);
         if (!Irp->MdlAddress) {
             ERR("IoAllocateMdl failed\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
-    //         IoFreeIrp(Irp);
             goto exit;
-//         } else {
-//             TRACE("got MDL %p from buffer %p\n", Irp->MdlAddress, Buffer);
         }
         
         MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
-    } else {
-//         TRACE("neither buffered nor direct IO\n");
+    } else
         Irp->UserBuffer = Buffer;
-    }
 
     IrpSp->Parameters.Read.Length = Length;
     IrpSp->Parameters.Read.ByteOffset = Offset;
     
     Irp->UserIosb = IoStatus;
-//     Irp->Tail.Overlay.Thread = PsGetCurrentThread();
     
     Irp->UserEvent = &context->Event;
-
-//     IoQueueThreadIrp(Irp);
     
     IoSetCompletionRoutine(Irp, read_completion, context, TRUE, TRUE, TRUE);
 
