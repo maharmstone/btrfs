@@ -1560,32 +1560,47 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
                 fn = &hl->name;
             
             if (!deleted) {
+                ULONG reqlen;
                 UNICODE_STRING path;
                 
-                Status = fileref_get_filename(parfr, &path, NULL);
-                if (!NT_SUCCESS(Status)) {
+                path.Length = path.MaximumLength = 0;
+                
+                Status = fileref_get_filename2(parfr, &path, NULL, &reqlen);
+                if (Status != STATUS_BUFFER_OVERFLOW)
                     ERR("fileref_get_filename returned %08x\n", Status);
-                } else {
+                else {
                     UNICODE_STRING fn2;
                     ULONG name_offset;
                     
-                    name_offset = path.Length;
-                    if (parfr != fileref->fcb->Vcb->root_fileref) name_offset += sizeof(WCHAR);
-                    
-                    fn2.Length = fn2.MaximumLength = fn->Length + name_offset;
-                    fn2.Buffer = ExAllocatePoolWithTag(PagedPool, fn2.MaximumLength, ALLOC_TAG);
-                    
-                    RtlCopyMemory(fn2.Buffer, path.Buffer, path.Length);
-                    if (parfr != fileref->fcb->Vcb->root_fileref) fn2.Buffer[path.Length / sizeof(WCHAR)] = '\\';
-                    RtlCopyMemory(&fn2.Buffer[name_offset / sizeof(WCHAR)], fn->Buffer, fn->Length);
-                    
-                    TRACE("%.*S\n", fn2.Length / sizeof(WCHAR), fn2.Buffer);
-                    
-                    FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn2, name_offset,
-                                                  NULL, NULL, filter_match, action, NULL, NULL);
-                    
-                    ExFreePool(fn2.Buffer);
-                    ExFreePool(path.Buffer);
+                    path.MaximumLength = reqlen;
+                    path.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+                    if (!path.Buffer)
+                        ERR("out of memory\n");
+                    else {
+                        Status = fileref_get_filename2(parfr, &path, NULL, &reqlen);
+                        
+                        if (!NT_SUCCESS(Status))
+                            ERR("fileref_get_filename2 returned %08x\n", Status);
+                        else {
+                            name_offset = path.Length;
+                            if (parfr != fileref->fcb->Vcb->root_fileref) name_offset += sizeof(WCHAR);
+                            
+                            fn2.Length = fn2.MaximumLength = fn->Length + name_offset;
+                            fn2.Buffer = ExAllocatePoolWithTag(PagedPool, fn2.MaximumLength, ALLOC_TAG);
+                            
+                            RtlCopyMemory(fn2.Buffer, path.Buffer, path.Length);
+                            if (parfr != fileref->fcb->Vcb->root_fileref) fn2.Buffer[path.Length / sizeof(WCHAR)] = '\\';
+                            RtlCopyMemory(&fn2.Buffer[name_offset / sizeof(WCHAR)], fn->Buffer, fn->Length);
+                            
+                            TRACE("%.*S\n", fn2.Length / sizeof(WCHAR), fn2.Buffer);
+                            
+                            FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn2, name_offset,
+                                                        NULL, NULL, filter_match, action, NULL, NULL);
+                        }
+                        
+                        ExFreePool(fn2.Buffer);
+                        ExFreePool(path.Buffer);
+                    }
                 }
             }
             
