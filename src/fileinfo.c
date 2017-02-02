@@ -1524,8 +1524,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (fcb->ads) {
-        FIXME("FIXME - renaming streams\n"); // FIXME
-        Status = STATUS_NOT_IMPLEMENTED;
+        // MSDN says that NTFS data streams can be renamed (https://msdn.microsoft.com/en-us/library/windows/hardware/ff540344.aspx),
+        // but if you try it always seems to return STATUS_INVALID_PARAMETER. There is a function in ntfs.sys called NtfsStreamRename,
+        // but it never seems to get invoked... If you know what's going on here, I'd appreciate it if you let me know.
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     
