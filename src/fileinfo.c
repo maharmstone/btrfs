@@ -23,7 +23,6 @@
 #endif
 
 static NTSTATUS get_inode_dir_path(device_extension* Vcb, root* subvol, UINT64 inode, PUNICODE_STRING us, PIRP Irp);
-static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset);
 
 static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
@@ -1637,7 +1636,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     if (related == fileref->parent) { // keeping file in same directory
         UNICODE_STRING fnus2, oldfn, newfn;
         USHORT name_offset;
-        ULONG oldutf8len;
+        ULONG reqlen, oldutf8len;
         
         fnus2.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
         if (!fnus2.Buffer) {
@@ -1646,9 +1645,27 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        Status = fileref_get_filename(fileref, &oldfn, &name_offset);
+        oldfn.Length = oldfn.MaximumLength = 0;
+        
+        Status = fileref_get_filename2(fileref, &oldfn, &name_offset, &reqlen);
+        if (Status != STATUS_BUFFER_OVERFLOW) {
+            ERR("fileref_get_filename2 returned %08x\n", Status);
+            goto end;
+        }
+        
+        oldfn.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+        if (!oldfn.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        oldfn.MaximumLength = reqlen;
+        
+        Status = fileref_get_filename2(fileref, &oldfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
-            ERR("fileref_get_filename returned %08x\n", Status);
+            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ExFreePool(oldfn.Buffer);
             goto end;
         }
         
@@ -1667,10 +1684,30 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fileref->utf8 = utf8;
         fileref->filepart = fnus2;
         
-        Status = fileref_get_filename(fileref, &newfn, &name_offset);
-        if (!NT_SUCCESS(Status)) {
-            ERR("fileref_get_filename returned %08x\n", Status);
+        newfn.Length = newfn.MaximumLength = 0;
+        
+        Status = fileref_get_filename2(fileref, &newfn, &name_offset, &reqlen);
+        if (Status != STATUS_BUFFER_OVERFLOW) {
+            ERR("fileref_get_filename2 returned %08x\n", Status);
             ExFreePool(oldfn.Buffer);
+            goto end;
+        }
+        
+        newfn.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
+        if (!newfn.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            ExFreePool(oldfn.Buffer);
+            goto end;
+        }
+        
+        newfn.MaximumLength = reqlen;
+        
+        Status = fileref_get_filename2(fileref, &newfn, &name_offset, &reqlen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("fileref_get_filename2 returned %08x\n", Status);
+            ExFreePool(oldfn.Buffer);
+            ExFreePool(newfn.Buffer);
             goto end;
         }
         
@@ -1699,6 +1736,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                ExFreePool(oldfn.Buffer);
+                ExFreePool(newfn.Buffer);
                 goto end;
             }
             
@@ -1707,6 +1746,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                ExFreePool(oldfn.Buffer);
+                ExFreePool(newfn.Buffer);
                 goto end;
             }
             
@@ -1715,6 +1756,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+                ExFreePool(oldfn.Buffer);
+                ExFreePool(newfn.Buffer);
                 goto end;
             }
             
@@ -2915,105 +2958,6 @@ static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORM
     fai->AlignmentRequirement = first_device(Vcb)->devobj->AlignmentRequirement;
     
     return STATUS_SUCCESS;
-}
-
-typedef struct {
-    file_ref* fileref;
-    LIST_ENTRY list_entry;
-} fileref_list;
-
-static NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset) {
-    LIST_ENTRY fr_list, *le;
-    file_ref* fr;
-    NTSTATUS Status;
-    ULONG len, i;
-    
-    // FIXME - we need a lock on filerefs' filepart
-    
-    if (fileref == fileref->fcb->Vcb->root_fileref) {
-        fn->Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR), ALLOC_TAG);
-        if (!fn->Buffer) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        fn->Length = fn->MaximumLength = sizeof(WCHAR);
-        fn->Buffer[0] = '\\';
-
-        if (name_offset)
-            *name_offset = 0;
-
-        return STATUS_SUCCESS;
-    }
-    
-    InitializeListHead(&fr_list);
-    
-    len = 0;
-    fr = fileref;
-    
-    do {
-        fileref_list* frl;
-        
-        frl = ExAllocatePoolWithTag(PagedPool, sizeof(fileref_list), ALLOC_TAG);
-        if (!frl) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        frl->fileref = fr;
-        InsertTailList(&fr_list, &frl->list_entry);
-        
-        len += fr->filepart.Length;
-        
-        if (fr != fileref->fcb->Vcb->root_fileref)
-            len += sizeof(WCHAR);
-        
-        fr = fr->parent;
-    } while (fr);
-    
-    fn->Buffer = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-    if (!fn->Buffer) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    fn->Length = fn->MaximumLength = len;
-    
-    i = 0;
-    
-    le = fr_list.Blink;
-    while (le != &fr_list) {
-        fileref_list* frl = CONTAINING_RECORD(le, fileref_list, list_entry);
-        
-        if (frl->fileref != fileref->fcb->Vcb->root_fileref) {
-            fn->Buffer[i] = frl->fileref->fcb->ads ? ':' : '\\';
-            i++;
-            
-            if (name_offset && frl->fileref == fileref)
-                *name_offset = i * sizeof(WCHAR);
-            
-            RtlCopyMemory(&fn->Buffer[i], frl->fileref->filepart.Buffer, frl->fileref->filepart.Length);
-            i += frl->fileref->filepart.Length / sizeof(WCHAR);
-        }
-        
-        le = le->Blink;
-    }
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    while (!IsListEmpty(&fr_list)) {
-        fileref_list* frl;
-        
-        le = RemoveHeadList(&fr_list);
-        frl = CONTAINING_RECORD(le, fileref_list, list_entry);
-        
-        ExFreePool(frl);
-    }
-    
-    return Status;
 }
 
 NTSTATUS fileref_get_filename2(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
