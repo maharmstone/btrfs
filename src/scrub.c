@@ -2559,9 +2559,17 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
             
-            if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO)
-                FIXME("FIXME - buffered IO\n");
-            else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
+            if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
+                context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, read_stripes * c->chunk_item->stripe_length, ALLOC_TAG);
+                if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
+            } else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
                 context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length, FALSE, FALSE, NULL);
                 if (!context.stripes[i].Irp->MdlAddress) {
                     ERR("IoAllocateMdl failed\n");
