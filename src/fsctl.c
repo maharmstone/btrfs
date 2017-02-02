@@ -123,9 +123,9 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     
     c = get_chunk_from_address(Vcb, t.new_address);
             
-    if (c) {
-        increase_chunk_usage(c, Vcb->superblock.node_size);
-    } else {
+    if (c)
+        c->used += Vcb->superblock.node_size;
+    else {
         ERR("could not find chunk for address %llx\n", t.new_address);
         Status = STATUS_INTERNAL_ERROR;
         goto end;

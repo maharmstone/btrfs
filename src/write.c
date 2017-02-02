@@ -2586,7 +2586,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
         return FALSE;
     }
     
-    increase_chunk_usage(c, length);
+    c->used += length;
     space_list_subtract(Vcb, c, FALSE, address, length, rollback);
     
     fcb->inode_item.st_blocks += decoded_size;
