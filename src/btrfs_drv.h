@@ -399,6 +399,7 @@ typedef struct {
     BOOL reloc;
     BOOL last_alloc_set;
     UINT64 last_alloc;
+    UINT16 last_stripe;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

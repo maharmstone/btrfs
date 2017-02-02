@@ -2936,6 +2936,8 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
                 
                 c->last_alloc_set = FALSE;
+                
+                c->last_stripe = 0;
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 

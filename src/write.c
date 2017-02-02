@@ -556,6 +556,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->readonly = FALSE;
     c->reloc = FALSE;
     c->last_alloc_set = FALSE;
+    c->last_stripe = 0;
     
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);

@@ -24,7 +24,8 @@ enum read_data_status {
     ReadDataStatus_Cancelled,
     ReadDataStatus_Error,
     ReadDataStatus_CRCError,
-    ReadDataStatus_MissingDevice
+    ReadDataStatus_MissingDevice,
+    ReadDataStatus_Skip
 };
 
 struct read_data_context;
@@ -1199,9 +1200,8 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                 Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
 #endif
             }
-        } else if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+        } else if (context->stripes[i].status == ReadDataStatus_Cancelled || context->stripes[i].status == ReadDataStatus_Skip)
             cancelled++;
-        }
     }
     
     if (checksum_error) {
@@ -1216,7 +1216,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
             context->stripes_left = 0;
             
             for (i = 0; i < ci->num_stripes; i++) {
-                if (context->stripes[i].status == ReadDataStatus_Cancelled) {
+                if (context->stripes[i].status == ReadDataStatus_Cancelled || context->stripes[i].status == ReadDataStatus_Skip) {
                     PIO_STACK_LOCATION IrpSp;
                     
                     // re-run Irp that we cancelled
@@ -1247,6 +1247,16 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                     
                     IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
                     IrpSp->MajorFunction = IRP_MJ_READ;
+                    
+                    context->stripes[i].context = (struct read_data_context*)context;
+                    
+                    if (!context->stripes[i].buf) {
+                        context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                        if (!context->stripes[i].buf) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                    }
                     
                     if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
                         FIXME("FIXME - buffered IO\n");
@@ -2547,7 +2557,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     if (ci->type & BLOCK_FLAG_DUPLICATE) {
         type = BLOCK_FLAG_DUPLICATE;
-        allowed_missing = 0;
+        allowed_missing = ci->num_stripes - 1;
     } else if (ci->type & BLOCK_FLAG_RAID0) {
         type = BLOCK_FLAG_RAID0;
         allowed_missing = 0;
@@ -2791,6 +2801,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 missing_devices++;
         }
     }
+       
+    if (c && type == BLOCK_FLAG_DUPLICATE && missing_devices == 0) {
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (i != c->last_stripe) {
+                context->stripes[i].status = ReadDataStatus_Skip;
+                context->stripes[i].buf = NULL;
+                context->stripes_left--;
+            }
+        }
+        
+        c->last_stripe = (c->last_stripe + 1) % ci->num_stripes;
+    }
       
     if (missing_devices > allowed_missing) {
         ERR("not enough devices to service request (%u missing)\n", missing_devices);
@@ -2801,7 +2823,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        if (devices[i] && stripestart[i] != stripeend[i]) {
+        if (devices[i] && stripestart[i] != stripeend[i] && context->stripes[i].status != ReadDataStatus_Skip) {
             context->stripes[i].context = (struct read_data_context*)context;
             context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
             
@@ -2868,7 +2890,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 #endif
     
     for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status != ReadDataStatus_MissingDevice) {
+        if (context->stripes[i].status != ReadDataStatus_MissingDevice && context->stripes[i].status != ReadDataStatus_Skip) {
             IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
         }
     }
