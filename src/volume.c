@@ -95,9 +95,17 @@ NTSTATUS STDCALL vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     IrpSp2->MajorFunction = IRP_MJ_READ;
     
-    if (vc->devobj->Flags & DO_BUFFERED_IO)
-        FIXME("FIXME - buffered IO\n");
-    else if (vc->devobj->Flags & DO_DIRECT_IO)
+    if (vc->devobj->Flags & DO_BUFFERED_IO) {
+        Irp2->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, IrpSp->Parameters.Read.Length, ALLOC_TAG);
+        if (!Irp2->AssociatedIrp.SystemBuffer) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Irp2->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+        Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+    } else if (vc->devobj->Flags & DO_DIRECT_IO)
         Irp2->MdlAddress = Irp->MdlAddress;
     else
         Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
