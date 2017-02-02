@@ -2131,7 +2131,16 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
         IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
     
     if (DeviceObject->Flags & DO_BUFFERED_IO) {
-        FIXME("FIXME - buffered IO\n");
+        Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, Length, ALLOC_TAG);
+        if (!Irp->AssociatedIrp.SystemBuffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+
+        Irp->Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+        Irp->UserBuffer = Buffer;
     } else if (DeviceObject->Flags & DO_DIRECT_IO) {
         Irp->MdlAddress = IoAllocateMdl(Buffer, Length, FALSE, FALSE, NULL);
         if (!Irp->MdlAddress) {
