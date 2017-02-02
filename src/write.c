@@ -824,9 +824,16 @@ static NTSTATUS make_read_irp(PIRP old_irp, read_stripe* stripe, UINT64 offset, 
     IrpSp->MajorFunction = IRP_MJ_READ;
     
     if (stripe->devobj->Flags & DO_BUFFERED_IO) {
-        FIXME("FIXME - buffered IO\n");
-        IoFreeIrp(Irp);
-        return STATUS_INTERNAL_ERROR;
+        Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+        if (!Irp->AssociatedIrp.SystemBuffer) {
+            ERR("out of memory\n");
+            IoFreeIrp(Irp);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+        Irp->UserBuffer = data;
     } else if (stripe->devobj->Flags & DO_DIRECT_IO) {
         Irp->MdlAddress = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
         if (!Irp->MdlAddress) {
@@ -836,9 +843,8 @@ static NTSTATUS make_read_irp(PIRP old_irp, read_stripe* stripe, UINT64 offset, 
         }
         
         MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
-    } else {
+    } else
         Irp->UserBuffer = data;
-    }
 
     IrpSp->Parameters.Read.Length = length;
     IrpSp->Parameters.Read.ByteOffset.QuadPart = offset;
