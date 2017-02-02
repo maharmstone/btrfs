@@ -178,9 +178,13 @@ NTSTATUS STDCALL vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     IrpSp2->MajorFunction = IRP_MJ_WRITE;
     
-    if (vc->devobj->Flags & DO_BUFFERED_IO)
-        FIXME("FIXME - buffered IO\n");
-    else if (vc->devobj->Flags & DO_DIRECT_IO)
+    if (vc->devobj->Flags & DO_BUFFERED_IO) {
+        Irp2->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+
+        Irp2->Flags |= IRP_BUFFERED_IO;
+
+        Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+    } else if (vc->devobj->Flags & DO_DIRECT_IO)
         Irp2->MdlAddress = Irp->MdlAddress;
     else
         Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
