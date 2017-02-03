@@ -279,21 +279,24 @@ NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, t
 
     if (!th->tree) {
         NTSTATUS Status;
+        tree* nt;
         
-        Status = load_tree(Vcb, th->address, r, &th->tree, th->generation, Irp);
+        Status = load_tree(Vcb, th->address, r, &nt, th->generation, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
             return Status;
         }
         
-        th->tree->parent = t;
+        nt->parent = t;
         
 #ifdef DEBUG_PARANOID
-        if (t && t->header.level <= th->tree->header.level) int3;
+        if (t && t->header.level <= nt->header.level) int3;
 #endif
         
-        th->tree->paritem = td;
+        nt->paritem = td;
+        
+        th->tree = nt;
         
         ret = TRUE;
     } else
@@ -443,10 +446,12 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
 //         if (i > 0)
 //             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
         
-        Status = do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_load_tree returned %08x\n", Status);
-            return Status;
+        if (!td->treeholder.tree) {
+            Status = do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_load_tree returned %08x\n", Status);
+                return Status;
+            }
         }
         
         Status = find_item_in_tree(Vcb, td->treeholder.tree, tp, searchkey, ignore, level, Irp);
