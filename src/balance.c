@@ -1708,7 +1708,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     Status = STATUS_DISK_FULL;
                     goto end;
                 } else {
-                    newchunk += dr->size;
+                    newchunk->used += dr->size;
                     space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
                 }
                 
