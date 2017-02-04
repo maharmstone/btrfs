@@ -1000,7 +1000,7 @@ void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address,
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
-                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation);
+                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation, BOOL file_read, UINT32 irp_offset);
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity);
 NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
 NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum);

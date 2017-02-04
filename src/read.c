@@ -38,6 +38,7 @@ typedef struct {
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_data_status status;
+    BOOL not_alloc;
 } read_data_stripe;
 
 typedef struct {
@@ -1437,7 +1438,9 @@ raid1write:
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Success) {
-            RtlCopyMemory(buf, context->stripes[i].buf, length);
+            if (!context->stripes[i].not_alloc)
+                RtlCopyMemory(buf, context->stripes[i].buf, length);
+            
             return STATUS_SUCCESS;
         }
     }
@@ -2519,7 +2522,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
-                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation) {
+                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation, BOOL file_read, UINT32 irp_offset) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context* context;
@@ -2844,6 +2847,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 context->stripes[i].status = ReadDataStatus_Skip;
                 context->stripes[i].buf = NULL;
                 context->stripes_left--;
+            } else {
+                context->stripes[i].buf = buf;
+                context->stripes[i].not_alloc = TRUE;
             }
         }
         
@@ -2861,12 +2867,15 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         if (devices[i] && stripestart[i] != stripeend[i] && context->stripes[i].status != ReadDataStatus_Skip) {
             context->stripes[i].context = (struct read_data_context*)context;
-            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
             
-            if (!context->stripes[i].buf) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto exit;
+            if (!context->stripes[i].not_alloc) {
+                context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                
+                if (!context->stripes[i].buf) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
             }
             
             if (type == BLOCK_FLAG_RAID10) {
@@ -2905,14 +2914,31 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
                 context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
             } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
-                if (!context->stripes[i].Irp->MdlAddress) {
-                    ERR("IoAllocateMdl failed\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto exit;
+                if (context->stripes[i].not_alloc && file_read) {
+                    UINT8* va;
+                    
+                    va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + irp_offset;
+                    
+                    context->stripes[i].Irp->MdlAddress = IoAllocateMdl(va, stripeend[i] - stripestart[i], FALSE, FALSE, context->stripes[i].Irp);
+                    if (!context->stripes[i].Irp->MdlAddress) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    IoBuildPartialMdl(Irp->MdlAddress, context->stripes[i].Irp->MdlAddress, va, stripeend[i] - stripestart[i]);
+                } else {
+                    context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i],
+                                                                        FALSE, FALSE, NULL);
+
+                    if (!context->stripes[i].Irp->MdlAddress) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+                    
+                    MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
                 }
-                
-                MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
             } else {
                 context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
             }
@@ -3015,13 +3041,15 @@ exit:
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].Irp) {
             if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                MmUnlockPages(context->stripes[i].Irp->MdlAddress);
+                if (!context->stripes[i].not_alloc || !file_read)
+                    MmUnlockPages(context->stripes[i].Irp->MdlAddress);
+                
                 IoFreeMdl(context->stripes[i].Irp->MdlAddress);
             }
             IoFreeIrp(context->stripes[i].Irp);
         }
         
-        if (context->stripes[i].buf)
+        if (context->stripes[i].buf && !context->stripes[i].not_alloc)
             ExFreePool(context->stripes[i].buf);
     }
 
@@ -3158,6 +3186,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT64 off = start + bytes_read - ext->offset;
                     UINT32 to_read, read;
                     UINT8* buf;
+                    BOOL mdl = (Irp && Irp->MdlAddress) ? TRUE : FALSE;
                     BOOL buf_free;
                     UINT32 bumpoff = 0;
                     UINT64 addr, lockaddr, locklen;
@@ -3193,6 +3222,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto exit;
                         }
+                        
+                        mdl = FALSE;
                     }
                     
                     c = get_chunk_from_address(fcb->Vcb, addr);
@@ -3212,7 +3243,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     }
                     
                     Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE,
-                                       buf, c, NULL, Irp, check_nocsum_parity, 0);
+                                       buf, c, NULL, Irp, check_nocsum_parity, 0, mdl, bytes_read);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         

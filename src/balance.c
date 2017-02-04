@@ -561,7 +561,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         }
         
         Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)mr->data,
-                           c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->size ? c : NULL, &pc, NULL, FALSE, 0);
+                           c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->size ? c : NULL, &pc, NULL, FALSE, 0, FALSE, 0);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data returned %08x\n", Status);
             return Status;
@@ -1741,7 +1741,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         while (off < dr->size) {
             ULONG ds = min(dr->size - off, 0x100000);
             
-            Status = read_data(Vcb, dr->address + off, ds, NULL, FALSE, data, c, NULL, NULL, FALSE, 0);
+            Status = read_data(Vcb, dr->address + off, ds, NULL, FALSE, data, c, NULL, NULL, FALSE, 0, FALSE, 0);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
                 goto end;
