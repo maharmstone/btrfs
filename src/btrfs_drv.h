@@ -691,6 +691,7 @@ typedef struct {
     struct _write_data_context* context;
     UINT8* buf;
     BOOL need_free;
+    BOOL mdl;
     device* device;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
@@ -917,20 +918,20 @@ extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 // in write.c
 NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write);
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOL paging_io, BOOL no_cache,
-                     BOOL wait, BOOL deferred_write, LIST_ENTRY* rollback);
+                     BOOL wait, BOOL deferred_write, BOOL write_irp, LIST_ENTRY* rollback);
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, PIRP Irp, LIST_ENTRY* rollback);
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags);
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp, chunk* c);
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c);
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp,
+                            chunk* c, BOOL file_write, UINT32 irp_offset);
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset);
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
-                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size);
-NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, PIRP Irp, LIST_ENTRY* rollback);
+                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size, BOOL file_write, UINT32 irp_offset);
+NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, PIRP Irp, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback);
 NTSTATUS write_compressed(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, PIRP Irp, LIST_ENTRY* rollback);
 BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address);
 void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen);

@@ -444,7 +444,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -470,7 +470,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
                 
@@ -829,7 +829,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                     
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -855,7 +855,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
                 

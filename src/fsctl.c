@@ -182,7 +182,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     wtc->tree = TRUE;
     wtc->stripes_left = 0;
     
-    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc, NULL, NULL);
+    Status = write_data(Vcb, t.new_address, buf, FALSE, Vcb->superblock.node_size, wtc, NULL, NULL, FALSE, 0);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         goto end;
@@ -1697,7 +1697,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
             return Status;
         }
     } else {
-        Status = do_write_file(fcb, start_data, end_data, data, Irp, rollback);
+        Status = do_write_file(fcb, start_data, end_data, data, Irp, FALSE, 0, rollback);
         
         ExFreePool(data);
         

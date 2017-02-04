@@ -215,7 +215,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
         offset.QuadPart = 0;
         tlength = target.Length;
         Status = write_file2(fileref->fcb->Vcb, Irp, offset, target.Buffer, &tlength, FALSE, TRUE,
-                            TRUE, FALSE, rollback);
+                             TRUE, FALSE, FALSE, rollback);
         ExFreePool(target.Buffer);
     } else
         Status = STATUS_SUCCESS;
@@ -348,7 +348,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             
             offset.QuadPart = 0;
             
-            Status = write_file2(fcb->Vcb, Irp, offset, buffer, &buflen, FALSE, TRUE, TRUE, FALSE, &rollback);
+            Status = write_file2(fcb->Vcb, Irp, offset, buffer, &buflen, FALSE, TRUE, TRUE, FALSE, FALSE, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_file2 returned %08x\n", Status);
                 goto end;
