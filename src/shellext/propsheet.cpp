@@ -478,19 +478,21 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
 }
 
 void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
-    this->uid = uid;
-    
-    uid_changed = TRUE;
-    
-    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    if (this->uid != uid) {
+        this->uid = uid;
+        uid_changed = TRUE;
+        
+        SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    }
 }
 
 void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
-    this->gid = gid;
-    
-    gid_changed = TRUE;
-    
-    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    if (this->gid != gid) {
+        this->gid = gid;
+        gid_changed = TRUE;
+        
+        SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    }
 }
 
 void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
