@@ -864,6 +864,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         if (!NT_SUCCESS(Status))
             WARN("IoRegisterDeviceInterface returned %08x\n", Status);
         
+        pdo->SectorSize = sb->sector_size;
         vde->attached_device = IoAttachDeviceToDeviceStack(voldev, pdo);
         
         pdo->Flags &= ~DO_DEVICE_INITIALIZING;
