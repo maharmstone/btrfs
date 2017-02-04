@@ -1261,6 +1261,11 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
                 }
                 
+                if (me->fileref->dc->key.obj_type == TYPE_INODE_ITEM)
+                    me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+
+                me->fileref->dc->index = me->fileref->index;
+                
                 // add to new parent
                 ExAcquireResourceExclusiveLite(&destdir->fcb->nonpaged->dir_children_lock, TRUE);
                 InsertTailList(&destdir->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
