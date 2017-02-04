@@ -742,6 +742,9 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_security(DeviceObject, Irp);
         goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     if (!ccb) {
@@ -911,6 +914,9 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_security(DeviceObject, Irp);
+        goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     

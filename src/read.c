@@ -3533,6 +3533,9 @@ NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_read(DeviceObject, Irp);
         goto exit2;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     Irp->IoStatus.Information = 0;
@@ -3609,6 +3612,7 @@ exit:
     if (Irp->UserIosb)
         *Irp->UserIosb = Irp->IoStatus;
     
+end:
     Irp->IoStatus.Status = Status;
     
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);

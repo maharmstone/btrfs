@@ -4306,6 +4306,9 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_write(DeviceObject, Irp);
         goto exit;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     if (!fcb) {

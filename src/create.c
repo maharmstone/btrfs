@@ -3683,6 +3683,9 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_create(DeviceObject, Irp);
         goto exit;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
     }
     
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED)) {

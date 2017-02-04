@@ -293,6 +293,9 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         IoSkipCurrentIrpStackLocation(Irp);
         Status = IoCallDriver(vde->pdo, Irp);
         goto exit;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     Status = STATUS_NOT_IMPLEMENTED;
@@ -331,6 +334,7 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 // 
 // //     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
+end:
     Irp->IoStatus.Status = Status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);

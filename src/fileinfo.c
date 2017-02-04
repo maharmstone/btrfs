@@ -2638,6 +2638,9 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_information(DeviceObject, Irp);
         goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED)) {
@@ -4400,6 +4403,9 @@ NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_information(DeviceObject, Irp);
         goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     Irp->IoStatus.Information = 0;
@@ -4448,6 +4454,9 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_ea(DeviceObject, Irp);
+        goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     
@@ -4680,6 +4689,9 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_ea(DeviceObject, Irp);
+        goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     

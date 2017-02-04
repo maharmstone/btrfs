@@ -458,6 +458,9 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_close(DeviceObject, Irp);
         goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -499,6 +502,9 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_flush_buffers(DeviceObject, Irp);
+        goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     
@@ -575,7 +581,10 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_query_volume_information(DeviceObject, Irp);
         goto end;
-    }    
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -996,6 +1005,9 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_volume_information(DeviceObject, Irp);
+        goto end;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
     
@@ -1879,11 +1891,12 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_cleanup(DeviceObject, Irp);
         goto exit;
-    }
-    
-    if (DeviceObject == devobj) {
+    } else if (DeviceObject == devobj) {
         TRACE("closing file system\n");
         Status = STATUS_SUCCESS;
+        goto exit;
+    } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
+        Status = STATUS_INVALID_PARAMETER;
         goto exit;
     }
     
@@ -4192,6 +4205,9 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_file_system_control(DeviceObject, Irp);
         goto end;
+    } else if (!Vcb || (Vcb->type != VCB_TYPE_FS && Vcb->type != VCB_TYPE_CONTROL)) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
     }
     
     Status = STATUS_NOT_IMPLEMENTED;
@@ -4352,9 +4368,7 @@ static NTSTATUS STDCALL drv_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         
         goto exit;
-    }
-    
-    if (Vcb && Vcb->type == VCB_TYPE_FS) {
+    } else if (Vcb && Vcb->type == VCB_TYPE_FS) {
         IoSkipCurrentIrpStackLocation(Irp);
     
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
@@ -4394,9 +4408,7 @@ static NTSTATUS STDCALL drv_system_control(IN PDEVICE_OBJECT DeviceObject, IN PI
         Status = IoCallDriver(vde->pdo, Irp);
         
         goto exit;
-    }
-    
-    if (Vcb && Vcb->type == VCB_TYPE_FS) {
+    } else if (Vcb && Vcb->type == VCB_TYPE_FS) {
         IoSkipCurrentIrpStackLocation(Irp);
     
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);

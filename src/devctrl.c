@@ -190,6 +190,9 @@ NTSTATUS STDCALL drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         } else if (Vcb->type == VCB_TYPE_VOLUME) {
             Status = vol_device_control(DeviceObject, Irp);
             goto end;
+        } else if (Vcb->type != VCB_TYPE_FS) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
         }
     } else {
         Status = STATUS_INVALID_PARAMETER;
