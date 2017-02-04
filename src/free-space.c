@@ -636,6 +636,19 @@ clearcache:
     
     free_fcb(c->cache);
     c->cache = NULL;
+    
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+        LIST_ENTRY* le2 = le->Flink;
+        
+        RemoveEntryList(&s->list_entry);
+        RemoveEntryList(&s->list_entry_size);
+        ExFreePool(s);
+        
+        le = le2;
+    }
+    
     return STATUS_NOT_FOUND;
 }
 
