@@ -1106,6 +1106,23 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     } else
                         ExFreePool(fcb->sd);
                 }
+            } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH) {
+                UINT8* propdata;
+                UINT16 proplen;
+                
+                if (extract_xattr(tp.item->data, tp.item->size, EA_PROP_COMPRESSION, &propdata, &proplen)) {
+                    const char lzo[] = "lzo";
+                    const char zlib[] = "zlib";
+                    
+                    if (proplen == strlen(lzo) && RtlCompareMemory(propdata, lzo, strlen(lzo)) == strlen(lzo))
+                        fcb->prop_compression = PropCompression_LZO;
+                    else if (proplen == strlen(zlib) && RtlCompareMemory(propdata, zlib, strlen(zlib)) == strlen(zlib))
+                        fcb->prop_compression = PropCompression_Zlib;
+                    else
+                        fcb->prop_compression = PropCompression_None;
+                    
+                    ExFreePool(propdata);
+                }
             }
         } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
             extent* ext;

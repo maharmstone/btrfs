@@ -68,6 +68,9 @@
 #define EA_EA "user.EA"
 #define EA_EA_HASH 0x8270dd43
 
+#define EA_PROP_COMPRESSION "btrfs.compression"
+#define EA_PROP_COMPRESSION_HASH 0x20ccdf69
+
 #define MAX_EXTENT_SIZE 0x8000000 // 128 MB
 #define COMPRESSED_EXTENT_SIZE 0x20000 // 128 KB
 
@@ -137,6 +140,12 @@ typedef struct {
     LIST_ENTRY list_entry_hash_uc;
 } dir_child;
 
+enum prop_compression_type {
+    PropCompression_None,
+    PropCompression_Zlib,
+    PropCompression_LZO
+};
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -162,6 +171,7 @@ typedef struct _fcb {
     LIST_ENTRY hardlinks;
     struct _file_ref* fileref;
     BOOL inode_item_changed;
+    enum prop_compression_type prop_compression;
     
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
