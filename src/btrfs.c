@@ -3667,6 +3667,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     NewDeviceObject->Flags |= DO_DIRECT_IO;
+    NewDeviceObject->SectorSize = DeviceToMount->SectorSize;
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
     Vcb->type = VCB_TYPE_FS;
