@@ -3188,7 +3188,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     UINT8* buf;
                     BOOL mdl = (Irp && Irp->MdlAddress) ? TRUE : FALSE;
                     BOOL buf_free;
-                    UINT32 bumpoff = 0;
+                    UINT32 bumpoff = 0, *csum;
                     UINT64 addr, lockaddr, locklen;
                     chunk* c;
                     
@@ -3242,8 +3242,15 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
                     }
                     
-                    Status = read_data(fcb->Vcb, addr, to_read, ext->csum ? &ext->csum[off / fcb->Vcb->superblock.sector_size] : NULL, FALSE,
-                                       buf, c, NULL, Irp, check_nocsum_parity, 0, mdl, bytes_read);
+                    if (ext->csum) {
+                        if (ed->compression == BTRFS_COMPRESSION_NONE)
+                            csum = &ext->csum[off / fcb->Vcb->superblock.sector_size];
+                        else
+                            csum = ext->csum;
+                    } else
+                        csum = NULL;
+                    
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp, check_nocsum_parity, 0, mdl, bytes_read);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
