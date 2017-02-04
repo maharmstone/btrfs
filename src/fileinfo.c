@@ -439,6 +439,8 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         
         RtlCopyMemory(fcb->ea_xattr.Buffer, oldfcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
     }
+    
+    fcb->prop_compression = oldfcb->prop_compression;
 
 end:
     *pfcb = fcb;
