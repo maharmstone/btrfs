@@ -970,6 +970,12 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     rootfcb->created = TRUE;
     
+    if (fileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+        rootfcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+    
+    rootfcb->prop_compression = fileref->fcb->prop_compression;
+    rootfcb->prop_compression_changed = rootfcb->prop_compression != PropCompression_None;
+    
     r->lastinode = rootfcb->inode;
     
     // add INODE_REF
