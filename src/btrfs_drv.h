@@ -185,6 +185,7 @@ typedef struct _fcb {
     BOOL extents_changed;
     BOOL reparse_xattr_changed;
     BOOL ea_changed;
+    BOOL prop_compression_changed;
     BOOL created;
     
     BOOL ads;

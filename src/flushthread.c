@@ -4829,6 +4829,30 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->ea_changed = FALSE;
     }
     
+    if (fcb->prop_compression_changed) {
+        if (fcb->prop_compression == PropCompression_None)
+            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, Irp);
+        else if (fcb->prop_compression == PropCompression_Zlib) {
+            const char zlib[] = "zlib";
+            
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, strlen(zlib));
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else if (fcb->prop_compression == PropCompression_LZO) {
+            const char lzo[] = "lzo";
+            
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, strlen(lzo));
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        }
+
+        fcb->prop_compression_changed = FALSE;
+    }
+    
     Status = STATUS_SUCCESS;
     
 end:

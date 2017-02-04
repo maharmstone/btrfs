@@ -1968,6 +1968,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
             fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
     }
     
+    fcb->prop_compression = parfileref->fcb->prop_compression;
+    fcb->prop_compression_changed = TRUE;
+    
     fcb->inode_item_changed = TRUE;
     
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
