@@ -3949,7 +3949,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (fileref)
             mark_fileref_dirty(fileref);
     } else {
-        BOOL compress = write_fcb_compressed(fcb);
+        BOOL compress = write_fcb_compressed(fcb), no_buf = FALSE;
         
         if (make_inline) {
             start_data = 0;
@@ -3969,35 +3969,40 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
     
-        data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
-        if (!data) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlZeroMemory(data + bufhead, end_data - start_data);
-        
-        TRACE("start_data = %llx\n", start_data);
-        TRACE("end_data = %llx\n", end_data);
-        
-        if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
-            if (changed_length) {
-                if (fcb->inode_item.st_size > start_data) 
-                    Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL, Irp, TRUE);
-                else
-                    Status = STATUS_SUCCESS;
-            } else
-                Status = read_file(fcb, data + bufhead, start_data, end_data - start_data, NULL, Irp, TRUE);
-            
-            if (!NT_SUCCESS(Status)) {
-                ERR("read_file returned %08x\n", Status);
-                ExFreePool(data);
+        if (!make_inline && !compress && offset.QuadPart == start_data && offset.QuadPart + *length == end_data) {
+            data = buf;
+            no_buf = TRUE;
+        } else {
+            data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
+            if (!data) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
+            
+            RtlZeroMemory(data + bufhead, end_data - start_data);
+            
+            TRACE("start_data = %llx\n", start_data);
+            TRACE("end_data = %llx\n", end_data);
+            
+            if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
+                if (changed_length) {
+                    if (fcb->inode_item.st_size > start_data) 
+                        Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL, Irp, TRUE);
+                    else
+                        Status = STATUS_SUCCESS;
+                } else
+                    Status = read_file(fcb, data + bufhead, start_data, end_data - start_data, NULL, Irp, TRUE);
+                
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_file returned %08x\n", Status);
+                    ExFreePool(data);
+                    goto end;
+                }
+            }
+            
+            RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
         }
-        
-        RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
         
         if (make_inline) {
             Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
@@ -4042,7 +4047,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
             
-            ExFreePool(data);
+            if (!no_buf)
+                ExFreePool(data);
         }
     }
     
