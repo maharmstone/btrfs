@@ -2525,7 +2525,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                            PIRP Irp, BOOL check_nocsum_parity, UINT64 generation, BOOL file_read, UINT32 irp_offset) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
-    read_data_context* context;
+    read_data_context context;
     UINT64 i, type, offset;
     NTSTATUS Status;
     device** devices;
@@ -2619,37 +2619,29 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
     cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_context), ALLOC_TAG);
-    if (!context) {
+    RtlZeroMemory(&context, sizeof(read_data_context));
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+    
+    context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
+    if (!context.stripes) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlZeroMemory(context, sizeof(read_data_context));
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    RtlZeroMemory(context.stripes, sizeof(read_data_stripe) * ci->num_stripes);
     
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe) * ci->num_stripes, ALLOC_TAG);
-    if (!context->stripes) {
-        ERR("out of memory\n");
-        ExFreePool(context);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlZeroMemory(context->stripes, sizeof(read_data_stripe) * ci->num_stripes);
-    
-    context->buflen = length;
-    context->num_stripes = ci->num_stripes;
-    context->stripes_left = context->num_stripes;
-    context->sector_size = Vcb->superblock.sector_size;
-    context->csum = csum;
-    context->tree = is_tree;
-    context->type = type;
-    context->check_nocsum_parity = check_nocsum_parity;
+    context.buflen = length;
+    context.num_stripes = ci->num_stripes;
+    context.stripes_left = context.num_stripes;
+    context.sector_size = Vcb->superblock.sector_size;
+    context.csum = csum;
+    context.tree = is_tree;
+    context.type = type;
+    context.check_nocsum_parity = check_nocsum_parity;
     
     stripestart = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT64) * ci->num_stripes, ALLOC_TAG);
     if (!stripestart) {
         ERR("out of memory\n");
-        ExFreePool(context);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2657,7 +2649,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     if (!stripeend) {
         ERR("out of memory\n");
         ExFreePool(stripestart);
-        ExFreePool(context);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2698,9 +2689,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
         
-        context->firstoff = (startoff % ci->stripe_length) / Vcb->superblock.sector_size;
-        context->startoffstripe = startoffstripe;
-        context->sectors_per_stripe = ci->stripe_length / Vcb->superblock.sector_size;
+        context.firstoff = (startoff % ci->stripe_length) / Vcb->superblock.sector_size;
+        context.startoffstripe = startoffstripe;
+        context.sectors_per_stripe = ci->stripe_length / Vcb->superblock.sector_size;
         
         startoffstripe *= ci->sub_stripes;
         endoffstripe *= ci->sub_stripes;
@@ -2728,14 +2719,14 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
         }
         
-        context->stripes_cancel = 1;
+        context.stripes_cancel = 1;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
         for (i = 0; i < ci->num_stripes; i++) {
             stripestart[i] = addr - offset;
             stripeend[i] = stripestart[i] + length;
         }
         
-        context->stripes_cancel = ci->num_stripes - 1;
+        context.stripes_cancel = ci->num_stripes - 1;
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe;
@@ -2779,7 +2770,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripeend[i] = end;
         }
         
-        context->stripes_cancel = Vcb->options.raid5_recalculation;
+        context.stripes_cancel = Vcb->options.raid5_recalculation;
     } else if (type == BLOCK_FLAG_RAID6) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe;
@@ -2823,18 +2814,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripeend[i] = end;
         }
         
-        context->stripes_cancel = Vcb->options.raid6_recalculation;
+        context.stripes_cancel = Vcb->options.raid6_recalculation;
     }
     
-    KeInitializeSpinLock(&context->spin_lock);
+    KeInitializeSpinLock(&context.spin_lock);
     
-    context->address = addr;
+    context.address = addr;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (!devices[i] || stripestart[i] == stripeend[i]) {
-            context->stripes[i].status = ReadDataStatus_MissingDevice;
-            context->stripes[i].buf = NULL;
-            context->stripes_left--;
+            context.stripes[i].status = ReadDataStatus_MissingDevice;
+            context.stripes[i].buf = NULL;
+            context.stripes_left--;
             
             if (!devices[i])
                 missing_devices++;
@@ -2844,12 +2835,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     if (c && type == BLOCK_FLAG_DUPLICATE && missing_devices == 0) {
         for (i = 0; i < ci->num_stripes; i++) {
             if (i != c->last_stripe) {
-                context->stripes[i].status = ReadDataStatus_Skip;
-                context->stripes[i].buf = NULL;
-                context->stripes_left--;
+                context.stripes[i].status = ReadDataStatus_Skip;
+                context.stripes[i].buf = NULL;
+                context.stripes_left--;
             } else {
-                context->stripes[i].buf = buf;
-                context->stripes[i].not_alloc = TRUE;
+                context.stripes[i].buf = buf;
+                context.stripes[i].not_alloc = TRUE;
             }
         }
         
@@ -2865,13 +2856,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        if (devices[i] && stripestart[i] != stripeend[i] && context->stripes[i].status != ReadDataStatus_Skip) {
-            context->stripes[i].context = (struct read_data_context*)context;
+        if (devices[i] && stripestart[i] != stripeend[i] && context.stripes[i].status != ReadDataStatus_Skip) {
+            context.stripes[i].context = (struct read_data_context*)&context;
             
-            if (!context->stripes[i].not_alloc) {
-                context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+            if (!context.stripes[i].not_alloc) {
+                context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
                 
-                if (!context->stripes[i].buf) {
+                if (!context.stripes[i].buf) {
                     ERR("out of memory\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
@@ -2879,78 +2870,78 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
             
             if (type == BLOCK_FLAG_RAID10) {
-                context->stripes[i].stripenum = i / ci->sub_stripes;
+                context.stripes[i].stripenum = i / ci->sub_stripes;
             }
 
             if (!Irp) {
-                context->stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
+                context.stripes[i].Irp = IoAllocateIrp(devices[i]->devobj->StackSize, FALSE);
                 
-                if (!context->stripes[i].Irp) {
+                if (!context.stripes[i].Irp) {
                     ERR("IoAllocateIrp failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
             } else {
-                context->stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
+                context.stripes[i].Irp = IoMakeAssociatedIrp(Irp, devices[i]->devobj->StackSize);
                 
-                if (!context->stripes[i].Irp) {
+                if (!context.stripes[i].Irp) {
                     ERR("IoMakeAssociatedIrp failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
             }
             
-            IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+            IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
             
             if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                context->stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
-                if (!context->stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
+                if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                context->stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+                context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
 
-                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
             } else if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                if (context->stripes[i].not_alloc && file_read) {
+                if (context.stripes[i].not_alloc && file_read) {
                     UINT8* va;
                     
                     va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + irp_offset;
                     
-                    context->stripes[i].Irp->MdlAddress = IoAllocateMdl(va, stripeend[i] - stripestart[i], FALSE, FALSE, context->stripes[i].Irp);
-                    if (!context->stripes[i].Irp->MdlAddress) {
+                    context.stripes[i].Irp->MdlAddress = IoAllocateMdl(va, stripeend[i] - stripestart[i], FALSE, FALSE, context.stripes[i].Irp);
+                    if (!context.stripes[i].Irp->MdlAddress) {
                         ERR("IoAllocateMdl failed\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto exit;
                     }
                     
-                    IoBuildPartialMdl(Irp->MdlAddress, context->stripes[i].Irp->MdlAddress, va, stripeend[i] - stripestart[i]);
+                    IoBuildPartialMdl(Irp->MdlAddress, context.stripes[i].Irp->MdlAddress, va, stripeend[i] - stripestart[i]);
                 } else {
-                    context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, stripeend[i] - stripestart[i],
-                                                                        FALSE, FALSE, NULL);
+                    context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, stripeend[i] - stripestart[i],
+                                                                       FALSE, FALSE, NULL);
 
-                    if (!context->stripes[i].Irp->MdlAddress) {
+                    if (!context.stripes[i].Irp->MdlAddress) {
                         ERR("IoAllocateMdl failed\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto exit;
                     }
                     
-                    MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                    MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
                 }
             } else {
-                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
             }
 
             IrpSp->Parameters.Read.Length = stripeend[i] - stripestart[i];
             IrpSp->Parameters.Read.ByteOffset.QuadPart = stripestart[i] + cis[i].offset;
             
-            context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+            context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
             
-            IoSetCompletionRoutine(context->stripes[i].Irp, read_data_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context.stripes[i].Irp, read_data_completion, &context.stripes[i], TRUE, TRUE, TRUE);
 
-            context->stripes[i].status = ReadDataStatus_Pending;
+            context.stripes[i].status = ReadDataStatus_Pending;
         }
     }
     
@@ -2960,12 +2951,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 #endif
     
     for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status != ReadDataStatus_MissingDevice && context->stripes[i].status != ReadDataStatus_Skip) {
-            IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
+        if (context.stripes[i].status != ReadDataStatus_MissingDevice && context.stripes[i].status != ReadDataStatus_Skip) {
+            IoCallDriver(devices[i]->devobj, context.stripes[i].Irp);
         }
     }
 
-    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
    
 #ifdef DEBUG_STATS
     if (!is_tree) {
@@ -2978,8 +2969,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     // check if any of the devices return a "user-induced" error
     
     for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Error && IoIsErrorUserInduced(context->stripes[i].iosb.Status)) {
-            if (Irp && context->stripes[i].iosb.Status == STATUS_VERIFY_REQUIRED) {
+        if (context.stripes[i].status == ReadDataStatus_Error && IoIsErrorUserInduced(context.stripes[i].iosb.Status)) {
+            if (Irp && context.stripes[i].iosb.Status == STATUS_VERIFY_REQUIRED) {
                 PDEVICE_OBJECT dev;
                 
                 dev = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
@@ -2995,39 +2986,39 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 if (dev)
                     IoVerifyVolume(dev, FALSE);
             }
-//             IoSetHardErrorOrVerifyDevice(context->stripes[i].Irp, devices[i]->devobj);
+//             IoSetHardErrorOrVerifyDevice(context.stripes[i].Irp, devices[i]->devobj);
             
-            Status = context->stripes[i].iosb.Status;
+            Status = context.stripes[i].iosb.Status;
             goto exit;
         }
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, buf, addr, length, context, ci, stripestart, stripeend, startoffstripe, generation);
+        Status = read_data_raid0(Vcb, buf, addr, length, &context, ci, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID10) {
-        Status = read_data_raid10(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, startoffstripe, generation);
+        Status = read_data_raid10(Vcb, buf, addr, length, Irp, &context, ci, devices, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid10 returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = read_data_dup(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, generation);
+        Status = read_data_dup(Vcb, buf, addr, length, Irp, &context, ci, devices, stripestart, stripeend, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity, generation);
+        Status = read_data_raid5(Vcb, buf, addr, length, Irp, &context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID6) {
-        Status = read_data_raid6(Vcb, buf, addr, length, Irp, context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity, generation);
+        Status = read_data_raid6(Vcb, buf, addr, length, Irp, &context, ci, devices, stripestart, stripeend, offset, firststripesize, check_nocsum_parity, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08x\n", Status);
             goto exit;
@@ -3039,22 +3030,21 @@ exit:
     if (stripeend) ExFreePool(stripeend);
 
     for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].Irp) {
+        if (context.stripes[i].Irp) {
             if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                if (!context->stripes[i].not_alloc || !file_read)
-                    MmUnlockPages(context->stripes[i].Irp->MdlAddress);
+                if (!context.stripes[i].not_alloc || !file_read)
+                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
                 
-                IoFreeMdl(context->stripes[i].Irp->MdlAddress);
+                IoFreeMdl(context.stripes[i].Irp->MdlAddress);
             }
-            IoFreeIrp(context->stripes[i].Irp);
+            IoFreeIrp(context.stripes[i].Irp);
         }
         
-        if (context->stripes[i].buf && !context->stripes[i].not_alloc)
-            ExFreePool(context->stripes[i].buf);
+        if (context.stripes[i].buf && !context.stripes[i].not_alloc)
+            ExFreePool(context.stripes[i].buf);
     }
 
-    ExFreePool(context->stripes);
-    ExFreePool(context);
+    ExFreePool(context.stripes);
     
     if (!Vcb->log_to_phys_loaded)
         ExFreePool(devices);
