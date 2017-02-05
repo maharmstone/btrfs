@@ -489,6 +489,7 @@ typedef struct {
     BOOL skip_balance;
     BOOL no_barrier;
     BOOL no_trim;
+    BOOL clear_cache;
 } mount_options;
 
 #define VCB_TYPE_FS         1
@@ -826,6 +827,7 @@ extern UINT32 mount_raid6_recalculation;
 extern UINT32 mount_skip_balance;
 extern UINT32 mount_no_barrier;
 extern UINT32 mount_no_trim;
+extern UINT32 mount_clear_cache;
 
 #ifdef _DEBUG
 

@@ -71,6 +71,7 @@ UINT32 mount_raid6_recalculation = 1;
 UINT32 mount_skip_balance = 0;
 UINT32 mount_no_barrier = 0;
 UINT32 mount_no_trim = 0;
+UINT32 mount_clear_cache = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
@@ -3858,8 +3859,12 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&batchlist);
     
     // We've already increased the generation by one
-    if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) {
-        WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
+    if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation || Vcb->options.clear_cache) {
+        if (Vcb->options.clear_cache)
+            WARN("ClearCache option was set, clearing cache...\n");
+        else
+            WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
+        
         Status = clear_free_space_cache(Vcb, &batchlist, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("clear_free_space_cache returned %08x\n", Status);
