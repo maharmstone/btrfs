@@ -3859,7 +3859,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&batchlist);
     
     // We've already increased the generation by one
-    if (!Vcb->readonly && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation || Vcb->options.clear_cache) {
+    if (!Vcb->readonly && (Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation || Vcb->options.clear_cache)) {
         if (Vcb->options.clear_cache)
             WARN("ClearCache option was set, clearing cache...\n");
         else
