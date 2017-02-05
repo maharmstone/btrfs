@@ -594,6 +594,18 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* add
     
     TRACE("(%p, %llx, %p)\n", Vcb, c->offset, address);
     
+    if (Vcb->superblock.node_size > c->chunk_item->size - c->used)
+        return FALSE;
+    
+    if (!c->cache_loaded) {
+        NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_cache_chunk returned %08x\n", Status);
+            return FALSE;
+        }
+    }
+    
     if (IsListEmpty(&c->space_size))
         return FALSE;
     
@@ -863,6 +875,16 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
         
         if (c) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+            
+            if (!c->cache_loaded) {
+                Status = load_cache_chunk(Vcb, c, NULL);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("load_cache_chunk returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->lock);
+                    return Status;
+                }
+            }
             
             c->used -= Vcb->superblock.node_size;
             
@@ -2420,6 +2442,16 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
         c = CONTAINING_RECORD(le, chunk, list_entry);
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        
+        if (!c->cache_loaded && (!IsListEmpty(&c->changed_extents) || c->used != c->oldused)) {
+            Status = load_cache_chunk(Vcb, c, NULL);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_cache_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&c->lock);
+                goto end;
+            }
+        }
         
         le2 = c->changed_extents.Flink;
         while (le2 != &c->changed_extents) {
@@ -4259,9 +4291,23 @@ cont:
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
                     add_checksum_entry(fcb->Vcb, er->address, er->skip_start / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
+                ExAcquireResourceExclusiveLite(&er->chunk->lock, TRUE);
+                
+                if (!er->chunk->cache_loaded) {
+                    NTSTATUS Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("load_cache_chunk returned %08x\n", Status);
+                        ExReleaseResourceLite(&er->chunk->lock);
+                        goto end;
+                    }
+                }
+                
                 er->chunk->used -= er->skip_start;
                 
                 space_list_add(fcb->Vcb, er->chunk, TRUE, er->address, er->skip_start, NULL);
+                
+                ExReleaseResourceLite(&er->chunk->lock);
                 
                 er->address += er->skip_start;
                 er->length -= er->skip_start;
@@ -4299,9 +4345,23 @@ cont:
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
                     add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, er->skip_end / fcb->Vcb->superblock.sector_size, NULL, NULL);
                 
+                ExAcquireResourceExclusiveLite(&er->chunk->lock, TRUE);
+                
+                if (!er->chunk->cache_loaded) {
+                    NTSTATUS Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
+                    
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("load_cache_chunk returned %08x\n", Status);
+                        ExReleaseResourceLite(&er->chunk->lock);
+                        goto end;
+                    }
+                }
+                
                 er->chunk->used -= er->skip_end;
                 
                 space_list_add(fcb->Vcb, er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
+                
+                ExReleaseResourceLite(&er->chunk->lock);
                 
                 er->length -= er->skip_end;
             }

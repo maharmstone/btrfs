@@ -2886,6 +2886,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 c->created = FALSE;
                 c->readonly = FALSE;
                 c->reloc = FALSE;
+                c->cache_loaded = FALSE;
                 
                 c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);
                 
@@ -3114,23 +3115,6 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
                 ERR("(%llx;%llx,%x,%llx) is %u bytes, expected %u\n",
                     Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
             }
-        }
-
-        if (!Vcb->readonly) {
-            // It doesn't make a great deal of sense to load the free space cache of a
-            // readonly seeding chunk, as we'll never write to it. But btrfs check will
-            // complain if we don't write a valid cache, so we have to do it anyway...
-                
-            // FIXME - make sure we free occasionally after doing one of these, or we
-            // might use up a lot of memory with a big disk.
-            
-            Status = load_free_space_cache(Vcb, c, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("load_free_space_cache returned %08x\n", Status);
-                return Status;
-            }
-            
-            protect_superblocks(Vcb, c);
         }
 
         le = le->Flink;

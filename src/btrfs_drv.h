@@ -409,6 +409,7 @@ typedef struct {
     BOOL readonly;
     BOOL reloc;
     BOOL last_alloc_set;
+    BOOL cache_loaded;
     UINT64 last_alloc;
     UINT16 last_stripe;
     
@@ -804,6 +805,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums);
 void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
+NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1023,7 +1025,7 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in free-space.c
-NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp);
+NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);

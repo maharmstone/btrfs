@@ -56,6 +56,18 @@ BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, 
     
     TRACE("(%p, %llx, %llx, %p)\n", Vcb, c->offset, length, address);
     
+    if (length > c->chunk_item->size - c->used)
+        return FALSE;
+    
+    if (!c->cache_loaded) {
+        NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_cache_chunk returned %08x\n", Status);
+            return FALSE;
+        }
+    }
+    
     if (IsListEmpty(&c->space_size))
         return FALSE;
     
@@ -559,6 +571,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->reloc = FALSE;
     c->last_alloc_set = FALSE;
     c->last_stripe = 0;
+    c->cache_loaded = TRUE;
     
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);
@@ -2705,6 +2718,21 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         return FALSE;
     
     ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+    
+    if (length > c->chunk_item->size - c->used) {
+        ExReleaseResourceLite(&c->lock);
+        return FALSE;
+    }
+    
+    if (!c->cache_loaded) {
+        NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_cache_chunk returned %08x\n", Status);
+            ExReleaseResourceLite(&c->lock);
+            return FALSE;
+        }
+    }
     
     le = c->space.Flink;
     while (le != &c->space) {

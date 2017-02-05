@@ -652,7 +652,7 @@ clearcache:
     return STATUS_NOT_FOUND;
 }
 
-NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
+static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     UINT64 lastaddr;
@@ -746,6 +746,25 @@ NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
 //         le = le->Flink;
 //     }
 //     ERR("---\n");
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
+    NTSTATUS Status;
+    
+    if (c->cache_loaded)
+        return STATUS_SUCCESS;
+    
+    Status = load_free_space_cache(Vcb, c, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("load_free_space_cache returned %08x\n", Status);
+        return Status;
+    }
+    
+    protect_superblocks(Vcb, c);
+    
+    c->cache_loaded = TRUE;
 
     return STATUS_SUCCESS;
 }
