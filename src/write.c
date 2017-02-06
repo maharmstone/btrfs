@@ -26,7 +26,7 @@ typedef struct {
     UINT8* data;
     UINT32 skip_start;
     UINT32 skip_end;
-    BOOL mdl;
+    PMDL mdl;
     UINT32 irp_offset;
 } write_stripe;
 
@@ -687,6 +687,16 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
                 ExFreePool(stripeoff);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
+            
+            stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                           stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+            if (!stripes[i].mdl) {
+                ERR("IoAllocateMdl failed\n");
+                ExFreePool(stripeoff);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
         }
     }
     
@@ -764,6 +774,16 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
                 ExFreePool(stripeoff);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
+            
+            stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                           stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+            if (!stripes[i].mdl) {
+                ERR("IoAllocateMdl failed\n");
+                ExFreePool(stripeoff);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
         }
         
         for (j = 1; j < c->chunk_item->sub_stripes; j++) {
@@ -945,6 +965,15 @@ static NTSTATUS prepare_raid5_write(PIRP Irp, chunk* c, UINT64 address, void* da
             if (stripes[i].start == 0 && stripes[i].end == 0)
                 stripes[i].start = stripes[i].end = start;
         }
+        
+        stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                       stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+        if (!stripes[i].mdl) {
+            ERR("IoAllocateMdl failed\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
     }
     
     num_reads = 0;
@@ -1279,6 +1308,15 @@ static NTSTATUS prepare_raid6_write(PIRP Irp, chunk* c, UINT64 address, void* da
             if (stripes[i].start == 0 && stripes[i].end == 0)
                 stripes[i].start = stripes[i].end = start;
         }
+        
+        stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                       stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+        if (!stripes[i].mdl) {
+            ERR("IoAllocateMdl failed\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
     }
     
     num_reads = 0;
@@ -1587,8 +1625,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid0_write(c, address, data, length, stripes);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid0_write returned %08x\n", Status);
-            ExFreePool(stripes);
-            return Status;
+            goto prepare_failed;
         }
         
         if (need_free)
@@ -1599,8 +1636,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid10_write(c, address, data, length, stripes);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid10_write returned %08x\n", Status);
-            ExFreePool(stripes);
-            return Status;
+            goto prepare_failed;
         }
         
         if (need_free)
@@ -1611,8 +1647,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid5_write(Irp, c, address, data, length, stripes);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
-            ExFreePool(stripes);
-            return Status;
+            goto prepare_failed;
         }
         
         if (need_free)
@@ -1623,8 +1658,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
         Status = prepare_raid6_write(Irp, c, address, data, length, stripes);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08x\n", Status);
-            ExFreePool(stripes);
-            return Status;
+            goto prepare_failed;
         }
         
         if (need_free)
@@ -1636,8 +1670,33 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             stripes[i].start = address - c->offset;
             stripes[i].end = stripes[i].start + length;
             stripes[i].data = data;
-            stripes[i].mdl = file_write;
             stripes[i].irp_offset = irp_offset;
+            
+            if (file_write) {
+                UINT8* va;
+                ULONG writelen = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
+                
+                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset + stripes[i].skip_start;
+                
+                stripes[i].mdl = IoAllocateMdl(va, writelen, FALSE, FALSE, NULL);
+                if (!stripes[i].mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto prepare_failed;
+                }
+                
+                IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, writelen);
+            } else {
+                stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                               stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+                if (!stripes[i].mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
+            }
         }
         need_free2 = need_free;
     }
@@ -1659,7 +1718,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             stripe->Irp = NULL;
             stripe->buf = stripes[i].data;
             stripe->need_free = need_free2;
-            stripe->mdl = FALSE;
+            stripe->mdl = NULL;
         } else {
             stripe->context = (struct _write_data_context*)wtc;
             stripe->buf = stripes[i].data;
@@ -1691,38 +1750,13 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             IrpSp->MajorFunction = IRP_MJ_WRITE;
             
             if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
-                stripe->Irp->AssociatedIrp.SystemBuffer = stripes[i].data + stripes[i].skip_start;
+                stripe->Irp->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, NormalPagePriority);
 
                 stripe->Irp->Flags = IRP_BUFFERED_IO;
-            } else if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
-                if (stripes[i].mdl) {
-                    UINT8* va;
-                    ULONG writelen = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
-                    
-                    va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset + stripes[i].skip_start;
-                    
-                    stripe->Irp->MdlAddress = IoAllocateMdl(va, writelen, FALSE, FALSE, stripe->Irp);
-                    if (!stripe->Irp->MdlAddress) {
-                        ERR("IoAllocateMdl failed\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    IoBuildPartialMdl(Irp->MdlAddress, stripe->Irp->MdlAddress, va, writelen);
-                } else {
-                    stripe->Irp->MdlAddress = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
-                                                            stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
-                    if (!stripe->Irp->MdlAddress) {
-                        ERR("IoAllocateMdl failed\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end;
-                    }
-                    
-                    MmProbeAndLockPages(stripe->Irp->MdlAddress, KernelMode, IoWriteAccess);
-                }
-            } else {
-                stripe->Irp->UserBuffer = stripes[i].data + stripes[i].skip_start;
-            }
+            } else if (stripe->device->devobj->Flags & DO_DIRECT_IO)
+                stripe->Irp->MdlAddress = stripe->mdl;
+            else
+                stripe->Irp->UserBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, NormalPagePriority);
             
 #ifdef DEBUG_PARANOID
             if (stripes[i].end < stripes[i].start + stripes[i].skip_start + stripes[i].skip_end) {
@@ -1755,6 +1789,19 @@ end:
         ExFreePool(wtc);
     }
     
+    return Status;
+    
+prepare_failed:
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (stripes[i].mdl) {
+            if (stripes[i].mdl->MdlFlags & MDL_PAGES_LOCKED)
+                MmUnlockPages(stripes[i].mdl);
+
+            IoFreeMdl(stripes[i].mdl);
+        }
+    }
+
+    ExFreePool(stripes);
     return Status;
 }
 
@@ -1944,13 +1991,11 @@ void free_write_data_stripes(write_data_context* wtc) {
     while (le != &wtc->stripes) {
         write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
         
-        if (stripe->Irp) {
-            if (stripe->device->devobj->Flags & DO_DIRECT_IO) {
-                if (!stripe->mdl)
-                    MmUnlockPages(stripe->Irp->MdlAddress);
-                
-                IoFreeMdl(stripe->Irp->MdlAddress);
-            }
+        if (stripe->mdl) {
+            if (stripe->mdl->MdlFlags & MDL_PAGES_LOCKED)
+                MmUnlockPages(stripe->mdl);
+
+            IoFreeMdl(stripe->mdl);
         }
         
         le = le->Flink;

@@ -704,7 +704,7 @@ typedef struct {
     struct _write_data_context* context;
     UINT8* buf;
     BOOL need_free;
-    BOOL mdl;
+    PMDL mdl;
     device* device;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
