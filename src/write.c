@@ -647,11 +647,12 @@ end:
     return success ? c : NULL;
 }
 
-static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes) {
+static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum;
     UINT64 pos, *stripeoff;
     UINT32 i;
+    BOOL file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
     
     stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes, ALLOC_TAG);
     if (!stripeoff) {
@@ -680,23 +681,38 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
         }
         
         if (stripes[i].start != stripes[i].end) {
-            stripes[i].data = ExAllocatePoolWithTag(NonPagedPool, stripes[i].end - stripes[i].start, ALLOC_TAG);
-            
-            if (!stripes[i].data) {
-                ERR("out of memory\n");
-                ExFreePool(stripeoff);
-                return STATUS_INSUFFICIENT_RESOURCES;
+            if (file_write) {
+                UINT8* va;
+                
+                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset + stripes[i].skip_start;
+                
+                stripes[i].mdl = IoAllocateMdl(va, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
+                if (!stripes[i].mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                    ExFreePool(stripeoff);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, stripes[i].end - stripes[i].start);
+            } else {
+                stripes[i].data = ExAllocatePoolWithTag(NonPagedPool, stripes[i].end - stripes[i].start, ALLOC_TAG);
+                
+                if (!stripes[i].data) {
+                    ERR("out of memory\n");
+                    ExFreePool(stripeoff);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
+                                               stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+                if (!stripes[i].mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                    ExFreePool(stripeoff);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
             }
-            
-            stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
-                                           stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
-            if (!stripes[i].mdl) {
-                ERR("IoAllocateMdl failed\n");
-                ExFreePool(stripeoff);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
         }
     }
     
@@ -704,24 +720,55 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
     RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes);
     
     stripenum = startoffstripe;
-    while (pos < length) {
-        if (pos == 0) {
-            UINT32 writelen = min(stripes[stripenum].end - stripes[stripenum].start,
-                                  c->chunk_item->stripe_length - (stripes[stripenum].start % c->chunk_item->stripe_length));
-            
-            RtlCopyMemory(stripes[stripenum].data, data, writelen);
-            stripeoff[stripenum] += writelen;
-            pos += writelen;
-        } else if (length - pos < c->chunk_item->stripe_length) {
-            RtlCopyMemory(stripes[stripenum].data + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
-            break;
-        } else {
-            RtlCopyMemory(stripes[stripenum].data + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
-            stripeoff[stripenum] += c->chunk_item->stripe_length;
-            pos += c->chunk_item->stripe_length;
-        }
+    
+    if (file_write) {
+        PFN_NUMBER* pfns = (PFN_NUMBER*)(Irp->MdlAddress + 1);
         
-        stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        pfns = &pfns[irp_offset >> PAGE_SHIFT];
+        
+        while (pos < length) {
+            PFN_NUMBER* stripe_pfns = (PFN_NUMBER*)(stripes[stripenum].mdl + 1);
+            
+            if (pos == 0) {
+                UINT32 writelen = min(stripes[stripenum].end - stripes[stripenum].start,
+                                      c->chunk_item->stripe_length - (stripes[stripenum].start % c->chunk_item->stripe_length));
+                
+                RtlCopyMemory(stripe_pfns, pfns, writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                stripeoff[stripenum] += writelen;
+                pos += writelen;
+            } else if (length - pos < c->chunk_item->stripe_length) {
+                RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], (length - pos) * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                break;
+            } else {
+                RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], c->chunk_item->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                stripeoff[stripenum] += c->chunk_item->stripe_length;
+                pos += c->chunk_item->stripe_length;
+            }
+        
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
+    } else {
+        while (pos < length) {
+            if (pos == 0) {
+                UINT32 writelen = min(stripes[stripenum].end - stripes[stripenum].start,
+                                      c->chunk_item->stripe_length - (stripes[stripenum].start % c->chunk_item->stripe_length));
+                
+                RtlCopyMemory(stripes[stripenum].data, data, writelen);
+                stripeoff[stripenum] += writelen;
+                pos += writelen;
+            } else if (length - pos < c->chunk_item->stripe_length) {
+                RtlCopyMemory(stripes[stripenum].data + stripeoff[stripenum], (UINT8*)data + pos, length - pos);
+                break;
+            } else {
+                RtlCopyMemory(stripes[stripenum].data + stripeoff[stripenum], (UINT8*)data + pos, c->chunk_item->stripe_length);
+                stripeoff[stripenum] += c->chunk_item->stripe_length;
+                pos += c->chunk_item->stripe_length;
+            }
+        
+            stripenum = (stripenum + 1) % c->chunk_item->num_stripes;
+        }
     }
 
     ExFreePool(stripeoff);
@@ -1622,7 +1669,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
-        Status = prepare_raid0_write(c, address, data, length, stripes);
+        Status = prepare_raid0_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid0_write returned %08x\n", Status);
             goto prepare_failed;
