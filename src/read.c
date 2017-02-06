@@ -58,6 +58,7 @@ typedef struct {
     BOOL check_nocsum_parity;
     read_data_stripe* stripes;
     KSPIN_LOCK spin_lock;
+    UINT8* va;
 } read_data_context;
 
 extern BOOL diskacc;
@@ -2623,7 +2624,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT16 endoffstripe, stripe;
         UINT32 *stripeoff;
         UINT32 pos;
-        UINT8* va;
         PMDL master_mdl;
         PFN_NUMBER* pfns;
         
@@ -2638,16 +2638,22 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes, &endoff, &endoffstripe);
         
         if (file_read) {
-            va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + irp_offset;
-            master_mdl = Irp->MdlAddress;
-            pfns = (PFN_NUMBER*)(master_mdl + 1);
-            pfns = &pfns[irp_offset >> PAGE_SHIFT];
-        } else {
-            va = buf;
-            master_mdl = IoAllocateMdl(va, length, FALSE, FALSE, NULL);
-            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
-            pfns = (PFN_NUMBER*)(master_mdl + 1);
-        }
+            // Unfortunately we can't avoid doing no memcpys, as Windows can give us an MDL
+            // with duplicated dummy PFNs, which confuse check_csum. Ah well.
+            // See https://msdn.microsoft.com/en-us/library/windows/hardware/Dn614012.aspx if you're interested.
+            
+            context.va = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+            
+            if (!context.va) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        } else
+            context.va = buf;
+        
+        master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        pfns = (PFN_NUMBER*)(master_mdl + 1);
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (startoffstripe > i)
@@ -2665,7 +2671,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 stripeend[i] = endoff - (endoff % ci->stripe_length);
             
             if (stripestart[i] != stripeend[i]) {
-                context.stripes[i].mdl = IoAllocateMdl(va, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
+                context.stripes[i].mdl = IoAllocateMdl(context.va, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
 
                 if (!context.stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
@@ -2709,10 +2715,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             stripe = (stripe + 1) % ci->num_stripes;
         }
         
-        if (!file_read) {
-            MmUnlockPages(master_mdl);
-            IoFreeMdl(master_mdl);
-        }
+        MmUnlockPages(master_mdl);
+        IoFreeMdl(master_mdl);
 
         ExFreePool(stripeoff);
     } else if (type == BLOCK_FLAG_RAID10) {
@@ -3084,11 +3088,18 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, buf, addr, length, &context, ci, stripestart, stripeend, startoffstripe, generation);
+        Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
+            
+            if (file_read)
+                ExFreePool(context.va);
+            
             goto exit;
         }
+        
+        if (file_read)
+            RtlCopyMemory(buf, context.va, length);
     } else if (type == BLOCK_FLAG_RAID10) {
         Status = read_data_raid10(Vcb, buf, addr, length, Irp, &context, ci, devices, stripestart, stripeend, startoffstripe, generation);
         if (!NT_SUCCESS(Status)) {
@@ -3290,7 +3301,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     }
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE && start % fcb->Vcb->superblock.sector_size == 0 &&
-                        length % fcb->Vcb->superblock.sector_size == 0 && (!mdl || Irp->MdlAddress->ByteOffset == 0)) {
+                        length % fcb->Vcb->superblock.sector_size == 0) {
                         buf = data + bytes_read;
                         buf_free = FALSE;
                     } else {
