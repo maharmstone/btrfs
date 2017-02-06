@@ -1969,7 +1969,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     fcb->prop_compression = parfileref->fcb->prop_compression;
-    fcb->prop_compression_changed = TRUE;
+    fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
     
     fcb->inode_item_changed = TRUE;
     
