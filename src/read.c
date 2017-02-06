@@ -1461,8 +1461,6 @@ raid1write:
 static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
                                 CHUNK_ITEM* ci, UINT64* stripestart, UINT64* stripeend, UINT16 startoffstripe, UINT64 generation) {
     UINT64 i;
-    UINT32 pos, *stripeoff;
-    UINT8 stripe;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -1470,40 +1468,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             return context->stripes[i].iosb.Status;
         }
     }
-    
-    pos = 0;
-    stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
-    if (!stripeoff) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
-    
-    stripe = startoffstripe;
-    while (pos < length) {
-        if (pos == 0) {
-            UINT32 readlen = min(stripeend[stripe] - stripestart[stripe], ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
-            
-            RtlCopyMemory(buf, context->stripes[stripe].buf, readlen);
-            stripeoff[stripe] += readlen;
-            pos += readlen;
-        } else if (length - pos < ci->stripe_length) {
-            RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], length - pos);
-            pos = length;
-        } else {
-            RtlCopyMemory(buf + pos, &context->stripes[stripe].buf[stripeoff[stripe]], ci->stripe_length);
-            stripeoff[stripe] += ci->stripe_length;
-            pos += ci->stripe_length;
-        }
-        
-        stripe = (stripe + 1) % ci->num_stripes;
-    }
-    
-    ExFreePool(stripeoff);
-    
-    // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
-    
+
     if (context->tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
@@ -2655,10 +2620,34 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     if (type == BLOCK_FLAG_RAID0) {
         UINT64 startoff, endoff;
-        UINT16 endoffstripe;
+        UINT16 endoffstripe, stripe;
+        UINT32 *stripeoff;
+        UINT32 pos;
+        UINT8* va;
+        PMDL master_mdl;
+        PFN_NUMBER* pfns;
+        
+        // FIXME - test this still works if page size isn't the same as sector size
+        
+        // This relies on the fact that MDLs are followed in memory by the page file numbers,
+        // so with a bit of jiggery-pokery you can trick your disks into deinterlacing your RAID0
+        // data for you without doing a memcpy yourself.
+        // MDLs are officially opaque, so this might very well break in future versions of Windows.
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes, &startoff, &startoffstripe);
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes, &endoff, &endoffstripe);
+        
+        if (file_read) {
+            va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + irp_offset;
+            master_mdl = Irp->MdlAddress;
+            pfns = (PFN_NUMBER*)(master_mdl + 1);
+            pfns = &pfns[irp_offset >> PAGE_SHIFT];
+        } else {
+            va = buf;
+            master_mdl = IoAllocateMdl(va, length, FALSE, FALSE, NULL);
+            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+            pfns = (PFN_NUMBER*)(master_mdl + 1);
+        }
         
         for (i = 0; i < ci->num_stripes; i++) {
             if (startoffstripe > i)
@@ -2676,25 +2665,56 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 stripeend[i] = endoff - (endoff % ci->stripe_length);
             
             if (stripestart[i] != stripeend[i]) {
-                context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, stripeend[i] - stripestart[i], ALLOC_TAG);
-                
-                if (!context.stripes[i].buf) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto exit;
-                }
-                
-                context.stripes[i].mdl = IoAllocateMdl(context.stripes[i].buf, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
+                context.stripes[i].mdl = IoAllocateMdl(va, stripeend[i] - stripestart[i], FALSE, FALSE, NULL);
 
                 if (!context.stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
-                
-                MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
             }
         }
+        
+        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
+        if (!stripeoff) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
+
+        pos = 0;
+        stripe = startoffstripe;
+        while (pos < length) {
+            PFN_NUMBER* stripe_pfns = (PFN_NUMBER*)(context.stripes[stripe].mdl + 1);
+            
+            if (pos == 0) {
+                UINT32 readlen = min(stripeend[stripe] - stripestart[stripe], ci->stripe_length - (stripestart[stripe] % ci->stripe_length));
+
+                RtlCopyMemory(stripe_pfns, pfns, readlen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                stripeoff[stripe] += readlen;
+                pos += readlen;
+            } else if (length - pos < ci->stripe_length) {
+                RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], (length - pos) * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                pos = length;
+            } else {
+                RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], ci->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                stripeoff[stripe] += ci->stripe_length;
+                pos += ci->stripe_length;
+            }
+            
+            stripe = (stripe + 1) % ci->num_stripes;
+        }
+        
+        if (!file_read) {
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
+        }
+
+        ExFreePool(stripeoff);
     } else if (type == BLOCK_FLAG_RAID10) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe, j;
@@ -3100,15 +3120,15 @@ exit:
     if (stripeend) ExFreePool(stripeend);
 
     for (i = 0; i < ci->num_stripes; i++) {
-        if (context.stripes[i].Irp) {
-            if (devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                if (!context.stripes[i].not_alloc || !file_read)
-                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
-                
-                IoFreeMdl(context.stripes[i].Irp->MdlAddress);
-            }
-            IoFreeIrp(context.stripes[i].Irp);
+        if (context.stripes[i].mdl) {
+            if (context.stripes[i].mdl->MdlFlags & MDL_PAGES_LOCKED)
+                MmUnlockPages(context.stripes[i].mdl);
+
+            IoFreeMdl(context.stripes[i].mdl);
         }
+        
+        if (context.stripes[i].Irp)
+            IoFreeIrp(context.stripes[i].Irp);
         
         if (context.stripes[i].buf && !context.stripes[i].not_alloc)
             ExFreePool(context.stripes[i].buf);
