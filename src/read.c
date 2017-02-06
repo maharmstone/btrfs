@@ -3290,7 +3290,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     }
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE && start % fcb->Vcb->superblock.sector_size == 0 &&
-                        length % fcb->Vcb->superblock.sector_size == 0) {
+                        length % fcb->Vcb->superblock.sector_size == 0 && (!mdl || Irp->MdlAddress->ByteOffset == 0)) {
                         buf = data + bytes_read;
                         buf_free = FALSE;
                     } else {
