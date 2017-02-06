@@ -2629,7 +2629,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes, &endoff, &endoffstripe);
         
         if (file_read) {
-            // Unfortunately we can't avoid doing no memcpys, as Windows can give us an MDL
+            // Unfortunately we can't avoid doing at least one memcpy, as Windows can give us an MDL
             // with duplicated dummy PFNs, which confuse check_csum. Ah well.
             // See https://msdn.microsoft.com/en-us/library/windows/hardware/Dn614012.aspx if you're interested.
             
