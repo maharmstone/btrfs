@@ -837,6 +837,7 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
             stripes[i+j].start = stripes[i].start;
             stripes[i+j].end = stripes[i].end;
             stripes[i+j].data = stripes[i].data;
+            stripes[i+j].mdl = stripes[i].mdl;
         }
     }
 
@@ -1840,7 +1841,7 @@ end:
     
 prepare_failed:
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (stripes[i].mdl) {
+        if (stripes[i].mdl && (i == 0 || stripes[i].mdl != stripes[i-1].mdl)) {
             if (stripes[i].mdl->MdlFlags & MDL_PAGES_LOCKED)
                 MmUnlockPages(stripes[i].mdl);
 
@@ -2033,17 +2034,20 @@ end:
 
 void free_write_data_stripes(write_data_context* wtc) {
     LIST_ENTRY *le, *le2, *nextle;
+    PMDL last_mdl = NULL;
     
     le = wtc->stripes.Flink;
     while (le != &wtc->stripes) {
         write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
         
-        if (stripe->mdl) {
+        if (stripe->mdl && stripe->mdl != last_mdl) {
             if (stripe->mdl->MdlFlags & MDL_PAGES_LOCKED)
                 MmUnlockPages(stripe->mdl);
 
             IoFreeMdl(stripe->mdl);
         }
+        
+        last_mdl = stripe->mdl;
         
         le = le->Flink;
     }
