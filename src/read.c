@@ -2713,6 +2713,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     } else if (type == BLOCK_FLAG_RAID10) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe, j;
+        ULONG orig_ls;
+        
+        if (c)
+            orig_ls = c->last_stripe;
+        else
+            orig_ls = 0;
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &startoff, &startoffstripe);
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &endoff, &endoffstripe);
@@ -2729,6 +2735,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         startoffstripe *= ci->sub_stripes;
         endoffstripe *= ci->sub_stripes;
+        
+        if (c)
+            c->last_stripe = (orig_ls + 1) % ci->sub_stripes;
         
         for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
             UINT64 sstart, send;
@@ -2748,28 +2757,31 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 send = endoff - (endoff % ci->stripe_length);
             
             for (j = 0; j < ci->sub_stripes; j++) {
-                context.stripes[i+j].stripestart = sstart;
-                context.stripes[i+j].stripeend = send;
-                
-                if (sstart != send) {
-                    context.stripes[i+j].buf = ExAllocatePoolWithTag(NonPagedPool, send - sstart, ALLOC_TAG);
+                if (j == orig_ls) {
+                    context.stripes[i+j].stripestart = sstart;
+                    context.stripes[i+j].stripeend = send;
                     
-                    if (!context.stripes[i+j].buf) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto exit;
-                    }
-                    
-                    context.stripes[i+j].mdl = IoAllocateMdl(context.stripes[i].buf, send - sstart, FALSE, FALSE, NULL);
+                    if (sstart != send) {
+                        context.stripes[i+j].buf = ExAllocatePoolWithTag(NonPagedPool, send - sstart, ALLOC_TAG);
+                        
+                        if (!context.stripes[i+j].buf) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto exit;
+                        }
+                        
+                        context.stripes[i+j].mdl = IoAllocateMdl(context.stripes[i+j].buf, send - sstart, FALSE, FALSE, NULL);
 
-                    if (!context.stripes[i+j].mdl) {
-                        ERR("IoAllocateMdl failed\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto exit;
+                        if (!context.stripes[i+j].mdl) {
+                            ERR("IoAllocateMdl failed\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto exit;
+                        }
+                        
+                        MmProbeAndLockPages(context.stripes[i+j].mdl, KernelMode, IoWriteAccess);
                     }
-                    
-                    MmProbeAndLockPages(context.stripes[i+j].mdl, KernelMode, IoWriteAccess);
-                }
+                } else
+                    context.stripes[i+j].status = ReadDataStatus_Skip;
             }
         }
         
