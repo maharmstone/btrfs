@@ -1564,8 +1564,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
     stripe = startoffstripe / ci->sub_stripes;
     while (pos < length) {
         if (pos == 0) {
-            UINT32 readlen = min(context->stripes[stripe * ci->sub_stripes].stripeend - context->stripes[stripe * ci->sub_stripes].stripestart,
-                                 ci->stripe_length - (context->stripes[stripe * ci->sub_stripes].stripestart % ci->stripe_length));
+            UINT32 readlen = min(stripes[stripe]->stripeend - stripes[stripe]->stripestart, ci->stripe_length - (stripes[stripe]->stripestart % ci->stripe_length));
             
             RtlCopyMemory(buf, stripes[stripe]->buf, readlen);
             stripeoff[stripe] += readlen;
