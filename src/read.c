@@ -2768,7 +2768,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                         goto exit;
                     }
                     
-                    MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
+                    MmProbeAndLockPages(context.stripes[i+j].mdl, KernelMode, IoWriteAccess);
                 }
             }
         }
