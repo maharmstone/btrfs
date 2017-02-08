@@ -692,8 +692,6 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
                     ExFreePool(stripeoff);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-                
-                IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, stripes[i].end - stripes[i].start);
             } else {
                 stripes[i].data = ExAllocatePoolWithTag(NonPagedPool, stripes[i].end - stripes[i].start, ALLOC_TAG);
                 
@@ -4238,9 +4236,17 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             ExFreePool(data);
         } else {
-            if (write_irp && Irp->MdlAddress)
+            if (write_irp && Irp->MdlAddress) {
+                BOOL locked = Irp->MdlAddress->MdlFlags & MDL_PAGES_LOCKED;
+                
+                if (!locked)
+                    MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
+                
                 Status = do_write_file(fcb, start_data, end_data, data, Irp, TRUE, 0, rollback);
-            else
+                
+                if (!locked)
+                    MmUnlockPages(Irp->MdlAddress);
+            } else
                 Status = do_write_file(fcb, start_data, end_data, data, Irp, FALSE, 0, rollback);
             
             if (!NT_SUCCESS(Status)) {
