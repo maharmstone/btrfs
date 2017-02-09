@@ -136,6 +136,7 @@ BEGIN
     CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,218,46,10
     LTEXT           "Size on disk:",IDC_STATIC,14,63,61,8
     CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,78,63,142,8
+    COMBOBOX        IDC_COMPRESS_TYPE,63,217,48,13,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
 END
 
 IDD_SIZE_DETAILS DIALOGEX 0, 0, 212, 85
@@ -528,6 +529,9 @@ BEGIN
     IDS_LOCK_FAILED         "Unable to lock volume: error %08x. Make sure that there are no files open, and that you have closed any Explorer windows."
     IDS_SCRUB_MSG_RECOVERABLE_PARITY 
                             "Recovered from parity error at %llx on device %llx."
+    IDS_COMPRESS_ANY        "(any)"
+    IDS_COMPRESS_ZLIB       "Zlib"
+    IDS_COMPRESS_LZO        "LZO"
 END
 
 #endif    // English (U.K.) resources

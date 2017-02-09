@@ -115,6 +115,9 @@
 #define IDS_SCRUB_FAILED                202
 #define IDS_LOCK_FAILED                 203
 #define IDS_SCRUB_MSG_RECOVERABLE_PARITY 204
+#define IDS_COMPRESS_ANY                205
+#define IDS_COMPRESS_ZLIB               206
+#define IDS_COMPRESS_LZO                207
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -207,6 +210,7 @@
 #define IDC_CANCEL_SCRUB                1058
 #define IDC_SCRUB_PROGRESS              1059
 #define IDC_SCRUB_STATUS                1060
+#define IDC_COMPRESS_TYPE               1061
 
 // Next default values for new objects
 // 
@@ -214,7 +218,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        169
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1061
+#define _APS_NEXT_CONTROL_VALUE         1062
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

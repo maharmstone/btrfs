@@ -148,7 +148,7 @@ public:
     UINT32 min_mode, max_mode, mode, mode_set;
     UINT64 min_flags, max_flags, flags, flags_set;
     UINT64 subvol, inode, rdev;
-    UINT8 type;
+    UINT8 type, min_compression_type, max_compression_type;
     UINT32 uid, gid;
     BOOL various_subvols, various_inodes, various_types, various_uids, various_gids;
     

@@ -173,6 +173,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     max_mode = 0;
     min_flags = 0;
     max_flags = 0;
+    min_compression_type = 0;
+    max_compression_type = 0;
     various_subvols = various_inodes = various_types = various_uids = various_gids = FALSE;
     
     can_change_perms = TRUE;
@@ -261,6 +263,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     max_mode |= bii2.st_mode;
                     min_flags |= ~bii2.flags;
                     max_flags |= bii2.flags;
+                    min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
+                    max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
                     
                     ignore = FALSE;
                     
@@ -577,9 +581,11 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             WCHAR s[255];
             ULONG sr;
             int i;
+            HWND comptype;
             
             static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX, 0 };
             static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, 0 };
+            static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
@@ -659,6 +665,32 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             set_check_box(hwndDlg, IDC_NODATACOW, bps->min_flags & BTRFS_INODE_NODATACOW, bps->max_flags & BTRFS_INODE_NODATACOW);
             set_check_box(hwndDlg, IDC_COMPRESS, bps->min_flags & BTRFS_INODE_COMPRESS, bps->max_flags & BTRFS_INODE_COMPRESS);
             
+            comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
+            
+            if (bps->min_compression_type != bps->max_compression_type) {
+                SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)L"");
+                SendMessage(comptype, CB_SETCURSEL, 0, 0);
+            }
+
+            i = 0;
+            while (comp_types[i] != 0) {
+                WCHAR t[255];
+                
+                if (!LoadStringW(module, comp_types[i], t, sizeof(t) / sizeof(WCHAR))) {
+                    ShowError(hwndDlg, GetLastError());
+                    return FALSE;
+                }
+                
+                SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)t);
+                
+                i++;
+            }
+            
+            if (bps->min_compression_type == bps->max_compression_type)
+                SendMessage(comptype, CB_SETCURSEL, bps->min_compression_type, 0);
+            
+            EnableWindow(comptype, bps->max_flags & BTRFS_INODE_COMPRESS);
+            
             i = 0;
             while (perm_controls[i] != 0) {
                 set_check_box(hwndDlg, perm_controls[i], bps->min_mode & perms[i], bps->max_mode & perms[i]);
@@ -735,6 +767,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             
                             case IDC_COMPRESS:
                                 bps->change_inode_flag(hwndDlg, BTRFS_INODE_COMPRESS, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                                
+                                EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE), IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) != BST_UNCHECKED);
                             break;
                             
                             case IDC_USERR:
