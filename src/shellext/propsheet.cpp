@@ -173,7 +173,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     max_mode = 0;
     min_flags = 0;
     max_flags = 0;
-    min_compression_type = 0;
+    min_compression_type = 0xff;
     max_compression_type = 0;
     various_subvols = various_inodes = various_types = various_uids = various_gids = FALSE;
     
@@ -364,7 +364,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     if (various_gids)
         gid_changed = FALSE;
     
-    if (!flags_changed && !perms_changed && !uid_changed && !gid_changed)
+    if (!flags_changed && !perms_changed && !uid_changed && !gid_changed && !compress_type_changed)
         return;
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
@@ -420,6 +420,11 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             if (gid_changed) {
                 bsii.gid_changed = TRUE;
                 bsii.st_gid = gid;
+            }
+            
+            if (compress_type_changed) {
+                bsii.compression_type_changed = TRUE;
+                bsii.compression_type = compress_type;
             }
             
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
@@ -686,8 +691,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 i++;
             }
             
-            if (bps->min_compression_type == bps->max_compression_type)
+            if (bps->min_compression_type == bps->max_compression_type) {
                 SendMessage(comptype, CB_SETCURSEL, bps->min_compression_type, 0);
+                bps->compress_type = bps->min_compression_type;
+            }
             
             EnableWindow(comptype, bps->max_flags & BTRFS_INODE_COMPRESS);
             
@@ -807,6 +814,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                 bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
                             break;
                         }
+                        
+                        break;
                     }
                     
                     case EN_CHANGE: {
@@ -829,6 +838,34 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                 break;
                             }
                         }
+                        
+                        break;
+                    }
+                    
+                    case CBN_SELCHANGE: {
+                        switch (LOWORD(wParam)) {
+                            case IDC_COMPRESS_TYPE: {
+                                int sel = SendMessageW(GetDlgItem(hwndDlg, LOWORD(wParam)), CB_GETCURSEL, 0, 0);
+                                
+                                if (bps->min_compression_type != bps->max_compression_type) {
+                                    if (sel == 0)
+                                        bps->compress_type_changed = FALSE;
+                                    else {
+                                        bps->compress_type = sel - 1;
+                                        bps->compress_type_changed = TRUE;
+                                    }
+                                } else {
+                                    bps->compress_type = sel;
+                                    bps->compress_type_changed = TRUE;
+                                }
+                                
+                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, 0, 0);
+                                
+                                break;
+                            }
+                        }
+                        
+                        break;
                     }
                 }
             }

@@ -81,6 +81,7 @@ public:
         perms_changed = FALSE;
         uid_changed = FALSE;
         gid_changed = FALSE;
+        compress_type_changed = FALSE;
         can_change_perms = FALSE;
         can_change_owner = FALSE;
         thread = NULL;
@@ -148,9 +149,9 @@ public:
     UINT32 min_mode, max_mode, mode, mode_set;
     UINT64 min_flags, max_flags, flags, flags_set;
     UINT64 subvol, inode, rdev;
-    UINT8 type, min_compression_type, max_compression_type;
+    UINT8 type, min_compression_type, max_compression_type, compress_type;
     UINT32 uid, gid;
-    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids;
+    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed;
     
 private:
     LONG refcount;
