@@ -1210,6 +1210,20 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         }
     }
     
+    switch (fcb->prop_compression) {
+        case PropCompression_Zlib:
+            bii->compression_type = BTRFS_COMPRESSION_ZLIB;
+        break;
+        
+        case PropCompression_LZO:
+            bii->compression_type = BTRFS_COMPRESSION_LZO;
+        break;
+        
+        default:
+            bii->compression_type = BTRFS_COMPRESSION_ANY;
+        break;
+    }
+    
     ExReleaseResourceLite(fcb->Header.Resource);
     
     return STATUS_SUCCESS;

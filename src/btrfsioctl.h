@@ -37,6 +37,10 @@ typedef struct {
     WCHAR name[1];
 } btrfs_create_snapshot;
 
+#define BTRFS_COMPRESSION_ANY   0
+#define BTRFS_COMPRESSION_ZLIB  1
+#define BTRFS_COMPRESSION_LZO   2
+
 typedef struct {
     UINT64 subvol;
     UINT64 inode;
@@ -49,6 +53,7 @@ typedef struct {
     UINT64 flags;
     UINT32 inline_length;
     UINT64 disk_size[3];
+    UINT8 compression_type;
 } btrfs_inode_info;
 
 typedef struct {
