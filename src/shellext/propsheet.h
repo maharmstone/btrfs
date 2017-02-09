@@ -87,6 +87,7 @@ public:
         thread = NULL;
         mode = mode_set = 0;
         flags = flags_set = 0;
+        has_subvols = FALSE;
         
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
         totalsize = 0;
@@ -151,7 +152,7 @@ public:
     UINT64 subvol, inode, rdev;
     UINT8 type, min_compression_type, max_compression_type, compress_type;
     UINT32 uid, gid;
-    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed;
+    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols, ro_subvol, various_ro;
     
 private:
     LONG refcount;

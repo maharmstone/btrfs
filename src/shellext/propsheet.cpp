@@ -30,6 +30,8 @@
 #include "propsheet.h"
 #include "resource.h"
 
+#define SUBVOL_ROOT_INODE 0x100
+
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this); 
@@ -141,7 +143,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    UINT num_files, i;
+    UINT num_files, i, sv = 0;
     WCHAR fn[MAX_PATH];
     HDROP hdrop;
     
@@ -175,7 +177,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     max_flags = 0;
     min_compression_type = 0xff;
     max_compression_type = 0;
-    various_subvols = various_inodes = various_types = various_uids = various_gids = FALSE;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
     
     can_change_perms = TRUE;
     can_change_owner = TRUE;
@@ -265,6 +267,21 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     max_flags |= bii2.flags;
                     min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
                     max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
+                    
+                    if (bii2.inode == SUBVOL_ROOT_INODE) {
+                        BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+                        
+                        has_subvols = TRUE;
+                        
+                        if (sv == 0)
+                            ro_subvol = ro;
+                        else {
+                            if (ro_subvol != ro)
+                                various_ro = TRUE;
+                        }
+                        
+                        sv++;
+                    }
                     
                     ignore = FALSE;
                     
@@ -731,6 +748,11 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             }
             
             SetDlgItemTextW(hwndDlg, IDC_GID, s);
+            
+            ShowWindow(GetDlgItem(hwndDlg, IDC_SUBVOL_RO), bps->has_subvols);
+            
+            if (bps->has_subvols)
+                set_check_box(hwndDlg, IDC_SUBVOL_RO, bps->ro_subvol, bps->various_ro ? (!bps->ro_subvol) : bps->ro_subvol);
             
             if (!bps->can_change_nocow)
                 EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
