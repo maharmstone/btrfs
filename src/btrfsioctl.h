@@ -65,6 +65,8 @@ typedef struct {
     BOOL gid_changed;
     UINT32 st_mode;
     BOOL mode_changed;
+    UINT8 compression_type;
+    BOOL compression_type_changed;
 } btrfs_set_inode_info;
 
 typedef struct {

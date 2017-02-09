@@ -1266,6 +1266,9 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
     
+    if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_LZO)
+        return STATUS_INVALID_PARAMETER;
+    
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (bsii->flags_changed) {
@@ -1333,7 +1336,25 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (bsii->gid_changed)
         fcb->inode_item.st_gid = bsii->st_gid;
     
-    if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed) {
+    if (bsii->compression_type_changed) {
+        switch (bsii->compression_type) {
+            case BTRFS_COMPRESSION_ANY:
+                fcb->prop_compression = PropCompression_None;
+            break;
+            
+            case BTRFS_COMPRESSION_ZLIB:
+                fcb->prop_compression = PropCompression_Zlib;
+            break;
+            
+            case BTRFS_COMPRESSION_LZO:
+                fcb->prop_compression = PropCompression_LZO;
+            break;
+        }
+        
+        fcb->prop_compression_changed = TRUE;
+    }
+    
+    if (bsii->flags_changed || bsii->mode_changed || bsii->uid_changed || bsii->gid_changed || bsii->compression_type_changed) {
         fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(fcb);
     }
