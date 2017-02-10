@@ -470,19 +470,8 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             CloseHandle(h);
 
             if (!NT_SUCCESS(Status)) {
-                WCHAR s[255], t[255];
-                
-                if (!LoadStringW(module, IDS_SET_INODE_INFO_ERROR, t, sizeof(t) / sizeof(WCHAR))) {
-                    ShowError(hDlg, GetLastError());
-                    return;
-                }
-                
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-                    ShowError(hDlg, ERROR_INSUFFICIENT_BUFFER);
-                    return;
-                }
-                
-                MessageBoxW(hDlg, s, L"Error", MB_ICONERROR);
+                ShowNtStatusError(hDlg, Status);
+                return;
             }
         }
     }

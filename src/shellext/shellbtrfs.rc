@@ -409,7 +409,6 @@ BEGIN
     IDS_INODE_SOCKET        "Socket"
     IDS_INODE_SYMLINK       "Symbolic link"
     IDS_INODE_UNKNOWN       "Unknown inode type %x"
-    IDS_SET_INODE_INFO_ERROR "FSCTL_BTRFS_SET_INODE_INFO returned %08x"
     IDS_SIZE_BYTE           "%s byte"
     IDS_SIZE_BYTES          "%s bytes"
     IDS_SIZE_KB             "%1.1f KB"
