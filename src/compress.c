@@ -156,8 +156,11 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     if (stream->error) return STATUS_INTERNAL_ERROR;
     
     if (byte > 17) {
-        lzo_copy(stream, byte - 17);
+        lzo_copy(stream, min(byte - 17, stream->outlen - stream->outpos));
         if (stream->error) return STATUS_INTERNAL_ERROR;
+        
+        if (stream->outlen == stream->outpos)
+            return STATUS_SUCCESS;
         
         byte = lzo_nextbyte(stream);
         if (stream->error) return STATUS_INTERNAL_ERROR;
@@ -207,8 +210,11 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
             len = lzo_len(stream, byte, 15);
             if (stream->error) return STATUS_INTERNAL_ERROR;
             
-            lzo_copy(stream, len + 3);
+            lzo_copy(stream, min(len + 3, stream->outlen - stream->outpos));
             if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            if (stream->outlen == stream->outpos)
+                return STATUS_SUCCESS;
             
             byte = lzo_nextbyte(stream);
             if (stream->error) return STATUS_INTERNAL_ERROR;
@@ -223,14 +229,20 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
             break;
         }
         
-        lzo_copyback(stream, back, len + 2);
+        lzo_copyback(stream, back, min(len + 2, stream->outlen - stream->outpos));
         if (stream->error) return STATUS_INTERNAL_ERROR;
+        
+        if (stream->outlen == stream->outpos)
+            return STATUS_SUCCESS;
         
         len = byte & 3;
         
         if (len) {
-            lzo_copy(stream, len);
+            lzo_copy(stream, min(len, stream->outlen - stream->outpos));
             if (stream->error) return STATUS_INTERNAL_ERROR;
+            
+            if (stream->outlen == stream->outpos)
+                return STATUS_SUCCESS;
         } else
             backcopy = !backcopy;
         
