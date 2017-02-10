@@ -381,7 +381,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     if (various_gids)
         gid_changed = FALSE;
     
-    if (!flags_changed && !perms_changed && !uid_changed && !gid_changed && !compress_type_changed)
+    if (!flags_changed && !perms_changed && !uid_changed && !gid_changed && !compress_type_changed && !ro_changed)
         return;
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
@@ -389,8 +389,9 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
             ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
+            btrfs_inode_info bii2;
             
-            if (flags_changed)
+            if (flags_changed || ro_changed)
                 perms |= FILE_WRITE_ATTRIBUTES;
             
             if (perms_changed)
@@ -408,8 +409,6 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
             }
             
             ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
-            
-            btrfs_inode_info bii2;
                     
             Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
         
@@ -417,6 +416,29 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
                 ShowNtStatusError(hDlg, Status);
                 CloseHandle(h);
                 return;
+            }
+            
+            if (bii2.inode == SUBVOL_ROOT_INODE && ro_changed) {
+                BY_HANDLE_FILE_INFORMATION bhfi;
+                FILE_BASIC_INFO fbi;
+                
+                if (!GetFileInformationByHandle(h, &bhfi)) {
+                    ShowError(hDlg, GetLastError());
+                    return;
+                }
+                
+                memset(&fbi, 0, sizeof(fbi));
+                fbi.FileAttributes = bhfi.dwFileAttributes;
+                
+                if (ro_subvol)
+                    fbi.FileAttributes |= FILE_ATTRIBUTE_READONLY;
+                else
+                    fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
+                
+                if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
+                    ShowError(hDlg, GetLastError());
+                    return;
+                }
             }
             
             if (flags_changed) {
@@ -834,6 +856,26 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             
                             case IDC_OTHERX:
                                 bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) == BST_CHECKED);
+                            break;
+                            
+                            case IDC_SUBVOL_RO:
+                                switch (IsDlgButtonChecked(hwndDlg, LOWORD(wParam))) {
+                                    case BST_CHECKED:
+                                        bps->ro_subvol = TRUE;
+                                        bps->ro_changed = TRUE;
+                                    break;
+                                    
+                                    case BST_UNCHECKED:
+                                        bps->ro_subvol = FALSE;
+                                        bps->ro_changed = TRUE;
+                                    break;
+                                    
+                                    case BST_INDETERMINATE:
+                                        bps->ro_changed = FALSE;
+                                    break;
+                                }
+                                
+                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, 0, 0);
                             break;
                         }
                         
