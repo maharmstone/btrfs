@@ -1072,7 +1072,8 @@ NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid);
 NTSTATUS registry_load_volume_options(device_extension* Vcb);
 
 // in compress.c
-NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);
+NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf);
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback);
 
 // in galois.c

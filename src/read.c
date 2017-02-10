@@ -3411,12 +3411,29 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             goto exit;
                         }
                         
-                        Status = decompress(ed->compression, buf, ed2->size, decomp, ed->decoded_size);
+                        if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
+                            Status = zlib_decompress(buf, ed2->size, decomp, ed->decoded_size);
+                            
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("zlib_decompress returned %08x\n", Status);
+                                ExFreePool(buf);
+                                ExFreePool(decomp);
+                                goto exit;
+                            }
+                        } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
+                            Status = lzo_decompress(buf, ed2->size, decomp);
                         
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("decompress returned %08x\n", Status);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("lzo_decompress returned %08x\n", Status);
+                                ExFreePool(buf);
+                                ExFreePool(decomp);
+                                goto exit;
+                            }
+                        } else {
+                            ERR("unsupported compression type %x\n", ed->compression);
                             ExFreePool(buf);
                             ExFreePool(decomp);
+                            Status = STATUS_NOT_SUPPORTED;
                             goto exit;
                         }
                         

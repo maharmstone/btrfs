@@ -241,7 +241,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
     NTSTATUS Status;
     UINT32 extlen, partlen, inoff, outoff;
     lzo_stream stream;
@@ -299,7 +299,7 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
-static NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
     z_stream c_stream;
     int ret;
 
@@ -340,17 +340,6 @@ static NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT6
     // FIXME - if we're short, should we zero the end of outbuf so we don't leak information into userspace?
     
     return STATUS_SUCCESS;
-}
-
-NTSTATUS decompress(UINT8 type, UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
-    if (type == BTRFS_COMPRESSION_ZLIB)
-        return zlib_decompress(inbuf, inlen, outbuf, outlen);
-    else if (type == BTRFS_COMPRESSION_LZO)
-        return lzo_decompress(inbuf, inlen, outbuf);
-    else {
-        ERR("unsupported compression type %x\n", type);
-        return STATUS_NOT_SUPPORTED;
-    }
 }
 
 static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
