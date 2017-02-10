@@ -67,6 +67,8 @@ extern BOOL diskacc;
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
 extern tCcCopyReadEx CcCopyReadEx;
 
+#define LINUX_PAGE_SIZE 4096
+
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
@@ -3399,11 +3401,45 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         if (buf_free)
                             RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
                     } else {
-                        UINT8* decomp = NULL;
-                        ULONG outlen;
+                        UINT8 *decomp = NULL, *buf2;
+                        ULONG outlen, inlen, off2;
+                        UINT32 inpageoff = 0;
                         
-                        if (ed2->offset + off != 0) {
-                            outlen = ed2->offset + off + min(read, ed2->num_bytes - off);
+                        off2 = ed2->offset + off;
+                        buf2 = buf;
+                        inlen = ed2->size;
+                        
+                        if (ed->compression == BTRFS_COMPRESSION_LZO) {
+                            ULONG inoff = sizeof(UINT32);
+                            
+                            inlen -= sizeof(UINT32);
+                            
+                            // If reading a few sectors in, skip to the interesting bit
+                            while (off2 > LINUX_PAGE_SIZE) {
+                                UINT32 partlen;
+                                
+                                if (inlen < sizeof(UINT32))
+                                    break;
+                                
+                                partlen = *(UINT32*)(buf2 + inoff);
+                                
+                                if (partlen < inlen) {
+                                    off2 -= LINUX_PAGE_SIZE;
+                                    inoff += partlen + sizeof(UINT32);
+                                    inlen -= partlen + sizeof(UINT32);
+                                    
+                                    if (LINUX_PAGE_SIZE - (inoff % LINUX_PAGE_SIZE) < sizeof(UINT32))
+                                        inoff = ((inoff / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE;
+                                } else
+                                    break;
+                            }
+                            
+                            buf2 = &buf2[inoff];
+                            inpageoff = inoff % LINUX_PAGE_SIZE;
+                        }
+                        
+                        if (off2 != 0) {
+                            outlen = off2 + min(read, ed2->num_bytes - off);
                             
                             decomp = ExAllocatePoolWithTag(PagedPool, outlen, ALLOC_TAG);
                             if (!decomp) {
@@ -3416,7 +3452,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             outlen = min(read, ed2->num_bytes - off);
                         
                         if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
-                            Status = zlib_decompress(buf, ed2->size, decomp ? decomp : (data + bytes_read), outlen);
+                            Status = zlib_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zlib_decompress returned %08x\n", Status);
@@ -3428,7 +3464,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                                 goto exit;
                             }
                         } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
-                            Status = lzo_decompress(buf, ed2->size, decomp ? decomp : (data + bytes_read), outlen);
+                            Status = lzo_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen, inpageoff);
                         
                             if (!NT_SUCCESS(Status)) {
                                 ERR("lzo_decompress returned %08x\n", Status);
@@ -3452,7 +3488,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         }
                         
                         if (decomp) {
-                            RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
+                            RtlCopyMemory(data + bytes_read, decomp + off2, min(read, ed2->num_bytes - off));
                             ExFreePool(decomp);
                         }
                     }

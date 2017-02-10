@@ -253,18 +253,12 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen, UINT32 inpageoff) {
     NTSTATUS Status;
-    UINT32 extlen, partlen, inoff, outoff;
+    UINT32 partlen, inoff, outoff;
     lzo_stream stream;
     
-    extlen = *((UINT32*)inbuf);
-    if (inlen < extlen) {
-        ERR("compressed extent was %llx, should have been at least %x\n", inlen, extlen);
-        return STATUS_INTERNAL_ERROR;
-    }
-    
-    inoff = sizeof(UINT32);
+    inoff = 0;
     outoff = 0;
     
     do {
@@ -296,11 +290,11 @@ NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen
         inoff += partlen;
         outoff += stream.outlen;
         
-        if (LINUX_PAGE_SIZE - (inoff % LINUX_PAGE_SIZE) < sizeof(UINT32))
-            inoff = ((inoff / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE;
+        if (LINUX_PAGE_SIZE - ((inpageoff + inoff) % LINUX_PAGE_SIZE) < sizeof(UINT32))
+            inoff = ((((inpageoff + inoff) / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE) - inpageoff;
         
         outlen -= stream.outlen;
-    } while (inoff < extlen && outlen > 0);
+    } while (inoff < inlen && outlen > 0);
     
     return STATUS_SUCCESS;
 }

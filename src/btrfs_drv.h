@@ -1073,7 +1073,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb);
 
 // in compress.c
 NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);
-NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen);
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen, UINT32 inpageoff);
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback);
 
 // in galois.c
