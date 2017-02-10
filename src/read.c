@@ -3400,46 +3400,61 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                             RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
                     } else {
                         UINT8* decomp = NULL;
+                        ULONG outlen;
                         
-                        // FIXME - don't mess around with decomp if we're reading the whole extent
-                        
-                        decomp = ExAllocatePoolWithTag(PagedPool, ed->decoded_size, ALLOC_TAG);
-                        if (!decomp) {
-                            ERR("out of memory\n");
-                            ExFreePool(buf);
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto exit;
-                        }
+                        if (ed2->offset + off != 0) {
+                            outlen = ed2->offset + off + min(read, ed2->num_bytes - off);
+                            
+                            decomp = ExAllocatePoolWithTag(PagedPool, outlen, ALLOC_TAG);
+                            if (!decomp) {
+                                ERR("out of memory\n");
+                                ExFreePool(buf);
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                        } else
+                            outlen = min(read, ed2->num_bytes - off);
                         
                         if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
-                            Status = zlib_decompress(buf, ed2->size, decomp, ed->decoded_size);
+                            Status = zlib_decompress(buf, ed2->size, decomp ? decomp : (data + bytes_read), outlen);
                             
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zlib_decompress returned %08x\n", Status);
                                 ExFreePool(buf);
-                                ExFreePool(decomp);
+                                
+                                if (decomp)
+                                    ExFreePool(decomp);
+                                
                                 goto exit;
                             }
                         } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
-                            Status = lzo_decompress(buf, ed2->size, decomp);
+                            Status = lzo_decompress(buf, ed2->size, decomp ? decomp : (data + bytes_read), outlen);
                         
                             if (!NT_SUCCESS(Status)) {
                                 ERR("lzo_decompress returned %08x\n", Status);
                                 ExFreePool(buf);
-                                ExFreePool(decomp);
+                                
+                                if (decomp)
+                                    ExFreePool(decomp);
+                                
                                 goto exit;
                             }
                         } else {
                             ERR("unsupported compression type %x\n", ed->compression);
-                            ExFreePool(buf);
-                            ExFreePool(decomp);
                             Status = STATUS_NOT_SUPPORTED;
+                            
+                            ExFreePool(buf);
+                            
+                            if (decomp)
+                                ExFreePool(decomp);
+                            
                             goto exit;
                         }
                         
-                        RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
-                        
-                        ExFreePool(decomp);
+                        if (decomp) {
+                            RtlCopyMemory(data + bytes_read, decomp + ed2->offset + off, min(read, ed2->num_bytes - off));
+                            ExFreePool(decomp);
+                        }
                     }
                     
                     if (buf_free)

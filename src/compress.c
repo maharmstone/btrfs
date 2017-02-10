@@ -241,7 +241,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
     NTSTATUS Status;
     UINT32 extlen, partlen, inoff, outoff;
     lzo_stream stream;
@@ -269,7 +269,7 @@ NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
         stream.inlen = partlen;
         stream.inpos = 0;
         stream.out = &outbuf[outoff];
-        stream.outlen = LINUX_PAGE_SIZE;
+        stream.outlen = min(outlen, LINUX_PAGE_SIZE);
         stream.outpos = 0;
         
         Status = do_lzo_decompress(&stream);
@@ -286,7 +286,9 @@ NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf) {
         
         if (LINUX_PAGE_SIZE - (inoff % LINUX_PAGE_SIZE) < sizeof(UINT32))
             inoff = ((inoff / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE;
-    } while (inoff < extlen);
+        
+        outlen -= stream.outlen;
+    } while (inoff < extlen && outlen > 0);
     
     return STATUS_SUCCESS;
 }
@@ -328,6 +330,9 @@ NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outle
             inflateEnd(&c_stream);
             return STATUS_INTERNAL_ERROR;
         }
+        
+        if (c_stream.avail_out == 0)
+            break;
     } while (ret != Z_STREAM_END);
 
     ret = inflateEnd(&c_stream);
