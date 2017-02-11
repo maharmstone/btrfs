@@ -566,7 +566,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->size = cisize;
     c->offset = logaddr;
     c->used = c->oldused = 0;
-    c->cache = NULL;
+    c->cache = c->old_cache = NULL;
     c->readonly = FALSE;
     c->reloc = FALSE;
     c->last_alloc_set = FALSE;

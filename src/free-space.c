@@ -634,7 +634,7 @@ clearcache:
     c->cache->deleted = TRUE;
     mark_fcb_dirty(c->cache);
     
-    free_fcb(c->cache);
+    c->old_cache = c->cache;
     c->cache = NULL;
     
     le = c->space.Flink;

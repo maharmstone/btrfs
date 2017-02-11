@@ -2478,6 +2478,26 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
         }
+        
+        if (c->old_cache) {
+            if (c->old_cache->dirty) {
+                LIST_ENTRY batchlist;
+                
+                InitializeListHead(&batchlist);
+                
+                Status = flush_fcb(c->old_cache, FALSE, &batchlist, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("flush_fcb returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->lock);
+                    goto end;
+                }
+                
+                commit_batch_list(Vcb, &batchlist, Irp);
+            }
+            
+            free_fcb(c->old_cache);
+            c->old_cache = NULL;
+        }
 
         if (c->used != c->oldused) {
             searchkey.obj_id = c->offset;

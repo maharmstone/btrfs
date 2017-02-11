@@ -396,6 +396,7 @@ typedef struct {
     UINT32 oldused;
     device** devices;
     fcb* cache;
+    fcb* old_cache;
     LIST_ENTRY space;
     LIST_ENTRY space_size;
     LIST_ENTRY deleting;

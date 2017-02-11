@@ -2883,7 +2883,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 c->size = tp.item->size;
                 c->offset = tp.item->key.offset;
                 c->used = c->oldused = 0;
-                c->cache = NULL;
+                c->cache = c->old_cache = NULL;
                 c->created = FALSE;
                 c->readonly = FALSE;
                 c->reloc = FALSE;
