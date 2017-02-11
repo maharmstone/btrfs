@@ -2990,7 +2990,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     fn.Length -= fnoff;
 
                     Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                        pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+                                          pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
                     
                     loaded_related = TRUE;
                 }
@@ -3473,12 +3473,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         ccb->fileref = fileref;
         
         FileObject->FsContext2 = ccb;
-        
-        if (fn_offset > 0) {
-            fn.Length -= fn_offset * sizeof(WCHAR);
-            RtlMoveMemory(&fn.Buffer[0], &fn.Buffer[fn_offset], fn.Length);
-        }
-        
         FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
         
         if (NT_SUCCESS(Status)) {
