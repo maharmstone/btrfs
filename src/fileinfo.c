@@ -2017,14 +2017,16 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.sequence++;
-    
-    if (!ccb->user_set_change_time)
-        fcb->inode_item.st_ctime = now;
-    
-    fcb->inode_item_changed = TRUE;
-    mark_fcb_dirty(fcb);
+    if (fileref->parent->fcb->subvol == fcb->subvol || !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+        fcb->inode_item.transid = Vcb->superblock.generation;
+        fcb->inode_item.sequence++;
+        
+        if (!ccb->user_set_change_time)
+            fcb->inode_item.st_ctime = now;
+        
+        fcb->inode_item_changed = TRUE;
+        mark_fcb_dirty(fcb);
+    }
     
     // update new parent's INODE_ITEM
     
