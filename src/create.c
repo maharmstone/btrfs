@@ -2357,7 +2357,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     NTSTATUS Status;
 //     fcb *fcb, *parfcb = NULL;
     file_ref *fileref, *parfileref = NULL;
-    ULONG i, j, fn_offset;
+    ULONG i, j;
 //     ULONG utf8len;
     ccb* ccb;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
@@ -2415,8 +2415,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     
     RtlCopyMemory(fpus.Buffer, &fnus->Buffer[i], (j - i + 1) * sizeof(WCHAR));
     fpus.Buffer[j - i + 1] = 0;
-    
-    fn_offset = i;
     
     if (fpus.Length > dsus.Length) { // check for :$DATA suffix
         UNICODE_STRING lb;
@@ -2518,11 +2516,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     InterlockedIncrement(&Vcb->open_files);
     
     FileObject->FsContext2 = ccb;
-    
-    if (fn_offset > 0) {
-        FileObject->FileName.Length -= fn_offset * sizeof(WCHAR);
-        RtlMoveMemory(&FileObject->FileName.Buffer[0], &FileObject->FileName.Buffer[fn_offset], FileObject->FileName.Length);
-    }
 
     FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
     
