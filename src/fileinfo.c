@@ -3027,6 +3027,9 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         
         fr = fr->parent;
     }
+    
+    if (fileref->parent && !fileref->parent->parent) // file in root directory
+        offset += sizeof(WCHAR);
 
     if (overflow) {
         *preqlen = reqlen;
