@@ -428,6 +428,8 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
             return;
         }
         
+        RefreshScrubDlg(hwndDlg, TRUE);
+        
         CloseHandle(h);
     } else {
         ShowError(hwndDlg, GetLastError());
