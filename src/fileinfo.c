@@ -217,6 +217,12 @@ end:
     ExReleaseResourceLite(fcb->Header.Resource);
     
     ExReleaseResourceLite(&Vcb->fcb_lock);
+    
+    // send notification that directory is about to be deleted
+    if (NT_SUCCESS(Status) && fdi->DeleteFile && fcb->type == BTRFS_TYPE_DIRECTORY) {
+        FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext,
+                                       NULL, FALSE, FALSE, 0, NULL, NULL, NULL);
+    }
 
     return Status;
 }
