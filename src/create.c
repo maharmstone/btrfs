@@ -3558,7 +3558,7 @@ exit:
         ExReleaseResourceLite(&Vcb->fcb_lock);
     }
     
-    if (NT_SUCCESS(Status)) {
+    if (Status == STATUS_SUCCESS) {
         fcb* fcb2;
         
         if (!FileObject->Vpb)
@@ -3575,10 +3575,8 @@ exit:
         ExAcquireResourceExclusiveLite(fcb2->Header.Resource, TRUE);
         fcb_load_csums(fcb2, Irp);
         ExReleaseResourceLite(fcb2->Header.Resource);
-    } else {
-        if (Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
-            TRACE("returning %08x\n", Status);
-    }
+    } else if (Status != STATUS_REPARSE && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
+        TRACE("returning %08x\n", Status);
     
 #ifdef DEBUG_STATS
     time2 = KeQueryPerformanceCounter(NULL);
