@@ -272,6 +272,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
 
 typedef struct {
     DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
+    ATA_PASS_THROUGH_EX apte;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
 } ioctl_context_stripe;
@@ -5939,8 +5940,36 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
 static void flush_disk_caches(device_extension* Vcb) {
     LIST_ENTRY* le;
-    ATA_PASS_THROUGH_EX apte;
-    NTSTATUS Status;
+    ioctl_context context;
+    ULONG num;
+    
+    context.left = 0;
+    
+    le = Vcb->devices.Flink;
+    
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devobj && !dev->readonly && dev->can_flush)
+            context.left++;
+        
+        le = le->Flink;
+    }
+    
+    if (context.left == 0)
+        return;
+    
+    num = 0;
+    
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+    
+    context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(ioctl_context_stripe) * context.left, ALLOC_TAG);
+    if (!context.stripes) {
+        ERR("out of memory\n");
+        return;
+    }
+    
+    RtlZeroMemory(context.stripes, sizeof(ioctl_context_stripe) * context.left);
     
     le = Vcb->devices.Flink;
     
@@ -5948,20 +5977,48 @@ static void flush_disk_caches(device_extension* Vcb) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
         if (dev->devobj && !dev->readonly && dev->can_flush) {
-            RtlZeroMemory(&apte, sizeof(ATA_PASS_THROUGH_EX));
+            PIO_STACK_LOCATION IrpSp;
+            ioctl_context_stripe* stripe = &context.stripes[num];
             
-            apte.Length = sizeof(ATA_PASS_THROUGH_EX);
-            apte.TimeOutValue = 5;
-            apte.CurrentTaskFile[6] = IDE_COMMAND_FLUSH_CACHE;
+            RtlZeroMemory(&stripe->apte, sizeof(ATA_PASS_THROUGH_EX));
             
-            Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, &apte, sizeof(ATA_PASS_THROUGH_EX), &apte, sizeof(ATA_PASS_THROUGH_EX), TRUE, NULL);
+            stripe->apte.Length = sizeof(ATA_PASS_THROUGH_EX);
+            stripe->apte.TimeOutValue = 5;
+            stripe->apte.CurrentTaskFile[6] = IDE_COMMAND_FLUSH_CACHE;
+
+            stripe->Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
             
-            if (!NT_SUCCESS(Status))
-                WARN("IOCTL_ATA_PASS_THROUGH returned %08x\n", Status);
+            if (!stripe->Irp) {
+                ERR("IoAllocateIrp failed\n");
+                goto nextdev;
+            }
+            
+            IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+            IrpSp->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+            
+            IrpSp->Parameters.DeviceIoControl.IoControlCode = IOCTL_ATA_PASS_THROUGH;
+            IrpSp->Parameters.DeviceIoControl.InputBufferLength = sizeof(ATA_PASS_THROUGH_EX);
+            IrpSp->Parameters.DeviceIoControl.OutputBufferLength = sizeof(ATA_PASS_THROUGH_EX);
+            
+            stripe->Irp->AssociatedIrp.SystemBuffer = &stripe->apte;
+            stripe->Irp->Flags |= IRP_BUFFERED_IO | IRP_INPUT_OPERATION;
+            stripe->Irp->UserBuffer = &stripe->apte;
+            stripe->Irp->UserIosb = &stripe->iosb;
+            
+            IoSetCompletionRoutine(stripe->Irp, ioctl_completion, &context, TRUE, TRUE, TRUE);
+            
+            IoCallDriver(dev->devobj, stripe->Irp);
+            
+nextdev:
+            num++;
         }
         
         le = le->Flink;
     }
+    
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+    
+    ExFreePool(context.stripes);
 }
 
 static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
