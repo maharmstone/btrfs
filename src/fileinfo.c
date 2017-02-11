@@ -1942,6 +1942,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
         }
         
+        fileref->dc->index = fileref->index;
+        
         // add to new parent
         ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
         InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
