@@ -2965,6 +2965,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     file_ref* fr;
     NTSTATUS Status;
     ULONG reqlen = 0;
+    USHORT offset;
     BOOL overflow = FALSE;
     
     // FIXME - we need a lock on filerefs' filepart
@@ -2973,6 +2974,9 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         if (fn->MaximumLength >= sizeof(WCHAR)) {
             fn->Buffer[0] = '\\';
             fn->Length = sizeof(WCHAR);
+            
+            if (name_offset)
+                *name_offset = 0;
             
             return STATUS_SUCCESS;
         } else {
@@ -2984,6 +2988,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     }
     
     fr = fileref;
+    offset = 0;
     
     while (fr->parent) {
         USHORT movelen;
@@ -2998,8 +3003,10 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         else
             movelen = fn->Length;
         
-        if (!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR))
+        if (!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR)) {
             RtlMoveMemory(&fn->Buffer[(fr->filepart.Length / sizeof(WCHAR)) + 1], fn->Buffer, movelen);
+            offset += movelen;
+        }
         
         if (fn->MaximumLength >= sizeof(WCHAR)) {
             fn->Buffer[0] = fr->fcb->ads ? ':' : '\\';
@@ -3024,8 +3031,12 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     if (overflow) {
         *preqlen = reqlen;
         Status = STATUS_BUFFER_OVERFLOW;
-    } else
+    } else {
+        if (name_offset)
+            *name_offset = offset;
+        
         Status = STATUS_SUCCESS;
+    }
     
     return Status;
 }
