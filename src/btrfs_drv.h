@@ -718,6 +718,8 @@ typedef struct _write_data_context {
     LIST_ENTRY stripes;
     LONG stripes_left;
     BOOL tree;
+    UINT8 *parity1, *scratch;
+    PMDL mdl, parity_mdl;
 } write_data_context;
 
 typedef struct {
