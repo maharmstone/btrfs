@@ -1050,7 +1050,7 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
                 stripes[stripe].start = stripes[stripe].end = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
             }
             
-            stripes[parity].start = stripes[stripe].end = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+            stripes[parity].start = stripes[parity].end = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
             
             if (length - pos > c->chunk_item->num_stripes * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) {
                 skip = ((length - pos) / (c->chunk_item->num_stripes * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) - 1;
@@ -1086,12 +1086,14 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
         }
     }
     
-    parity_start = stripes[0].start;
-    parity_end = stripes[0].end;
+    parity_start = 0xffffffffffffffff;
+    parity_end = 0;
     
-    for (i = 1; i < c->chunk_item->num_stripes; i++) {
-        parity_start = min(stripes[i].start, parity_start);
-        parity_end = max(stripes[i].end, parity_end);
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (stripes[i].start != 0 || stripes[i].end != 0) {
+            parity_start = min(stripes[i].start, parity_start);
+            parity_end = max(stripes[i].end, parity_end);
+        }
     }
     
     if (parity_end == parity_start) {
