@@ -986,6 +986,11 @@ static NTSTATUS make_read_irp(PIRP old_irp, read_stripe* stripe, UINT64 offset, 
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    PMDL mdl;
+    PFN_NUMBER* pfns;
+} log_stripe;
+
 static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity/*, stripenum, logstripe*/;
@@ -998,9 +1003,13 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
 //     UINT32 num_reads;
 //     BOOL same_stripe = FALSE, multiple_stripes;
     BOOL file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
-    PMDL master_mdl/*, parity_mdl = NULL*/;
+    PMDL master_mdl, fragment_mdl = NULL/*, parity_mdl = NULL*/;
     NTSTATUS Status;
-    PFN_NUMBER *pfns, *parity_pfns;
+    PFN_NUMBER *pfns, *parity_pfns, *fragment_pfns;
+    ULONG fragment_len = 0;
+    log_stripe* log_stripes = NULL;
+    UINT8 *fragments = NULL, *fragments2;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
@@ -1101,11 +1110,110 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
         goto exit;
     }
     
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (stripes[i].start == 0 && stripes[i].end == 0)
+            fragment_len += parity_end - parity_start;
+        else {
+            if (stripes[i].start > parity_start)
+                fragment_len += stripes[i].start - parity_start;
+            
+            if (stripes[i].end < parity_end)
+                fragment_len += parity_end - stripes[i].end;
+        }
+    }
+    
+    if (fragment_len > 0) {
+        fragments = ExAllocatePoolWithTag(NonPagedPool, fragment_len, ALLOC_TAG);
+
+        fragment_mdl = IoAllocateMdl(fragments, fragment_len, FALSE, FALSE, NULL);
+        MmBuildMdlForNonPagedPool(fragment_mdl);
+        
+        fragment_pfns = (PFN_NUMBER*)(fragment_mdl + 1);
+    }
+    
+    log_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(log_stripe) * (c->chunk_item->num_stripes - 1), ALLOC_TAG);
+    if (!log_stripes) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
+    RtlZeroMemory(log_stripes, sizeof(log_stripe) * (c->chunk_item->num_stripes - 1));
+    
+    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        log_stripes[i].mdl = IoAllocateMdl(NULL, parity_end - parity_start, FALSE, FALSE, NULL);
+        if (!log_stripes[i].mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        log_stripes[i].mdl->MdlFlags |= MDL_PARTIAL;
+        log_stripes[i].pfns = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
+    }
+    
     parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     stripes[parity].start = parity_start;
     
+    if (fragment_len > 0) {
+        UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
+        
+        fragments2 = fragments;
+        
+        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+            if ((stripes[stripe].start == 0 && stripes[stripe].end == 0) || stripes[stripe].start > parity_start) {
+                ULONG len;
+                
+                if (stripes[stripe].start == 0 && stripes[stripe].end == 0)
+                    len = parity_end - parity_start;
+                else
+                    len = stripes[stripe].start - parity_start;
+                
+                Status = sync_read_phys(c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("sync_read_phys returned %08x\n", Status);
+                    goto exit;
+                }
+                
+                RtlCopyMemory(log_stripes[i].pfns, fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                log_stripes[i].pfns += len >> PAGE_SHIFT;
+                
+                fragments2 += len;
+                fragment_pfns += len >> PAGE_SHIFT;
+            }
+            
+            stripe = (stripe + 1) % c->chunk_item->num_stripes;
+        }
+    }
+    
     parity = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     stripes[parity].end = parity_end;
+    
+    if (fragment_len > 0) {
+        UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
+        
+        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+            if ((stripes[stripe].start != 0 || stripes[stripe].end != 0) && stripes[stripe].end < parity_end) {
+                ULONG len = parity_end - stripes[stripe].end;
+                PFN_NUMBER* pl;
+                
+                Status = sync_read_phys(c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("sync_read_phys returned %08x\n", Status);
+                    goto exit;
+                }
+                
+                pl = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
+                
+                RtlCopyMemory(&pl[(parity_end - parity_start - len) >> PAGE_SHIFT], fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                fragments2 += len;
+                fragment_pfns += len >> PAGE_SHIFT;
+            }
+            
+            stripe = (stripe + 1) % c->chunk_item->num_stripes;
+        }
+    }
     
     wtc->parity1 = ExAllocatePoolWithTag(NonPagedPool, parity_end - parity_start, ALLOC_TAG);
     if (!wtc->parity1) {
@@ -1204,10 +1312,14 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
             
             RtlCopyMemory(stripe_pfns, pfns, writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
             
+            RtlCopyMemory(log_stripes[startoffstripe].pfns, pfns, writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+            log_stripes[startoffstripe].pfns += writelen >> PAGE_SHIFT;
+            
             stripeoff[stripe] = writelen;
             pos += writelen;
             
             stripe = (stripe + 1) % c->chunk_item->num_stripes;
+            i = startoffstripe + 1;
             
             while (stripe != parity) {
                 stripe_pfns = (PFN_NUMBER*)(stripes[stripe].mdl + 1);
@@ -1221,10 +1333,14 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
                 
                 RtlCopyMemory(stripe_pfns, &pfns[pos >> PAGE_SHIFT], writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
                 
+                RtlCopyMemory(log_stripes[i].pfns, &pfns[pos >> PAGE_SHIFT], writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                log_stripes[i].pfns += writelen >> PAGE_SHIFT;
+                
                 stripeoff[stripe] = writelen;
                 pos += writelen;
                 
                 stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                i++;
             }
             
             stripe_pfns = (PFN_NUMBER*)(stripes[parity].mdl + 1);
@@ -1235,15 +1351,20 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
         } else if (length - pos >= c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
             UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
             
+            i = 0;
             while (stripe != parity) {
                 stripe_pfns = (PFN_NUMBER*)(stripes[stripe].mdl + 1);
                 
                 RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], c->chunk_item->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
                 
+                RtlCopyMemory(log_stripes[i].pfns, &pfns[pos >> PAGE_SHIFT], c->chunk_item->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                log_stripes[i].pfns += c->chunk_item->stripe_length >> PAGE_SHIFT;
+                
                 stripeoff[stripe] += c->chunk_item->stripe_length;
                 pos += c->chunk_item->stripe_length;
                 
                 stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                i++;
             }
             
             stripe_pfns = (PFN_NUMBER*)(stripes[parity].mdl + 1);
@@ -1255,6 +1376,7 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
             UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
             UINT32 writelen, maxwritelen = 0;
             
+            i = 0;
             while (pos < length) {
                 stripe_pfns = (PFN_NUMBER*)(stripes[stripe].mdl + 1);
                 writelen = min(length - pos, min(stripes[stripe].end - stripes[stripe].start, c->chunk_item->stripe_length));
@@ -1267,10 +1389,14 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
                 
                 RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
                 
+                RtlCopyMemory(log_stripes[i].pfns, &pfns[pos >> PAGE_SHIFT], writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                log_stripes[i].pfns += writelen >> PAGE_SHIFT;
+                
                 stripeoff[stripe] += writelen;
                 pos += writelen;
                 
                 stripe = (stripe + 1) % c->chunk_item->num_stripes;
+                i++;
             }
             
             stripe_pfns = (PFN_NUMBER*)(stripes[parity].mdl + 1);
@@ -1658,10 +1784,34 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
 //         stripes[i].start = start;
 //         stripes[i].end = end;
 //     }
+
+    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, NormalPagePriority);
+        
+        if (i == 0)
+            RtlCopyMemory(wtc->parity1, ss, parity_end - parity_start);
+        else
+            do_xor(wtc->parity1, ss, parity_end - parity_start);
+    }
     
     Status = STATUS_SUCCESS;
     
 exit:
+    if (log_stripes) {
+        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+            if (log_stripes[i].mdl)
+                IoFreeMdl(log_stripes[i].mdl);
+        }
+        
+        ExFreePool(log_stripes);
+    }
+    
+    if (fragment_mdl)
+        IoFreeMdl(fragment_mdl);
+    
+    if (fragments)
+        ExFreePool(fragments);
+
     if (stripeoff)
         ExFreePool(stripeoff);
     
