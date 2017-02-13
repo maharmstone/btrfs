@@ -2154,49 +2154,17 @@ prepare_failed:
 void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, datastripes;
-    UINT64 start = 0xffffffffffffffff, end = 0, logend;
-    UINT16 i;
     
     datastripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
     
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, datastripes, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, datastripes, &endoff, &endoffstripe);
-
-    for (i = 0; i < datastripes; i++) {
-        UINT64 ststart, stend;
-        
-        if (startoffstripe > i) {
-            ststart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-        } else if (startoffstripe == i) {
-            ststart = startoff;
-        } else {
-            ststart = startoff - (startoff % c->chunk_item->stripe_length);
-        }
-
-        if (endoffstripe > i) {
-            stend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
-        } else if (endoffstripe == i) {
-            stend = endoff + 1;
-        } else {
-            stend = endoff - (endoff % c->chunk_item->stripe_length);
-        }
-
-        if (ststart != stend) {
-            if (ststart < start)
-                start = ststart;
-
-            if (stend > end)
-                end = stend;
-        }
-    }
     
-    *lockaddr = c->offset + ((start / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * datastripes) +
-                start % c->chunk_item->stripe_length;
-               
-    logend = c->offset + ((end / c->chunk_item->stripe_length) * c->chunk_item->stripe_length * datastripes);
-    logend += c->chunk_item->stripe_length * (datastripes - 1);
-    logend += end % c->chunk_item->stripe_length == 0 ? c->chunk_item->stripe_length : (end % c->chunk_item->stripe_length);
-    *locklen = logend - *lockaddr;
+    startoff -= startoff % c->chunk_item->stripe_length;
+    endoff = sector_align(endoff, c->chunk_item->stripe_length);
+    
+    *lockaddr = c->offset + (startoff * datastripes);
+    *locklen = (endoff - startoff) * datastripes;
 }
 
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset) {
