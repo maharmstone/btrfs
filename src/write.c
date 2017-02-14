@@ -1622,8 +1622,19 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
     
     if (fragment_len > 0) {
         fragments = ExAllocatePoolWithTag(NonPagedPool, fragment_len, ALLOC_TAG);
+        if (!fragments) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
 
         fragment_mdl = IoAllocateMdl(fragments, fragment_len, FALSE, FALSE, NULL);
+        if (!fragment_mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         MmBuildMdlForNonPagedPool(fragment_mdl);
         
         fragment_pfns = (PFN_NUMBER*)(fragment_mdl + 1);
@@ -1742,9 +1753,21 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
     }
     
     wtc->parity1_mdl = IoAllocateMdl(wtc->parity1, parity_end - parity_start, FALSE, FALSE, NULL);
+    if (!wtc->parity1_mdl) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     MmBuildMdlForNonPagedPool(wtc->parity1_mdl);
     
     wtc->parity2_mdl = IoAllocateMdl(wtc->parity2, parity_end - parity_start, FALSE, FALSE, NULL);
+    if (!wtc->parity2_mdl) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+    
     MmBuildMdlForNonPagedPool(wtc->parity2_mdl);
     
     if (file_write)
@@ -1760,11 +1783,23 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
         RtlCopyMemory(wtc->scratch, data, length);
         
         master_mdl = IoAllocateMdl(wtc->scratch, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         MmBuildMdlForNonPagedPool(master_mdl);
         
         wtc->mdl = master_mdl;
     } else {
         master_mdl = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         
         wtc->mdl = master_mdl;
