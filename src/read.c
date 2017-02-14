@@ -342,7 +342,6 @@ static BOOL raid5_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 
     
     return FALSE;
 }
-#endif
 
 static void raid6_reconstruct1(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
                                BOOL first, UINT32 firststripesize, UINT16 missing) {
@@ -1119,6 +1118,7 @@ end:
     
     return STATUS_SUCCESS;
 }
+#endif
 
 NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
     NTSTATUS Status;
@@ -2187,12 +2187,14 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, UINT64 offset, UINT32 firststripesize, BOOL check_nocsum_parity, UINT64 generation) {
     NTSTATUS Status;
+    BOOL checksum_error = FALSE;
+    
+#if 0
     UINT32 pos, skip;
     int num_errors = 0;
     UINT64 i, off, stripeoff, origoff;
     UINT8 needs_reconstruct = 0;
     UINT16 missing1, missing2;
-    BOOL checksum_error = FALSE;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -2300,6 +2302,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         off += (ci->num_stripes - 2) * ci->stripe_length;
         raid6_decode(off, 0, context, ci, &stripeoff, buf, &pos, length, 0);
     }
+#endif
     
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
@@ -2330,6 +2333,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     }
     
     if (checksum_error) {
+        return STATUS_CRC_ERROR; // FIXME
+#if 0
         CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
         
         for (i = 0; i < needs_reconstruct; i++) {
@@ -2459,8 +2464,10 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     return STATUS_CRC_ERROR;
             }
         }
+#endif
     }
     
+#if 0
     // write good data over bad
     
     if (!Vcb->readonly) {
@@ -2476,6 +2483,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             }
         }
     }
+#endif
     
     return STATUS_SUCCESS;
 }
@@ -2954,7 +2962,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     context.stripes[stripe].stripestart = context.stripes[stripe].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
                 }
                 
-                context.stripes[parity].stripestart = context.stripes[stripe].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                context.stripes[parity].stripestart = context.stripes[parity].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
                 
                 if (length - pos > ci->num_stripes * (ci->num_stripes - 1) * ci->stripe_length) {
                     skip = ((length - pos) / (ci->num_stripes * (ci->num_stripes - 1) * ci->stripe_length)) - 1;
@@ -3113,66 +3121,242 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         ExFreePool(stripeoff);
     } else if (type == BLOCK_FLAG_RAID6) {
         UINT64 startoff, endoff;
-        UINT16 endoffstripe;
-        UINT64 start = 0xffffffffffffffff, end = 0;
+        UINT16 endoffstripe, parity1;
+        UINT32 *stripeoff, pos;
+        PMDL master_mdl;
+        PFN_NUMBER *pfns, dummy;
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 2, &startoff, &startoffstripe);
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes - 2, &endoff, &endoffstripe);
         
-        for (i = 0; i < ci->num_stripes - 2; i++) {
-            UINT64 ststart, stend;
+        if (file_read) {
+            context.va = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
             
-            if (startoffstripe > i) {
-                ststart = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
-            } else if (startoffstripe == i) {
-                ststart = startoff;
-            } else {
-                ststart = startoff - (startoff % ci->stripe_length);
-            }
-              
-            if (endoffstripe > i) {
-                stend = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
-            } else if (endoffstripe == i) {
-                stend = endoff + 1;
-            } else {
-                stend = endoff - (endoff % ci->stripe_length);
-            }
-            
-            if (ststart != stend) {
-                if (ststart < start) {
-                    start = ststart;
-                    firststripesize = ci->stripe_length - (ststart % ci->stripe_length);
-                }
-                
-                if (stend > end)
-                    end = stend;
-            }
-        }
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            context.stripes[i].stripestart = start;
-            context.stripes[i].stripeend = end;
-            
-            context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].stripeend - context.stripes[i].stripestart, ALLOC_TAG);
-        
-            if (!context.stripes[i].buf) {
+            if (!context.va) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
-            
-            context.stripes[i].mdl = IoAllocateMdl(context.stripes[i].buf, context.stripes[i].stripeend - context.stripes[i].stripestart, FALSE, FALSE, NULL);
+        } else
+            context.va = buf;
 
-            if (!context.stripes[i].mdl) {
-                ERR("IoAllocateMdl failed\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto exit;
-            }
+        master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        pfns = (PFN_NUMBER*)(master_mdl + 1);
+        
+        pos = 0;
+        while (pos < length) {
+            parity1 = (((addr - offset + pos) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
             
-            MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
+            if (pos == 0) {
+                UINT16 stripe = (parity1 + startoffstripe + 2) % ci->num_stripes, parity2;
+                ULONG skip, readlen;
+                
+                i = startoffstripe;
+                while (stripe != parity1) {
+                    if (i == startoffstripe) {
+                        readlen = min(length, ci->stripe_length - (startoff % ci->stripe_length));
+                        
+                        context.stripes[stripe].stripestart = startoff;
+                        context.stripes[stripe].stripeend = startoff + readlen;
+                        
+                        pos += readlen;
+                        
+                        if (pos == length)
+                            break;
+                    } else {
+                        readlen = min(length - pos, ci->stripe_length);
+                        
+                        context.stripes[stripe].stripestart = startoff - (startoff % ci->stripe_length);
+                        context.stripes[stripe].stripeend = context.stripes[stripe].stripestart + readlen;
+                        
+                        pos += readlen;
+                        
+                        if (pos == length)
+                            break;
+                    }
+                    
+                    i++;
+                    stripe = (stripe + 1) % ci->num_stripes;
+                }
+                
+                if (pos == length)
+                    break;
+                
+                for (i = 0; i < startoffstripe; i++) {
+                    UINT16 stripe = (parity1 + i + 2) % ci->num_stripes;
+                    
+                    context.stripes[stripe].stripestart = context.stripes[stripe].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                }
+                
+                context.stripes[parity1].stripestart = context.stripes[parity1].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                
+                parity2 = (parity1 + 1) % ci->num_stripes;
+                context.stripes[parity2].stripestart = context.stripes[parity2].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                
+                if (length - pos > ci->num_stripes * (ci->num_stripes - 2) * ci->stripe_length) {
+                    skip = ((length - pos) / (ci->num_stripes * (ci->num_stripes - 2) * ci->stripe_length)) - 1;
+                    
+                    for (i = 0; i < ci->num_stripes; i++) {
+                        context.stripes[i].stripeend += skip * ci->num_stripes * ci->stripe_length;
+                    }
+                    
+                    pos += skip * (ci->num_stripes - 2) * ci->num_stripes * ci->stripe_length;
+                }
+            } else if (length - pos >= ci->stripe_length * (ci->num_stripes - 2)) {
+                for (i = 0; i < ci->num_stripes; i++) {
+                    context.stripes[i].stripeend += ci->stripe_length;
+                }
+                
+                pos += ci->stripe_length * (ci->num_stripes - 2);
+            } else {
+                UINT16 stripe = (parity1 + 2) % ci->num_stripes;
+                
+                i = 0;
+                while (stripe != parity1) {
+                    if (endoffstripe == i) {
+                        context.stripes[stripe].stripeend = endoff + 1;
+                        break;
+                    } else if (endoffstripe > i)
+                        context.stripes[stripe].stripeend = endoff - (endoff % ci->stripe_length) + ci->stripe_length;
+                    
+                    i++;
+                    stripe = (stripe + 1) % ci->num_stripes;
+                }
+                
+                break;
+            }
         }
         
-        context.stripes_cancel = Vcb->options.raid6_recalculation;
+        for (i = 0; i < ci->num_stripes; i++) {
+            if (context.stripes[i].stripestart != context.stripes[i].stripeend) {
+                context.stripes[i].mdl = IoAllocateMdl(context.va, context.stripes[i].stripeend - context.stripes[i].stripestart, FALSE, FALSE, NULL);
+
+                if (!context.stripes[i].mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
+            }
+        }
+        
+        // FIXME - miss this out if read is short enough not to cross any parity stripes?
+        dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
+        if (!dummypage) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
+        dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
+        if (!dummy_mdl) {
+            ERR("IoAllocateMdl failed\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            ExFreePool(dummypage);
+            goto exit;
+        }
+        
+        MmBuildMdlForNonPagedPool(dummy_mdl);
+        
+        dummy = *(PFN_NUMBER*)(dummy_mdl + 1);
+        
+        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
+        if (!stripeoff) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+
+        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
+
+        pos = 0;
+        
+        while (pos < length) {
+            PFN_NUMBER* stripe_pfns;
+            
+            parity1 = (((addr - offset + pos) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+            
+            if (pos == 0) {
+                UINT16 stripe = (parity1 + startoffstripe + 2) % ci->num_stripes;
+                UINT32 readlen = min(length - pos, min(context.stripes[stripe].stripeend - context.stripes[stripe].stripestart,
+                                                       ci->stripe_length - (context.stripes[stripe].stripestart % ci->stripe_length)));
+                
+                stripe_pfns = (PFN_NUMBER*)(context.stripes[stripe].mdl + 1);
+                
+                RtlCopyMemory(stripe_pfns, pfns, readlen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                
+                stripeoff[stripe] = readlen;
+                pos += readlen;
+                
+                stripe = (stripe + 1) % ci->num_stripes;
+                
+                while (stripe != parity1) {
+                    stripe_pfns = (PFN_NUMBER*)(context.stripes[stripe].mdl + 1);
+                    readlen = min(length - pos, min(context.stripes[stripe].stripeend - context.stripes[stripe].stripestart, ci->stripe_length));
+                    
+                    if (readlen == 0)
+                        break;
+                    
+                    RtlCopyMemory(stripe_pfns, &pfns[pos >> PAGE_SHIFT], readlen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                    
+                    stripeoff[stripe] = readlen;
+                    pos += readlen;
+                    
+                    stripe = (stripe + 1) % ci->num_stripes;
+                }
+            } else if (length - pos >= ci->stripe_length * (ci->num_stripes - 2)) {
+                UINT16 stripe = (parity1 + 2) % ci->num_stripes;
+                UINT16 parity2 = (parity1 + 1) % ci->num_stripes;
+                
+                while (stripe != parity1) {
+                    stripe_pfns = (PFN_NUMBER*)(context.stripes[stripe].mdl + 1);
+                    
+                    RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], ci->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                    
+                    stripeoff[stripe] += ci->stripe_length;
+                    pos += ci->stripe_length;
+                    
+                    stripe = (stripe + 1) % ci->num_stripes;
+                }
+                
+                stripe_pfns = (PFN_NUMBER*)(context.stripes[parity1].mdl + 1);
+                
+                for (i = 0; i < ci->stripe_length >> PAGE_SHIFT; i++) {
+                    stripe_pfns[stripeoff[parity1] >> PAGE_SHIFT] = dummy;
+                    stripeoff[parity1] += PAGE_SIZE;
+                }
+                
+                stripe_pfns = (PFN_NUMBER*)(context.stripes[parity2].mdl + 1);
+                
+                for (i = 0; i < ci->stripe_length >> PAGE_SHIFT; i++) {
+                    stripe_pfns[stripeoff[parity2] >> PAGE_SHIFT] = dummy;
+                    stripeoff[parity2] += PAGE_SIZE;
+                }
+            } else {
+                UINT16 stripe = (parity1 + 2) % ci->num_stripes;
+                UINT32 readlen;
+                
+                while (pos < length) {
+                    stripe_pfns = (PFN_NUMBER*)(context.stripes[stripe].mdl + 1);
+                    readlen = min(length - pos, min(context.stripes[stripe].stripeend - context.stripes[stripe].stripestart, ci->stripe_length));
+                    
+                    if (readlen == 0)
+                        break;
+                    
+                    RtlCopyMemory(&stripe_pfns[stripeoff[stripe] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], readlen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+                    
+                    stripeoff[stripe] += readlen;
+                    pos += readlen;
+                    
+                    stripe = (stripe + 1) % ci->num_stripes;
+                }
+            }
+        }
+        
+        MmUnlockPages(master_mdl);
+        IoFreeMdl(master_mdl);
+
+        ExFreePool(stripeoff);
     }
     
     KeInitializeSpinLock(&context.spin_lock);
@@ -3353,10 +3537,19 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID6) {
-        Status = read_data_raid6(Vcb, buf, addr, length, Irp, &context, ci, devices, offset, firststripesize, check_nocsum_parity, generation);
+        Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, firststripesize, check_nocsum_parity, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08x\n", Status);
+            
+            if (file_read)
+                ExFreePool(context.va);
+            
             goto exit;
+        }
+
+        if (file_read) {
+            RtlCopyMemory(buf, context.va, length);
+            ExFreePool(context.va);
         }
     }
 
