@@ -2639,6 +2639,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             context.va = buf;
         
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
@@ -2750,6 +2755,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             c->last_stripe = (orig_ls + 1) % ci->sub_stripes;
         
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
         MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
@@ -2914,6 +2924,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             context.va = buf;
 
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
@@ -3141,6 +3157,12 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             context.va = buf;
 
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
+        if (!master_mdl) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
+        }
+        
         MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
