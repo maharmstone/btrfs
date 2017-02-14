@@ -24,8 +24,6 @@ typedef struct {
     UINT64 start;
     UINT64 end;
     UINT8* data;
-    UINT32 skip_start;
-    UINT32 skip_end;
     PMDL mdl;
     UINT32 irp_offset;
 } write_stripe;
@@ -808,7 +806,7 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
             if (file_write) {
                 UINT8* va;
                 
-                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset + stripes[i].skip_start;
+                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset;
                 
                 stripes[i].mdl = IoAllocateMdl(va, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
                 if (!stripes[i].mdl) {
@@ -827,8 +825,7 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
-                                               stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+                stripes[i].mdl = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
                 if (!stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
                     ExFreePool(stripeoff);
@@ -2099,9 +2096,9 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             
             if (file_write) {
                 UINT8* va;
-                ULONG writelen = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
+                ULONG writelen = stripes[i].end - stripes[i].start;
                 
-                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset + stripes[i].skip_start;
+                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset;
                 
                 stripes[i].mdl = IoAllocateMdl(va, writelen, FALSE, FALSE, NULL);
                 if (!stripes[i].mdl) {
@@ -2112,8 +2109,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
                 
                 IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, writelen);
             } else {
-                stripes[i].mdl = IoAllocateMdl(stripes[i].data + stripes[i].skip_start,
-                                               stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end, FALSE, FALSE, NULL);
+                stripes[i].mdl = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
                 if (!stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2137,7 +2133,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             goto end;
         }
         
-        if (stripes[i].start + stripes[i].skip_start == stripes[i].end - stripes[i].skip_end || stripes[i].start == stripes[i].end) {
+        if (stripes[i].start == stripes[i].end) {
             stripe->status = WriteDataStatus_Ignore;
             stripe->Irp = NULL;
             stripe->buf = stripes[i].data;
@@ -2181,15 +2177,14 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
                 stripe->Irp->UserBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, NormalPagePriority);
             
 #ifdef DEBUG_PARANOID
-            if (stripes[i].end < stripes[i].start + stripes[i].skip_start + stripes[i].skip_end) {
-                ERR("trying to write stripe with negative length (%llx < %llx + %x + %x)\n",
-                    stripes[i].end, stripes[i].start, stripes[i].skip_start, stripes[i].skip_end);
+            if (stripes[i].end < stripes[i].start) {
+                ERR("trying to write stripe with negative length (%llx < %llx)\n", stripes[i].end, stripes[i].start);
                 int3;
             }
 #endif
 
-            IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start - stripes[i].skip_start - stripes[i].skip_end;
-            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset + stripes[i].skip_start;
+            IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start;
+            IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset;
             
             stripe->Irp->UserIosb = &stripe->iosb;
             wtc->stripes_left++;
