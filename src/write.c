@@ -1933,15 +1933,18 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
     }
 
     for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
-        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, NormalPagePriority);
+        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[c->chunk_item->num_stripes - 3 - i].mdl, NormalPagePriority);
         
-        if (i == 0)
+        if (i == 0) {
             RtlCopyMemory(wtc->parity1, ss, parity_end - parity_start);
-        else
+            RtlCopyMemory(wtc->parity2, ss, parity_end - parity_start);
+        } else {
             do_xor(wtc->parity1, ss, parity_end - parity_start);
+            
+            galois_double(wtc->parity2, parity_end - parity_start);
+            do_xor(wtc->parity2, ss, parity_end - parity_start);
+        }
     }
-    
-    // FIXME - Galois stripe
     
     Status = STATUS_SUCCESS;
     
