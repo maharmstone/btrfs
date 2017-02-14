@@ -96,8 +96,8 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    wtc->parity1 = wtc->scratch = NULL;
-    wtc->mdl = wtc->parity_mdl = NULL;
+    wtc->parity1 = wtc->parity2 = wtc->scratch = NULL;
+    wtc->mdl = wtc->parity1_mdl = wtc->parity2_mdl = NULL;
     
     Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL, Irp, FALSE, 0, FALSE, 0);
     if (!NT_SUCCESS(Status)) {

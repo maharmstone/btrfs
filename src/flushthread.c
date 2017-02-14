@@ -1502,8 +1502,8 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
     InitializeListHead(&wtc->stripes);
     wtc->tree = TRUE;
     wtc->stripes_left = 0;
-    wtc->parity1 = wtc->scratch = NULL;
-    wtc->mdl = wtc->parity_mdl = NULL;
+    wtc->parity1 = wtc->parity2 = wtc->scratch = NULL;
+    wtc->mdl = wtc->parity1_mdl = wtc->parity2_mdl = NULL;
     
     // merge together runs
     c = NULL;
