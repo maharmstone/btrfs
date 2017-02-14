@@ -2049,14 +2049,13 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, BOOL need_free, UINT32 length, write_data_context* wtc, PIRP Irp,
+NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
                             chunk* c, BOOL file_write, UINT32 irp_offset) {
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
     write_data_stripe* stripe;
     write_stripe* stripes = NULL;
-    BOOL need_free2;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
@@ -2084,44 +2083,24 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             ERR("prepare_raid0_write returned %08x\n", Status);
             goto prepare_failed;
         }
-        
-        if (need_free)
-            ExFreePool(data);
-
-        need_free2 = TRUE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
         Status = prepare_raid10_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid10_write returned %08x\n", Status);
             goto prepare_failed;
         }
-        
-        if (need_free)
-            ExFreePool(data);
-
-        need_free2 = TRUE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
         Status = prepare_raid5_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
             goto prepare_failed;
         }
-        
-        if (need_free)
-            ExFreePool(data);
-
-        need_free2 = TRUE;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         Status = prepare_raid6_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08x\n", Status);
             goto prepare_failed;
         }
-        
-        if (need_free)
-            ExFreePool(data);
-
-        need_free2 = TRUE;
     } else {  // write same data to every location - SINGLE, DUP, RAID1
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             stripes[i].start = address - c->offset;
@@ -2155,7 +2134,6 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
                 MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
             }
         }
-        need_free2 = need_free;
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -2174,12 +2152,10 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, B
             stripe->status = WriteDataStatus_Ignore;
             stripe->Irp = NULL;
             stripe->buf = stripes[i].data;
-            stripe->need_free = need_free2;
             stripe->mdl = NULL;
         } else {
             stripe->context = (struct _write_data_context*)wtc;
             stripe->buf = stripes[i].data;
-            stripe->need_free = need_free2;
             stripe->device = c->devices[i];
             RtlZeroMemory(&stripe->iosb, sizeof(IO_STATUS_BLOCK));
             stripe->status = WriteDataStatus_Pending;
@@ -2342,7 +2318,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
     
-    Status = write_data(Vcb, address, data, FALSE, length, wtc, Irp, c, file_write, irp_offset);
+    Status = write_data(Vcb, address, data, length, wtc, Irp, c, file_write, irp_offset);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         
@@ -2442,7 +2418,7 @@ end:
 }
 
 void free_write_data_stripes(write_data_context* wtc) {
-    LIST_ENTRY *le, *le2, *nextle;
+    LIST_ENTRY* le;
     PMDL last_mdl = NULL;
     
     if (wtc->parity1_mdl) {
@@ -2492,29 +2468,10 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
     
     le = wtc->stripes.Flink;
-    while (le != &wtc->stripes) {
-        write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
-        
-        nextle = le->Flink;
-
-        if (stripe->buf && stripe->need_free) {
-            ExFreePool(stripe->buf);
-            
-            le2 = le->Flink;
-            while (le2 != &wtc->stripes) {
-                write_data_stripe* s2 = CONTAINING_RECORD(le2, write_data_stripe, list_entry);
-                
-                if (s2->buf == stripe->buf)
-                    s2->buf = NULL;
-                
-                le2 = le2->Flink;
-            }
-            
-        }
-        
+    while (!IsListEmpty(&wtc->stripes)) {
+        write_data_stripe* stripe = CONTAINING_RECORD(RemoveHeadList(&wtc->stripes), write_data_stripe, list_entry);
+       
         ExFreePool(stripe);
-        
-        le = nextle;
     }
 }
 

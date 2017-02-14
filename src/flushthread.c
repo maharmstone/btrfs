@@ -1582,7 +1582,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
         if (!tw->overlap) {
             TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
             
-            Status = write_data(Vcb, tw->address, tw->data, TRUE, tw->length, wtc, NULL, NULL, FALSE, 0);
+            Status = write_data(Vcb, tw->address, tw->data, tw->length, wtc, NULL, NULL, FALSE, 0);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data returned %08x\n", Status);
                 ExFreePool(wtc);
@@ -1935,6 +1935,9 @@ end:
     while (!IsListEmpty(&tree_writes)) {
         le = RemoveHeadList(&tree_writes);
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        if (tw->data)
+            ExFreePool(tw->data);
         
         ExFreePool(tw);
     }
