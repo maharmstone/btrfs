@@ -3036,10 +3036,11 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     TRACE("cut out superblock in chunk %llx\n", c->offset);
                     
                     off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 1));
+                    off_start -= off_start % ci->stripe_length;
                     off_start *= ci->num_stripes - 1;
 
-                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
+                    off_end *= ci->num_stripes - 1;
                     
                     TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
 
@@ -3054,10 +3055,11 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     TRACE("cut out superblock in chunk %llx\n", c->offset);
                     
                     off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 2));
+                    off_start -= off_start % ci->stripe_length;
                     off_start *= ci->num_stripes - 2;
 
-                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 2));
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
+                    off_end *= ci->num_stripes - 2;
                     
                     TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
 
