@@ -931,76 +931,166 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         return STATUS_SUCCESS;
     
     if (context->tree) {
-//         UINT16 j, stripe, parity;
-//         UINT64 off;
-        BOOL recovered = FALSE/*, first = TRUE, failed = FALSE*/;
-//         UINT8* t2;
-//         
-//         t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size * 2, ALLOC_TAG);
-//         if (!t2) {
-//             ERR("out of memory\n");
-//             return STATUS_INSUFFICIENT_RESOURCES;
-//         }
-//         
-//         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 1, &off, &stripe);
-//         
-//         parity = (((addr - offset) / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
-//         
-//         stripe = (parity + stripe + 1) % ci->num_stripes;
-//         
-//         for (j = 0; j < ci->num_stripes; j++) {
-//             if (j != stripe) {
-//                 if (devices[j]->devobj) {
-//                     if (first) {
-//                         Status = sync_read_phys(devices[j]->devobj, cis[j].offset + off, Vcb->superblock.node_size, t2, FALSE);
-//                         if (!NT_SUCCESS(Status)) {
-//                             ERR("sync_read_phys returned %08x\n", Status);
-//                             failed = TRUE;
-//                             break;
-//                         }
-//                         
-//                         first = FALSE;
-//                     } else {
-//                         Status = sync_read_phys(devices[j]->devobj, cis[j].offset + off, Vcb->superblock.node_size, t2 + Vcb->superblock.node_size, FALSE);
-//                         if (!NT_SUCCESS(Status)) {
-//                             ERR("sync_read_phys returned %08x\n", Status);
-//                             failed = TRUE;
-//                             break;
-//                         }
-//                         
-//                         do_xor(t2, t2 + Vcb->superblock.node_size, Vcb->superblock.node_size);
-//                     }
-//                 } else {
-//                     failed = TRUE;
-//                     break;
-//                 }
-//             }
-//         }
-//         
-//         if (!failed) {
-//             tree_header* t3 = (tree_header*)t2;
-//             UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&t3->fs_uuid, Vcb->superblock.node_size - sizeof(t3->csum));
-// 
-//             if (t3->address == addr && crc32 == *((UINT32*)t3->csum) && (generation == 0 || t3->generation == generation)) {
-//                 RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
-//                 ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
-//                 recovered = TRUE;
-//                 
-//                 if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
-//                     Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off, t2, Vcb->superblock.node_size, FALSE);
-//                     if (!NT_SUCCESS(Status))
-//                         WARN("write_data_phys returned %08x\n", Status);
-//                 }
-//             }
-//         }
-// 
+        UINT8* sector;
+        UINT16 j, stripe, physstripe, parity1, parity2, error_stripe;
+        UINT64 off;
+        BOOL recovered = FALSE, failed = FALSE;
+        ULONG num_errors = 0;
+        
+        sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size * (ci->num_stripes + 2), ALLOC_TAG);
+        if (!sector) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 2, &off, &stripe);
+        
+        parity1 = (((addr - offset) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+        parity2 = (parity1 + 1) % ci->num_stripes;
+        
+        physstripe = (parity2 + stripe + 1) % ci->num_stripes;
+        
+        j = (parity2 + 1) % ci->num_stripes;
+        do {
+            if (j != stripe) {
+                if (devices[j]->devobj) {
+                    Status = sync_read_phys(devices[j]->devobj, cis[j].offset + off, Vcb->superblock.node_size, sector + (j * Vcb->superblock.node_size), FALSE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("sync_read_phys returned %08x\n", Status);
+                        num_errors++;
+                        error_stripe = j;
+                        
+                        if (num_errors > 1) {
+                            failed = TRUE;
+                            break;
+                        }
+                    }
+                } else {
+                    num_errors++;
+                    error_stripe = j;
+                    
+                    if (num_errors > 1) {
+                        failed = TRUE;
+                        break;
+                    }
+                }
+            }
+            
+            j = (j + 1) % ci->num_stripes;
+        } while (j != (parity2 + 1) % ci->num_stripes);
+        
+        if (!failed) {
+            if (num_errors == 0) {
+                tree_header* th = (tree_header*)(sector + (stripe * Vcb->superblock.node_size));
+                UINT32 crc32;
+                
+                j = (stripe + 1) % ci->num_stripes;
+                
+                RtlCopyMemory(sector + (stripe * Vcb->superblock.node_size), sector + (j * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                
+                j = (j + 1) % ci->num_stripes;
+                while (j != stripe) {
+                    if (j != parity2)
+                        do_xor(sector + (stripe * Vcb->superblock.node_size), sector + (j * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                    
+                    j = (j + 1) % ci->num_stripes;
+                }
+                
+                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+                if (th->address == addr && crc32 == *((UINT32*)th->csum) && (generation == 0 || th->generation == generation)) {
+                    RtlCopyMemory(buf, sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                    ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[physstripe]->devitem.dev_id);
+                    recovered = TRUE;
+                    
+                    if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
+                        Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
+                                                 sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
+                }
+            }
+            
+            if (!recovered) {
+                UINT32 crc32;
+                tree_header* th = (tree_header*)(sector + (ci->num_stripes * Vcb->superblock.node_size));
+                
+                if (num_errors == 1) {
+                    raid6_recover2(sector, ci->num_stripes, Vcb->superblock.node_size, stripe, error_stripe, sector + (ci->num_stripes * Vcb->superblock.node_size));
+                    
+                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+                    if (th->address == addr && crc32 == *((UINT32*)th->csum) && (generation == 0 || th->generation == generation))
+                        recovered = TRUE;
+                } else {
+                    for (j = 0; j < ci->num_stripes - 1; j++) {
+                        if (j != stripe) {
+                            raid6_recover2(sector, ci->num_stripes, Vcb->superblock.node_size, stripe, j, sector + (ci->num_stripes * Vcb->superblock.node_size));
+                            
+                            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+                            if (th->address == addr && crc32 == *((UINT32*)th->csum) && (generation == 0 || th->generation == generation)) {
+                                recovered = TRUE;
+                                error_stripe = j;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (recovered) {
+                    UINT16 error_stripe_phys = (parity2 + error_stripe + 1) % ci->num_stripes;
+                    
+                    ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[physstripe]->devitem.dev_id);
+                    RtlCopyMemory(buf, sector + (ci->num_stripes * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                    
+                    if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
+                        Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
+                                                 sector + (ci->num_stripes * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
+                    
+                    if (error_stripe == ci->num_stripes - 2) {
+                        ERR("recovering from parity error at %llx, device %llx\n", addr, devices[error_stripe_phys]->devitem.dev_id);
+                        
+                        RtlZeroMemory(sector + ((ci->num_stripes - 2) * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                        
+                        for (j = 0; j < ci->num_stripes - 2; j++) {
+                            if (j == stripe) {
+                                do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.node_size), sector + (ci->num_stripes * Vcb->superblock.node_size),
+                                        Vcb->superblock.node_size);
+                            } else {
+                                do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.node_size), sector + (j * Vcb->superblock.node_size),
+                                        Vcb->superblock.node_size);
+                            }
+                        }
+                    } else {
+                        ERR("recovering from checksum error at %llx, device %llx\n", addr + ((error_stripe - stripe) * ci->stripe_length),
+                            devices[error_stripe_phys]->devitem.dev_id);
+                        
+                        RtlCopyMemory(sector + (error_stripe * Vcb->superblock.node_size),
+                                      sector + ((ci->num_stripes + 1) * Vcb->superblock.node_size), Vcb->superblock.node_size);
+                    }
+                    
+                    if (!Vcb->readonly && devices[error_stripe_phys]->devobj && !devices[error_stripe_phys]->readonly) { // write good data over bad
+                        Status = write_data_phys(devices[error_stripe_phys]->devobj, cis[error_stripe_phys].offset + off,
+                                                 sector + (error_stripe * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                        if (!NT_SUCCESS(Status))
+                            WARN("write_data_phys returned %08x\n", Status);
+                    }
+                }
+            }
+        }
+
         if (!recovered) {
             ERR("unrecoverable checksum error at %llx\n", addr);
-//             ExFreePool(t2);
+            ExFreePool(sector);
             return STATUS_CRC_ERROR;
         }
         
-//         ExFreePool(t2);
+        ExFreePool(sector);
     } else {
         ULONG sectors = length / Vcb->superblock.sector_size;
         UINT8* sector;
@@ -1059,16 +1149,15 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 
                 if (!failed) {
                     if (num_errors == 0) {
-                        if (stripe == 0)
-                            j = (parity1 + 3) % ci->num_stripes;
-                        else
-                            j = (parity1 + 2) % ci->num_stripes;
-                        
+                        j = (stripe + 1) % ci->num_stripes;
+                
                         RtlCopyMemory(sector + (stripe * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                         
                         j = (j + 1) % ci->num_stripes;
-                        while (j != parity2) {
-                            do_xor(sector + (stripe * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                        while (j != stripe) {
+                            if (j != parity2)
+                                do_xor(sector + (stripe * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            
                             j = (j + 1) % ci->num_stripes;
                         }
                         
@@ -1079,7 +1168,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[physstripe]->devitem.dev_id);
                             recovered = TRUE;
                             
-                            if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
+                            if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
                                                          sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
                                 if (!NT_SUCCESS(Status))
