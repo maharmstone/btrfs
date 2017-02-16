@@ -23,7 +23,6 @@ enum read_data_status {
     ReadDataStatus_Cancelling,
     ReadDataStatus_Cancelled,
     ReadDataStatus_Error,
-    ReadDataStatus_CRCError,
     ReadDataStatus_MissingDevice,
     ReadDataStatus_Skip
 };
@@ -227,10 +226,8 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
         
         crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
         
-        if (th->address != context->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && th->generation != generation)) {
-            context->stripes[stripe].status = ReadDataStatus_CRCError;
+        if (th->address != context->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && th->generation != generation))
             checksum_error = TRUE;
-        }
     } else if (context->csum) {
 #ifdef DEBUG_STATS
         LARGE_INTEGER time1, time2;
@@ -239,10 +236,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
 #endif
         Status = check_csum(Vcb, context->stripes[stripe].buf, context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
         
-        if (Status == STATUS_CRC_ERROR) {
-            context->stripes[stripe].status = ReadDataStatus_CRCError;
+        if (Status == STATUS_CRC_ERROR)
             checksum_error = TRUE;
-        } else if (!NT_SUCCESS(Status)) {
+        else if (!NT_SUCCESS(Status)) {
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
