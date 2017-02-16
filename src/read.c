@@ -20,8 +20,6 @@
 enum read_data_status {
     ReadDataStatus_Pending,
     ReadDataStatus_Success,
-    ReadDataStatus_Cancelling,
-    ReadDataStatus_Cancelled,
     ReadDataStatus_Error,
     ReadDataStatus_MissingDevice,
     ReadDataStatus_Skip
@@ -53,7 +51,7 @@ typedef struct {
     LONG stripes_left;
     UINT64 type;
     UINT32 sector_size;
-    UINT16 firstoff, startoffstripe, sectors_per_stripe, stripes_cancel;
+    UINT16 firstoff, startoffstripe, sectors_per_stripe;
     UINT32* csum;
     BOOL tree;
     read_data_stripe* stripes;
@@ -70,7 +68,6 @@ extern tCcCopyReadEx CcCopyReadEx;
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
-    UINT64 i;
     LONG stripes_left;
     KIRQL irql;
 
@@ -78,70 +75,13 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     
     stripes_left = InterlockedDecrement(&context->stripes_left);
     
-    if (stripe->status == ReadDataStatus_Cancelling) {
-        stripe->status = ReadDataStatus_Cancelled;
-        goto end;
-    }
-    
     stripe->iosb = Irp->IoStatus;
     
-    if (NT_SUCCESS(Irp->IoStatus.Status)) {
-        if (context->type == BLOCK_FLAG_DUPLICATE) {
-            stripe->status = ReadDataStatus_Success;
-
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel) {
-                for (i = 0; i < context->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Pending) {
-                        context->stripes[i].status = ReadDataStatus_Cancelling;
-                        IoCancelIrp(context->stripes[i].Irp);
-                    }
-                }
-            }
-        } else if (context->type == BLOCK_FLAG_RAID0) {
-            stripe->status = ReadDataStatus_Success;
-        } else if (context->type == BLOCK_FLAG_RAID10) {
-            stripe->status = ReadDataStatus_Success;
-            
-            if (stripes_left > 0 && context->stripes_cancel != 0) {
-                for (i = 0; i < context->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Pending && context->stripes[i].stripenum == stripe->stripenum) {
-                        context->stripes[i].status = ReadDataStatus_Cancelling;
-                        IoCancelIrp(context->stripes[i].Irp);
-                        break;
-                    }
-                }
-            }
-        } else if (context->type == BLOCK_FLAG_RAID5) {
-            stripe->status = ReadDataStatus_Success;
-            
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
-                for (i = 0; i < context->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Pending) {
-                        context->stripes[i].status = ReadDataStatus_Cancelling;
-                        IoCancelIrp(context->stripes[i].Irp);
-                        break;
-                    }
-                }
-            }
-        } else if (context->type == BLOCK_FLAG_RAID6) {
-            stripe->status = ReadDataStatus_Success;
-
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
-                for (i = 0; i < context->num_stripes; i++) {
-                    if (context->stripes[i].status == ReadDataStatus_Pending) {
-                        context->stripes[i].status = ReadDataStatus_Cancelling;
-                        IoCancelIrp(context->stripes[i].Irp);
-                    }
-                }
-            }
-        }
-            
-        goto end;
-    } else {
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+        stripe->status = ReadDataStatus_Success;
+    else
         stripe->status = ReadDataStatus_Error;
-    }
     
-end:
     KeReleaseSpinLock(&context->spin_lock, irql);
     
     if (stripes_left == 0)
@@ -1612,8 +1552,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
         ExFreePool(stripeoff);
         ExFreePool(stripes);
-        
-        context.stripes_cancel = 1;
     } else if (type == BLOCK_FLAG_DUPLICATE) {
         UINT64 orig_ls;
         
@@ -1665,8 +1603,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
         }
-        
-        context.stripes_cancel = ci->num_stripes - 1;
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe, parity;
