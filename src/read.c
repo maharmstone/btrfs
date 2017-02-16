@@ -152,784 +152,6 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-#if 0
-static void raid6_reconstruct1(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
-                               BOOL first, UINT32 firststripesize, UINT16 missing) {
-    UINT16 parity1, parity2, stripe;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    UINT32 readlen;
-    
-    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %x)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, missing);
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    parity2 = (parity1 + 1) % ci->num_stripes;
-    
-    readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
-    
-    if (missing != parity1 && missing != parity2) {
-        RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], &context->stripes[parity1].buf[*stripeoff], readlen);
-        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-        
-        do {
-            if (stripe != missing)
-                do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        } while (stripe != parity2);
-    } else
-        TRACE("skipping parity stripe\n");
-    
-    *stripeoff += stripelen;
-}
-
-static void raid6_reconstruct2(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
-                               BOOL first, UINT32 firststripesize, UINT16 missing1, UINT16 missing2) {
-    UINT16 parity1, parity2, stripe;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    UINT32 readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
-    
-    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %x, %x)\n", off, skip, context, ci, *stripeoff, maxsize,
-          first, firststripesize, missing1, missing2);
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    parity2 = (parity1 + 1) % ci->num_stripes;
-    
-    // skip if missing stripes are p and q
-    if ((parity1 == missing1 && parity2 == missing2) || (parity1 == missing2 && parity2 == missing1)) {
-        *stripeoff += stripelen;
-        return;
-    }
-    
-    if (missing1 == parity2 || missing2 == parity2) { // reconstruct from p and data
-        UINT16 missing = missing1 == parity2 ? missing2 : missing1;
-        
-        RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], &context->stripes[parity1].buf[*stripeoff], readlen);
-        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-        
-        do {
-            if (stripe != missing)
-                do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        } while (stripe != parity2);
-    } else if (missing1 == parity1 || missing2 == parity1) { // reconstruct from q and data
-        UINT16 missing = missing1 == parity1 ? missing2 : missing1;
-        UINT16 i, div;
-        
-        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-        
-        i = ci->num_stripes - 3;
-        
-        if (stripe == missing) {
-            RtlZeroMemory(&context->stripes[missing].buf[*stripeoff], readlen);
-            div = i;
-        } else
-            RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-        
-        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        
-        i--;
-        do {
-            galois_double(&context->stripes[missing].buf[*stripeoff], readlen);
-            
-            if (stripe != missing)
-                do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            else
-                div = i;
-            
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            i--;
-        } while (stripe != parity2);
-        
-        do_xor(&context->stripes[missing].buf[*stripeoff], &context->stripes[parity2].buf[*stripeoff], readlen);
-        
-        if (div != 0)
-            galois_divpower(&context->stripes[missing].buf[*stripeoff], div, readlen);
-    } else { // reconstruct from p and q
-        UINT16 x, y, i;
-        UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
-        UINT32 j;
-        
-        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-        
-        // put qxy in missing1
-        // put pxy in missing2
-        
-        i = ci->num_stripes - 3;
-        if (stripe == missing1 || stripe == missing2) {
-            RtlZeroMemory(&context->stripes[missing1].buf[*stripeoff], readlen);
-            RtlZeroMemory(&context->stripes[missing2].buf[*stripeoff], readlen);
-            
-            if (stripe == missing1)
-                x = i;
-            else
-                y = i;
-        } else {
-            RtlCopyMemory(&context->stripes[missing1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            RtlCopyMemory(&context->stripes[missing2].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-        }
-        
-        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        
-        i--;
-        do {
-            galois_double(&context->stripes[missing1].buf[*stripeoff], readlen);
-            
-            if (stripe != missing1 && stripe != missing2) {
-                do_xor(&context->stripes[missing1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-                do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            } else if (stripe == missing1)
-                x = i;
-            else if (stripe == missing2)
-                y = i;
-            
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            i--;
-        } while (stripe != parity2);
-        
-        gyx = gpow2(y > x ? (y-x) : (255-x+y));
-        gx = gpow2(255-x);
-
-        denom = gdiv(1, gyx ^ 1);
-        a = gmul(gyx, denom);
-        b = gmul(gx, denom);
-        
-        p = &context->stripes[parity1].buf[*stripeoff];
-        q = &context->stripes[parity2].buf[*stripeoff];
-        pxy = &context->stripes[missing2].buf[*stripeoff];
-        qxy = &context->stripes[missing1].buf[*stripeoff]; 
-        
-        for (j = 0; j < readlen; j++) {
-            *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
-            
-            p++;
-            q++;
-            pxy++;
-            qxy++;
-        }
-        
-        do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[missing1].buf[*stripeoff], readlen);
-        do_xor(&context->stripes[missing2].buf[*stripeoff], &context->stripes[parity1].buf[*stripeoff], readlen);
-    }
-    
-    *stripeoff += stripelen;
-}
-
-static void raid6_decode(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
-                         UINT32* pos, UINT32 length, UINT32 firststripesize) {
-    UINT16 parity1, stripe;
-    BOOL first = *pos == 0;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    
-    stripe = (parity1 + 2) % ci->num_stripes;
-    
-    while (TRUE) {
-        if (stripe == parity1) {
-            *stripeoff += stripelen;
-            return;
-        }
-        
-        if (skip >= ci->stripe_length) {
-            skip -= ci->stripe_length;
-        } else {
-            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
-            
-            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
-            
-            *pos += copylen;
-            
-            if (*pos == length)
-                return;
-            
-            skip = 0;
-        }
-        
-        stripe = (stripe + 1) % ci->num_stripes;
-    }
-}
-
-static BOOL raid6_decode_with_checksum(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
-                                       UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32* csum, UINT32 sector_size) {
-    UINT16 parity1, parity2, stripe;
-    BOOL first = *pos == 0;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    parity2 = (parity1 + 1) % ci->num_stripes;
-    stripe = (parity1 + 2) % ci->num_stripes;
-    
-    while (TRUE) {
-        if (stripe == parity1) {
-            *stripeoff += stripelen;
-            return TRUE;
-        }
-        
-        if (skip >= ci->stripe_length) {
-            skip -= ci->stripe_length;
-        } else {
-            UINT32 i;
-            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
-            
-            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
-            
-            for (i = 0; i < copylen / sector_size; i ++) {
-                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
-                
-                if (crc32 != csum[i]) {
-                    UINT16 j, firststripe;
-                    
-                    if (parity2 == 0 && stripe == 1)
-                        firststripe = 2;
-                    else if (parity2 == 0 || stripe == 0)
-                        firststripe = 1;
-                    else
-                        firststripe = 0;
-                    
-                    RtlCopyMemory(buf + *pos + (i * sector_size),
-                                  &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                    
-                    for (j = firststripe + 1; j < ci->num_stripes; j++) {
-                        if (j != stripe && j != parity2) {
-                            do_xor(buf + *pos + (i * sector_size), &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                        }
-                    }
-                    
-                    crc32 = ~calc_crc32c(0xffffffff, buf + *pos + (i * sector_size), sector_size);
-                    
-                    if (crc32 != csum[i]) {
-                        UINT8 *parity, *buf2;
-                        UINT16 rs, div;
-                        
-                        // assume p is wrong
-                        
-                        parity = ExAllocatePoolWithTag(NonPagedPool, sector_size, ALLOC_TAG);
-                        if (!parity) {
-                            ERR("out of memory\n");
-                            return FALSE;
-                        }
-                        
-                        rs = (parity1 + ci->num_stripes - 1) % ci->num_stripes;
-                        j = ci->num_stripes - 3;
-                        
-                        if (rs == stripe) {
-                            RtlZeroMemory(parity, sector_size);
-                            div = j;
-                        } else
-                            RtlCopyMemory(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                        
-                        rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
-                        j--;
-                        while (rs != parity2) {
-                            galois_double(parity, sector_size);
-                            
-                            if (rs != stripe)
-                                do_xor(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                            else
-                                div = j;
-            
-                            rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
-                            j--;
-                        }
-                        
-                        do_xor(parity, &context->stripes[parity2].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                        
-                        if (div != 0)
-                            galois_divpower(parity, div, sector_size);
-                        
-                        crc32 = ~calc_crc32c(0xffffffff, parity, sector_size);
-                        if (crc32 == csum[i]) {
-                            RtlCopyMemory(buf + *pos + (i * sector_size), parity, sector_size);
-                            
-                            // recalculate p
-                            RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], parity, sector_size);
-                            
-                            for (j = 0; j < ci->num_stripes; j++) {
-                                if (j != stripe && j != parity1 && j != parity2) {
-                                    do_xor(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)],
-                                           &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], sector_size);
-                                }
-                            }
-                            
-                            context->stripes[parity1].rewrite = TRUE;
-                            
-                            ExFreePool(parity);
-                            goto success;
-                        }
-                        
-                        // assume another of the data stripes is wrong
-                        
-                        buf2 = ExAllocatePoolWithTag(NonPagedPool, sector_size, ALLOC_TAG);
-                        if (!buf2) {
-                            ERR("out of memory\n");
-                            ExFreePool(parity);
-                            return FALSE;
-                        }
-                        
-                        j = (parity2 + 1) % ci->num_stripes;
-                        
-                        while (j != parity1) {
-                            if (j != stripe) {
-                                UINT16 curstripe, k;
-                                UINT32 bufoff = *stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size);
-                                UINT16 x, y;
-                                UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
-                            
-                                curstripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-                                
-                                // put qxy in parity
-                                // put pxy in buf2
-                                
-                                k = ci->num_stripes - 3;
-                                if (curstripe == stripe || curstripe == j) {
-                                    RtlZeroMemory(parity, sector_size);
-                                    RtlZeroMemory(buf2, sector_size);
-                                    
-                                    if (curstripe == stripe)
-                                        x = k;
-                                    else
-                                        y = k;
-                                } else {
-                                    RtlCopyMemory(parity, &context->stripes[curstripe].buf[bufoff], sector_size);
-                                    RtlCopyMemory(buf2, &context->stripes[curstripe].buf[bufoff], sector_size);
-                                }
-                                
-                                curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
-                                
-                                k--;
-                                do {
-                                    galois_double(parity, sector_size);
-                                    
-                                    if (curstripe != stripe && curstripe != j) {
-                                        do_xor(parity, &context->stripes[curstripe].buf[bufoff], sector_size);
-                                        do_xor(buf2, &context->stripes[curstripe].buf[bufoff], sector_size);
-                                    } else if (curstripe == stripe)
-                                        x = k;
-                                    else if (curstripe == j)
-                                        y = k;
-                                    
-                                    curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
-                                    k--;
-                                } while (curstripe != parity2);
-                                
-                                gyx = gpow2(y > x ? (y-x) : (255-x+y));
-                                gx = gpow2(255-x);
-
-                                denom = gdiv(1, gyx ^ 1);
-                                a = gmul(gyx, denom);
-                                b = gmul(gx, denom);
-                                
-                                p = &context->stripes[parity1].buf[bufoff];
-                                q = &context->stripes[parity2].buf[bufoff];
-                                pxy = buf2;
-                                qxy = parity; 
-                                
-                                for (k = 0; k < sector_size; k++) {
-                                    *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
-                                    
-                                    p++;
-                                    q++;
-                                    pxy++;
-                                    qxy++;
-                                }
-                                
-                                crc32 = ~calc_crc32c(0xffffffff, parity, sector_size);
-                                
-                                if (crc32 == csum[i]) {
-                                    do_xor(buf2, parity, sector_size);
-                                    do_xor(buf2, &context->stripes[parity1].buf[bufoff], sector_size);
-                                    
-                                    RtlCopyMemory(&context->stripes[j].buf[bufoff], buf2, sector_size);
-                                    context->stripes[j].rewrite = TRUE;
-                                    
-                                    RtlCopyMemory(buf + *pos + (i * sector_size), parity, sector_size);
-                                    ExFreePool(parity);
-                                    ExFreePool(buf2);
-                                    goto success;
-                                }
-                            }
-                            
-                            j = (j + 1) % ci->num_stripes;
-                        }
-                            
-                        ExFreePool(parity);
-                        ExFreePool(buf2);
-                        
-                        ERR("unrecoverable checksum error\n");
-                        return FALSE;
-                    }
-                    
-success:
-                    RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen + (i * sector_size)], buf + *pos + (i * sector_size), sector_size);
-                    context->stripes[stripe].rewrite = TRUE;
-                }
-            }
-            
-            *pos += copylen;
-            
-            if (*pos == length)
-                return TRUE;
-            
-            skip = 0;
-        }
-        
-        stripe = (stripe + 1) % ci->num_stripes;
-    }
-}
-
-static BOOL raid6_decode_with_checksum_metadata(UINT64 addr, UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT8* buf,
-                                                UINT32* pos, UINT32 length, UINT32 firststripesize, UINT32 node_size, UINT64 generation) {
-    UINT16 parity1, parity2, stripe;
-    BOOL first = *pos == 0;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    parity2 = (parity1 + 1) % ci->num_stripes;
-    stripe = (parity1 + 2) % ci->num_stripes;
-    
-    while (TRUE) {
-        if (stripe == parity1) {
-            *stripeoff += stripelen;
-            return TRUE;
-        }
-        
-        if (skip >= ci->stripe_length) {
-            skip -= ci->stripe_length;
-        } else {
-            UINT32 copylen = min(ci->stripe_length - skip, length - *pos);
-            tree_header* th = (tree_header*)buf;
-            UINT32 crc32;
-            
-            RtlCopyMemory(buf + *pos, &context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], copylen);
-            
-            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
-            
-            if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
-                UINT16 j, firststripe;
-                
-                if (parity2 == 0 && stripe == 1)
-                    firststripe = 2;
-                else if (parity2 == 0 || stripe == 0)
-                    firststripe = 1;
-                else
-                    firststripe = 0;
-                
-                RtlCopyMemory(buf + *pos, &context->stripes[firststripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                
-                for (j = firststripe + 1; j < ci->num_stripes; j++) {
-                    if (j != stripe && j != parity2) {
-                        do_xor(buf + *pos, &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                    }
-                }
-                
-                crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, node_size - sizeof(th->csum));
-                
-                if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
-                    UINT8 *parity, *buf2;
-                    UINT16 rs, div;
-                    tree_header* th2;
-                    
-                    // assume p is wrong
-                    
-                    parity = ExAllocatePoolWithTag(NonPagedPool, node_size, ALLOC_TAG);
-                    if (!parity) {
-                        ERR("out of memory\n");
-                        return FALSE;
-                    }
-                    
-                    rs = (parity1 + ci->num_stripes - 1) % ci->num_stripes;
-                    j = ci->num_stripes - 3;
-                    
-                    if (rs == stripe) {
-                        RtlZeroMemory(parity, node_size);
-                        div = j;
-                    } else
-                        RtlCopyMemory(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                    
-                    rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
-                    j--;
-                    while (rs != parity2) {
-                        galois_double(parity, node_size);
-                        
-                        if (rs != stripe)
-                            do_xor(parity, &context->stripes[rs].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                        else
-                            div = j;
-        
-                        rs = (rs + ci->num_stripes - 1) % ci->num_stripes;
-                        j--;
-                    }
-                    
-                    do_xor(parity, &context->stripes[parity2].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                    
-                    if (div != 0)
-                        galois_divpower(parity, div, node_size);
-                    
-                    th2 = (tree_header*)parity;
-                    
-                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
-                
-                    if (addr == th2->address && crc32 == *((UINT32*)th2->csum) && (generation == 0 || generation == th->generation)) {
-                        RtlCopyMemory(buf + *pos, parity, node_size);
-                        
-                        // recalculate p
-                        RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen], parity, node_size);
-                        
-                        for (j = 0; j < ci->num_stripes; j++) {
-                            if (j != stripe && j != parity1 && j != parity2) {
-                                do_xor(&context->stripes[parity1].buf[*stripeoff + skip - ci->stripe_length + stripelen],
-                                        &context->stripes[j].buf[*stripeoff + skip - ci->stripe_length + stripelen], node_size);
-                            }
-                        }
-                        
-                        context->stripes[parity1].rewrite = TRUE;
-                        
-                        ExFreePool(parity);
-                        goto success;
-                    }
-                    
-                    // assume another of the data stripes is wrong
-                    
-                    buf2 = ExAllocatePoolWithTag(NonPagedPool, node_size, ALLOC_TAG);
-                    if (!buf2) {
-                        ERR("out of memory\n");
-                        ExFreePool(parity);
-                        return FALSE;
-                    }
-                    
-                    j = (parity2 + 1) % ci->num_stripes;
-                    
-                    while (j != parity1) {
-                        if (j != stripe) {
-                            UINT16 curstripe, k;
-                            UINT32 bufoff = *stripeoff + skip - ci->stripe_length + stripelen;
-                            UINT16 x, y;
-                            UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
-                        
-                            curstripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-                            
-                            // put qxy in parity
-                            // put pxy in buf2
-                            
-                            k = ci->num_stripes - 3;
-                            if (curstripe == stripe || curstripe == j) {
-                                RtlZeroMemory(parity, node_size);
-                                RtlZeroMemory(buf2, node_size);
-                                
-                                if (curstripe == stripe)
-                                    x = k;
-                                else
-                                    y = k;
-                            } else {
-                                RtlCopyMemory(parity, &context->stripes[curstripe].buf[bufoff], node_size);
-                                RtlCopyMemory(buf2, &context->stripes[curstripe].buf[bufoff], node_size);
-                            }
-                            
-                            curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
-                            
-                            k--;
-                            do {
-                                galois_double(parity, node_size);
-                                
-                                if (curstripe != stripe && curstripe != j) {
-                                    do_xor(parity, &context->stripes[curstripe].buf[bufoff], node_size);
-                                    do_xor(buf2, &context->stripes[curstripe].buf[bufoff], node_size);
-                                } else if (curstripe == stripe)
-                                    x = k;
-                                else if (curstripe == j)
-                                    y = k;
-                                
-                                curstripe = curstripe == 0 ? (ci->num_stripes - 1) : (curstripe - 1);
-                                k--;
-                            } while (curstripe != parity2);
-                            
-                            gyx = gpow2(y > x ? (y-x) : (255-x+y));
-                            gx = gpow2(255-x);
-
-                            denom = gdiv(1, gyx ^ 1);
-                            a = gmul(gyx, denom);
-                            b = gmul(gx, denom);
-                            
-                            p = &context->stripes[parity1].buf[bufoff];
-                            q = &context->stripes[parity2].buf[bufoff];
-                            pxy = buf2;
-                            qxy = parity; 
-                            
-                            for (k = 0; k < node_size; k++) {
-                                *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
-                                
-                                p++;
-                                q++;
-                                pxy++;
-                                qxy++;
-                            }
-                            
-                            th2 = (tree_header*)parity;
-                    
-                            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th2->fs_uuid, node_size - sizeof(th2->csum));
-                        
-                            if (addr == th2->address && crc32 == *((UINT32*)th2->csum) && (generation == 0 || generation == th2->generation)) {
-                                do_xor(buf2, parity, node_size);
-                                do_xor(buf2, &context->stripes[parity1].buf[bufoff], node_size);
-                                
-                                RtlCopyMemory(&context->stripes[j].buf[bufoff], buf2, node_size);
-                                context->stripes[j].rewrite = TRUE;
-                                
-                                RtlCopyMemory(buf + *pos, parity, node_size);
-                                ExFreePool(parity);
-                                ExFreePool(buf2);
-                                goto success;
-                            }
-                        }
-                        
-                        j = (j + 1) % ci->num_stripes;
-                    }
-                        
-                    ExFreePool(parity);
-                    ExFreePool(buf2);
-                    
-                    ERR("unrecoverable checksum error\n");
-                    return FALSE;
-                }
-                
-success:
-                RtlCopyMemory(&context->stripes[stripe].buf[*stripeoff + skip - ci->stripe_length + stripelen], buf + *pos, node_size);
-                context->stripes[stripe].rewrite = TRUE;
-            }
-            
-            *pos += copylen;
-            
-            if (*pos == length)
-                return TRUE;
-            
-            skip = 0;
-        }
-        
-        stripe = (stripe + 1) % ci->num_stripes;
-    }
-}
-
-static NTSTATUS check_raid6_nocsum_parity(UINT64 off, UINT32 skip, read_data_context* context, CHUNK_ITEM* ci, UINT64* stripeoff, UINT64 maxsize,
-                                          BOOL first, UINT32 firststripesize, UINT8* scratch) {
-    UINT16 parity1, parity2, stripe;
-    UINT32 stripelen = first ? firststripesize : ci->stripe_length;
-    UINT32 readlen, i;
-    BOOL bad = FALSE;
-    
-    TRACE("(%llx, %x, %p, %p, %llx, %llx, %u, %x, %p)\n", off, skip, context, ci, *stripeoff, maxsize, first, firststripesize, scratch);
-    
-    parity1 = ((off / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-    parity2 = (parity1 + 1) % ci->num_stripes;
-    
-    readlen = min(min(ci->stripe_length - (skip % ci->stripe_length), stripelen), maxsize - *stripeoff);
-    
-    RtlCopyMemory(scratch, &context->stripes[parity1].buf[*stripeoff], readlen);
-    stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-    
-    do {
-        do_xor(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
-        
-        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-    } while (stripe != parity2);
-    
-    for (i = 0; i < readlen; i++) {
-        if (scratch[i] != 0) {
-            bad = TRUE;
-            break;
-        }
-    }
-    
-    if (bad) {
-        UINT16 missing;
-        UINT8* buf2;
-        
-        // assume parity is bad
-        stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-        RtlCopyMemory(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
-        stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        
-        do {
-            galois_double(scratch, readlen);
-            
-            do_xor(scratch, &context->stripes[stripe].buf[*stripeoff], readlen);
-            
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        } while (stripe != parity2);
-        
-        if (RtlCompareMemory(scratch, &context->stripes[parity2].buf[*stripeoff], readlen) == readlen) {
-            WARN("recovering from invalid parity stripe\n");
-            
-            // recalc p
-            stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-            RtlCopyMemory(&context->stripes[parity1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-        
-            do {
-                do_xor(&context->stripes[parity1].buf[*stripeoff], &context->stripes[stripe].buf[*stripeoff], readlen);
-                
-                stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            } while (stripe != parity2);
-            
-            context->stripes[parity1].rewrite = TRUE;
-            goto end;
-        }
-        
-        // assume one of the data stripes is bad
-        
-        buf2 = ExAllocatePoolWithTag(NonPagedPool, readlen, ALLOC_TAG);
-        if (!buf2) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        missing = (parity2 + 1) % ci->num_stripes;
-        while (missing != parity1) {
-            RtlCopyMemory(scratch, &context->stripes[parity1].buf[*stripeoff], readlen);
-            for (i = 0; i < ci->num_stripes; i++) {
-                if (i != parity1 && i != parity2 && i != missing) {
-                    do_xor(scratch, &context->stripes[i].buf[*stripeoff], readlen);
-                }
-            }
-            
-            stripe = parity1 == 0 ? (ci->num_stripes - 1) : (parity1 - 1);
-            RtlCopyMemory(buf2, stripe == missing ? scratch : &context->stripes[stripe].buf[*stripeoff], readlen);
-            stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            
-            do {
-                galois_double(buf2, readlen);
-                
-                do_xor(buf2, stripe == missing ? scratch : &context->stripes[stripe].buf[*stripeoff], readlen);
-                
-                stripe = stripe == 0 ? (ci->num_stripes - 1) : (stripe - 1);
-            } while (stripe != parity2);
-            
-            if (RtlCompareMemory(buf2, &context->stripes[parity2].buf[*stripeoff], readlen) == readlen) {
-                WARN("recovering from invalid data stripe\n");
-                
-                RtlCopyMemory(&context->stripes[missing].buf[*stripeoff], scratch, readlen);
-                ExFreePool(buf2);
-                
-                context->stripes[missing].rewrite = TRUE;
-                goto end;
-            }
-            
-            missing = (missing + 1) % ci->num_stripes;
-        }
-        
-        ExFreePool(buf2);
-        
-        ERR("unrecoverable checksum error\n");
-        return STATUS_CRC_ERROR;
-    }
-    
-end:
-    *stripeoff += stripelen;
-    
-    return STATUS_SUCCESS;
-}
-#endif
-
 NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
     NTSTATUS Status;
     calc_job* cj;
@@ -1577,6 +799,92 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     return STATUS_SUCCESS;
 }
 
+static void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out) {
+    if (missing1 == num_stripes - 2 || missing2 == num_stripes - 2) { // reconstruct from q and data
+        UINT16 missing = missing1 == (num_stripes - 2) ? missing2 : missing1;
+        UINT16 stripe;
+        
+        stripe = num_stripes - 3;
+        
+        if (stripe == missing)
+            RtlZeroMemory(out, sector_size);
+        else
+            RtlCopyMemory(out, sectors + (stripe * sector_size), sector_size);
+
+        do {
+            stripe--;
+            
+            galois_double(out, sector_size);
+            
+            if (stripe != missing)
+                do_xor(out, sectors + (stripe * sector_size), sector_size);
+        } while (stripe > 0);
+        
+        do_xor(out, sectors + ((num_stripes - 1) * sector_size), sector_size);
+        
+        if (missing != 0)
+            galois_divpower(out, missing, sector_size);
+    } else { // reconstruct from p and q
+        UINT16 x, y, stripe;
+        UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
+        UINT32 j;
+        
+        stripe = num_stripes - 3;
+        
+        pxy = out + sector_size;
+        qxy = out; 
+
+        if (stripe == missing1 || stripe == missing2) {
+            RtlZeroMemory(qxy, sector_size);
+            RtlZeroMemory(pxy, sector_size);
+            
+            if (stripe == missing1)
+                x = stripe;
+            else
+                y = stripe;
+        } else {
+            RtlCopyMemory(qxy, sectors + (stripe * sector_size), sector_size);
+            RtlCopyMemory(pxy, sectors + (stripe * sector_size), sector_size);
+        }
+
+        do {
+            stripe--;
+            
+            galois_double(qxy, sector_size);
+            
+            if (stripe != missing1 && stripe != missing2) {
+                do_xor(qxy, sectors + (stripe * sector_size), sector_size);
+                do_xor(pxy, sectors + (stripe * sector_size), sector_size);
+            } else if (stripe == missing1)
+                x = stripe;
+            else if (stripe == missing2)
+                y = stripe;
+        } while (stripe > 0);
+        
+        gyx = gpow2(y > x ? (y-x) : (255-x+y));
+        gx = gpow2(255-x);
+
+        denom = gdiv(1, gyx ^ 1);
+        a = gmul(gyx, denom);
+        b = gmul(gx, denom);
+        
+        p = sectors + ((num_stripes - 2) * sector_size);
+        q = sectors + ((num_stripes - 1) * sector_size);
+        
+        for (j = 0; j < sector_size; j++) {
+            *qxy = gmul(a, *p ^ *pxy) ^ gmul(b, *q ^ *qxy);
+            
+            p++;
+            q++;
+            pxy++;
+            qxy++;
+        }
+        
+        do_xor(out + sector_size, out, sector_size);
+        do_xor(out + sector_size, sectors + ((num_stripes - 2) * sector_size), sector_size);
+    }
+}
+
 static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, UINT64 offset, UINT64 generation) {
     NTSTATUS Status;
@@ -1625,7 +933,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     if (context->tree) {
 //         UINT16 j, stripe, parity;
 //         UINT64 off;
-        BOOL recovered = FALSE, first = TRUE, failed = FALSE;
+        BOOL recovered = FALSE/*, first = TRUE, failed = FALSE*/;
 //         UINT8* t2;
 //         
 //         t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size * 2, ALLOC_TAG);
@@ -1697,7 +1005,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         ULONG sectors = length / Vcb->superblock.sector_size;
         UINT8* sector;
         
-        sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * ci->num_stripes, ALLOC_TAG);
+        sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * (ci->num_stripes + 2), ALLOC_TAG);
         if (!sector) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1709,7 +1017,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             if (context->csum[i] != crc32) {
                 UINT16 j, stripe, physstripe, parity1, parity2, error_stripe;
                 UINT64 off;
-                BOOL recovered = FALSE, first = TRUE, failed = FALSE;
+                BOOL recovered = FALSE, failed = FALSE;
                 ULONG num_errors = 0;
                 
                 get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
@@ -1781,9 +1089,71 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     }
                     
                     if (!recovered) {
-                        // FIXME - recover from two errors
-                        // FIXME - if num_errors == 1, we already know the other stripe with the error
-                        // FIXME - otherwise, test each other one in turn
+                        if (num_errors == 1) {
+                            raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, error_stripe, sector + (ci->num_stripes * Vcb->superblock.sector_size));
+                            
+                            crc32 = ~calc_crc32c(0xffffffff, sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
+                            if (crc32 == context->csum[i])
+                                recovered = TRUE;
+                        } else {
+                            for (j = 0; j < ci->num_stripes - 1; j++) {
+                                if (j != stripe) {
+                                    raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, j, sector + (ci->num_stripes * Vcb->superblock.sector_size));
+                                    
+                                    crc32 = ~calc_crc32c(0xffffffff, sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
+                                    if (crc32 == context->csum[i]) {
+                                        recovered = TRUE;
+                                        error_stripe = j;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (recovered) {
+                            UINT16 error_stripe_phys = (parity2 + error_stripe + 1) % ci->num_stripes;
+                            
+                            ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[physstripe]->devitem.dev_id);
+                            RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            
+                            if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
+                                Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
+                                                         sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
+                                if (!NT_SUCCESS(Status))
+                                    WARN("write_data_phys returned %08x\n", Status);
+                            }
+                            
+                            if (error_stripe == ci->num_stripes - 2) {
+                                ERR("recovering from parity error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[error_stripe_phys]->devitem.dev_id);
+                                
+                                RtlZeroMemory(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                
+                                for (j = 0; j < ci->num_stripes - 2; j++) {
+                                    if (j == stripe) {
+                                        do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), sector + (ci->num_stripes * Vcb->superblock.sector_size),
+                                               Vcb->superblock.sector_size);
+                                    } else {
+                                        do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size),
+                                               Vcb->superblock.sector_size);
+                                    }
+                                }
+                            } else {
+                                ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size) + ((error_stripe - stripe) * ci->stripe_length),
+                                    devices[error_stripe_phys]->devitem.dev_id);
+                                
+                                RtlCopyMemory(sector + (error_stripe * Vcb->superblock.sector_size),
+                                              sector + ((ci->num_stripes + 1) * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            }
+                            
+                            if (!Vcb->readonly && devices[error_stripe_phys]->devobj && !devices[error_stripe_phys]->readonly) { // write good data over bad
+                                Status = write_data_phys(devices[error_stripe_phys]->devobj, cis[error_stripe_phys].offset + off,
+                                                         sector + (error_stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
+                                if (!NT_SUCCESS(Status))
+                                    WARN("write_data_phys returned %08x\n", Status);
+                            }
+                        }
                     }
                 }
 
@@ -1797,154 +1167,6 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         ExFreePool(sector);
     }
-    
-#if 0
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-        
-        for (i = 0; i < needs_reconstruct; i++) {
-            PIO_STACK_LOCATION IrpSp;
-            UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
-            
-            // re-run Irps that we cancelled
-            
-            if (context->stripes[reconstruct_stripe].Irp) {
-                if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
-                    MmUnlockPages(context->stripes[reconstruct_stripe].Irp->MdlAddress);
-                    IoFreeMdl(context->stripes[reconstruct_stripe].Irp->MdlAddress);
-                }
-                IoFreeIrp(context->stripes[reconstruct_stripe].Irp);
-            }
-            
-            if (!Irp) {
-                context->stripes[reconstruct_stripe].Irp = IoAllocateIrp(devices[reconstruct_stripe]->devobj->StackSize, FALSE);
-                
-                if (!context->stripes[reconstruct_stripe].Irp) {
-                    ERR("IoAllocateIrp failed\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-            } else {
-                context->stripes[reconstruct_stripe].Irp = IoMakeAssociatedIrp(Irp, devices[reconstruct_stripe]->devobj->StackSize);
-                
-                if (!context->stripes[reconstruct_stripe].Irp) {
-                    ERR("IoMakeAssociatedIrp failed\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-            }
-            
-            IrpSp = IoGetNextIrpStackLocation(context->stripes[reconstruct_stripe].Irp);
-            IrpSp->MajorFunction = IRP_MJ_READ;
-            
-            if (devices[reconstruct_stripe]->devobj->Flags & DO_BUFFERED_IO) {
-                context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer =
-                    ExAllocatePoolWithTag(NonPagedPool, context->stripes[reconstruct_stripe].stripeend - context->stripes[reconstruct_stripe].stripestart, ALLOC_TAG);
-                    
-                if (!context->stripes[reconstruct_stripe].Irp->AssociatedIrp.SystemBuffer) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                context->stripes[reconstruct_stripe].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
-
-                context->stripes[reconstruct_stripe].Irp->UserBuffer = context->stripes[reconstruct_stripe].buf;
-            } else if (devices[reconstruct_stripe]->devobj->Flags & DO_DIRECT_IO) {
-                context->stripes[reconstruct_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[reconstruct_stripe].buf,
-                                                                                        context->stripes[reconstruct_stripe].stripeend - context->stripes[reconstruct_stripe].stripestart, FALSE, FALSE, NULL);
-                if (!context->stripes[reconstruct_stripe].Irp->MdlAddress) {
-                    ERR("IoAllocateMdl failed\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                MmProbeAndLockPages(context->stripes[reconstruct_stripe].Irp->MdlAddress, KernelMode, IoWriteAccess);
-            } else {
-                context->stripes[reconstruct_stripe].Irp->UserBuffer = context->stripes[reconstruct_stripe].buf;
-            }
-
-            IrpSp->Parameters.Read.Length = context->stripes[reconstruct_stripe].stripeend - context->stripes[reconstruct_stripe].stripestart;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = context->stripes[reconstruct_stripe].stripestart + cis[reconstruct_stripe].offset;
-            
-            context->stripes[reconstruct_stripe].Irp->UserIosb = &context->stripes[reconstruct_stripe].iosb;
-            
-            IoSetCompletionRoutine(context->stripes[reconstruct_stripe].Irp, read_data_completion, &context->stripes[reconstruct_stripe], TRUE, TRUE, TRUE);
-
-            context->stripes[reconstruct_stripe].status = ReadDataStatus_Pending;
-        }
-            
-        if (needs_reconstruct > 0) {
-#ifdef DEBUG_STATS
-            LARGE_INTEGER time1, time2;
-#endif
-            context->stripes_left = needs_reconstruct;
-            KeClearEvent(&context->Event);
-            
-#ifdef DEBUG_STATS
-            if (!context->tree)
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
-            
-            for (i = 0; i < needs_reconstruct; i++) {
-                UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
-                
-                IoCallDriver(devices[reconstruct_stripe]->devobj, context->stripes[reconstruct_stripe].Irp);
-            }
-            
-            KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-            
-#ifdef DEBUG_STATS
-            if (!context->tree) {
-                time2 = KeQueryPerformanceCounter(NULL);
-                
-                Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
-            }
-#endif
-
-            for (i = 0; i < needs_reconstruct; i++) {
-                UINT16 reconstruct_stripe = i == 0 ? missing1 : missing2;
-                
-                if (context->stripes[reconstruct_stripe].status != ReadDataStatus_Success) {
-                    ERR("unrecoverable checksum error\n");
-                    return STATUS_CRC_ERROR;
-                }
-            }
-        }
-        
-        off = origoff;
-        
-        if (context->tree) {
-            pos = 0;
-            stripeoff = 0;
-            if (!raid6_decode_with_checksum_metadata(addr, off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, Vcb->superblock.node_size, generation)) {
-                ERR("unrecoverable metadata checksum error\n");
-                return STATUS_CRC_ERROR;
-            }
-        } else {
-            pos = 0;
-            stripeoff = 0;
-            if (!raid6_decode_with_checksum(off, skip, context, ci, &stripeoff, buf, &pos, length, firststripesize, context->csum, Vcb->superblock.sector_size))
-                return STATUS_CRC_ERROR;
-            
-            while (pos < length) {
-                off += (ci->num_stripes - 1) * ci->stripe_length;
-                if (!raid6_decode_with_checksum(off, 0, context, ci, &stripeoff, buf, &pos, length, 0, context->csum, Vcb->superblock.sector_size))
-                    return STATUS_CRC_ERROR;
-            }
-        }
-
-    // write good data over bad
-    
-    if (!Vcb->readonly) {
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                Status = write_data_phys(devices[i]->devobj, cis[i].offset + context->stripes[i].stripestart,
-                                         context->stripes[i].buf, context->stripes[i].stripeend - context->stripes[i].stripestart, FALSE);
-                
-                if (!NT_SUCCESS(Status))
-                    WARN("write_data_phys returned %08x\n", Status);
-            }
-        }
-    }
-#endif
     
     return STATUS_SUCCESS;
 }
