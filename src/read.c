@@ -1377,9 +1377,17 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, UINT64 offset, UINT64 generation) {
+    ULONG i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Error) {
+            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status);
+            return context->stripes[i].iosb.Status;
+        }
+    }
     
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
@@ -1485,7 +1493,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         ExFreePool(t2);
     } else {
-        ULONG i, sectors = length / Vcb->superblock.sector_size;
+        ULONG sectors = length / Vcb->superblock.sector_size;
         UINT8* sector;
         
         sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * 2, ALLOC_TAG);
