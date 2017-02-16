@@ -56,7 +56,6 @@ typedef struct {
     UINT16 firstoff, startoffstripe, sectors_per_stripe, stripes_cancel;
     UINT32* csum;
     BOOL tree;
-    BOOL check_nocsum_parity;
     read_data_stripe* stripes;
     KSPIN_LOCK spin_lock;
     UINT8* va;
@@ -115,7 +114,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID5) {
             stripe->status = ReadDataStatus_Success;
             
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree || !context->check_nocsum_parity)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -127,7 +126,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
         } else if (context->type == BLOCK_FLAG_RAID6) {
             stripe->status = ReadDataStatus_Success;
 
-            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree || !context->check_nocsum_parity)) {
+            if (stripes_left > 0 && stripes_left == context->stripes_cancel && (context->csum || context->tree)) {
                 for (i = 0; i < context->num_stripes; i++) {
                     if (context->stripes[i].status == ReadDataStatus_Pending) {
                         context->stripes[i].status = ReadDataStatus_Cancelling;
@@ -1257,7 +1256,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
-                           PIRP Irp, BOOL check_nocsum_parity, UINT64 generation, BOOL file_read, UINT32 irp_offset) {
+                           PIRP Irp, UINT64 generation, BOOL file_read, UINT32 irp_offset) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context context;
@@ -1372,7 +1371,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context.csum = csum;
     context.tree = is_tree;
     context.type = type;
-    context.check_nocsum_parity = check_nocsum_parity;
     
     if (type == BLOCK_FLAG_RAID0) {
         UINT64 startoff, endoff;
@@ -2405,7 +2403,7 @@ static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG l
     return Status;
 }
 
-NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp, BOOL check_nocsum_parity) {
+NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     UINT64 bytes_read = 0;
@@ -2560,7 +2558,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     } else
                         csum = NULL;
                     
-                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp, check_nocsum_parity, 0, mdl, bytes_read);
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp, 0, mdl, bytes_read);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
@@ -2871,7 +2869,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (fcb->ads)
             Status = read_stream(fcb, data, start, length, bytes_read);
         else
-            Status = read_file(fcb, data, start, length, bytes_read, Irp, TRUE);
+            Status = read_file(fcb, data, start, length, bytes_read, Irp);
         
         *bytes_read += addon;
         TRACE("read %u bytes\n", *bytes_read);
