@@ -485,8 +485,6 @@ typedef struct {
     UINT32 flush_interval;
     UINT32 max_inline;
     UINT64 subvol_id;
-    UINT32 raid5_recalculation;
-    UINT32 raid6_recalculation;
     BOOL skip_balance;
     BOOL no_barrier;
     BOOL no_trim;
@@ -824,8 +822,6 @@ extern UINT32 mount_compress_type;
 extern UINT32 mount_zlib_level;
 extern UINT32 mount_flush_interval;
 extern UINT32 mount_max_inline;
-extern UINT32 mount_raid5_recalculation;
-extern UINT32 mount_raid6_recalculation;
 extern UINT32 mount_skip_balance;
 extern UINT32 mount_no_barrier;
 extern UINT32 mount_no_trim;

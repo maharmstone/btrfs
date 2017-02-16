@@ -27,7 +27,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;
     UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus,
-                   maxinlineus, subvolidus, raid5recalcus, raid6recalcus, skipbalanceus, nobarrierus, notrimus, clearcacheus;
+                   maxinlineus, subvolidus, skipbalanceus, nobarrierus, notrimus, clearcacheus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -41,8 +41,6 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->zlib_level = mount_zlib_level;
     options->flush_interval = mount_flush_interval;
     options->max_inline = min(mount_max_inline, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
-    options->raid5_recalculation = mount_raid5_recalculation;
-    options->raid6_recalculation = mount_raid6_recalculation;
     options->skip_balance = mount_skip_balance;
     options->no_barrier = mount_no_barrier;
     options->no_trim = mount_no_trim;
@@ -105,8 +103,6 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     RtlInitUnicodeString(&flushintervalus, L"FlushInterval");
     RtlInitUnicodeString(&maxinlineus, L"MaxInline");
     RtlInitUnicodeString(&subvolidus, L"SubvolId");
-    RtlInitUnicodeString(&raid5recalcus, L"Raid5Recalculation");
-    RtlInitUnicodeString(&raid6recalcus, L"Raid6Recalculation");
     RtlInitUnicodeString(&skipbalanceus, L"SkipBalance");
     RtlInitUnicodeString(&nobarrierus, L"NoBarrier");
     RtlInitUnicodeString(&notrimus, L"NoTrim");
@@ -159,14 +155,6 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
                 UINT64* val = (UINT64*)((UINT8*)kvfi + kvfi->DataOffset);
                 
                 options->subvol_id = *val;
-            } else if (FsRtlAreNamesEqual(&raid5recalcus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
-                
-                options->raid5_recalculation = *val;
-            } else if (FsRtlAreNamesEqual(&raid6recalcus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
-                
-                options->raid6_recalculation = *val;
             } else if (FsRtlAreNamesEqual(&skipbalanceus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
                 
@@ -199,12 +187,6 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     if (options->flush_interval == 0)
         options->flush_interval = mount_flush_interval;
     
-    if (options->raid5_recalculation > 1)
-        options->raid5_recalculation = 1;
-    
-    if (options->raid6_recalculation > 2)
-        options->raid6_recalculation = 2;
-
     Status = STATUS_SUCCESS;
     
 end2:
@@ -671,8 +653,6 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     get_registry_value(h, L"ZlibLevel", REG_DWORD, &mount_zlib_level, sizeof(mount_zlib_level));
     get_registry_value(h, L"FlushInterval", REG_DWORD, &mount_flush_interval, sizeof(mount_flush_interval));
     get_registry_value(h, L"MaxInline", REG_DWORD, &mount_max_inline, sizeof(mount_max_inline));
-    get_registry_value(h, L"Raid5Recalculation", REG_DWORD, &mount_raid5_recalculation, sizeof(mount_raid5_recalculation));
-    get_registry_value(h, L"Raid6Recalculation", REG_DWORD, &mount_raid6_recalculation, sizeof(mount_raid6_recalculation));
     get_registry_value(h, L"SkipBalance", REG_DWORD, &mount_skip_balance, sizeof(mount_skip_balance));
     get_registry_value(h, L"NoBarrier", REG_DWORD, &mount_no_barrier, sizeof(mount_no_barrier));
     get_registry_value(h, L"NoTrim", REG_DWORD, &mount_no_trim, sizeof(mount_no_trim));
@@ -680,12 +660,6 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     
     if (mount_flush_interval == 0)
         mount_flush_interval = 1;
-    
-    if (mount_raid5_recalculation > 1)
-        mount_raid5_recalculation = 1;
-    
-    if (mount_raid6_recalculation > 2)
-        mount_raid6_recalculation = 2;
     
 #ifdef _DEBUG
     get_registry_value(h, L"DebugLogLevel", REG_DWORD, &debug_log_level, sizeof(debug_log_level));
