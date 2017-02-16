@@ -1383,41 +1383,16 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 }
 
 static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                                 CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation) {
+                                 CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation, UINT64 offset) {
     UINT64 i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
-    UINT32 pos;
-    UINT8 stripe;
-    read_data_stripe** stripes;
-
-    stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
-    if (!stripes) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
     
-    RtlZeroMemory(stripes, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes);
-    
-    for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
-        UINT16 j;
-        
-        for (j = 0; j < ci->sub_stripes; j++) {
-            if (context->stripes[i+j].status == ReadDataStatus_Success) {
-                stripes[i / ci->sub_stripes] = &context->stripes[i+j];
-                break;
-            }
-        }
-        
-        if (!stripes[i / ci->sub_stripes]) {
-            for (j = 0; j < ci->sub_stripes; j++) {
-                if (context->stripes[i+j].status == ReadDataStatus_Error) {
-                    // both stripes must have errored if we get here
-                    WARN("stripe %llu returned error %08x\n", i+j, context->stripes[i+j].iosb.Status);
-                    ExFreePool(stripes);
-                    return context->stripes[i].iosb.Status;
-                }
-            }
+    for (i = 0; i < ci->num_stripes; i++) {
+        if (context->stripes[i].status == ReadDataStatus_Error) {
+            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status);
+            return context->stripes[i].iosb.Status;
         }
     }
     
@@ -1428,15 +1403,12 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         if (crc32 != *((UINT32*)th->csum)) {
             WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
             checksum_error = TRUE;
-            stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         } else if (addr != th->address) {
             WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
             checksum_error = TRUE;
-            stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         } else if (generation != 0 && generation != th->generation) {
             WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
             checksum_error = TRUE;
-            stripes[startoffstripe]->status = ReadDataStatus_CRCError;
         }
     } else if (context->csum) {
         NTSTATUS Status;
@@ -1460,317 +1432,135 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 #endif
     }
     
-    if (checksum_error) {
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-        UINT32* stripeoff;
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-#endif
+    if (!checksum_error)
+        return STATUS_SUCCESS;
+    
+    if (context->tree) {
+        tree_header* t2;
+        UINT16 j;
+        UINT64 off;
+        UINT16 stripe, badsubstripe = 0;
+        BOOL recovered = FALSE;
         
-        // FIXME - update dev stats
-        
-        WARN("checksum error\n");
-        
-        stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
-        if (!stripeoff) {
+        t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+        if (!t2) {
             ERR("out of memory\n");
-            ExFreePool(stripes);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        if (!context->tree) {
-            RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes);
-            
-            // find out which stripe the error was on
-            pos = 0;
-            stripe = startoffstripe / ci->sub_stripes;
-            while (pos < length) {
-                if (pos == 0) {
-                    UINT32 readlen = min(context->stripes[stripe * ci->sub_stripes].stripeend - context->stripes[stripe * ci->sub_stripes].stripestart, ci->stripe_length - (context->stripes[stripe * ci->sub_stripes].stripestart % ci->stripe_length));
-                    
-                    stripeoff[stripe] += readlen;
-                    pos += readlen;
-
-                    for (i = 0; i < readlen / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[i])
-                            stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                } else if (length - pos < ci->stripe_length) {
-                    for (i = 0; i < (length - pos) / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i])
-                            stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                    
-                    pos = length;
-                } else {
-                    stripeoff[stripe] += ci->stripe_length;
-                    
-                    for (i = 0; i < ci->stripe_length / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i])
-                            stripes[stripe]->status = ReadDataStatus_CRCError;
-                    }
-                    
-                    pos += ci->stripe_length;
-                }
-                
-                stripe = (stripe + 1) % (ci->num_stripes / ci->sub_stripes);
+        get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes / ci->sub_stripes, &off, &stripe);
+        
+        stripe *= ci->sub_stripes;
+        
+        for (j = 0; j < ci->sub_stripes; j++) {
+            if (context->stripes[stripe + j].status == ReadDataStatus_Success) {
+                badsubstripe = j;
+                break;
             }
         }
-        
-        context->stripes_left = 0;
-        
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_CRCError) {
-                UINT16 other_stripe = (i % 1) ? (i - 1) : (i + 1);
-                
-                if (context->stripes[other_stripe].status == ReadDataStatus_Cancelled) {
-                    PIO_STACK_LOCATION IrpSp;
-                    
-                    // re-run Irp that we cancelled
-                    
-                    if (context->stripes[other_stripe].Irp) {
-                        if (devices[other_stripe]->devobj->Flags & DO_DIRECT_IO) {
-                            MmUnlockPages(context->stripes[other_stripe].Irp->MdlAddress);
-                            IoFreeMdl(context->stripes[other_stripe].Irp->MdlAddress);
-                        }
-                        IoFreeIrp(context->stripes[other_stripe].Irp);
-                    }
-                    
-                    if (!Irp) {
-                        context->stripes[other_stripe].Irp = IoAllocateIrp(devices[other_stripe]->devobj->StackSize, FALSE);
-                        
-                        if (!context->stripes[other_stripe].Irp) {
-                            ERR("IoAllocateIrp failed\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                    } else {
-                        context->stripes[other_stripe].Irp = IoMakeAssociatedIrp(Irp, devices[other_stripe]->devobj->StackSize);
-                        
-                        if (!context->stripes[other_stripe].Irp) {
-                            ERR("IoMakeAssociatedIrp failed\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-                    }
-                    
-                    IrpSp = IoGetNextIrpStackLocation(context->stripes[other_stripe].Irp);
-                    IrpSp->MajorFunction = IRP_MJ_READ;
-                    
-                    if (devices[other_stripe]->devobj->Flags & DO_BUFFERED_IO) {
-                        context->stripes[other_stripe].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, context->stripes[other_stripe].stripeend - context->stripes[other_stripe].stripestart, ALLOC_TAG);
-                        if (!context->stripes[other_stripe].Irp->AssociatedIrp.SystemBuffer) {
-                            ERR("out of memory\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
 
-                        context->stripes[other_stripe].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
-
-                        context->stripes[other_stripe].Irp->UserBuffer = context->stripes[other_stripe].buf;
-                    } else if (devices[other_stripe]->devobj->Flags & DO_DIRECT_IO) {
-                        context->stripes[other_stripe].Irp->MdlAddress = IoAllocateMdl(context->stripes[other_stripe].buf, context->stripes[other_stripe].stripeend - context->stripes[other_stripe].stripestart, FALSE, FALSE, NULL);
-                        if (!context->stripes[other_stripe].Irp->MdlAddress) {
-                            ERR("IoAllocateMdl failed\n");
-                            return STATUS_INSUFFICIENT_RESOURCES;
+        for (j = 0; j < ci->sub_stripes; j++) {
+            if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
+                Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
+                                        Vcb->superblock.node_size, (UINT8*)t2, FALSE);
+                if (!NT_SUCCESS(Status))
+                    WARN("sync_read_phys returned %08x\n", Status);
+                else {
+                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&t2->fs_uuid, Vcb->superblock.node_size - sizeof(t2->csum));
+                    
+                    if (t2->address == addr && crc32 == *((UINT32*)t2->csum) && (generation == 0 || t2->generation == generation)) {
+                        RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
+                        ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe + j]->devitem.dev_id);
+                        recovered = TRUE;
+                        
+                        if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
+                            Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
+                                                     t2, Vcb->superblock.node_size, FALSE);
+                            if (!NT_SUCCESS(Status))
+                                WARN("write_data_phys returned %08x\n", Status);
                         }
                         
-                        MmProbeAndLockPages(context->stripes[other_stripe].Irp->MdlAddress, KernelMode, IoWriteAccess);
-                    } else {
-                        context->stripes[other_stripe].Irp->UserBuffer = context->stripes[other_stripe].buf;
+                        break;
                     }
-
-                    IrpSp->Parameters.Read.Length = context->stripes[other_stripe].stripeend - context->stripes[other_stripe].stripestart;
-                    IrpSp->Parameters.Read.ByteOffset.QuadPart = context->stripes[other_stripe].stripestart + cis[other_stripe].offset;
-                    
-                    context->stripes[other_stripe].Irp->UserIosb = &context->stripes[other_stripe].iosb;
-                    
-                    IoSetCompletionRoutine(context->stripes[other_stripe].Irp, read_data_completion, &context->stripes[other_stripe], TRUE, TRUE, TRUE);
-                    
-                    context->stripes_left++;
-                    context->stripes[other_stripe].status = ReadDataStatus_Pending;
                 }
             }
         }
         
-        if (context->stripes_left == 0) {
-            WARN("could not recover from checksum error\n");
-            ExFreePool(stripes);
-            ExFreePool(stripeoff);
+        if (!recovered) {
+            ERR("unrecoverable checksum error at %llx\n", addr);
+            ExFreePool(t2);
             return STATUS_CRC_ERROR;
         }
-        
-        context->stripes_cancel = 0;
-        KeClearEvent(&context->Event);
-        
-#ifdef DEBUG_STATS
-        if (!context->tree)
-            time1 = KeQueryPerformanceCounter(NULL);
-#endif
 
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_Pending) {
-                IoCallDriver(devices[i]->devobj, context->stripes[i].Irp);
-            }
+        ExFreePool(t2);
+    } else {
+        ULONG sectors = length / Vcb->superblock.sector_size;
+        UINT8* sector;
+        
+        sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size, ALLOC_TAG);
+        if (!sector) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-        
-#ifdef DEBUG_STATS
-        if (!context->tree) {
-            time2 = KeQueryPerformanceCounter(NULL);
+        for (i = 0; i < sectors; i++) {
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
             
-            Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
-        }
-#endif
-
-        for (i = 0; i < ci->num_stripes; i++) {
-            if (context->stripes[i].status == ReadDataStatus_CRCError) {
-                UINT16 other_stripe = (i % 1) ? (i - 1) : (i + 1);
+            if (context->csum[i] != crc32) {
+                UINT16 j;
+                UINT64 off;
+                UINT16 stripe, badsubstripe = 0;
+                BOOL recovered = FALSE;
                 
-                if (context->stripes[other_stripe].status != ReadDataStatus_Success) {
-                    WARN("could not recover from checksum error\n");
-                    ExFreePool(stripes);
-                    ExFreePool(stripeoff);
+                get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
+                                 ci->num_stripes / ci->sub_stripes, &off, &stripe);
+                
+                stripe *= ci->sub_stripes;
+                
+                for (j = 0; j < ci->sub_stripes; j++) {
+                    if (context->stripes[stripe + j].status == ReadDataStatus_Success) {
+                        badsubstripe = j;
+                        break;
+                    }
+                }
+                
+                for (j = 0; j < ci->sub_stripes; j++) {
+                    if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
+                        Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
+                                                Vcb->superblock.sector_size, sector, FALSE);
+                        if (!NT_SUCCESS(Status))
+                            WARN("sync_read_phys returned %08x\n", Status);
+                        else {
+                            UINT32 crc32b = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
+                            
+                            if (crc32b == context->csum[i]) {
+                                RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
+                                ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe + j]->devitem.dev_id);
+                                recovered = TRUE;
+                                
+                                if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
+                                    Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
+                                                             sector, Vcb->superblock.sector_size, FALSE);
+                                    if (!NT_SUCCESS(Status))
+                                        WARN("write_data_phys returned %08x\n", Status);
+                                }
+                                
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (!recovered) {
+                    ERR("unrecoverable checksum error at %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size));
+                    ExFreePool(sector);
                     return STATUS_CRC_ERROR;
                 }
             }
         }
-
-        RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes);
-    
-        pos = 0;
-        stripe = startoffstripe / ci->sub_stripes;
-        while (pos < length) {
-            if (pos == 0) {
-                UINT32 readlen = min(context->stripes[stripe * ci->sub_stripes].stripeend - context->stripes[stripe * ci->sub_stripes].stripestart, ci->stripe_length - (context->stripes[stripe * ci->sub_stripes].stripestart % ci->stripe_length));
-                
-                stripeoff[stripe] += readlen;
-                pos += readlen;
-                
-                if (context->csum && stripes[stripe]->status == ReadDataStatus_CRCError) {
-                    for (i = 0; i < readlen / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[i]) {
-                            UINT16 other_stripe = (stripe * ci->sub_stripes) + (context->stripes[stripe * ci->sub_stripes].status == ReadDataStatus_CRCError ? 1 : 0);
-                            UINT32 crc32b = ~calc_crc32c(0xffffffff, context->stripes[other_stripe].buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                            
-                            if (crc32b == context->csum[i]) {
-                                RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), context->stripes[other_stripe].buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                                RtlCopyMemory(stripes[stripe]->buf + (i * Vcb->superblock.sector_size), context->stripes[other_stripe].buf + (i * Vcb->superblock.sector_size),
-                                                Vcb->superblock.sector_size);
-                                stripes[stripe]->rewrite = TRUE;
-                            } else {
-                                WARN("could not recover from checksum error\n");
-                                ExFreePool(stripes);
-                                ExFreePool(stripeoff);
-                                return STATUS_CRC_ERROR;
-                            }
-                        }
-                    }
-                } else if (context->tree) {
-                    UINT16 other_stripe = (stripe * ci->sub_stripes) + (context->stripes[stripe * ci->sub_stripes].status == ReadDataStatus_CRCError ? 1 : 0);
-                    tree_header* th = (tree_header*)buf;
-                    UINT32 crc32;
-                    
-                    RtlCopyMemory(buf, context->stripes[other_stripe].buf, readlen);
-                    
-                    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-                    
-                    if (addr != th->address || crc32 != *((UINT32*)th->csum) || (generation != 0 && generation != th->generation)) {
-                        WARN("could not recover from checksum error\n");
-                        ExFreePool(stripes);
-                        ExFreePool(stripeoff);
-                        return STATUS_CRC_ERROR;
-                    }
-                    
-                    RtlCopyMemory(stripes[stripe]->buf, buf, readlen);
-                    stripes[stripe]->rewrite = TRUE;
-                }
-            } else if (length - pos < ci->stripe_length) {
-                if (context->csum && stripes[stripe]->status == ReadDataStatus_CRCError) {
-                    for (i = 0; i < (length - pos) / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i]) {
-                            UINT16 other_stripe = (stripe * ci->sub_stripes) + (context->stripes[stripe * ci->sub_stripes].status == ReadDataStatus_CRCError ? 1 : 0);
-                            UINT32 crc32b = ~calc_crc32c(0xffffffff, &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                            Vcb->superblock.sector_size);
-                            
-                            if (crc32b == context->csum[i]) {
-                                RtlCopyMemory(buf + pos + (i * Vcb->superblock.sector_size),
-                                                &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)], Vcb->superblock.sector_size);
-                                RtlCopyMemory(&stripes[stripe]->buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                Vcb->superblock.sector_size);
-                                stripes[stripe]->rewrite = TRUE;
-                            } else {
-                                WARN("could not recover from checksum error\n");
-                                ExFreePool(stripes);
-                                ExFreePool(stripeoff);
-                                return STATUS_CRC_ERROR;
-                            }
-                        }
-                    }
-                }
-                
-                pos = length;
-            } else {
-                if (context->csum && stripes[stripe]->status == ReadDataStatus_CRCError) {
-                    for (i = 0; i < ci->stripe_length / Vcb->superblock.sector_size; i++) {
-                        UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + pos + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                    
-                        if (crc32 != context->csum[(pos / Vcb->superblock.sector_size) + i]) {
-                            UINT16 other_stripe = (stripe * ci->sub_stripes) + (context->stripes[stripe * ci->sub_stripes].status == ReadDataStatus_CRCError ? 1 : 0);
-                            UINT32 crc32b = ~calc_crc32c(0xffffffff, &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                            Vcb->superblock.sector_size);
-                            
-                            if (crc32b == context->csum[i]) {
-                                RtlCopyMemory(buf + pos + (i * Vcb->superblock.sector_size),
-                                                &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)], Vcb->superblock.sector_size);
-                                RtlCopyMemory(&stripes[stripe]->buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                &context->stripes[other_stripe].buf[stripeoff[stripe] + (i * Vcb->superblock.sector_size)],
-                                                Vcb->superblock.sector_size);
-                                stripes[stripe]->rewrite = TRUE;
-                            } else {
-                                WARN("could not recover from checksum error\n");
-                                ExFreePool(stripes);
-                                ExFreePool(stripeoff);
-                                return STATUS_CRC_ERROR;
-                            }
-                        }
-                    }
-                }
-                
-                stripeoff[stripe] += ci->stripe_length;
-                pos += ci->stripe_length;
-            }
-            
-            stripe = (stripe + 1) % (ci->num_stripes / ci->sub_stripes);
-        }
         
-        // write good data over bad
-        
-        if (!Vcb->readonly) {
-            for (i = 0; i < ci->num_stripes; i++) {
-                if (context->stripes[i].rewrite && devices[i] && !devices[i]->readonly) {
-                    Status = write_data_phys(devices[i]->devobj, cis[i].offset + context->stripes[i].stripestart, context->stripes[i].buf,
-                                             context->stripes[i].stripeend - context->stripes[i].stripestart, FALSE);
-                    
-                    if (!NT_SUCCESS(Status))
-                        WARN("write_data_phys returned %08x\n", Status);
-                }
-            }
-        }
+        ExFreePool(sector);
     }
-    
-    ExFreePool(stripes);
-    
-    // FIXME - handle the case where one of the stripes doesn't read everything, i.e. Irp->IoStatus.Information is short
     
     return STATUS_SUCCESS;
 }
@@ -3388,7 +3178,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID10) {
-        Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, startoffstripe, generation);
+        Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, startoffstripe, generation, offset);
         
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid10 returned %08x\n", Status);
