@@ -299,7 +299,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
 }
 
 static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
-                                CHUNK_ITEM* ci, UINT16 startoffstripe, UINT64 generation) {
+                                CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation, UINT64 offset) {
     UINT64 i;
     
     for (i = 0; i < ci->num_stripes; i++) {
@@ -313,15 +313,24 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         
-        if (crc32 != *((UINT32*)th->csum)) {
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
-            return STATUS_CRC_ERROR;
-        } else if (addr != th->address) {
-            WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
-            return STATUS_CRC_ERROR;
-        } else if (generation != 0 && generation != th->generation) {
-            WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
-            return STATUS_CRC_ERROR;
+        if (crc32 != *((UINT32*)th->csum) || addr != th->address || (generation != 0 && generation != th->generation)) {
+            UINT64 off;
+            UINT16 stripe;
+            
+            get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes, &off, &stripe);
+            
+            ERR("unrecoverable checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
+
+            if (crc32 != *((UINT32*)th->csum)) {
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                return STATUS_CRC_ERROR;
+            } else if (addr != th->address) {
+                WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+                return STATUS_CRC_ERROR;
+            } else if (generation != 0 && generation != th->generation) {
+                WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
+                return STATUS_CRC_ERROR;
+            }
         }
     } else if (context->csum) {
         NTSTATUS Status;
@@ -333,7 +342,23 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
         
         if (Status == STATUS_CRC_ERROR) {
-            WARN("checksum error\n");
+            ULONG i;
+            
+            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
+                UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            
+                if (context->csum[i] != crc32) {
+                    UINT64 off;
+                    UINT16 stripe;
+                    
+                    get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length, ci->num_stripes, &off, &stripe);
+                    
+                    ERR("unrecoverable checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
+                    
+                    return Status;
+                }
+            }
+
             return Status;
         } else if (!NT_SUCCESS(Status)) {
             ERR("check_csum returned %08x\n", Status);
@@ -2208,7 +2233,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, startoffstripe, generation);
+        Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, startoffstripe, generation, offset);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
             
