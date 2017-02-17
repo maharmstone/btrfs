@@ -558,11 +558,12 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 }
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
-                                device** devices, UINT64 offset, UINT64 generation) {
+                                device** devices, UINT64 offset, UINT64 generation, chunk* c) {
     ULONG i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    UINT64 lockaddr, locklen;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -603,6 +604,11 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     if (!checksum_error)
         return STATUS_SUCCESS;
     
+    if (c) {
+        get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
+        chunk_lock_range(Vcb, c, lockaddr, locklen);
+    }
+    
     if (context->tree) {
         UINT16 j, stripe, parity;
         UINT64 off;
@@ -612,7 +618,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size * 2, ALLOC_TAG);
         if (!t2) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 1, &off, &stripe);
@@ -670,7 +677,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         if (!recovered) {
             ERR("unrecoverable checksum error at %llx\n", addr);
             ExFreePool(t2);
-            return STATUS_CRC_ERROR;
+            Status = STATUS_CRC_ERROR;
+            goto end;
         }
         
         ExFreePool(t2);
@@ -681,7 +689,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * 2, ALLOC_TAG);
         if (!sector) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
         
         for (i = 0; i < sectors; i++) {
@@ -748,7 +757,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 if (!recovered) {
                     ERR("unrecoverable checksum error at %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size));
                     ExFreePool(sector);
-                    return STATUS_CRC_ERROR;
+                    Status = STATUS_CRC_ERROR;
+                    goto end;
                 }
             }
         }
@@ -756,7 +766,13 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         ExFreePool(sector);
     }
 
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (c)
+        chunk_unlock_range(Vcb, c, lockaddr, locklen);
+
+    return Status;
 }
 
 static void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out) {
@@ -846,11 +862,12 @@ static void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size
 }
 
 static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
-                                device** devices, UINT64 offset, UINT64 generation) {
+                                device** devices, UINT64 offset, UINT64 generation, chunk* c) {
     NTSTATUS Status;
     ULONG i;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    UINT64 lockaddr, locklen;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
@@ -890,6 +907,11 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     if (!checksum_error)
         return STATUS_SUCCESS;
     
+    if (c) {
+        get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
+        chunk_lock_range(Vcb, c, lockaddr, locklen);
+    }
+    
     if (context->tree) {
         UINT8* sector;
         UINT16 j, stripe, physstripe, parity1, parity2, error_stripe;
@@ -900,7 +922,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size * (ci->num_stripes + 2), ALLOC_TAG);
         if (!sector) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 2, &off, &stripe);
@@ -1047,7 +1070,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         if (!recovered) {
             ERR("unrecoverable checksum error at %llx\n", addr);
             ExFreePool(sector);
-            return STATUS_CRC_ERROR;
+            Status = STATUS_CRC_ERROR;
+            goto end;
         }
         
         ExFreePool(sector);
@@ -1058,7 +1082,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * (ci->num_stripes + 2), ALLOC_TAG);
         if (!sector) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
         
         for (i = 0; i < sectors; i++) {
@@ -1209,7 +1234,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 if (!recovered) {
                     ERR("unrecoverable checksum error at %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size));
                     ExFreePool(sector);
-                    return STATUS_CRC_ERROR;
+                    Status = STATUS_CRC_ERROR;
+                    goto end;
                 }
             }
         }
@@ -1217,7 +1243,13 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         ExFreePool(sector);
     }
     
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+    
+end:
+    if (c)
+        chunk_unlock_range(Vcb, c, lockaddr, locklen);
+    
+    return Status;
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
@@ -2270,7 +2302,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation);
+        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation, c);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             
@@ -2285,7 +2317,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID6) {
-        Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation);
+        Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation, c);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08x\n", Status);
             
@@ -2458,7 +2490,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     BOOL mdl = (Irp && Irp->MdlAddress) ? TRUE : FALSE;
                     BOOL buf_free;
                     UINT32 bumpoff = 0, *csum;
-                    UINT64 addr, lockaddr, locklen;
+                    UINT64 addr;
+//                     UINT64 lockaddr, locklen;
                     chunk* c;
                     
                     read = len - off;
@@ -2506,10 +2539,10 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         goto exit;
                     }
                     
-                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
-                        get_raid56_lock_range(c, addr, to_read, &lockaddr, &locklen);
-                        chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
-                    }
+//                     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+//                         get_raid56_lock_range(c, addr, to_read, &lockaddr, &locklen);
+//                         chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
+//                     }
                     
                     if (ext->csum) {
                         if (ed->compression == BTRFS_COMPRESSION_NONE)
@@ -2523,8 +2556,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
-                        if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
-                            chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
+//                         if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+//                             chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                         
                         if (buf_free)
                             ExFreePool(buf);
@@ -2532,8 +2565,8 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         goto exit;
                     }
                     
-                    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
-                        chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
+//                     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+//                         chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
                     
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         if (buf_free)
