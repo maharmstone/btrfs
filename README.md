@@ -67,6 +67,8 @@ Todo
 * Scrubbing
 * Passthrough of permissions etc. for LXSS
 * TRIM/DISCARD
+* Subvol send and receive
+* Reflink copy
 
 Installation
 ------------
