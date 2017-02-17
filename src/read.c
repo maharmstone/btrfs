@@ -1666,6 +1666,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT32 *stripeoff, pos;
         PMDL master_mdl;
         PFN_NUMBER *pfns, dummy;
+        BOOL need_dummy = FALSE;
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 1, &startoff, &startoffstripe);
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes - 1, &endoff, &endoffstripe);
@@ -1746,6 +1747,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     }
                     
                     pos += skip * (ci->num_stripes - 1) * ci->num_stripes * ci->stripe_length;
+                    need_dummy = TRUE;
                 }
             } else if (length - pos >= ci->stripe_length * (ci->num_stripes - 1)) {
                 for (i = 0; i < ci->num_stripes; i++) {
@@ -1753,6 +1755,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 }
                 
                 pos += ci->stripe_length * (ci->num_stripes - 1);
+                need_dummy = TRUE;
             } else {
                 UINT16 stripe = (parity + 1) % ci->num_stripes;
                 
@@ -1784,25 +1787,26 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
         }
         
-        // FIXME - miss this out if read is short enough not to cross any parity stripes?
-        dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
-        if (!dummypage) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
+        if (need_dummy) {
+            dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
+            if (!dummypage) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
+            
+            dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
+            if (!dummy_mdl) {
+                ERR("IoAllocateMdl failed\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExFreePool(dummypage);
+                goto exit;
+            }
+            
+            MmBuildMdlForNonPagedPool(dummy_mdl);
+            
+            dummy = *(PFN_NUMBER*)(dummy_mdl + 1);
         }
-        
-        dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
-        if (!dummy_mdl) {
-            ERR("IoAllocateMdl failed\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            ExFreePool(dummypage);
-            goto exit;
-        }
-        
-        MmBuildMdlForNonPagedPool(dummy_mdl);
-        
-        dummy = *(PFN_NUMBER*)(dummy_mdl + 1);
         
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
@@ -1899,6 +1903,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         UINT32 *stripeoff, pos;
         PMDL master_mdl;
         PFN_NUMBER *pfns, dummy;
+        BOOL need_dummy = FALSE;
         
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 2, &startoff, &startoffstripe);
         get_raid0_offset(addr + length - offset - 1, ci->stripe_length, ci->num_stripes - 2, &endoff, &endoffstripe);
@@ -1982,6 +1987,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                     }
                     
                     pos += skip * (ci->num_stripes - 2) * ci->num_stripes * ci->stripe_length;
+                    need_dummy = TRUE;
                 }
             } else if (length - pos >= ci->stripe_length * (ci->num_stripes - 2)) {
                 for (i = 0; i < ci->num_stripes; i++) {
@@ -1989,6 +1995,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 }
                 
                 pos += ci->stripe_length * (ci->num_stripes - 2);
+                need_dummy = TRUE;
             } else {
                 UINT16 stripe = (parity1 + 2) % ci->num_stripes;
                 
@@ -2020,25 +2027,26 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             }
         }
         
-        // FIXME - miss this out if read is short enough not to cross any parity stripes?
-        dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
-        if (!dummypage) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
+        if (need_dummy) {
+            dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
+            if (!dummypage) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
+            }
+            
+            dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
+            if (!dummy_mdl) {
+                ERR("IoAllocateMdl failed\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                ExFreePool(dummypage);
+                goto exit;
+            }
+            
+            MmBuildMdlForNonPagedPool(dummy_mdl);
+            
+            dummy = *(PFN_NUMBER*)(dummy_mdl + 1);
         }
-        
-        dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
-        if (!dummy_mdl) {
-            ERR("IoAllocateMdl failed\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            ExFreePool(dummypage);
-            goto exit;
-        }
-        
-        MmBuildMdlForNonPagedPool(dummy_mdl);
-        
-        dummy = *(PFN_NUMBER*)(dummy_mdl + 1);
         
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
