@@ -57,6 +57,31 @@ NTSYSAPI NTSTATUS NTAPI RtlUnicodeToUTF8N(PCHAR UTF8StringDestination, ULONG UTF
 }
 #endif
 
+// These are undocumented, and what comes from format.exe
+typedef struct {
+    void* table;
+    void* unk1;
+    WCHAR* string;
+} DSTRING;
+
+typedef struct {
+    void* table;
+} STREAM_MESSAGE;
+
+#define FORMAT_FLAG_QUICK_FORMAT        0x00000001
+#define FORMAT_FLAG_UNKNOWN1            0x00000002
+#define FORMAT_FLAG_DISMOUNT_FIRST      0x00000004
+#define FORMAT_FLAG_UNKNOWN2            0x00000040
+#define FORMAT_FLAG_LARGE_RECORDS       0x00000100
+#define FORMAT_FLAG_INTEGRITY_DISABLE   0x00000100
+
+typedef struct {
+    UINT16 unk1;
+    UINT16 unk2;
+    UINT32 flags;
+    DSTRING* label;
+} options;
+
 FORCEINLINE VOID InitializeListHead(PLIST_ENTRY ListHead) {
     ListHead->Flink = ListHead->Blink = ListHead;
 }
@@ -1039,8 +1064,8 @@ static void do_full_trim(HANDLE h) {
     NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, &dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), NULL, 0);
 }
 
-NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
-                        BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
+static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
+                                BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
     NTSTATUS Status;
     HANDLE h, btrfsh;
@@ -1126,29 +1151,33 @@ end:
     
     NtClose(h);
     
-    btrfsus.Buffer = btrfs;
-    btrfsus.Length = btrfsus.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
-    
-    InitializeObjectAttributes(&attr, &btrfsus, 0, NULL, NULL);
-    
-    Status = NtOpenFile(&btrfsh, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
-                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
-    
     if (NT_SUCCESS(Status)) {
-        MOUNTDEV_NAME* mdn;
-        ULONG mdnsize;
+        btrfsus.Buffer = btrfs;
+        btrfsus.Length = btrfsus.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
         
-        mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + DriveRoot->Length;
-        mdn = malloc(mdnsize);
+        InitializeObjectAttributes(&attr, &btrfsus, 0, NULL, NULL);
         
-        mdn->NameLength = DriveRoot->Length;
-        memcpy(mdn->Name, DriveRoot->Buffer, DriveRoot->Length);
+        Status = NtOpenFile(&btrfsh, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                            FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
         
-        NtDeviceIoControlFile(btrfsh, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_PROBE_VOLUME, mdn, mdnsize, NULL, 0);
+        if (NT_SUCCESS(Status)) {
+            MOUNTDEV_NAME* mdn;
+            ULONG mdnsize;
+            
+            mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + DriveRoot->Length;
+            mdn = malloc(mdnsize);
+            
+            mdn->NameLength = DriveRoot->Length;
+            memcpy(mdn->Name, DriveRoot->Buffer, DriveRoot->Length);
+            
+            NtDeviceIoControlFile(btrfsh, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_PROBE_VOLUME, mdn, mdnsize, NULL, 0);
+            
+            free(mdn);
+            
+            NtClose(btrfsh);
+        }
         
-        free(mdn);
-        
-        NtClose(btrfsh);
+        Status = STATUS_SUCCESS;
     }
     
     if (Callback) {
@@ -1157,6 +1186,35 @@ end:
     }
     
     return Status;
+}
+
+BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1) {
+    UNICODE_STRING DriveRoot, Label;
+    NTSTATUS Status;
+    
+    if (!root || !root->string)
+        return FALSE;
+    
+    DriveRoot.Length = DriveRoot.MaximumLength = wcslen(root->string) * sizeof(WCHAR);
+    DriveRoot.Buffer = root->string;
+    
+    if (opts && opts->label && opts->label->string) {
+        Label.Length = Label.MaximumLength = wcslen(opts->label->string) * sizeof(WCHAR);
+        Label.Buffer = opts->label->string;
+    } else {
+        Label.Length = Label.MaximumLength = 0;
+        Label.Buffer = NULL;
+    }
+    
+    Status = FormatEx2(&DriveRoot, FMIFS_HARDDISK, &Label, opts && opts->flags & FORMAT_FLAG_QUICK_FORMAT, 0, NULL);
+    
+    return NT_SUCCESS(Status);
+}
+
+BOOL __stdcall GetFilesystemInformation(UINT32 unk1, UINT32 unk2, void* unk3) {
+    // STUB - undocumented
+    
+    return TRUE;
 }
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
