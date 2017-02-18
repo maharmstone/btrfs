@@ -3027,9 +3027,9 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
+            UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
+            
             for (j = 0; j < ci->num_stripes; j++) {
-                UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
-                
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     TRACE("cut out superblock in chunk %llx\n", c->offset);
                     
@@ -3046,9 +3046,9 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
+            UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
+            
             for (j = 0; j < ci->num_stripes; j++) {
-                UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
-                
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     TRACE("cut out superblock in chunk %llx\n", c->offset);
                     
