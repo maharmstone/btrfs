@@ -154,7 +154,7 @@ end:
     return Status;
 }
 
-static NTSTATUS probe_volume(void* data, ULONG length) {
+static NTSTATUS probe_volume(void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
     MOUNTDEV_NAME* mdn = (MOUNTDEV_NAME*)data;
     UNICODE_STRING path, pnp_name;
     NTSTATUS Status;
@@ -169,6 +169,9 @@ static NTSTATUS probe_volume(void* data, ULONG length) {
         return STATUS_INVALID_PARAMETER;
     
     TRACE("%.*S\n", mdn->NameLength / sizeof(WCHAR), mdn->Name);
+    
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
     
     path.Buffer = mdn->Name;
     path.Length = path.MaximumLength = mdn->NameLength;
@@ -214,7 +217,7 @@ static NTSTATUS control_ioctl(PIRP Irp) {
             break;
 
         case IOCTL_BTRFS_PROBE_VOLUME:
-            Status = probe_volume(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            Status = probe_volume(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
             break;
             
         default:
