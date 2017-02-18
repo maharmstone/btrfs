@@ -3698,6 +3698,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
+    if (Vcb->removing) {
+        Status = STATUS_ACCESS_DENIED;
+        goto exit;
+    }
+    
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("verify_vcb returned %08x\n", Status);
@@ -3768,11 +3773,6 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (RequestedOptions & FILE_DIRECTORY_FILE) {
             Status = STATUS_NOT_A_DIRECTORY;
-            goto exit;
-        }
-        
-        if (Vcb->removing) {
-            Status = STATUS_ACCESS_DENIED;
             goto exit;
         }
         
