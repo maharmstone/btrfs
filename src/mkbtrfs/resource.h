@@ -15,6 +15,7 @@
 #define IDS_NO_SECTOR_SIZE              111
 #define IDS_NO_NODE_SIZE                112
 #define IDS_CANT_FIND_SETINCOMPATFLAGS  113
+#define IDS_USAGE2                      114
 
 // Next default values for new objects
 // 

@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     if (invalid_args) {
         char* c = argv[0] + strlen(argv[0]) - 1;
         char* fn = NULL;
-        WCHAR fnw[MAX_PATH];
+        WCHAR fnw[MAX_PATH], *s;
         
         while (c > argv[0]) {
             if (*c == '/' || *c == '\\') {
@@ -175,6 +175,13 @@ int main(int argc, char** argv) {
         }
 
         print_string(stdout, IDS_USAGE, fnw);
+        
+        if (!LoadStringW(GetModuleHandle(NULL), IDS_USAGE2, (WCHAR*)&s, 0)) {
+            fprintf(stderr, "LoadString failed (error %lu)\n", GetLastError());
+            return 0;
+        }
+        
+        fwprintf(stdout, L"%s\n", s);
         
         return 0;
     }
