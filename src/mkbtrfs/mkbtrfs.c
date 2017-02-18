@@ -27,58 +27,32 @@
 
 #define UBTRFS_DLL L"ubtrfs.dll"
 
-typedef enum {
-    FMIFS_UNKNOWN0,
-    FMIFS_UNKNOWN1,
-    FMIFS_UNKNOWN2,
-    FMIFS_UNKNOWN3,
-    FMIFS_UNKNOWN4,
-    FMIFS_UNKNOWN5,
-    FMIFS_UNKNOWN6,
-    FMIFS_UNKNOWN7,
-    FMIFS_FLOPPY,
-    FMIFS_UNKNOWN9,
-    FMIFS_UNKNOWN10,
-    FMIFS_REMOVABLE,
-    FMIFS_HARDDISK,
-    FMIFS_UNKNOWN13,
-    FMIFS_UNKNOWN14,
-    FMIFS_UNKNOWN15,
-    FMIFS_UNKNOWN16,
-    FMIFS_UNKNOWN17,
-    FMIFS_UNKNOWN18,
-    FMIFS_UNKNOWN19,
-    FMIFS_UNKNOWN20,
-    FMIFS_UNKNOWN21,
-    FMIFS_UNKNOWN22,
-    FMIFS_UNKNOWN23,
-} FMIFS_MEDIA_FLAG;
+// These are undocumented, and what comes from format.exe
+typedef struct {
+    void* table;
+    void* unk1;
+    WCHAR* string;
+} DSTRING;
 
-typedef enum {
-    PROGRESS,
-    DONEWITHSTRUCTURE,
-    UNKNOWN2,
-    UNKNOWN3,
-    UNKNOWN4,
-    UNKNOWN5,
-    INSUFFICIENTRIGHTS,
-    FSNOTSUPPORTED,
-    VOLUMEINUSE,
-    UNKNOWN9,
-    UNKNOWNA,
-    DONE,
-    UNKNOWNC,
-    UNKNOWND,
-    OUTPUT,
-    STRUCTUREPROGRESS,
-    CLUSTERSIZETOOSMALL,
-} CALLBACKCOMMAND;
+typedef struct {
+    void* table;
+} STREAM_MESSAGE;
 
-typedef BOOLEAN (NTAPI* PFMIFSCALLBACK)(CALLBACKCOMMAND Command, ULONG SubAction, PVOID ActionInfo);
+#define FORMAT_FLAG_QUICK_FORMAT        0x00000001
+#define FORMAT_FLAG_UNKNOWN1            0x00000002
+#define FORMAT_FLAG_DISMOUNT_FIRST      0x00000004
+#define FORMAT_FLAG_UNKNOWN2            0x00000040
+#define FORMAT_FLAG_LARGE_RECORDS       0x00000100
+#define FORMAT_FLAG_INTEGRITY_DISABLE   0x00000100
 
-typedef NTSTATUS (NTAPI* pFormatEx)(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag,
-                                    PUNICODE_STRING Label, BOOLEAN QuickFormat, ULONG ClusterSize,
-                                    PFMIFSCALLBACK Callback);
+typedef struct {
+    UINT16 unk1;
+    UINT16 unk2;
+    UINT32 flags;
+    DSTRING* label;
+} options;
+
+typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1);
 
 static void print_string(FILE* f, int resid, ...) {
     WCHAR s[1024], t[1024];
@@ -99,12 +73,13 @@ static void print_string(FILE* f, int resid, ...) {
 
 int main(int argc, char** argv) {
     HMODULE ubtrfs;
-    NTSTATUS Status;
-    BOOL baddrive = FALSE;
+    BOOL baddrive = FALSE, success;
     char* ds;
     WCHAR dsw[10], labelw[255], dsw2[255];
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
+    options opts;
+    DSTRING labelds, rootds;
     
     if (argc < 2 || argc > 3) {
         char* c = argv[0] + strlen(argv[0]) - 1;
@@ -206,10 +181,19 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    Status = FormatEx(&drive, FMIFS_HARDDISK, &label, FALSE, 4096, NULL);
+    memset(&opts, 0, sizeof(options));
     
-    if (!NT_SUCCESS(Status)) {
-        print_string(stderr, IDS_FORMATEX_ERROR, Status);
+    if (label.Length > 0) {
+        labelds.string = label.Buffer;
+        opts.label = &labelds;
+    }
+    
+    rootds.string = drive.Buffer;
+
+    success = FormatEx(&rootds, NULL, &opts, 0);
+    
+    if (!success) {
+        print_string(stderr, IDS_FORMATEX_ERROR);
         return 1;
     }
     
