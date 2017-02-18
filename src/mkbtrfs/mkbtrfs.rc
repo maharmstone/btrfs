@@ -92,7 +92,7 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDS_USAGE               "Usage: %s device [label]\n\nThe device parameter can either be a drive letter, e.g. D:, or a device path,\nsuch as \\Device\\Harddisk0\\Partition2."
+    IDS_USAGE               "Usage: %s device [label]\n\nThe device parameter can either be a drive letter, e.g. D:, or a device path,\nsuch as \\Device\\Harddisk0\\Partition2.\n\nTo format the whole of the first hard disk without using partitions, you would\nneed to use the parameter \\Device\\Harddisk0\\Partition0."
     IDS_MULTIBYTE_FAILED    "MultiByteToWideChar failed (error %lu)"
     IDS_CANT_RECOGNIZE_DRIVE "Could not recognize drive %s"
     IDS_CANT_LOAD_DLL       "Unable to load %s"
