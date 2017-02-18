@@ -22,6 +22,7 @@
 #include <ntdddisk.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stringapiset.h>
 #include "resource.h"
 
@@ -53,6 +54,7 @@ typedef struct {
 } options;
 
 typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1);
+typedef void (__stdcall* pSetSizes)(ULONG sector, ULONG node);
 
 static void print_string(FILE* f, int resid, ...) {
     WCHAR s[1024], t[1024];
@@ -74,14 +76,64 @@ static void print_string(FILE* f, int resid, ...) {
 int main(int argc, char** argv) {
     HMODULE ubtrfs;
     BOOL baddrive = FALSE, success;
-    char* ds;
+    char *ds = NULL, *labels = NULL;
     WCHAR dsw[10], labelw[255], dsw2[255];
     UNICODE_STRING drive, label;
     pFormatEx FormatEx;
     options opts;
     DSTRING labelds, rootds;
+    ULONG sector_size = 0, node_size = 0;
+    int i;
+    BOOL invalid_args = FALSE;
     
-    if (argc < 2 || argc > 3) {
+    if (argc >= 2) {
+        for (i = 1; i < argc; i++) {
+            if (argv[i][0] == '/' && argv[i][1] != 0) {
+                char cmd[255], *colon;
+                
+                colon = strstr(argv[i], ":");
+                
+                if (colon) {
+                    memcpy(cmd, argv[i] + 1, colon - argv[i] - 1);
+                    cmd[colon - argv[i] - 1] = 0;
+                } else
+                    strcpy(cmd, argv[i] + 1);
+                
+                if (!stricmp(cmd, "sectorsize")) {
+                    if (!colon || colon[1] == 0) {
+                        print_string(stdout, IDS_NO_SECTOR_SIZE);
+                        invalid_args = TRUE;
+                        break;
+                    } else
+                        sector_size = atoi(&colon[1]);
+                } else if (!stricmp(cmd, "nodesize")) {
+                    if (!colon || colon[1] == 0) {
+                        print_string(stdout, IDS_NO_NODE_SIZE);
+                        invalid_args = TRUE;
+                        break;
+                    } else
+                        node_size = atoi(&colon[1]);
+                } else {
+                    print_string(stdout, IDS_UNKNOWN_ARG);
+                    invalid_args = TRUE;
+                    break;
+                }
+            } else {
+                if (!ds)
+                    ds = argv[i];
+                else if (!labels)
+                    labels = argv[i];
+                else {
+                    print_string(stdout, IDS_TOO_MANY_ARGS);
+                    invalid_args = TRUE;
+                    break;
+                }
+            }
+        }
+    } else
+        invalid_args = TRUE;
+    
+    if (invalid_args) {
         char* c = argv[0] + strlen(argv[0]) - 1;
         char* fn = NULL;
         WCHAR fnw[MAX_PATH];
@@ -107,8 +159,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    ds = argv[1];
-    
     if (ds[0] != '\\') {
         if ((ds[0] >= 'A' && ds[0] <= 'Z') || (ds[0] >= 'a' && ds[0] <= 'z')) {
             if (ds[1] == 0 || (ds[1] == ':' && ds[2] == 0) || (ds[1] == ':' && ds[2] == '\\' && ds[3] == 0)) {
@@ -127,7 +177,7 @@ int main(int argc, char** argv) {
         } else
             baddrive = TRUE;
     } else {
-        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, ds, -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
             print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
             return 1;
         }
@@ -146,8 +196,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    if (argc > 2) {
-        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[2], -1, labelw, sizeof(labelw) / sizeof(WCHAR))) {
+    if (labels) {
+        if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, labels, -1, labelw, sizeof(labelw) / sizeof(WCHAR))) {
             print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
             return 1;
         }
@@ -172,6 +222,19 @@ int main(int argc, char** argv) {
     if (!ubtrfs) {
         print_string(stderr, IDS_CANT_LOAD_DLL, UBTRFS_DLL);
         return 1;
+    }
+    
+    if (node_size != 0 || sector_size != 0) {
+        pSetSizes SetSizes;
+        
+        SetSizes = (pSetSizes)GetProcAddress(ubtrfs, "SetSizes");
+        
+        if (!SetSizes) {
+            print_string(stderr, IDS_CANT_FIND_SETSIZES, UBTRFS_DLL);
+            return 1;
+        }
+        
+        SetSizes(node_size, sector_size);
     }
     
     FormatEx = (pFormatEx)GetProcAddress(ubtrfs, "FormatEx");

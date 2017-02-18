@@ -92,13 +92,22 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDS_USAGE               "Usage: %s device [label]\n\nThe device parameter can either be a drive letter, e.g. D:, or a device path,\nsuch as \\Device\\Harddisk0\\Partition2.\n\nTo format the whole of the first hard disk without using partitions, you would\nneed to use the parameter \\Device\\Harddisk0\\Partition0."
+    IDS_USAGE               "Usage: %s device [label] [/sectorsize:num] [/nodesize:num]\n\nThe device parameter can either be a drive letter, e.g. D:, or a device path,\nsuch as \\Device\\Harddisk0\\Partition2.\n\nTo format the whole of the first hard disk without using partitions, you would\nneed to use the parameter \\Device\\Harddisk0\\Partition0."
     IDS_MULTIBYTE_FAILED    "MultiByteToWideChar failed (error %lu)"
     IDS_CANT_RECOGNIZE_DRIVE "Could not recognize drive %s"
     IDS_CANT_LOAD_DLL       "Unable to load %s"
     IDS_CANT_FIND_FORMATEX  "Could not load function FormatEx in %s"
     IDS_FORMATEX_ERROR      "FormatEx failed"
     IDS_SUCCESS             "Completed successfully."
+    IDS_CANT_FIND_SETSIZES  "Could not load function SetSizes in %s"
+    IDS_TOO_MANY_ARGS       "Too many arguments."
+    IDS_UNKNOWN_ARG         "Unknown argument."
+    IDS_NO_SECTOR_SIZE      "No sector size specified."
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_NO_NODE_SIZE        "No node size specified."
 END
 
 #endif    // English (U.K.) resources

@@ -9,6 +9,11 @@
 #define IDS_CANT_FIND_FORMATEX          105
 #define IDS_FORMATEX_ERROR              106
 #define IDS_SUCCESS                     107
+#define IDS_CANT_FIND_SETSIZES          108
+#define IDS_TOO_MANY_ARGS               109
+#define IDS_UNKNOWN_ARG                 110
+#define IDS_NO_SECTOR_SIZE              111
+#define IDS_NO_NODE_SIZE                112
 
 // Next default values for new objects
 // 
