@@ -20,6 +20,7 @@
 #include <mountdev.h>
 #include <diskguid.h>
 
+extern PDRIVER_OBJECT drvobj;
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 
@@ -153,6 +154,56 @@ end:
     return Status;
 }
 
+static NTSTATUS probe_volume(void* data, ULONG length) {
+    MOUNTDEV_NAME* mdn = (MOUNTDEV_NAME*)data;
+    UNICODE_STRING path, pnp_name;
+    NTSTATUS Status;
+    PDEVICE_OBJECT DeviceObject;
+    PFILE_OBJECT FileObject;
+    const GUID* guid;
+    
+    if (length < sizeof(MOUNTDEV_NAME))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (length < offsetof(MOUNTDEV_NAME, Name[0]) + mdn->NameLength)
+        return STATUS_INVALID_PARAMETER;
+    
+    TRACE("%.*S\n", mdn->NameLength / sizeof(WCHAR), mdn->Name);
+    
+    path.Buffer = mdn->Name;
+    path.Length = path.MaximumLength = mdn->NameLength;
+    
+    Status = IoGetDeviceObjectPointer(&path, FILE_READ_ATTRIBUTES, &FileObject, &DeviceObject);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return Status;
+    }
+    
+    Status = get_device_pnp_name(DeviceObject, &pnp_name, &guid);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_device_pnp_name returned %08x\n", Status);
+        ObDereferenceObject(FileObject);
+        return Status;
+    }
+    
+    if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID)) {
+        Status = dev_ioctl(DeviceObject, IOCTL_DISK_UPDATE_PROPERTIES, NULL, 0, NULL, 0, TRUE, NULL);
+        if (!NT_SUCCESS(Status))
+            WARN("IOCTL_DISK_UPDATE_PROPERTIES returned %08x\n", Status);
+    }
+
+    ObDereferenceObject(FileObject);
+    
+    volume_removal(drvobj, &pnp_name);
+
+    if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID))
+        disk_arrival(drvobj, &pnp_name);
+    else
+        volume_arrival(drvobj, &pnp_name);
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS control_ioctl(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -160,6 +211,10 @@ static NTSTATUS control_ioctl(PIRP Irp) {
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
         case IOCTL_BTRFS_QUERY_FILESYSTEMS:
             Status = query_filesystems(map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+
+        case IOCTL_BTRFS_PROBE_VOLUME:
+            Status = probe_volume(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
             
         default:

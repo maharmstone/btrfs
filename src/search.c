@@ -175,7 +175,7 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     return Status;
 }
 
-static void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     PFILE_OBJECT FileObject, mountmgrfo;
     PDEVICE_OBJECT devobj, mountmgr;
     NTSTATUS Status;
