@@ -928,7 +928,8 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
     
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | (ssd ? 0 : BLOCK_FLAG_DUPLICATE), chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | (ssd ? 0 : BLOCK_FLAG_DUPLICATE) | (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS ? BLOCK_FLAG_DATA : 0),
+                               chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
     
