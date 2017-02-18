@@ -108,6 +108,8 @@ END
 STRINGTABLE 
 BEGIN
     IDS_NO_NODE_SIZE        "No node size specified."
+    IDS_CANT_FIND_SETINCOMPATFLAGS 
+                            "Could not load function SetIncompatFlags in %s"
 END
 
 #endif    // English (U.K.) resources

@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stringapiset.h>
 #include "resource.h"
+#include "../btrfs.h"
 
 #define UBTRFS_DLL L"ubtrfs.dll"
 
@@ -55,6 +56,7 @@ typedef struct {
 
 typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1);
 typedef void (__stdcall* pSetSizes)(ULONG sector, ULONG node);
+typedef void (__stdcall* pSetIncompatFlags)(UINT64 incompat_flags);
 
 static void print_string(FILE* f, int resid, ...) {
     WCHAR s[1024], t[1024];
@@ -85,6 +87,8 @@ int main(int argc, char** argv) {
     ULONG sector_size = 0, node_size = 0;
     int i;
     BOOL invalid_args = FALSE;
+    UINT64 incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    pSetIncompatFlags SetIncompatFlags;
     
     if (argc >= 2) {
         for (i = 1; i < argc; i++) {
@@ -113,7 +117,23 @@ int main(int argc, char** argv) {
                         break;
                     } else
                         node_size = atoi(&colon[1]);
-                } else {
+                } else if (!stricmp(cmd, "mixed"))
+                    incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS;
+                else if (!stricmp(cmd, "notmixed"))
+                    incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS;
+                else if (!stricmp(cmd, "extiref"))
+                    incompat_flags |= BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF;
+                else if (!stricmp(cmd, "notextiref"))
+                    incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF;
+                else if (!stricmp(cmd, "skinnymetadata"))
+                    incompat_flags |= BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+                else if (!stricmp(cmd, "notskinnymetadata"))
+                    incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+                else if (!stricmp(cmd, "noholes"))
+                    incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
+                else if (!stricmp(cmd, "notnoholes"))
+                    incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_NO_HOLES;
+                else {
                     print_string(stdout, IDS_UNKNOWN_ARG);
                     invalid_args = TRUE;
                     break;
@@ -236,6 +256,15 @@ int main(int argc, char** argv) {
         
         SetSizes(node_size, sector_size);
     }
+    
+    SetIncompatFlags = (pSetIncompatFlags)GetProcAddress(ubtrfs, "SetIncompatFlags");
+    
+    if (!SetIncompatFlags) {
+        print_string(stderr, IDS_CANT_FIND_SETINCOMPATFLAGS, UBTRFS_DLL);
+        return 1;
+    }
+    
+    SetIncompatFlags(incompat_flags);
     
     FormatEx = (pFormatEx)GetProcAddress(ubtrfs, "FormatEx");
     
