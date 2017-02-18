@@ -407,10 +407,10 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     
     c->chunk_item->size = size;
     c->chunk_item->root_id = BTRFS_ROOT_EXTENT;
-    c->chunk_item->stripe_length = 0x10000;
+    c->chunk_item->stripe_length = max(sector_size, 0x10000);
     c->chunk_item->type = flags;
-    c->chunk_item->opt_io_alignment = 0x10000;
-    c->chunk_item->opt_io_width = 0x10000;
+    c->chunk_item->opt_io_alignment = max(sector_size, 0x10000);
+    c->chunk_item->opt_io_width = max(sector_size, 0x10000);
     c->chunk_item->sector_size = sector_size;
     c->chunk_item->num_stripes = stripes;
     c->chunk_item->sub_stripes = 0;
