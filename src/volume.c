@@ -615,6 +615,80 @@ static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS vol_ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+    KEVENT* event = conptr;
+    
+    KeSetEvent(event, 0, FALSE);
+    
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static NTSTATUS vol_ioctl_passthrough(volume_device_extension* vde, PIRP Irp) {
+    NTSTATUS Status;
+    volume_child* vc;
+    PIRP Irp2;
+    PIO_STACK_LOCATION IrpSp, IrpSp2;
+    KEVENT Event;
+    
+    TRACE("(%p, %p)\n", vde, Irp);
+    
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    
+    if (IsListEmpty(&vde->children)) {
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+    
+    vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+    
+    if (vc->list_entry.Flink != &vde->children) { // more than once device
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    Irp2 = IoAllocateIrp(vc->devobj->StackSize, FALSE);
+        
+    if (!Irp2) {
+        ERR("IoAllocateIrp failed\n");
+        ExReleaseResourceLite(&vde->child_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    IrpSp2 = IoGetNextIrpStackLocation(Irp2);
+    
+    IrpSp2->MajorFunction = IrpSp->MajorFunction;
+    IrpSp2->MinorFunction = IrpSp->MinorFunction;
+    
+    IrpSp2->Parameters.DeviceIoControl.OutputBufferLength = IrpSp->Parameters.DeviceIoControl.OutputBufferLength;
+    IrpSp2->Parameters.DeviceIoControl.InputBufferLength = IrpSp->Parameters.DeviceIoControl.InputBufferLength;
+    IrpSp2->Parameters.DeviceIoControl.IoControlCode = IrpSp->Parameters.DeviceIoControl.IoControlCode;
+    IrpSp2->Parameters.DeviceIoControl.Type3InputBuffer = IrpSp->Parameters.DeviceIoControl.Type3InputBuffer;
+    
+    Irp2->AssociatedIrp.SystemBuffer = Irp->AssociatedIrp.SystemBuffer;
+    Irp2->MdlAddress = Irp->MdlAddress;
+    Irp2->UserBuffer = Irp->UserBuffer;
+    Irp2->Flags = Irp->Flags;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+
+    IoSetCompletionRoutine(Irp2, vol_ioctl_completion, &Event, TRUE, TRUE, TRUE);
+
+    Status = IoCallDriver(vc->devobj, Irp2);
+
+    if (Status == STATUS_PENDING) {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        Status = Irp2->IoStatus.Status;
+    }
+    
+    Irp->IoStatus.Status = Irp2->IoStatus.Status;
+    Irp->IoStatus.Information = Irp2->IoStatus.Information;
+    
+    ExReleaseResourceLite(&vde->child_lock);
+
+    return Status;
+}
+
 NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -674,9 +748,8 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         case IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
             return vol_get_disk_extents(vde, Irp);
 
-        default:
-            TRACE("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
-            break;
+        default: // pass ioctl through if only one child device
+            return vol_ioctl_passthrough(vde, Irp);
     }
 
     return STATUS_INVALID_DEVICE_REQUEST;
