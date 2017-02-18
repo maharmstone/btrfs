@@ -134,6 +134,7 @@ typedef struct {
     0))))))
 
 HMODULE module;
+ULONG def_sector_size = 0, def_node_size = 0;
 
 // the following definitions come from fmifs.h in ReactOS
 
@@ -862,9 +863,8 @@ static BOOL is_ssd(HANDLE h) {
     return FALSE;
 }
 
-static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size) {
+static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size, UINT32 node_size) {
     NTSTATUS Status;
-    UINT32 node_size;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
     btrfs_chunk *sys_chunk, *metadata_chunk; 
@@ -899,7 +899,6 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
     
-    node_size = 0x4000;
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
     
     add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
@@ -1064,6 +1063,10 @@ static void do_full_trim(HANDLE h) {
     NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, &dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), NULL, 0);
 }
 
+static BOOL is_power_of_two(ULONG i) {
+    return ((i != 0) && !(i & (i - 1)));
+}
+
 static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                                 BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
@@ -1073,7 +1076,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
     DISK_GEOMETRY dg;
-    UINT32 sector_size;
+    UINT32 sector_size, node_size;
     UNICODE_STRING btrfsus;
     HANDLE token;
     TOKEN_PRIVILEGES tp;
@@ -1123,10 +1126,30 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
         return Status;
     }
     
-    sector_size = dg.BytesPerSector;
+    if (def_sector_size == 0) {
+        sector_size = dg.BytesPerSector;
+        
+        if (sector_size == 0x200 || sector_size == 0)
+            sector_size = 0x1000;
+    } else {
+        if (dg.BytesPerSector != 0 && (def_sector_size < dg.BytesPerSector || def_sector_size % dg.BytesPerSector != 0 || !is_power_of_two(def_sector_size / dg.BytesPerSector))) {
+            NtClose(h);
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        sector_size = def_sector_size;
+    }
     
-    if (sector_size == 0x200 || sector_size == 0)
-        sector_size = 0x1000;
+    if (def_node_size == 0)
+        node_size = 0x4000;
+    else {
+        if (def_node_size < sector_size || def_node_size % sector_size != 0 || !is_power_of_two(def_node_size / sector_size)) {
+            NtClose(h);
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        node_size = def_node_size;
+    }
     
     if (Callback) {
         ULONG pc = 0;
@@ -1142,7 +1165,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     
     do_full_trim(h);
     
-    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size);
+    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size, node_size);
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
     
@@ -1209,6 +1232,14 @@ BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, U
     Status = FormatEx2(&DriveRoot, FMIFS_HARDDISK, &Label, opts && opts->flags & FORMAT_FLAG_QUICK_FORMAT, 0, NULL);
     
     return NT_SUCCESS(Status);
+}
+
+void __stdcall SetSizes(ULONG sector, ULONG node) {
+    if (sector != 0)
+        def_sector_size = sector;
+    
+    if (node != 0)
+        def_node_size = node;
 }
 
 BOOL __stdcall GetFilesystemInformation(UINT32 unk1, UINT32 unk2, void* unk3) {
