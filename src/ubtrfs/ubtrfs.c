@@ -1050,8 +1050,30 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     DISK_GEOMETRY dg;
     UINT32 sector_size;
     UNICODE_STRING btrfsus;
+    HANDLE token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
     
     static WCHAR btrfs[] = L"\\Btrfs";
+    
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        CloseHandle(token);
+        return STATUS_PRIVILEGE_NOT_HELD;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        CloseHandle(token);
+        return STATUS_PRIVILEGE_NOT_HELD;
+    }
+    
+    CloseHandle(token);
     
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);
     
