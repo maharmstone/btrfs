@@ -3,4 +3,5 @@ EXPORTS
     FormatEx			PRIVATE
     GetFilesystemInformation	PRIVATE
     SetSizes			PRIVATE
+    SetIncompatFlags		PRIVATE
 

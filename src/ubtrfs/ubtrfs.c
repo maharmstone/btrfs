@@ -135,6 +135,7 @@ typedef struct {
 
 HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
+UINT64 def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
 
 // the following definitions come from fmifs.h in ReactOS
 
@@ -472,29 +473,61 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_METADATA;
 
+typedef struct {
+    EXTENT_ITEM ei;
+    EXTENT_ITEM2 ei2;
+    UINT8 type;
+    TREE_BLOCK_REF tbr;
+} EXTENT_ITEM_METADATA2;
+
 static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size,
-                             btrfs_root* root_root, btrfs_root* extent_root) {
+                             btrfs_root* root_root, btrfs_root* extent_root, BOOL skinny) {
     LIST_ENTRY* le;
     
     le = roots->Flink;
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
-        EXTENT_ITEM_METADATA eim;
         
         r->header.address = get_next_address(c);
         r->c = c;
         c->lastoff = r->header.address + node_size;
         c->used += node_size;
         
-        eim.ei.refcount = 1;
-        eim.ei.generation = 1;
-        eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
-        eim.type = TYPE_TREE_BLOCK_REF;
-        eim.tbr.offset = r->id;
-        
-        // FIXME - support non-skinny EXTENT_ITEM
-        add_item(extent_root, r->header.address, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
+        if (skinny) {
+            EXTENT_ITEM_METADATA eim;
+            
+            eim.ei.refcount = 1;
+            eim.ei.generation = 1;
+            eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
+            eim.type = TYPE_TREE_BLOCK_REF;
+            eim.tbr.offset = r->id;
+            
+            add_item(extent_root, r->header.address, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
+        } else {
+            EXTENT_ITEM_METADATA2 eim2;
+            KEY firstitem;
+            
+            if (r->items.Flink == &r->items) {
+                firstitem.obj_id = 0;
+                firstitem.obj_type = 0;
+                firstitem.offset = 0;
+            } else {
+                btrfs_item* bi = CONTAINING_RECORD(r->items.Flink, btrfs_item, list_entry);
+                
+                firstitem = bi->key;
+            }
+            
+            eim2.ei.refcount = 1;
+            eim2.ei.generation = 1;
+            eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
+            eim2.ei2.firstitem = firstitem;
+            eim2.ei2.level = 0;
+            eim2.type = TYPE_TREE_BLOCK_REF;
+            eim2.tbr.offset = r->id;
+            
+            add_item(extent_root, r->header.address, TYPE_EXTENT_ITEM, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
+        }
         
         if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
             ROOT_ITEM ri;
@@ -639,7 +672,7 @@ static void init_device(btrfs_dev* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuu
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
-                                  btrfs_chunk* sys_chunk, UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label) {
+                                  btrfs_chunk* sys_chunk, UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label, UINT64 incompat_flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
@@ -687,7 +720,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->stripe_size = sector_size;
     sb->n = sizeof(KEY) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
-    sb->incompat_flags = BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    sb->incompat_flags = incompat_flags;
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
     
     if (label->Length > 0) {
@@ -863,7 +896,7 @@ static BOOL is_ssd(HANDLE h) {
     return FALSE;
 }
 
-static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size, UINT32 node_size) {
+static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size, UINT32 node_size, UINT64 incompat_flags) {
     NTSTATUS Status;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
@@ -899,12 +932,12 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
     
-    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root);
-    
     add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
     
     init_fs_tree(fs_root, node_size);
     init_fs_tree(reloc_root, node_size);
+    
+    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root, incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA);
     
     add_block_group_items(&chunks, extent_root);
     
@@ -916,7 +949,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     if (!NT_SUCCESS(Status))
         return Status;
     
-    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label);
+    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label, incompat_flags);
     if (!NT_SUCCESS(Status))
         return Status;
     
@@ -1081,6 +1114,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
+    UINT64 incompat_flags;
     
     static WCHAR btrfs[] = L"\\Btrfs";
     
@@ -1165,7 +1199,10 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     
     do_full_trim(h);
     
-    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size, node_size);
+    incompat_flags = def_incompat_flags;
+    incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_BIG_METADATA;
+    
+    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size, node_size, incompat_flags);
     
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
     
@@ -1240,6 +1277,10 @@ void __stdcall SetSizes(ULONG sector, ULONG node) {
     
     if (node != 0)
         def_node_size = node;
+}
+
+void __stdcall SetIncompatFlags(UINT64 incompat_flags) {
+    def_incompat_flags = incompat_flags;
 }
 
 BOOL __stdcall GetFilesystemInformation(UINT32 unk1, UINT32 unk2, void* unk3) {
