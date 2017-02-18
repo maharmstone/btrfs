@@ -1097,7 +1097,7 @@ NTSTATUS NTAPI FormatEx(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, P
     DISK_GEOMETRY dg;
     UINT32 sector_size;
     
-    InitializeObjectAttributes(&attr, DriveRoot, 0, NULL, NULL);
+    InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);
     
     Status = NtOpenFile(&h, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
                         FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
