@@ -557,11 +557,6 @@ static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LO
     *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
 }
 
-typedef struct stack_frame {
-    void* next;
-    void* ret;
-} stack_frame;
-
 // This function exists because we have to lie about our FS type in certain situations. 
 // MPR!MprGetConnection queries the FS type, and compares it to a whitelist. If it doesn't match,
 // it will return ERROR_NO_NET_OR_BAD_PATH, which prevents UAC from working.
@@ -608,23 +603,22 @@ static BOOL called_from_mpr() {
             name.Length = name.MaximumLength = dllus.Length;
             
             if (FsRtlAreNamesEqual(&name, &dllus, TRUE, NULL)) {
-                stack_frame* frame;
+                void** frames;
+                USHORT i, num_frames;
                 
-#ifdef _MSC_VER
-                frame = CONTAINING_RECORD(_AddressOfReturnAddress(), stack_frame, ret);
-#elif defined(__x86_64__) || defined(_M_X64)
-                asm("mov %%rsp, %0" : "=r" (frame));
-#else
-                asm("movl %%esp, %0" : "=r" (frame));
-#endif
+                frames = ExAllocatePoolWithTag(PagedPool, 256 * sizeof(void*), ALLOC_TAG);
+
+                num_frames = RtlWalkFrameChain(frames, 256, 1);
                 
-                do {
+                for (i = 0; i < num_frames; i++) {
                     // entry->Reserved3[1] appears to be the image size
-                    if (frame->ret >= entry->DllBase && (ULONG_PTR)frame->ret <= (ULONG_PTR)entry->DllBase + (ULONG_PTR)entry->Reserved3[1])
+                    if (frames[i] >= entry->DllBase && (ULONG_PTR)frames[i] <= (ULONG_PTR)entry->DllBase + (ULONG_PTR)entry->Reserved3[1]) {
+                        ExFreePool(frames);
                         return TRUE;
-                    
-                    frame = frame->next;
-                } while (frame);
+                    }
+                }
+                
+                ExFreePool(frames);
             }
         }
         
