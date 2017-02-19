@@ -911,7 +911,7 @@ void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
     RemoveEntryList(&dc->list_entry_hash_uc);
 }
 
-static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
     move_entry* me;
@@ -920,6 +920,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
     file_ref* origparent;
     
     InitializeListHead(&move_list);
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
     
     me = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
     
@@ -1012,6 +1015,14 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
                     me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
                     me->fileref->fcb->ea_changed = !!me->fileref->fcb->ea_xattr.Buffer;
                     me->fileref->fcb->inode_item_changed = TRUE;
+                    
+                    if (le == move_list.Flink) { // first entry
+                        me->fileref->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
+                        me->fileref->fcb->inode_item.sequence++;
+
+                        if (!ccb->user_set_change_time)
+                            me->fileref->fcb->inode_item.st_ctime = now;
+                    }
                     
                     le2 = me->fileref->fcb->extents.Flink;
                     while (le2 != &me->fileref->fcb->extents) {
@@ -1111,9 +1122,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, file_ref* destdir, PANSI_
         
         le = le->Flink;
     }
-    
-    KeQuerySystemTime(&time);
-    win_time_to_unix(time, &now);
     
     fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
     fileref->fcb->subvol->root_item.ctime = now;
@@ -1638,7 +1646,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
-        Status = move_across_subvols(fileref, related, &utf8, &fnus, Irp, &rollback);
+        Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
         }
