@@ -557,6 +557,83 @@ static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LO
     *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
 }
 
+typedef struct stack_frame {
+    void* next;
+    void* ret;
+} stack_frame;
+
+// This function exists because we have to lie about our FS type in certain situations. 
+// MPR!MprGetConnection queries the FS type, and compares it to a whitelist. If it doesn't match,
+// it will return ERROR_NO_NET_OR_BAD_PATH, which prevents UAC from working.
+
+static BOOL called_from_mpr() {
+    NTSTATUS Status;
+    PROCESS_BASIC_INFORMATION pbi;
+    PPEB peb;
+    LIST_ENTRY* le;
+    ULONG retlen;
+    
+    static WCHAR dll[] = L"MPR.DLL";
+    UNICODE_STRING dllus;
+    
+    dllus.Buffer = dll;
+    dllus.Length = dllus.MaximumLength = wcslen(dll) * sizeof(WCHAR);
+    
+    if (!PsGetCurrentProcess())
+        return FALSE;
+    
+    Status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessBasicInformation, &pbi, sizeof(pbi), &retlen);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwQueryInformationProcess returned %08x\n", Status);
+        return FALSE;
+    }
+
+    if (!pbi.PebBaseAddress)
+        return FALSE;
+    
+    peb = pbi.PebBaseAddress;
+    
+    if (!peb->Ldr)
+        return FALSE;
+    
+    le = peb->Ldr->InMemoryOrderModuleList.Flink;
+    while (le != &peb->Ldr->InMemoryOrderModuleList) {
+        LDR_DATA_TABLE_ENTRY* entry = CONTAINING_RECORD(le, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+        
+        if (entry->FullDllName.Length >= dllus.Length) {
+            UNICODE_STRING name;
+            
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - dllus.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = dllus.Length;
+            
+            if (FsRtlAreNamesEqual(&name, &dllus, TRUE, NULL)) {
+                stack_frame* frame;
+                
+#ifdef _MSC_VER
+                frame = CONTAINING_RECORD(_AddressOfReturnAddress(), stack_frame, ret);
+#elif defined(__x86_64__) || defined(_M_X64)
+                asm("mov %%rsp, %0" : "=r" (frame));
+#else
+                asm("movl %%esp, %0" : "=r" (frame));
+#endif
+                
+                do {
+                    // entry->Reserved3[1] appears to be the image size
+                    if (frame->ret >= entry->DllBase && (ULONG_PTR)frame->ret <= (ULONG_PTR)entry->DllBase + (ULONG_PTR)entry->Reserved3[1])
+                        return TRUE;
+                    
+                    frame = frame->next;
+                } while (frame);
+            }
+        }
+        
+        le = le->Flink;
+    }
+
+    return FALSE;
+}
+
 static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
@@ -564,14 +641,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
     
-    // An unfortunate necessity - we have to lie about our FS type. MPR!MprGetConnection polls for this,
-    // and compares it to a whitelist. If it doesn't match, it will return ERROR_NO_NET_OR_BAD_PATH,
-    // which prevents UAC from working.
-    // FIXME - only lie if we detect that we're being called by mpr.dll
-    
-    WCHAR* fs_name = L"NTFS";
-    ULONG fs_name_len = 4 * sizeof(WCHAR);
-
     TRACE("query volume information\n");
     
     FsRtlEnterFileSystem();
@@ -594,6 +663,8 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         {
             FILE_FS_ATTRIBUTE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
             BOOL overflow = FALSE;
+            WCHAR* fs_name = (Irp->RequestorMode == UserMode && called_from_mpr()) ? L"NTFS" : L"Btrfs";
+            ULONG fs_name_len = wcslen(fs_name) * sizeof(WCHAR);
             ULONG orig_fs_name_len = fs_name_len;
             
             TRACE("FileFsAttributeInformation\n");
