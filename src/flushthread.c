@@ -2154,6 +2154,54 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     le = ce->refs.Flink;
     while (le != &ce->refs) {
         changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
+        UINT64 old_count = 0;
+        
+        if (cer->type == TYPE_EXTENT_DATA_REF) {
+            le2 = ce->old_refs.Flink;
+            while (le2 != &ce->old_refs) {
+                changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                
+                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
+                    old_count = cer2->edr.count;
+                    break;
+                }
+                
+                le2 = le2->Flink;
+            }
+            
+            old_size = ce->old_count > 0 ? ce->old_size : ce->size;
+            
+            if (cer->edr.count > old_count) {
+                Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp);
+                            
+                if (!NT_SUCCESS(Status)) {
+                    ERR("increase_extent_refcount_data returned %08x\n", Status);
+                    return Status;
+                }
+            }
+        } else if (cer->type == TYPE_SHARED_DATA_REF) {
+            le2 = ce->old_refs.Flink;
+            while (le2 != &ce->old_refs) {
+                changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
+                
+                if (cer2->type == TYPE_SHARED_DATA_REF && cer2->sdr.offset == cer->sdr.offset) {
+//                     old_count = cer2->edr.count;
+                    
+                    RemoveEntryList(&cer2->list_entry);
+                    ExFreePool(cer2);
+                    break;
+                }
+                
+                le2 = le2->Flink;
+            }            
+        }
+        
+        le = le->Flink;
+    }
+    
+    le = ce->refs.Flink;
+    while (le != &ce->refs) {
+        changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
         LIST_ENTRY* le3 = le->Flink;
         UINT64 old_count = 0;
         
@@ -2175,14 +2223,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             
             old_size = ce->old_count > 0 ? ce->old_size : ce->size;
             
-            if (cer->edr.count > old_count) {
-                Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp);
-                            
-                if (!NT_SUCCESS(Status)) {
-                    ERR("increase_extent_refcount_data returned %08x\n", Status);
-                    return Status;
-                }
-            } else if (cer->edr.count < old_count) {
+            if (cer->edr.count < old_count) {
                 Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
                                                        old_count - cer->edr.count, ce->superseded, Irp);
                 
@@ -2236,21 +2277,6 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                     return Status;
                 }
             }
-        } else if (cer->type == TYPE_SHARED_DATA_REF) {
-            le2 = ce->old_refs.Flink;
-            while (le2 != &ce->old_refs) {
-                changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
-                
-                if (cer2->type == TYPE_SHARED_DATA_REF && cer2->sdr.offset == cer->sdr.offset) {
-//                     old_count = cer2->edr.count;
-                    
-                    RemoveEntryList(&cer2->list_entry);
-                    ExFreePool(cer2);
-                    break;
-                }
-                
-                le2 = le2->Flink;
-            }            
         }
        
         RemoveEntryList(&cer->list_entry);
