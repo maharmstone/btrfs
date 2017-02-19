@@ -3020,9 +3020,9 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         else
             movelen = fn->Length;
         
-        if (!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR)) {
+        if ((!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR)) && movelen > 0) {
             RtlMoveMemory(&fn->Buffer[(fr->filepart.Length / sizeof(WCHAR)) + 1], fn->Buffer, movelen);
-            offset += movelen;
+            offset += fr->filepart.Length + sizeof(WCHAR);
         }
         
         if (fn->MaximumLength >= sizeof(WCHAR)) {
@@ -3045,8 +3045,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         fr = fr->parent;
     }
     
-    if (fileref->parent && !fileref->parent->parent) // file in root directory
-        offset += sizeof(WCHAR);
+    offset += sizeof(WCHAR);
 
     if (overflow) {
         *preqlen = reqlen;
