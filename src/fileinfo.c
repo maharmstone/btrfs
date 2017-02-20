@@ -460,418 +460,49 @@ typedef struct _move_entry {
     LIST_ENTRY list_entry;
 } move_entry;
 
-static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
+static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me, PIRP Irp) {
     NTSTATUS Status;
-    KEY searchkey;
-    traverse_ptr tp;
-    BOOL b;
     LIST_ENTRY* le;
-    move_entry* me2;
-    
-    static char xapref[] = "user.";
-    ULONG xapreflen = strlen(xapref);
-    
-    ExAcquireResourceSharedLite(&me->fileref->nonpaged->children_lock, TRUE);
-    
-    le = me->fileref->children.Flink;
-    while (le != &me->fileref->children) {
-        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
-        
-        if (!fr->deleted) {
-            me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-            if (!me2) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
-            }
-            
-            me2->fileref = fr;
-            
-            increase_fileref_refcount(fr);
 
-            me2->dummyfcb = NULL;
-            me2->dummyfileref = NULL;
-            me2->parent = me;
-            
-            InsertHeadList(&me->list_entry, &me2->list_entry);
+    // FIXME - work with streams
+    
+    ExAcquireResourceSharedLite(&me->fileref->fcb->nonpaged->dir_children_lock, TRUE);
+    
+    le = me->fileref->fcb->dir_children_index.Flink;
+    
+    while (le != &me->fileref->fcb->dir_children_index) {
+        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        file_ref* fr;
+        move_entry* me2;
+        
+        Status = open_fileref_child(Vcb, me->fileref, &dc->name, TRUE, TRUE, FALSE/*streampart*/, PagedPool, &fr, Irp);
+        
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref_child returned %08x\n", Status);
+            ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
+            return Status;
         }
+        
+        me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
+        if (!me2) {
+            ERR("out of memory\n");
+            ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        me2->fileref = fr;
+        me2->dummyfcb = NULL;
+        me2->dummyfileref = NULL;
+        me2->parent = me;
+
+        InsertHeadList(&me->list_entry, &me2->list_entry);
         
         le = le->Flink;
     }
     
-    searchkey.obj_id = me->fileref->fcb->inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
-    searchkey.offset = 0;
+    ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
     
-    Status = find_item(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    do {
-        traverse_ptr next_tp;
-        
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
-            ULONG len;
-            
-            if (tp.item->size < sizeof(DIR_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
-            
-            len = tp.item->size;
-            
-            do {
-                if (len < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
-                }
-                
-                if (xa->n > xapreflen && RtlCompareMemory(xa->name, xapref, xapreflen) == xapreflen &&
-                    (tp.item->key.offset != EA_DOSATTRIB_HASH || xa->n != strlen(EA_DOSATTRIB) || RtlCompareMemory(xa->name, EA_DOSATTRIB, xa->n) != xa->n) &&
-                    (tp.item->key.offset != EA_EA_HASH || xa->n != strlen(EA_EA) || RtlCompareMemory(xa->name, EA_EA, xa->n) != xa->n)
-                ) {
-                    BOOL found = FALSE;
-                
-                    le = me->fileref->children.Flink;
-                    
-                    while (le != &me->fileref->children) {
-                        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
-
-                        if (fr->fcb->ads && fr->fcb->adshash == tp.item->key.offset && fr->fcb->adsxattr.Length == xa->n &&
-                            RtlCompareMemory(fr->fcb->adsxattr.Buffer, xa->name, xa->n) == xa->n) {
-                            found = TRUE;
-                            break;
-                        }
-                         
-                        le = le->Flink;
-                    }
-                    
-                    if (!found) {
-                        fcb* fcb;
-                        file_ref* fr;
-                        ANSI_STRING xattr;
-                        ULONG stringlen;
-                        
-                        xattr.Length = xa->n;
-                        xattr.MaximumLength = xattr.Length + 1;
-                        xattr.Buffer = ExAllocatePoolWithTag(PagedPool, xattr.MaximumLength, ALLOC_TAG);
-                        
-                        if (!xattr.Buffer) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        RtlCopyMemory(xattr.Buffer, xa->name, xa->n);
-                        xattr.Buffer[xa->n] = 0;
-                        
-                        Status = open_fcb_stream(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode, &xattr,
-                                                 tp.item->key.offset, me->fileref->fcb, &fcb, Irp);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("open_fcb_stream returned %08x\n", Status);
-                            ExFreePool(xattr.Buffer);
-                            goto end;
-                        }
-                        
-                        fr = create_fileref(me->fileref->fcb->Vcb);
-                        if (!fr) {
-                            ERR("out of memory\n");
-                            free_fcb(fcb);
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        fr->fcb = fcb;
-                        
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[xapreflen], xa->n - xapreflen);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                        if (!fr->filepart.Buffer) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        Status = RtlUTF8ToUnicodeN(fr->filepart.Buffer, stringlen, &stringlen, &xa->name[xapreflen], xa->n - xapreflen);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        fr->filepart.Length = fr->filepart.MaximumLength = stringlen;
-                        
-                        Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-
-                        fr->parent = (struct _file_ref*)me->fileref;
-                        increase_fileref_refcount(fr->parent);
-                        
-                        insert_fileref_child(me->fileref, fr, FALSE);
-
-                        me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-                        if (!me2) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        me2->fileref = fr;
-                        me2->dummyfcb = NULL;
-                        me2->dummyfileref = NULL;
-                        me2->parent = me;
-                        
-                        InsertHeadList(&me->list_entry, &me2->list_entry);
-                    }
-                }
-                
-                len -= sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-                
-                if (len > 0)
-                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-            } while (len > 0);
-        }
-        
-        b = find_next_item(me->fileref->fcb->Vcb, &tp, &next_tp, FALSE, Irp);
-        if (b) {
-            tp = next_tp;
-            
-            if (next_tp.item->key.obj_id > searchkey.obj_id || (next_tp.item->key.obj_id == searchkey.obj_id && next_tp.item->key.obj_type > searchkey.obj_type))
-                break;
-        }
-    } while (b);
-    
-    if (me->fileref->fcb->type == BTRFS_TYPE_DIRECTORY && me->fileref->fcb->inode_item.st_size != 0) {
-        searchkey.obj_id = me->fileref->fcb->inode;
-        searchkey.obj_type = TYPE_DIR_INDEX;
-        searchkey.offset = 2;
-        
-        Status = find_item(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08x\n", Status);
-            goto end;
-        }
-        
-        do {
-            traverse_ptr next_tp;
-            
-            // FIXME - both lists are ordered; we can make this more efficient
-            
-            if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                BOOL found = FALSE;
-                
-                le = me->fileref->children.Flink;
-                
-                while (le != &me->fileref->children) {
-                    file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
-                    
-                    if (!fr->fcb->ads) {
-                        if (fr->index == tp.item->key.offset) {
-                            found = TRUE;
-                            break;
-                        } else if (fr->index > tp.item->key.offset)
-                            break;
-                    }
-                    
-                    le = le->Flink;
-                }
-                
-                if (!found) {
-                    DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
-                    
-                    if (tp.item->size < sizeof(DIR_ITEM)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-                        Status = STATUS_INTERNAL_ERROR;
-                        goto end;
-                    }
-                    
-                    if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->m + di->n) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->m + di->n);
-                        Status = STATUS_INTERNAL_ERROR;
-                        goto end;
-                    }
-                    
-                    if (di->n == 0) {
-                        ERR("(%llx,%x,%llx): filename length was 0\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                        Status = STATUS_INTERNAL_ERROR;
-                        goto end;
-                    }
-                    
-                    if (di->key.obj_type == TYPE_INODE_ITEM || di->key.obj_type == TYPE_ROOT_ITEM) {
-                        ANSI_STRING utf8;
-                        fcb* fcb;
-                        file_ref* fr;
-                        ULONG stringlen;
-                        root* subvol;
-                        UINT64 inode;
-                        dir_child* dc = NULL;
-                        
-                        utf8.Length = utf8.MaximumLength = di->n;
-                        utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
-                        if (!utf8.Buffer) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        RtlCopyMemory(utf8.Buffer, di->name, di->n);
-                        
-                        if (di->key.obj_type == TYPE_ROOT_ITEM) {
-                            LIST_ENTRY* le2;
-                            
-                            subvol = NULL;
-                            
-                            le2 = me->fileref->fcb->Vcb->roots.Flink;
-                            while (le2 != &me->fileref->fcb->Vcb->roots) {
-                                root* r2 = CONTAINING_RECORD(le2, root, list_entry);
-                                
-                                if (r2->id == di->key.obj_id) {
-                                    subvol = r2;
-                                    break;
-                                }
-                                
-                                le2 = le2->Flink;
-                            }
-                            
-                            if (!subvol) {
-                                ERR("could not find subvol %llx\n", di->key.obj_id);
-                                Status = STATUS_INTERNAL_ERROR;
-                                goto end;
-                            }
-
-                            inode = SUBVOL_ROOT_INODE;
-                        } else {
-                            subvol = me->fileref->fcb->subvol;
-                            inode = di->key.obj_id;
-                        }
-                        
-                        Status = open_fcb(me->fileref->fcb->Vcb, subvol, inode, di->type, &utf8, me->fileref->fcb, &fcb, PagedPool, Irp);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("open_fcb returned %08x\n", Status);
-                            ExFreePool(utf8.Buffer);
-                            goto end;
-                        }
-                        
-                        fr = create_fileref(me->fileref->fcb->Vcb);
-                        if (!fr) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            ExFreePool(utf8.Buffer);
-                            free_fcb(fcb);
-                            goto end;
-                        }
-                        
-                        fr->fcb = fcb;
-                        
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, utf8.Buffer, utf8.Length);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                        if (!fr->filepart.Buffer) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        Status = RtlUTF8ToUnicodeN(fr->filepart.Buffer, stringlen, &stringlen, utf8.Buffer, utf8.Length);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        fr->filepart.Length = fr->filepart.MaximumLength = stringlen;
-                        
-                        Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        fr->parent = me->fileref;
-
-                        fr->index = tp.item->key.offset;
-                        increase_fileref_refcount(me->fileref);
-                        
-                        Status = add_dir_child(me->fileref->fcb, di->key.obj_type == TYPE_ROOT_ITEM ? subvol->id : fr->fcb->inode,
-                                               di->key.obj_type == TYPE_ROOT_ITEM ? TRUE : FALSE, fr->index, &utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
-                        if (!NT_SUCCESS(Status))
-                            WARN("add_dir_child returned %08x\n", Status);
-                        
-                        ExFreePool(utf8.Buffer);
-                        
-                        fr->dc = dc;
-                        dc->fileref = fr;
-                        
-                        insert_fileref_child(fr->parent, fr, FALSE);
-                        
-                        if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
-                            fr->fcb->fileref = fr;
-                        
-                        me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-                        if (!me2) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(me->fileref->fcb->Vcb, fr);
-                            goto end;
-                        }
-                        
-                        me2->fileref = fr;
-                        me2->dummyfcb = NULL;
-                        me2->dummyfileref = NULL;
-                        me2->parent = me;
-                        
-                        InsertHeadList(&me->list_entry, &me2->list_entry);
-                    } else {
-                        ERR("unrecognized key (%llx,%x,%llx)\n", di->key.obj_id, di->key.obj_type, di->key.offset);
-                        Status = STATUS_INTERNAL_ERROR;
-                        goto end;
-                    }
-                }
-            }
-            
-            b = find_next_item(me->fileref->fcb->Vcb, &tp, &next_tp, FALSE, Irp);
-            if (b) {
-                tp = next_tp;
-                
-                if (next_tp.item->key.obj_id > searchkey.obj_id || (next_tp.item->key.obj_id == searchkey.obj_id && next_tp.item->key.obj_type > searchkey.obj_type))
-                    break;
-            }
-        } while (b);
-    }
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    ExReleaseResourceLite(&me->fileref->nonpaged->children_lock);
-    
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
@@ -950,7 +581,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         ExAcquireResourceSharedLite(me->fileref->fcb->Header.Resource, TRUE);
         
         if (!me->fileref->fcb->ads && me->fileref->fcb->subvol == origparent->fcb->subvol) {
-            Status = add_children_to_move_list(me, Irp);
+            Status = add_children_to_move_list(fileref->fcb->Vcb, me, Irp);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("add_children_to_move_list returned %08x\n", Status);

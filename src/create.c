@@ -114,6 +114,7 @@ static NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, roo
     UINT32 hash;
     LIST_ENTRY* le;
     UINT8 c;
+    BOOL locked = FALSE;
     
     if (!case_sensitive) {
         Status = RtlUpcaseUnicodeString(&fnus, filename, TRUE);
@@ -129,7 +130,10 @@ static NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, roo
     
     c = hash >> 24;
     
-    ExAcquireResourceSharedLite(&fcb->nonpaged->dir_children_lock, TRUE);
+    if (!ExIsResourceAcquiredSharedLite(&fcb->nonpaged->dir_children_lock)) {
+        ExAcquireResourceSharedLite(&fcb->nonpaged->dir_children_lock, TRUE);
+        locked = TRUE;
+    }
     
     if (case_sensitive) {
         if (!fcb->hash_ptrs[c]) {
@@ -230,7 +234,8 @@ static NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, roo
     Status = STATUS_OBJECT_NAME_NOT_FOUND;
 
 end:
-    ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
+    if (locked)
+        ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
     
     if (!case_sensitive)
         ExFreePool(fnus.Buffer);
@@ -1376,8 +1381,8 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
 }
 
-static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
-                                   POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
+NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
+                            POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
         
