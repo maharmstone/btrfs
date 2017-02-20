@@ -686,6 +686,7 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
+    ULONG num_children = 0;
     
     fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fcb->hash_ptrs) {
@@ -799,12 +800,19 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
         
         insert_dir_child_into_hash_lists(fcb, dc);
         
+        num_children++;
+        
 cont:
         if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp))
             tp = next_tp;
         else
             break;
     }
+    
+    // If a directory has a lot of files, force it to stick around until the next flush
+    // so we aren't constantly re-reading.
+    if (num_children >= 100)
+        mark_fcb_dirty(fcb);
     
     return STATUS_SUCCESS;
 }
