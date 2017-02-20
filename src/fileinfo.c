@@ -933,6 +933,22 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->fileref->parent->fcb->inode_item.st_mtime = now;
             me->fileref->parent->fcb->inode_item_changed = TRUE;
             mark_fcb_dirty(me->fileref->parent->fcb);
+        } else {
+            if (me->fileref->dc) {
+                ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
+                RemoveEntryList(&me->fileref->dc->list_entry_index);
+                remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
+                ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
+                
+                if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE) {
+                    me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+                    
+                    ExAcquireResourceExclusiveLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock, TRUE);
+                    InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                    insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
+                    ExReleaseResourceLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock);
+                }
+            }
         }
 
         if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE)
