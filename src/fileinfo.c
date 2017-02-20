@@ -579,7 +579,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                             goto end;
                         }
                         
-                        fr = create_fileref();
+                        fr = create_fileref(me->fileref->fcb->Vcb);
                         if (!fr) {
                             ERR("out of memory\n");
                             free_fcb(fcb);
@@ -592,7 +592,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[xapreflen], xa->n - xapreflen);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -600,14 +600,14 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         if (!fr->filepart.Buffer) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
                         Status = RtlUTF8ToUnicodeN(fr->filepart.Buffer, stringlen, &stringlen, &xa->name[xapreflen], xa->n - xapreflen);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -616,7 +616,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
 
@@ -629,7 +629,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         if (!me2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -770,7 +770,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                             goto end;
                         }
                         
-                        fr = create_fileref();
+                        fr = create_fileref(me->fileref->fcb->Vcb);
                         if (!fr) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -785,7 +785,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, utf8.Buffer, utf8.Length);
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -793,7 +793,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         if (!fr->filepart.Buffer) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -801,7 +801,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -811,7 +811,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -837,7 +837,7 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         if (!me2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
-                            free_fileref(fr);
+                            free_fileref(me->fileref->fcb->Vcb, fr);
                             goto end;
                         }
                         
@@ -1135,7 +1135,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         
         me = CONTAINING_RECORD(le, move_entry, list_entry);
         
-        me->dummyfileref = create_fileref();
+        me->dummyfileref = create_fileref(fileref->fcb->Vcb);
         if (!me->dummyfileref) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1216,7 +1216,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         if (!me->parent) {
             RemoveEntryList(&me->fileref->list_entry);
             
-            free_fileref(me->fileref->parent);
+            free_fileref(fileref->fcb->Vcb, me->fileref->parent);
             
             increase_fileref_refcount(destdir);
             
@@ -1389,9 +1389,9 @@ end:
             free_fcb(me->dummyfcb);
         
         if (me->dummyfileref)
-            free_fileref(me->dummyfileref);
+            free_fileref(fileref->fcb->Vcb, me->dummyfileref);
         
-        free_fileref(me->fileref);
+        free_fileref(fileref->fcb->Vcb, me->fileref);
         
         ExFreePool(me);
     }
@@ -1603,7 +1603,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         if (fileref == oldfileref || oldfileref->deleted) {
-            free_fileref(oldfileref);
+            free_fileref(Vcb, oldfileref);
             oldfileref = NULL;
         }
     }
@@ -1843,7 +1843,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     // We move files by moving the existing fileref to the new directory, and
     // replacing it with a dummy fileref with the same original values, but marked as deleted.
     
-    fr2 = create_fileref();
+    fr2 = create_fileref(Vcb);
     
     fr2->fcb = fileref->fcb;
     fr2->fcb->refcount++;
@@ -2060,7 +2060,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
     
-    free_fileref(fr2);
+    free_fileref(Vcb, fr2);
     
     fr2->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fr2->parent->fcb);
@@ -2074,13 +2074,13 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
 
 end:
     if (oldfileref)
-        free_fileref(oldfileref);
+        free_fileref(Vcb, oldfileref);
     
     if (!NT_SUCCESS(Status) && related)
-        free_fileref(related);
+        free_fileref(Vcb, related);
     
     if (!NT_SUCCESS(Status) && fr2)
-        free_fileref(fr2);
+        free_fileref(Vcb, fr2);
     
     if (NT_SUCCESS(Status))
         clear_rollback(Vcb, &rollback);
@@ -2423,7 +2423,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
                 goto end;
             }
         } else {
-            free_fileref(oldfileref);
+            free_fileref(Vcb, oldfileref);
             oldfileref = NULL;
         }
     }
@@ -2479,7 +2479,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         goto end;
     }
     
-    fr2 = create_fileref();
+    fr2 = create_fileref(Vcb);
     
     fr2->fcb = fcb;
     fcb->refcount++;
@@ -2592,7 +2592,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     InsertTailList(&fcb->hardlinks, &hl->list_entry);
     
     mark_fileref_dirty(fr2);
-    free_fileref(fr2);
+    free_fileref(Vcb, fr2);
     
     // update inode's INODE_ITEM
     
@@ -2627,13 +2627,13 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     
 end:
     if (oldfileref)
-        free_fileref(oldfileref);
+        free_fileref(Vcb, oldfileref);
     
     if (!NT_SUCCESS(Status) && related)
-        free_fileref(related);
+        free_fileref(Vcb, related);
     
     if (!NT_SUCCESS(Status) && fr2)
-        free_fileref(fr2);
+        free_fileref(Vcb, fr2);
     
     if (NT_SUCCESS(Status))
         clear_rollback(Vcb, &rollback);
@@ -3600,7 +3600,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         }
     }
     
-    fr = create_fileref();
+    fr = create_fileref(Vcb);
     if (!fr) {
         ERR("out of memory\n");
         free_fcb(fcb);
@@ -3618,7 +3618,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         
         if (!fr->utf8.Buffer) {
             ERR("out of memory\n");
-            free_fileref(fr);
+            free_fileref(Vcb, fr);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -3631,7 +3631,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
         if (!fr->filepart.Buffer) {
             ERR("out of memory\n");
-            free_fileref(fr);
+            free_fileref(Vcb, fr);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -3641,7 +3641,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         return Status;
     }
     
@@ -3803,7 +3803,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                         }
                     }
                     
-                    free_fileref(parfr);
+                    free_fileref(fcb->Vcb, parfr);
                 }
                 
                 le = le->Flink;

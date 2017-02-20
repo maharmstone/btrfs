@@ -641,6 +641,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
     PAGED_LOOKASIDE_LIST rollback_item_lookaside;
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
+    PAGED_LOOKASIDE_LIST fileref_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
@@ -782,9 +783,9 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, 
 BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void free_fcb(fcb* fcb);
-void free_fileref(file_ref* fr);
+void free_fileref(device_extension* Vcb, file_ref* fr);
 fcb* create_fcb(POOL_TYPE pool_type);
-file_ref* create_fileref();
+file_ref* create_fileref(device_extension* Vcb);
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);

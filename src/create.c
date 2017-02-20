@@ -76,10 +76,10 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     return fcb;
 }
 
-file_ref* create_fileref() {
+file_ref* create_fileref(device_extension* Vcb) {
     file_ref* fr;
     
-    fr = ExAllocatePoolWithTag(PagedPool, sizeof(file_ref), ALLOC_TAG);
+    fr = ExAllocateFromPagedLookasideList(&Vcb->fileref_lookaside);
     if (!fr) {
         ERR("out of memory\n");
         return NULL;
@@ -1391,7 +1391,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
         if (sf2) {
             if (sf2->deleted) {
                 TRACE("element in path has been deleted\n");
-                free_fileref(sf2);
+                free_fileref(Vcb, sf2);
                 return lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
             }
             
@@ -1427,7 +1427,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
                 return Status;
             }
             
-            sf2 = create_fileref();
+            sf2 = create_fileref(Vcb);
             if (!sf2) {
                 ERR("out of memory\n");
                 free_fcb(fcb);
@@ -1443,7 +1443,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
                 sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
                 if (!sf2->filepart.Buffer) {
                     ERR("out of memory\n");
-                    free_fileref(sf2);
+                    free_fileref(Vcb, sf2);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
@@ -1453,7 +1453,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
             Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-                free_fileref(sf2);
+                free_fileref(Vcb, sf2);
                 return Status;
             }
             
@@ -1515,7 +1515,7 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
                 return STATUS_OBJECT_PATH_NOT_FOUND;
             }
 
-            sf2 = create_fileref();
+            sf2 = create_fileref(Vcb);
             if (!sf2) {
                 ERR("out of memory\n");
                 free_fcb(fcb);
@@ -1534,21 +1534,21 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
             sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
             if (!sf2->utf8.Buffer) {
                 ERR("out of memory\n");
-                free_fileref(sf2);
+                free_fileref(Vcb, sf2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
             if (!sf2->filepart.Buffer) {
                 ERR("out of memory\n");
-                free_fileref(sf2);
+                free_fileref(Vcb, sf2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             sf2->filepart_uc.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name_uc.Length, ALLOC_TAG);
             if (!sf2->filepart_uc.Buffer) {
                 ERR("out of memory\n");
-                free_fileref(sf2);
+                free_fileref(Vcb, sf2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
@@ -1707,7 +1707,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             break;
         }
         
-        free_fileref(sf);
+        free_fileref(Vcb, sf);
         sf = sf2;
     }
     
@@ -1716,7 +1716,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     *pfr = sf2;
     
 end:
-    free_fileref(sf);
+    free_fileref(Vcb, sf);
     
 end2:
     if (parts)
@@ -2045,7 +2045,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         fcb->ea_changed = TRUE;
     }
     
-    fileref = create_fileref();
+    fileref = create_fileref(Vcb);
     if (!fileref) {
         ERR("out of memory\n");
         free_fcb(fcb);
@@ -2077,7 +2077,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         return Status;
     }
 
@@ -2086,7 +2086,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             return Status;
         }
     }
@@ -2117,7 +2117,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
             ERR("out of memory\n");
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -2126,7 +2126,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
         fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs_uc) {
             ERR("out of memory\n");
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
@@ -2202,7 +2202,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         return Status;
     }
     
-    free_fileref(parfileref);
+    free_fileref(Vcb, parfileref);
     
     parfileref = newpar;
     *pparfileref = parfileref;
@@ -2304,7 +2304,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     } else
         fcb->adsmaxlen -= overhead + utf8len + xapreflen;
     
-    fileref = create_fileref();
+    fileref = create_fileref(Vcb);
     if (!fileref) {
         ERR("out of memory\n");
         free_fcb(fcb);
@@ -2317,7 +2317,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
     if (!fileref->filepart.Buffer) {
         ERR("out of memory\n");
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
@@ -2326,7 +2326,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         return Status;
     }
     
@@ -2496,7 +2496,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     if (!ccb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         goto end;
     }
     
@@ -2561,7 +2561,7 @@ end:
     
 end2:
     if (parfileref && !loaded_related)
-        free_fileref(parfileref);
+        free_fileref(Vcb, parfileref);
     
     return Status;
 }
@@ -3020,7 +3020,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         if (!NT_SUCCESS(Status)) {
             ERR("get_reparse_block returned %08x\n", Status);
             
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
@@ -3033,14 +3033,14 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         
         Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
         
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         goto exit;
     }
     
     if (NT_SUCCESS(Status) && fileref->deleted) {
-        free_fileref(fileref);
+        free_fileref(Vcb, fileref);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -3051,7 +3051,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             TRACE("file %S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", file_desc_fileref(fileref));
             Status = STATUS_OBJECT_NAME_COLLISION;
             
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
@@ -3087,7 +3087,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_ACCESS_DENIED;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3097,7 +3097,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_MEDIA_WRITE_PROTECTED;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3108,7 +3108,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_USER_MAPPED_FILE;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3126,7 +3126,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             WARN("SeAccessCheck failed, returning %08x\n", Status);
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
         
             goto exit;
@@ -3141,7 +3141,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_ACCESS_DENIED;
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
         
             goto exit;
@@ -3156,7 +3156,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_DELETE_PENDING;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3178,7 +3178,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_ACCESS_DENIED;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3190,7 +3190,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_CANNOT_DELETE;
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
         
             goto exit;
@@ -3211,7 +3211,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 ERR("get_reparse_block returned %08x\n", Status);
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3226,7 +3226,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
             
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
@@ -3237,7 +3237,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_FILE_IS_A_DIRECTORY;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3247,7 +3247,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_NOT_A_DIRECTORY;
             
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
@@ -3260,7 +3260,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3274,7 +3274,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3291,7 +3291,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 Status = STATUS_ACCESS_DENIED;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3311,7 +3311,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 ERR("truncate_file returned %08x\n", Status);
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(fileref);
+                free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
                 
                 goto exit;
@@ -3324,7 +3324,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     ERR("extend_file returned %08x\n", Status);
                     
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(fileref);
+                    free_fileref(Vcb, fileref);
                     ExReleaseResourceLite(&Vcb->fcb_lock);
                     
                     goto exit;
@@ -3340,7 +3340,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
                     
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(fileref);
+                    free_fileref(Vcb, fileref);
                     ExReleaseResourceLite(&Vcb->fcb_lock);
                     
                     goto exit;
@@ -3375,7 +3375,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(fileref);
+                    free_fileref(Vcb, fileref);
                     ExReleaseResourceLite(&Vcb->fcb_lock);
                     
                     goto exit;
@@ -3437,7 +3437,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                         Status = STATUS_ACCESS_DENIED;
                         
                         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                        free_fileref(fileref);
+                        free_fileref(Vcb, fileref);
                         ExReleaseResourceLite(&Vcb->fcb_lock);
                         
                         goto exit;
@@ -3459,7 +3459,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = STATUS_INSUFFICIENT_RESOURCES;
             
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(fileref);
+            free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
@@ -3556,7 +3556,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 exit:
     if (loaded_related) {
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(related);
+        free_fileref(Vcb, related);
         ExReleaseResourceLite(&Vcb->fcb_lock);
     }
     

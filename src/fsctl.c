@@ -422,7 +422,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     // create fileref for entry in other subvolume
     
-    fr = create_fileref();
+    fr = create_fileref(Vcb);
     if (!fr) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -433,7 +433,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, fr->utf8.MaximumLength, ALLOC_TAG);
     if (!fr->utf8.Buffer) {
         ERR("out of memory\n");
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -443,14 +443,14 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         goto end;
     }
     
     Status = fcb_get_last_dir_index(fcb, &dirpos, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         goto end;
     }
     
@@ -461,7 +461,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
     if (!fr->filepart.Buffer) {
         ERR("out of memory\n");
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -471,7 +471,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         goto end;
     }
     
@@ -493,7 +493,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr->fcb->fileref = fr;
     
-    free_fileref(fr);
+    free_fileref(Vcb, fr);
 
     // change fcb's INODE_ITEM
     
@@ -635,11 +635,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
             WARN("file already exists\n");
-            free_fileref(fr2);
+            free_fileref(Vcb, fr2);
             Status = STATUS_OBJECT_NAME_COLLISION;
             goto end3;
         } else
-            free_fileref(fr2);
+            free_fileref(Vcb, fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08x\n", Status);
         goto end3;
@@ -710,7 +710,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
             Status = STATUS_SUCCESS;
         } else {
             send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED);
-            free_fileref(fr);
+            free_fileref(Vcb, fr);
         }
     }
     
@@ -833,11 +833,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
             WARN("file already exists\n");
-            free_fileref(fr2);
+            free_fileref(Vcb, fr2);
             Status = STATUS_OBJECT_NAME_COLLISION;
             goto end;
         } else
-            free_fileref(fr2);
+            free_fileref(Vcb, fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08x\n", Status);
         goto end;
@@ -1003,7 +1003,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // create fileref for entry in other subvolume
     
-    fr = create_fileref();
+    fr = create_fileref(Vcb);
     if (!fr) {
         ERR("out of memory\n");
         
@@ -1023,7 +1023,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         goto end;
     }
@@ -1036,7 +1036,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!fr->filepart.Buffer) {
         ERR("out of memory\n");
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1048,7 +1048,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         goto end;
     }
@@ -1066,7 +1066,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!fr->fcb->hash_ptrs) {
         ERR("out of memory\n");
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1078,7 +1078,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     if (!fcb->hash_ptrs_uc) {
         ERR("out of memory\n");
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1133,7 +1133,7 @@ end:
 end2:
     if (fr) {
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(fr);
+        free_fileref(Vcb, fr);
         ExReleaseResourceLite(&Vcb->fcb_lock);
     }
         

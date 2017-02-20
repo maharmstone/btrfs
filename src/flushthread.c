@@ -6117,7 +6117,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
         
         flush_fileref(dirt->fileref, &batchlist, Irp);
-        free_fileref(dirt->fileref);
+        free_fileref(Vcb, dirt->fileref);
         ExFreePool(dirt);
 
 #ifdef DEBUG_FLUSH_TIMES
