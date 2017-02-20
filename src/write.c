@@ -3314,6 +3314,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
             return STATUS_SUCCESS;
         else if (written > 0) {
             start_data += written;
+            irp_offset += written;
             length -= written;
             data = &((UINT8*)data)[written];
         }
@@ -3347,6 +3348,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
                     } else {
                         done = TRUE;
                         start_data += newlen;
+                        irp_offset += newlen;
                         length -= newlen;
                         data = &((UINT8*)data)[newlen];
                         break;
@@ -3380,6 +3382,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
                 else {
                     done = TRUE;
                     start_data += newlen;
+                    irp_offset += newlen;
                     length -= newlen;
                     data = &((UINT8*)data)[newlen];
                 }
@@ -4063,7 +4066,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                         return Status;
                     }
                     
-                    Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, data, Irp, file_write, 0, rollback);
+                    Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, (UINT8*)data + written, Irp, file_write, irp_offset + written, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("insert_extent returned %08x\n", Status);
                         return Status;
@@ -4135,7 +4138,7 @@ nextitem:
             return Status;
         }
         
-        Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, data, Irp, file_write, irp_offset, rollback);
+        Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, (UINT8*)data + written, Irp, file_write, irp_offset + written, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_extent returned %08x\n", Status);
             return Status;
