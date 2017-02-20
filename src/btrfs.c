@@ -560,19 +560,24 @@ static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LO
 // This function exists because we have to lie about our FS type in certain situations. 
 // MPR!MprGetConnection queries the FS type, and compares it to a whitelist. If it doesn't match,
 // it will return ERROR_NO_NET_OR_BAD_PATH, which prevents UAC from working.
+// The command mklink refuses to create hard links on anything other than NTFS, so we have to
+// blacklist cmd.exe too.
 
-static BOOL called_from_mpr() {
+static BOOL lie_about_fs_type() {
     NTSTATUS Status;
     PROCESS_BASIC_INFORMATION pbi;
     PPEB peb;
     LIST_ENTRY* le;
     ULONG retlen;
     
-    static WCHAR dll[] = L"MPR.DLL";
-    UNICODE_STRING dllus;
+    static WCHAR mpr[] = L"MPR.DLL";
+    static WCHAR cmd[] = L"CMD.EXE";
+    UNICODE_STRING mprus, cmdus;
     
-    dllus.Buffer = dll;
-    dllus.Length = dllus.MaximumLength = wcslen(dll) * sizeof(WCHAR);
+    mprus.Buffer = mpr;
+    mprus.Length = mprus.MaximumLength = wcslen(mpr) * sizeof(WCHAR);
+    cmdus.Buffer = cmd;
+    cmdus.Length = cmdus.MaximumLength = wcslen(cmd) * sizeof(WCHAR);
     
     if (!PsGetCurrentProcess())
         return FALSE;
@@ -595,31 +600,43 @@ static BOOL called_from_mpr() {
     le = peb->Ldr->InMemoryOrderModuleList.Flink;
     while (le != &peb->Ldr->InMemoryOrderModuleList) {
         LDR_DATA_TABLE_ENTRY* entry = CONTAINING_RECORD(le, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+        BOOL blacklist = FALSE;
         
-        if (entry->FullDllName.Length >= dllus.Length) {
+        if (entry->FullDllName.Length >= mprus.Length) {
             UNICODE_STRING name;
             
-            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - dllus.Length) / sizeof(WCHAR)];
-            name.Length = name.MaximumLength = dllus.Length;
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - mprus.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = mprus.Length;
             
-            if (FsRtlAreNamesEqual(&name, &dllus, TRUE, NULL)) {
-                void** frames;
-                USHORT i, num_frames;
-                
-                frames = ExAllocatePoolWithTag(PagedPool, 256 * sizeof(void*), ALLOC_TAG);
+            blacklist = FsRtlAreNamesEqual(&name, &mprus, TRUE, NULL);
+        }
+        
+        if (!blacklist && entry->FullDllName.Length >= cmdus.Length) {
+            UNICODE_STRING name;
+            
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - cmdus.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = cmdus.Length;
+            
+            blacklist = FsRtlAreNamesEqual(&name, &cmdus, TRUE, NULL);
+        }
+        
+        if (blacklist) {
+            void** frames;
+            USHORT i, num_frames;
+            
+            frames = ExAllocatePoolWithTag(PagedPool, 256 * sizeof(void*), ALLOC_TAG);
 
-                num_frames = RtlWalkFrameChain(frames, 256, 1);
-                
-                for (i = 0; i < num_frames; i++) {
-                    // entry->Reserved3[1] appears to be the image size
-                    if (frames[i] >= entry->DllBase && (ULONG_PTR)frames[i] <= (ULONG_PTR)entry->DllBase + (ULONG_PTR)entry->Reserved3[1]) {
-                        ExFreePool(frames);
-                        return TRUE;
-                    }
+            num_frames = RtlWalkFrameChain(frames, 256, 1);
+            
+            for (i = 0; i < num_frames; i++) {
+                // entry->Reserved3[1] appears to be the image size
+                if (frames[i] >= entry->DllBase && (ULONG_PTR)frames[i] <= (ULONG_PTR)entry->DllBase + (ULONG_PTR)entry->Reserved3[1]) {
+                    ExFreePool(frames);
+                    return TRUE;
                 }
-                
-                ExFreePool(frames);
             }
+            
+            ExFreePool(frames);
         }
         
         le = le->Flink;
@@ -657,7 +674,7 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
         {
             FILE_FS_ATTRIBUTE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
             BOOL overflow = FALSE;
-            WCHAR* fs_name = (Irp->RequestorMode == UserMode && called_from_mpr()) ? L"NTFS" : L"Btrfs";
+            WCHAR* fs_name = (Irp->RequestorMode == UserMode && lie_about_fs_type()) ? L"NTFS" : L"Btrfs";
             ULONG fs_name_len = wcslen(fs_name) * sizeof(WCHAR);
             ULONG orig_fs_name_len = fs_name_len;
             
