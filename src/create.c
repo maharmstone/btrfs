@@ -1531,13 +1531,6 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
             sf2->dc = dc;
             dc->fileref = sf2;
             
-            sf2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
-            if (!sf2->utf8.Buffer) {
-                ERR("out of memory\n");
-                free_fileref(Vcb, sf2);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
             sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
             if (!sf2->filepart.Buffer) {
                 ERR("out of memory\n");
@@ -1551,9 +1544,6 @@ static NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE
                 free_fileref(Vcb, sf2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
-            
-            sf2->utf8.Length = sf2->utf8.MaximumLength = dc->utf8.Length;
-            RtlCopyMemory(sf2->utf8.Buffer, dc->utf8.Buffer, dc->utf8.Length);
             
             sf2->filepart.Length = sf2->filepart.MaximumLength = dc->name.Length;
             RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
@@ -1852,6 +1842,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     ULONG defda;
     file_ref* fileref;
     dir_child* dc;
+    ANSI_STRING utf8as;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2054,9 +2045,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fileref->fcb = fcb;
     fileref->index = dirpos;
-
-    fileref->utf8.MaximumLength = fileref->utf8.Length = utf8len;
-    fileref->utf8.Buffer = utf8;
     
     fileref->filepart.Length = fileref->filepart.MaximumLength = fpus->Length;
     
@@ -2104,9 +2092,14 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
     insert_fileref_child(parfileref, fileref, TRUE);
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &fileref->utf8, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
+    utf8as.Buffer = utf8;
+    utf8as.Length = utf8as.MaximumLength = utf8len;
+    
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
+    
+    ExFreePool(utf8);
     
     fileref->dc = dc;
     dc->fileref = fileref;

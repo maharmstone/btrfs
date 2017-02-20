@@ -780,7 +780,6 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                         }
                         
                         fr->fcb = fcb;
-                        fr->utf8 = utf8;
                         
                         Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, utf8.Buffer, utf8.Length);
                         if (!NT_SUCCESS(Status)) {
@@ -824,6 +823,8 @@ static NTSTATUS add_children_to_move_list(move_entry* me, PIRP Irp) {
                                                di->key.obj_type == TYPE_ROOT_ITEM ? TRUE : FALSE, fr->index, &utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
                         if (!NT_SUCCESS(Status))
                             WARN("add_dir_child returned %08x\n", Status);
+                        
+                        ExFreePool(utf8.Buffer);
                         
                         fr->dc = dc;
                         dc->fileref = fr;
@@ -1172,27 +1173,24 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             goto end;
         }
         
-        me->dummyfileref->utf8 = me->fileref->utf8;
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
         
         if (le == move_list.Flink) {
-            if (me->fileref->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length)
+            if (me->fileref->dc->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length)
                 name_changed = TRUE;
             
-            me->fileref->utf8.Length = me->fileref->utf8.MaximumLength = utf8->Length;
-        } else
-            me->fileref->utf8.MaximumLength = me->fileref->utf8.Length;
-        
-        if (me->fileref->utf8.MaximumLength > 0) {
-            me->fileref->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->utf8.MaximumLength, ALLOC_TAG);
-            
-            if (!me->fileref->utf8.Buffer) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
+            if (!me->dummyfileref->oldutf8.Buffer) {
+                me->dummyfileref->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->dc->utf8.Length, ALLOC_TAG);
+                if (!me->dummyfileref->oldutf8.Buffer) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                RtlCopyMemory(me->dummyfileref->oldutf8.Buffer, me->fileref->dc->utf8.Buffer, me->fileref->dc->utf8.Length);
+                
+                me->dummyfileref->oldutf8.Length = me->dummyfileref->oldutf8.MaximumLength = me->fileref->dc->utf8.Length;
             }
-            
-            RtlCopyMemory(me->fileref->utf8.Buffer, le == move_list.Flink ? utf8->Buffer : me->dummyfileref->utf8.Buffer, me->fileref->utf8.Length);
         }
         
         me->dummyfileref->delete_on_close = me->fileref->delete_on_close;
@@ -1216,8 +1214,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         if (!me->parent) {
             RemoveEntryList(&me->fileref->list_entry);
             
-            free_fileref(fileref->fcb->Vcb, me->fileref->parent);
-            
             increase_fileref_refcount(destdir);
             
             Status = fcb_get_last_dir_index(destdir->fcb, &me->fileref->index, Irp);
@@ -1232,6 +1228,14 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
+                
+                me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
+                me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
+                me->fileref->parent->fcb->inode_item.sequence++;
+                me->fileref->parent->fcb->inode_item.st_ctime = now;
+                me->fileref->parent->fcb->inode_item.st_mtime = now;
+                me->fileref->parent->fcb->inode_item_changed = TRUE;
+                mark_fcb_dirty(me->fileref->parent->fcb);
                 
                 if (name_changed) {
                     ExFreePool(me->fileref->dc->utf8.Buffer);
@@ -1284,12 +1288,13 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 ExReleaseResourceLite(&destdir->fcb->nonpaged->dir_children_lock);
             }
             
+            free_fileref(fileref->fcb->Vcb, me->fileref->parent);
             me->fileref->parent = destdir;
             
             insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
             
             TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
-            me->fileref->parent->fcb->inode_item.st_size += me->fileref->utf8.Length * 2;
+            me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
             TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
@@ -1321,7 +1326,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             hl->parent = me->fileref->parent->fcb->inode;
             hl->index = me->fileref->index;
             
-            hl->utf8.Length = hl->utf8.MaximumLength = me->fileref->utf8.Length;
+            hl->utf8.Length = hl->utf8.MaximumLength = me->fileref->dc->utf8.Length;
             hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
             if (!hl->utf8.Buffer) {
                 ERR("out of memory\n");
@@ -1330,7 +1335,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 goto end;
             }
             
-            RtlCopyMemory(hl->utf8.Buffer, me->fileref->utf8.Buffer, me->fileref->utf8.Length);
+            RtlCopyMemory(hl->utf8.Buffer, me->fileref->dc->utf8.Buffer, me->fileref->dc->utf8.Length);
             
             hl->name.Length = hl->name.MaximumLength = me->fileref->filepart.Length;
             hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
@@ -1495,7 +1500,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
     UINT64 index;
     WCHAR* fn;
-    ULONG fnlen, utf8len;
+    ULONG fnlen, utf8len, origutf8len;
     UNICODE_STRING fnus;
     ANSI_STRING utf8;
     NTSTATUS Status;
@@ -1553,6 +1558,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
     
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+    
+    origutf8len = fileref->dc->utf8.Length;
     
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
@@ -1692,16 +1699,22 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         fnus2.Length = fnus2.MaximumLength = fnus.Length;
         RtlCopyMemory(fnus2.Buffer, fnus.Buffer, fnus.Length);
         
-        oldutf8len = fileref->utf8.Length;
+        oldutf8len = fileref->dc->utf8.Length;
         
-        if (!fileref->created && !fileref->oldutf8.Buffer)
-            fileref->oldutf8 = fileref->utf8;
-        else
-            ExFreePool(fileref->utf8.Buffer);
+        if (!fileref->created && !fileref->oldutf8.Buffer) {
+            fileref->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->dc->utf8.Length, ALLOC_TAG);
+            if (!fileref->oldutf8.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = fileref->dc->utf8.Length;
+            RtlCopyMemory(fileref->oldutf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+        }
         
         TRACE("renaming %.*S to %.*S\n", fileref->filepart.Length / sizeof(WCHAR), fileref->filepart.Buffer, fnus2.Length / sizeof(WCHAR), fnus.Buffer);
         
-        fileref->utf8 = utf8;
         fileref->filepart = fnus2;
         
         newfn.Length = newfn.MaximumLength = 0;
@@ -1850,7 +1863,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fr2->filepart = fileref->filepart;
     fr2->filepart_uc = fileref->filepart_uc;
-    fr2->utf8 = fileref->utf8;
     fr2->oldutf8 = fileref->oldutf8;
     fr2->index = fileref->index;
     fr2->delete_on_close = fileref->delete_on_close;
@@ -1858,6 +1870,19 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->created = fileref->created;
     fr2->parent = fileref->parent;
     fr2->dc = NULL;
+    
+    if (!fr2->oldutf8.Buffer) {
+        fr2->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->dc->utf8.Length, ALLOC_TAG);
+        if (!fr2->oldutf8.Buffer) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlCopyMemory(fr2->oldutf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+        
+        fr2->oldutf8.Length = fr2->oldutf8.MaximumLength = fileref->dc->utf8.Length;
+    }
     
     if (fr2->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr2->fcb->fileref = fr2;
@@ -1884,7 +1909,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         goto end;
     }
     
-    fileref->utf8 = utf8;
+    fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = 0;
     fileref->oldutf8.Buffer = NULL;
     fileref->index = index;
     fileref->deleted = FALSE;
@@ -1908,7 +1933,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         remove_dir_child_from_hash_lists(fr2->parent->fcb, fileref->dc);
         ExReleaseResourceLite(&fr2->parent->fcb->nonpaged->dir_children_lock);
         
-        if (fileref->utf8.Length != fr2->utf8.Length || RtlCompareMemory(fileref->utf8.Buffer, fr2->utf8.Buffer, fr2->utf8.Length) != fr2->utf8.Length) {
+        if (fileref->dc->utf8.Length != utf8.Length || RtlCompareMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length) != utf8.Length) {
             // handle changed name
             
             ExFreePool(fileref->dc->utf8.Buffer);
@@ -1983,7 +2008,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         
         RtlCopyMemory(hl->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
         
-        hl->utf8.Length = hl->utf8.MaximumLength = fileref->utf8.Length;
+        hl->utf8.Length = hl->utf8.MaximumLength = fileref->dc->utf8.Length;
         hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
         
         if (!hl->utf8.Buffer) {
@@ -1994,7 +2019,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        RtlCopyMemory(hl->utf8.Buffer, fileref->utf8.Buffer, fileref->utf8.Length);
+        RtlCopyMemory(hl->utf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
         InsertTailList(&fcb->hardlinks, &hl->list_entry);
     }
@@ -2054,7 +2079,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
     TRACE("fr2->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
-    fr2->parent->fcb->inode_item.st_size -= 2 * fr2->utf8.Length;
+    fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
     TRACE("fr2->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
     fr2->parent->fcb->inode_item.sequence++;
     fr2->parent->fcb->inode_item.st_ctime = now;
@@ -2484,7 +2509,6 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fr2->fcb = fcb;
     fcb->refcount++;
     
-    fr2->utf8 = utf8;
     fr2->index = index;
     fr2->created = TRUE;
     fr2->parent = related;
@@ -2538,7 +2562,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         
         RtlCopyMemory(hl->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
         
-        hl->utf8.Length = hl->utf8.MaximumLength = fileref->utf8.Length;
+        hl->utf8.Length = hl->utf8.MaximumLength = fileref->dc->utf8.Length;
         hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
         
         if (!hl->utf8.Buffer) {
@@ -2549,7 +2573,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
             goto end;
         }
         
-        RtlCopyMemory(hl->utf8.Buffer, fileref->utf8.Buffer, fileref->utf8.Length);
+        RtlCopyMemory(hl->utf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
         InsertTailList(&fcb->hardlinks, &hl->list_entry);
     }
@@ -2588,6 +2612,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
     
     RtlCopyMemory(hl->utf8.Buffer, utf8.Buffer, utf8.Length);
+    ExFreePool(utf8.Buffer);
     
     InsertTailList(&fcb->hardlinks, &hl->list_entry);
     
@@ -3612,19 +3637,6 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     
     fr->index = hl->index;
     
-    fr->utf8.Length = fr->utf8.MaximumLength = hl->utf8.Length;
-    if (fr->utf8.Length > 0) {
-        fr->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, fr->utf8.Length, ALLOC_TAG);
-        
-        if (!fr->utf8.Buffer) {
-            ERR("out of memory\n");
-            free_fileref(Vcb, fr);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        RtlCopyMemory(fr->utf8.Buffer, hl->utf8.Buffer, hl->utf8.Length);
-    }
-    
     fr->filepart.MaximumLength = fr->filepart.Length = hl->name.Length;
     
     if (fr->filepart.Length > 0) {
@@ -3648,7 +3660,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     fr->parent = parfr;
     
     Status = add_dir_child(parfr->fcb, fr->fcb->inode == SUBVOL_ROOT_INODE ? fr->fcb->subvol->id : fr->fcb->inode, fr->fcb->inode == SUBVOL_ROOT_INODE,
-                           fr->index, &fr->utf8, &fr->filepart, &fr->filepart_uc, fr->fcb->type, &dc);
+                           fr->index, &hl->utf8, &fr->filepart, &fr->filepart_uc, fr->fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

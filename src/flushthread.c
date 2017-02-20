@@ -5658,9 +5658,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         DIR_ITEM *di, *di2;
         UINT32 crc32;
         
-        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
-        disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
+        disize = sizeof(DIR_ITEM) - 1 + fileref->dc->utf8.Length;
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
@@ -5679,9 +5679,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         di->transid = fileref->fcb->Vcb->superblock.generation;
         di->m = 0;
-        di->n = (UINT16)fileref->utf8.Length;
+        di->n = (UINT16)fileref->dc->utf8.Length;
         di->type = fileref->fcb->type;
-        RtlCopyMemory(di->name, fileref->utf8.Buffer, fileref->utf8.Length);
+        RtlCopyMemory(di->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
         di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di2) {
@@ -5706,15 +5706,15 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
             INODE_REF* ir;
             
-            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->utf8.Length, ALLOC_TAG);
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->dc->utf8.Length, ALLOC_TAG);
             if (!ir) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ir->index = fileref->index;
-            ir->n = fileref->utf8.Length;
-            RtlCopyMemory(ir->name, fileref->utf8.Buffer, ir->n);
+            ir->n = fileref->dc->utf8.Length;
+            RtlCopyMemory(ir->name, fileref->dc->utf8.Buffer, ir->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
                                         ir, sizeof(INODE_REF) - 1 + ir->n, Batch_InodeRef)) {
@@ -5725,7 +5725,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             ULONG rrlen;
             ROOT_REF* rr;
 
-            rrlen = sizeof(ROOT_REF) - 1 + fileref->utf8.Length;
+            rrlen = sizeof(ROOT_REF) - 1 + fileref->dc->utf8.Length;
                 
             rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
             if (!rr) {
@@ -5735,8 +5735,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             
             rr->dir = fileref->parent->fcb->inode;
             rr->index = fileref->index;
-            rr->n = fileref->utf8.Length;
-            RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
+            rr->n = fileref->dc->utf8.Length;
+            RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
             
             Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -5757,10 +5757,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         ANSI_STRING* name;
         DIR_ITEM* di;
         
-        if (fileref->oldutf8.Buffer)
-            name = &fileref->oldutf8;
-        else
-            name = &fileref->utf8;
+        name = &fileref->oldutf8;
 
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)name->Buffer, name->Length);
 
@@ -5831,12 +5828,12 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             fileref->oldutf8.Buffer = NULL;
         }
     } else { // rename or change type
-        PANSI_STRING oldutf8 = fileref->oldutf8.Buffer ? &fileref->oldutf8 : &fileref->utf8;
+        PANSI_STRING oldutf8 = fileref->oldutf8.Buffer ? &fileref->oldutf8 : &fileref->dc->utf8;
         UINT32 crc32, oldcrc32;
         ULONG disize;
         DIR_ITEM *olddi, *di, *di2;
         
-        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->utf8.Buffer, fileref->utf8.Length);
+        crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
         if (!fileref->oldutf8.Buffer)
             oldcrc32 = crc32;
@@ -5863,7 +5860,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         // add DIR_ITEM (0x54)
         
-        disize = sizeof(DIR_ITEM) - 1 + fileref->utf8.Length;
+        disize = sizeof(DIR_ITEM) - 1 + fileref->dc->utf8.Length;
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
@@ -5889,9 +5886,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         
         di->transid = fileref->fcb->Vcb->superblock.generation;
         di->m = 0;
-        di->n = (UINT16)fileref->utf8.Length;
+        di->n = (UINT16)fileref->dc->utf8.Length;
         di->type = fileref->fcb->type;
-        RtlCopyMemory(di->name, fileref->utf8.Buffer, fileref->utf8.Length);
+        RtlCopyMemory(di->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         
         RtlCopyMemory(di2, di, disize);
         
@@ -5924,15 +5921,15 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             
             // add INODE_REF (0xc)
             
-            ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->utf8.Length, ALLOC_TAG);
+            ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->dc->utf8.Length, ALLOC_TAG);
             if (!ir2) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ir2->index = fileref->index;
-            ir2->n = fileref->utf8.Length;
-            RtlCopyMemory(ir2->name, fileref->utf8.Buffer, ir2->n);
+            ir2->n = fileref->dc->utf8.Length;
+            RtlCopyMemory(ir2->name, fileref->dc->utf8.Buffer, ir2->n);
         
             if (!insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
                                         ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef)) {
@@ -5950,7 +5947,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 ERR("delete_root_ref returned %08x\n", Status);
             }
             
-            rrlen = sizeof(ROOT_REF) - 1 + fileref->utf8.Length;
+            rrlen = sizeof(ROOT_REF) - 1 + fileref->dc->utf8.Length;
             
             rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
             if (!rr) {
@@ -5960,8 +5957,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             
             rr->dir = fileref->parent->fcb->inode;
             rr->index = fileref->index;
-            rr->n = fileref->utf8.Length;
-            RtlCopyMemory(rr->name, fileref->utf8.Buffer, fileref->utf8.Length);
+            rr->n = fileref->dc->utf8.Length;
+            RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
             
             Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {

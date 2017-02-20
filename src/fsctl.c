@@ -429,17 +429,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    fr->utf8.Length = fr->utf8.MaximumLength = utf8->Length;
-    fr->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, fr->utf8.MaximumLength, ALLOC_TAG);
-    if (!fr->utf8.Buffer) {
-        ERR("out of memory\n");
-        free_fileref(Vcb, fr);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(fr->utf8.Buffer, utf8->Buffer, utf8->Length);
-    
     Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
@@ -1029,7 +1018,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     }
     
     fr->index = dirpos;
-    fr->utf8 = utf8;
     
     fr->filepart.MaximumLength = fr->filepart.Length = nameus.Length;
     fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);

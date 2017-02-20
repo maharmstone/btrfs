@@ -212,7 +212,6 @@ typedef struct _file_ref {
     fcb* fcb;
     UNICODE_STRING filepart;
     UNICODE_STRING filepart_uc;
-    ANSI_STRING utf8;
     ANSI_STRING oldutf8;
     UINT64 index;
     BOOL delete_on_close;

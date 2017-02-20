@@ -1535,9 +1535,6 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
     if (fr->filepart_uc.Buffer)
         ExFreePool(fr->filepart_uc.Buffer);
     
-    if (fr->utf8.Buffer)
-        ExFreePool(fr->utf8.Buffer);
-    
     if (fr->debug_desc)
         ExFreePool(fr->debug_desc);
     
@@ -1796,6 +1793,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     LARGE_INTEGER newlength, time;
     BTRFS_TIME now;
     NTSTATUS Status;
+    ULONG utf8len = 0;
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1901,7 +1899,13 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
         remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
         ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
         
-        ExFreePool(fileref->dc->utf8.Buffer);
+        if (!fileref->oldutf8.Buffer)
+            fileref->oldutf8 = fileref->dc->utf8;
+        else
+            ExFreePool(fileref->dc->utf8.Buffer);
+        
+        utf8len = fileref->dc->utf8.Length;
+        
         ExFreePool(fileref->dc->name.Buffer);
         ExFreePool(fileref->dc->name_uc.Buffer);
         ExFreePool(fileref->dc);
@@ -1914,7 +1918,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     TRACE("delete file %.*S\n", fileref->filepart.Length / sizeof(WCHAR), fileref->filepart.Buffer);
     ExAcquireResourceExclusiveLite(fileref->parent->fcb->Header.Resource, TRUE);
     TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
-    fileref->parent->fcb->inode_item.st_size -= fileref->utf8.Length * 2;
+    fileref->parent->fcb->inode_item.st_size -= utf8len * 2;
     TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
     fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
     fileref->parent->fcb->inode_item.sequence++;
