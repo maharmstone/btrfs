@@ -23,19 +23,28 @@ extern PDEVICE_OBJECT devobj;
 
 static WCHAR datastring[] = L"::$DATA";
 
-fcb* create_fcb(POOL_TYPE pool_type) {
+fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb* fcb;
     
-    fcb = ExAllocatePoolWithTag(pool_type, sizeof(struct _fcb), ALLOC_TAG);
-    if (!fcb) {
-        ERR("out of memory\n");
-        return NULL;
+    if (pool_type == NonPagedPool) {
+        fcb = ExAllocatePoolWithTag(pool_type, sizeof(struct _fcb), ALLOC_TAG);
+        if (!fcb) {
+            ERR("out of memory\n");
+            return NULL;
+        }
+    } else {
+        fcb = ExAllocateFromPagedLookasideList(&Vcb->fcb_lookaside);
+        if (!fcb) {
+            ERR("out of memory\n");
+            return NULL;
+        }
     }
     
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("allocating fcb %p\n", fcb);
 #endif
     RtlZeroMemory(fcb, sizeof(struct _fcb));
+    fcb->pool_type = pool_type;
     
     fcb->Header.NodeTypeCode = BTRFS_NODE_TYPE_FCB;
     fcb->Header.NodeByteSize = sizeof(struct _fcb);
@@ -43,7 +52,12 @@ fcb* create_fcb(POOL_TYPE pool_type) {
     fcb->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct _fcb_nonpaged), ALLOC_TAG);
     if (!fcb->nonpaged) {
         ERR("out of memory\n");
-        ExFreePool(fcb);
+        
+        if (pool_type == NonPagedPool)
+            ExFreePool(fcb);
+        else
+            ExFreeToPagedLookasideList(&Vcb->fcb_lookaside, fcb);
+        
         return NULL;
     }
     RtlZeroMemory(fcb->nonpaged, sizeof(struct _fcb_nonpaged));
@@ -859,7 +873,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         }
     }
     
-    fcb = create_fcb(pooltype);
+    fcb = create_fcb(Vcb, pooltype);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1278,7 +1292,7 @@ NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, ANSI
         }
     }
     
-    fcb = create_fcb(PagedPool);
+    fcb = create_fcb(Vcb, PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1919,7 +1933,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (IrpSp->Parameters.Create.FileAttributes == FILE_ATTRIBUTE_NORMAL)
         IrpSp->Parameters.Create.FileAttributes = defda;
     
-    fcb = create_fcb(pool_type);
+    fcb = create_fcb(Vcb, pool_type);
     if (!fcb) {
         ERR("out of memory\n");
         ExFreePool(utf8);
@@ -2220,7 +2234,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         return STATUS_OBJECT_NAME_INVALID;
     }
         
-    fcb = create_fcb(pool_type);
+    fcb = create_fcb(Vcb, pool_type);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;

@@ -1442,7 +1442,8 @@ void free_fcb(fcb* fcb) {
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
-    ExFreePool(fcb->nonpaged);
+    
+    ExFreeToNPagedLookasideList(&fcb->Vcb->fcb_np_lookaside, fcb->nonpaged);
     
     if (fcb->sd)
         ExFreePool(fcb->sd);
@@ -1503,7 +1504,11 @@ void free_fcb(fcb* fcb) {
     
     FsRtlUninitializeFileLock(&fcb->lock);
     
-    ExFreePool(fcb);
+    if (fcb->pool_type == NonPagedPool)
+        ExFreePool(fcb);
+    else
+        ExFreeToPagedLookasideList(&fcb->Vcb->fcb_lookaside, fcb);
+    
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
     _debug_message(func, file, line, "freeing fcb %p\n", fcb);
@@ -1801,8 +1806,10 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
     ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
     ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
+    ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
+    ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -3877,8 +3884,10 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->rollback_item_lookaside, NULL, NULL, 0, sizeof(rollback_item), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fileref_lookaside, NULL, NULL, 0, sizeof(file_ref), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->fcb_lookaside, NULL, NULL, 0, sizeof(fcb), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->fileref_np_lookaside, NULL, NULL, 0, sizeof(file_ref_nonpaged), ALLOC_TAG, 0);
+    ExInitializeNPagedLookasideList(&Vcb->fcb_np_lookaside, NULL, NULL, 0, sizeof(fcb_nonpaged), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
     Vcb->Vpb = IrpSp->Parameters.MountVolume.Vpb;
@@ -3966,7 +3975,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     commit_batch_list(Vcb, &batchlist, Irp);
     
-    Vcb->volume_fcb = create_fcb(NonPagedPool);
+    Vcb->volume_fcb = create_fcb(Vcb, NonPagedPool);
     if (!Vcb->volume_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3976,7 +3985,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
     
-    root_fcb = create_fcb(NonPagedPool);
+    root_fcb = create_fcb(Vcb, NonPagedPool);
     if (!root_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -4130,8 +4139,10 @@ exit2:
                 ExDeletePagedLookasideList(&Vcb->rollback_item_lookaside);
                 ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
+                ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
+                ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
             }
                 
             if (Vcb->root_file)

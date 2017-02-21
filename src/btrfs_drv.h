@@ -150,6 +150,7 @@ typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
     LONG refcount;
+    POOL_TYPE pool_type;
     struct _device_extension* Vcb;
     struct _root* subvol;
     UINT64 inode;
@@ -641,8 +642,10 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST rollback_item_lookaside;
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
     PAGED_LOOKASIDE_LIST fileref_lookaside;
+    PAGED_LOOKASIDE_LIST fcb_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
+    NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -784,7 +787,6 @@ BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* da
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 void free_fcb(fcb* fcb);
 void free_fileref(device_extension* Vcb, file_ref* fr);
-fcb* create_fcb(POOL_TYPE pool_type);
 file_ref* create_fileref(device_extension* Vcb);
 void protect_superblocks(device_extension* Vcb, chunk* c);
 BOOL is_top_level(PIRP Irp);
@@ -997,6 +999,7 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc);
 NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
                             POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
+fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);

@@ -902,7 +902,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     // add .. inode to new subvol
     
-    rootfcb = create_fcb(PagedPool);
+    rootfcb = create_fcb(Vcb, PagedPool);
     if (!rootfcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
