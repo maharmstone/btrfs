@@ -642,6 +642,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
     PAGED_LOOKASIDE_LIST fileref_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
+    NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
     LIST_ENTRY list_entry;
 } device_extension;
 

@@ -87,7 +87,7 @@ file_ref* create_fileref(device_extension* Vcb) {
     
     RtlZeroMemory(fr, sizeof(file_ref));
     
-    fr->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(file_ref_nonpaged), ALLOC_TAG);
+    fr->nonpaged = ExAllocateFromNPagedLookasideList(&Vcb->fileref_np_lookaside);
     if (!fr->nonpaged) {
         ERR("out of memory\n");
         ExFreePool(fr);

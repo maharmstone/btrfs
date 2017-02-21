@@ -1558,7 +1558,7 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
     ExDeleteResourceLite(&fr->nonpaged->children_lock);
     ExDeleteResourceLite(&fr->nonpaged->fileref_lock);
     
-    ExFreePool(fr->nonpaged);
+    ExFreeToNPagedLookasideList(&Vcb->fileref_np_lookaside, fr->nonpaged);
     
     // FIXME - throw error if children not empty
     
@@ -1802,6 +1802,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
     ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
+    ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
     
     ZwClose(Vcb->flush_thread_handle);
 }
@@ -3877,6 +3878,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fileref_lookaside, NULL, NULL, 0, sizeof(file_ref), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
+    ExInitializeNPagedLookasideList(&Vcb->fileref_np_lookaside, NULL, NULL, 0, sizeof(file_ref_nonpaged), ALLOC_TAG, 0);
     init_lookaside = TRUE;
     
     Vcb->Vpb = IrpSp->Parameters.MountVolume.Vpb;
@@ -4129,6 +4131,7 @@ exit2:
                 ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
+                ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
             }
                 
             if (Vcb->root_file)
