@@ -104,7 +104,7 @@ file_ref* create_fileref(device_extension* Vcb) {
     fr->nonpaged = ExAllocateFromNPagedLookasideList(&Vcb->fileref_np_lookaside);
     if (!fr->nonpaged) {
         ERR("out of memory\n");
-        ExFreePool(fr);
+        ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
         return NULL;
     }
     
