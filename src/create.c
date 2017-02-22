@@ -2828,7 +2828,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 fileref = related;
             else if (NT_SUCCESS(Status)) {
                 fnoff *= sizeof(WCHAR);
-                fnoff += related->dc ? (related->dc->name.Length + sizeof(WCHAR)) : 0;
+                fnoff += (related->dc ? related->dc->name.Length : 0) + sizeof(WCHAR);
                 
                 if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
                     Status = STATUS_REPARSE;
