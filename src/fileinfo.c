@@ -2813,212 +2813,42 @@ static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_IN
     return STATUS_SUCCESS;
 }
 
-typedef struct {
-    UNICODE_STRING name;
-    UINT64 size;
-    BOOL ignore;
-    LIST_ENTRY list_entry;
-} stream_info;
-
 static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, file_ref* fileref, PIRP Irp, LONG* length) {
     ULONG reqsize;
-    LIST_ENTRY streamlist, *le;
+    LIST_ENTRY* le;
     FILE_STREAM_INFORMATION *entry, *lastentry;
     NTSTATUS Status;
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    BOOL b;
-    stream_info* si;
     
-    static WCHAR datasuf[] = {':','$','D','A','T','A',0};
-    static char xapref[] = "user.";
+    static WCHAR datasuf[] = L":$DATA";
     UNICODE_STRING suf;
     
     if (!fileref) {
         ERR("fileref was NULL\n");
         return STATUS_INVALID_PARAMETER;
     }
-    
-    InitializeListHead(&streamlist);
-    
-    ExAcquireResourceSharedLite(&fileref->fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceSharedLite(fileref->fcb->Header.Resource, TRUE);
-    
+
     suf.Buffer = datasuf;
     suf.Length = suf.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
     
-    searchkey.obj_id = fileref->fcb->inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
-    searchkey.offset = 0;
-
-    Status = find_item(fileref->fcb->Vcb, fileref->fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
+    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY)
+        reqsize = sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR);
+    else
+        reqsize = 0;
     
-    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
-        si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
-        if (!si) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
+    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
+    
+    le = fileref->fcb->dir_children_index.Flink;
+    while (le != &fileref->fcb->dir_children_index) {
+        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
         
-        si->name.Length = si->name.MaximumLength = 0;
-        si->name.Buffer = NULL;
-        si->size = fileref->fcb->inode_item.st_size;
-        si->ignore = FALSE;
-        
-        InsertTailList(&streamlist, &si->list_entry);
-    }
-    
-    do {
-        if (tp.item->key.obj_id == fileref->fcb->inode && tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            if (tp.item->size < sizeof(DIR_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-            } else {
-                ULONG len = tp.item->size;
-                DIR_ITEM* xa = (DIR_ITEM*)tp.item->data;
-                ULONG stringlen;
-                
-                do {
-                    if (len < sizeof(DIR_ITEM) || len < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                        ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                        break;
-                    }
-                    
-                    if (xa->n > strlen(xapref) && RtlCompareMemory(xa->name, xapref, strlen(xapref)) == strlen(xapref) &&
-                        (tp.item->key.offset != EA_DOSATTRIB_HASH || xa->n != strlen(EA_DOSATTRIB) || RtlCompareMemory(xa->name, EA_DOSATTRIB, xa->n) != xa->n) &&
-                        (tp.item->key.offset != EA_EA_HASH || xa->n != strlen(EA_EA) || RtlCompareMemory(xa->name, EA_EA, xa->n) != xa->n)
-                    ) {
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                            goto end;
-                        }
-                        
-                        si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
-                        if (!si) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            goto end;
-                        }
-                        
-                        si->name.Buffer = ExAllocatePoolWithTag(PagedPool, stringlen, ALLOC_TAG);
-                        if (!si->name.Buffer) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            ExFreePool(si);
-                            goto end;
-                        }
-                            
-                        Status = RtlUTF8ToUnicodeN(si->name.Buffer, stringlen, &stringlen, &xa->name[strlen(xapref)], xa->n - strlen(xapref));
-                        
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                            ExFreePool(si->name.Buffer);
-                            ExFreePool(si);
-                            goto end;
-                        }
-                        
-                        si->name.Length = si->name.MaximumLength = stringlen;
-                        
-                        si->size = xa->m;
-                        
-                        si->ignore = FALSE;
-                        
-                        TRACE("stream name = %.*S (length = %u)\n", si->name.Length / sizeof(WCHAR), si->name.Buffer, si->name.Length / sizeof(WCHAR));
-                        
-                        InsertTailList(&streamlist, &si->list_entry);
-                    }
-                    
-                    len -= sizeof(DIR_ITEM) - sizeof(char) + xa->n + xa->m;
-                    xa = (DIR_ITEM*)&xa->name[xa->n + xa->m]; // FIXME - test xattr hash collisions work
-                } while (len > 0);
-            }
-        }
-        
-        b = find_next_item(fileref->fcb->Vcb, &tp, &next_tp, FALSE, Irp);
-        if (b) {
-            tp = next_tp;
-            
-            if (next_tp.item->key.obj_id > fileref->fcb->inode || next_tp.item->key.obj_type > TYPE_XATTR_ITEM)
-                break;
-        }
-    } while (b);
-    
-    ExAcquireResourceSharedLite(&fileref->nonpaged->children_lock, TRUE);
-    
-    le = fileref->children.Flink;
-    while (le != &fileref->children) {
-        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry);
-        
-        if (fr->fcb && fr->fcb->ads) {
-            LIST_ENTRY* le2 = streamlist.Flink;
-            BOOL found = FALSE;
-            
-            while (le2 != &streamlist) {
-                si = CONTAINING_RECORD(le2, stream_info, list_entry);
-                
-                if (si && si->name.Buffer && si->name.Length == fr->filepart.Length &&
-                    RtlCompareMemory(si->name.Buffer, fr->filepart.Buffer, si->name.Length) == si->name.Length) {
-                    
-                    si->size = fr->fcb->adsdata.Length;
-                    si->ignore = fr->fcb->deleted;
-                    
-                    found = TRUE;
-                    break;
-                }
-                
-                le2 = le2->Flink;
-            }
-            
-            if (!found && !fr->fcb->deleted) {
-                si = ExAllocatePoolWithTag(PagedPool, sizeof(stream_info), ALLOC_TAG);
-                if (!si) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                si->name.Length = si->name.MaximumLength = fr->filepart.Length;
-                
-                si->name.Buffer = ExAllocatePoolWithTag(PagedPool, si->name.MaximumLength, ALLOC_TAG);
-                if (!si->name.Buffer) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    ExFreePool(si);
-                    goto end;
-                }
-                
-                RtlCopyMemory(si->name.Buffer, fr->filepart.Buffer, fr->filepart.Length);
-                
-                si->size = fr->fcb->adsdata.Length;
-                si->ignore = FALSE;
-                
-                InsertTailList(&streamlist, &si->list_entry);
-            }
-        }
-        
-        le = le->Flink;
-    }
-    
-    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
-    
-    reqsize = 0;
-    
-    le = streamlist.Flink;
-    while (le != &streamlist) {
-        si = CONTAINING_RECORD(le, stream_info, list_entry);
-        
-        if (!si->ignore) {
+        if (dc->index == 0) {
             reqsize = sector_align(reqsize, sizeof(LONGLONG));
-            reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + si->name.Length;
-        }
+            reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length;
+        } else
+            break;
 
         le = le->Flink;
-    }        
+    }
     
     TRACE("length = %i, reqsize = %u\n", *length, reqsize);
     
@@ -3030,37 +2860,49 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     entry = fsi;
     lastentry = NULL;
     
-    le = streamlist.Flink;
-    while (le != &streamlist) {
-        si = CONTAINING_RECORD(le, stream_info, list_entry);
+    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+        ULONG off;
         
-        if (!si->ignore) {
+        entry->NextEntryOffset = 0;
+        entry->StreamNameLength = suf.Length + sizeof(WCHAR);
+        entry->StreamSize.QuadPart = fileref->fcb->inode_item.st_size;
+        entry->StreamAllocationSize.QuadPart = sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size);
+
+        entry->StreamName[0] = ':';
+        RtlCopyMemory(&entry->StreamName[1], suf.Buffer, suf.Length);
+        
+        off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
+
+        lastentry = entry;
+        entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
+    }
+    
+    le = fileref->fcb->dir_children_index.Flink;
+    while (le != &fileref->fcb->dir_children_index) {
+        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        
+        if (dc->index == 0) {
             ULONG off;
             
             entry->NextEntryOffset = 0;
-            entry->StreamNameLength = si->name.Length + suf.Length + sizeof(WCHAR);
-            entry->StreamSize.QuadPart = si->size;
-            
-            if (le == streamlist.Flink)
-                entry->StreamAllocationSize.QuadPart = sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size);
-            else
-                entry->StreamAllocationSize.QuadPart = si->size;
+            entry->StreamNameLength = dc->name.Length + suf.Length + sizeof(WCHAR);
+//             entry->StreamSize.QuadPart = si->size; // FIXME
+            entry->StreamAllocationSize.QuadPart = entry->StreamSize.QuadPart;
             
             entry->StreamName[0] = ':';
             
-            if (si->name.Length > 0)
-                RtlCopyMemory(&entry->StreamName[1], si->name.Buffer, si->name.Length);
-            
-            RtlCopyMemory(&entry->StreamName[1 + (si->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
+            RtlCopyMemory(&entry->StreamName[1], dc->name.Buffer, dc->name.Length);
+            RtlCopyMemory(&entry->StreamName[1 + (dc->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
             
             if (lastentry)
                 lastentry->NextEntryOffset = (UINT8*)entry - (UINT8*)lastentry;
             
-            off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + si->name.Length, sizeof(LONGLONG));
+            off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
             lastentry = entry;
             entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
-        }
+        } else
+            break;
         
         le = le->Flink;
     }
@@ -3070,18 +2912,7 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
     Status = STATUS_SUCCESS;
     
 end:
-    while (!IsListEmpty(&streamlist)) {
-        le = RemoveHeadList(&streamlist);
-        si = CONTAINING_RECORD(le, stream_info, list_entry);
-        
-        if (si->name.Buffer)
-            ExFreePool(si->name.Buffer);
-        
-        ExFreePool(si);
-    }
-    
-    ExReleaseResourceLite(fileref->fcb->Header.Resource);
-    ExReleaseResourceLite(&fileref->fcb->Vcb->tree_lock);
+    ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
     
     return Status;
 }
