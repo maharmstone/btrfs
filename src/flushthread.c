@@ -4874,15 +4874,15 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             } else
                 RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(INODE_ITEM)));
         }
+
+#ifdef DEBUG_PARANOID
+        if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.st_size) {
+            ERR("error - size has changed but extents not marked as changed\n");
+            int3;
+        }
+#endif
     } else
         ii_offset = 0;
-    
-#ifdef DEBUG_PARANOID
-    if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.st_size) {
-        ERR("error - size has changed but extents not marked as changed\n");
-        int3;
-    }
-#endif
     
     fcb->created = FALSE;
         
