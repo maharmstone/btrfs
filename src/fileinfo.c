@@ -465,8 +465,6 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
     NTSTATUS Status;
     LIST_ENTRY* le;
 
-    // FIXME - work with streams
-    
     ExAcquireResourceSharedLite(&me->fileref->fcb->nonpaged->dir_children_lock, TRUE);
     
     le = me->fileref->fcb->dir_children_index.Flink;
@@ -476,7 +474,7 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
         file_ref* fr;
         move_entry* me2;
         
-        Status = open_fileref_child(Vcb, me->fileref, &dc->name, TRUE, TRUE, FALSE/*streampart*/, PagedPool, &fr, Irp);
+        Status = open_fileref_child(Vcb, me->fileref, &dc->name, TRUE, TRUE, dc->index == 0 ? TRUE : FALSE, PagedPool, &fr, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref_child returned %08x\n", Status);
@@ -921,11 +919,17 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
                 
                 if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE) {
-                    me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
-                    
                     ExAcquireResourceExclusiveLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock, TRUE);
-                    InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
-                    insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
+                    
+                    if (me->fileref->fcb->ads)
+                        InsertHeadList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                    else {
+                        me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+                        
+                        InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                        insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
+                    }
+                    
                     ExReleaseResourceLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock);
                 }
             }
