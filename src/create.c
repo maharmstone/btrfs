@@ -1239,7 +1239,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
         BOOL locked = FALSE;
         LIST_ENTRY* le;
         UNICODE_STRING name_uc;
-        dir_child* dc;
+        dir_child* dc = NULL;
         fcb* fcb;
         
         if (!case_sensitive) {
@@ -2015,6 +2015,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
+    dir_child* dc;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2167,23 +2168,81 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     }
     
     fileref->fcb = fcb;
-
-    fileref->filepart.MaximumLength = fileref->filepart.Length = stream->Length;
-    fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
-    if (!fileref->filepart.Buffer) {
+    
+    dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+    if (!dc) {
         ERR("out of memory\n");
         free_fileref(Vcb, fileref);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlCopyMemory(fileref->filepart.Buffer, stream->Buffer, stream->Length);
+    RtlZeroMemory(dc, sizeof(dir_child));
     
-    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
+    dc->utf8.MaximumLength = dc->utf8.Length = fcb->adsxattr.Length - xapreflen;
+    dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
+    if (!dc->utf8.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc);
+        free_fileref(Vcb, fileref);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(dc->utf8.Buffer, &fcb->adsxattr.Buffer[xapreflen], fcb->adsxattr.Length - xapreflen);
+    
+    dc->name.MaximumLength = dc->name.Length = stream->Length;
+    dc->name.Buffer = ExAllocatePoolWithTag(pool_type, dc->name.MaximumLength, ALLOC_TAG);
+    if (!dc->name.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc);
+        free_fileref(Vcb, fileref);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(dc->name.Buffer, stream->Buffer, stream->Length);
+    
+    Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc);
         free_fileref(Vcb, fileref);
         return Status;
     }
+    
+    fileref->filepart.MaximumLength = fileref->filepart.Length = dc->name.Length;
+    fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
+    if (!fileref->filepart.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc->name_uc.Buffer);
+        ExFreePool(dc);
+        free_fileref(Vcb, fileref);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(fileref->filepart.Buffer, dc->name.Buffer, dc->name.Length);
+    
+    fileref->filepart_uc.MaximumLength = fileref->filepart_uc.Length = dc->name_uc.Length;
+    fileref->filepart_uc.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart_uc.MaximumLength, ALLOC_TAG);
+    if (!fileref->filepart.Buffer) {
+        ERR("out of memory\n");
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc->name_uc.Buffer);
+        ExFreePool(dc);
+        free_fileref(Vcb, fileref);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(fileref->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
+    
+    dc->fileref = fileref;
+    fileref->dc = dc;
+    
+    InsertHeadList(&parfileref->fcb->dir_children_index, &dc->list_entry_index);
     
     mark_fcb_dirty(fcb);
     mark_fileref_dirty(fileref);
