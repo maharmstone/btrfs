@@ -2886,7 +2886,7 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
             
             entry->NextEntryOffset = 0;
             entry->StreamNameLength = dc->name.Length + suf.Length + sizeof(WCHAR);
-//             entry->StreamSize.QuadPart = si->size; // FIXME
+            entry->StreamSize.QuadPart = dc->size;
             entry->StreamAllocationSize.QuadPart = entry->StreamSize.QuadPart;
             
             entry->StreamName[0] = ':';

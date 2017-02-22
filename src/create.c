@@ -1233,6 +1233,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         return Status;
                     }
                     
+                    dc->size = di->m;
+                    
                     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
                 }
                 

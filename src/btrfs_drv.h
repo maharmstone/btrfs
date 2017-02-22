@@ -134,6 +134,7 @@ typedef struct {
     UNICODE_STRING name;
     UINT32 hash_uc;
     UNICODE_STRING name_uc;
+    ULONG size;
     struct _file_ref* fileref;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
