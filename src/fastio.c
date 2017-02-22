@@ -131,7 +131,7 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
 
         fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = adssize;
         fsi->NumberOfLinks = fcb->inode_item.st_nlink;
-        fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
+        fsi->Directory = FALSE;
     } else {
         fsi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
         fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;

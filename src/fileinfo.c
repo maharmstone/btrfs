@@ -2563,7 +2563,7 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
         
         fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fsi->NumberOfLinks = fileref->parent->fcb->inode_item.st_nlink;
-        fsi->Directory = S_ISDIR(fileref->parent->fcb->inode_item.st_mode);
+        fsi->Directory = FALSE;
     } else {
         fsi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
         fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
@@ -2925,7 +2925,7 @@ static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LIN
     fsli->NumberOfAccessibleLinks = fcb->inode_item.st_nlink;
     fsli->TotalNumberOfLinks = fcb->inode_item.st_nlink;
     fsli->DeletePending = fileref ? fileref->delete_on_close : FALSE;
-    fsli->Directory = fcb->type == BTRFS_TYPE_DIRECTORY ? TRUE : FALSE;
+    fsli->Directory = (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY) ? TRUE : FALSE;
     
     *length -= sizeof(FILE_STANDARD_LINK_INFORMATION);
     
