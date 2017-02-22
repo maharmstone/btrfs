@@ -1064,93 +1064,121 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 ier = (INODE_EXTREF*)&ier->name[ier->n];
             }
         } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            if (tp.item->size < sizeof(DIR_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            ULONG len;
+            DIR_ITEM* di;
+            
+            if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
                 continue;
             }
             
-            if (tp.item->key.offset == EA_REPARSE_HASH) {
-                UINT8* xattrdata;
-                UINT16 xattrlen;
+            len = tp.item->size;
+            di = (DIR_ITEM*)tp.item->data;
+            
+            do {
+                if (len < offsetof(DIR_ITEM, name[0]) + di->m + di->n)
+                    break;
                 
-                if (extract_xattr(tp.item->data, tp.item->size, EA_REPARSE, &xattrdata, &xattrlen)) {
-                    fcb->reparse_xattr.Buffer = (char*)xattrdata;
-                    fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = xattrlen;
-                }
-            } else if (tp.item->key.offset == EA_EA_HASH) {
-                UINT8* eadata;
-                UINT16 ealen;
-                
-                if (extract_xattr(tp.item->data, tp.item->size, EA_EA, &eadata, &ealen)) {
-                    ULONG offset;
-                    
-                    Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, ealen, &offset);
-                    
-                    if (!NT_SUCCESS(Status)) {
-                        WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
-                        ExFreePool(eadata);
-                    } else {
-                        FILE_FULL_EA_INFORMATION* eainfo;
-                        fcb->ea_xattr.Buffer = (char*)eadata;
-                        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
+                if (tp.item->key.offset == EA_REPARSE_HASH && di->n == strlen(EA_REPARSE) && RtlCompareMemory(EA_REPARSE, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                        if (!fcb->reparse_xattr.Buffer) {
+                            ERR("out of memory\n");
+                            free_fcb(fcb);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
                         
-                        fcb->ealen = 4;
-                        
-                        // calculate ealen
-                        eainfo = (FILE_FULL_EA_INFORMATION*)eadata;
-                        do {
-                            fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
-                            
-                            if (eainfo->NextEntryOffset == 0)
-                                break;
-                            
-                            eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
-                        } while (TRUE);
-                    }
-                }
-            } else if (tp.item->key.offset == EA_DOSATTRIB_HASH) {
-                UINT8* xattrdata;
-                UINT16 xattrlen;
-                
-                if (extract_xattr(tp.item->data, tp.item->size, EA_DOSATTRIB, &xattrdata, &xattrlen)) {
-                    if (get_file_attributes_from_xattr((char*)xattrdata, xattrlen, &fcb->atts)) {
-                        atts_set = TRUE;
-                        
-                        if (fcb->type == BTRFS_TYPE_DIRECTORY)
-                            fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
-                        else if (fcb->type == BTRFS_TYPE_SYMLINK)
-                            fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
-                    }
-                    
-                    ExFreePool(xattrdata);
-                }
-            } else if (tp.item->key.offset == EA_NTACL_HASH) {
-                UINT16 buflen;
-                
-                if (extract_xattr(tp.item->data, tp.item->size, EA_NTACL, (UINT8**)&fcb->sd, &buflen)) {
-                    if (get_sd_from_xattr(fcb, buflen)) {
-                        sd_set = TRUE;
+                        RtlCopyMemory(fcb->reparse_xattr.Buffer, &di->name[di->n], di->m);
                     } else
-                        ExFreePool(fcb->sd);
+                        fcb->reparse_xattr.Buffer = NULL;
+                    
+                    fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = di->m;
+                } else if (tp.item->key.offset == EA_EA_HASH && di->n == strlen(EA_EA) && RtlCompareMemory(EA_EA, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        ULONG offset;
+                        
+                        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)&di->name[di->n], di->m, &offset);
+                        
+                        if (!NT_SUCCESS(Status))
+                            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                        else {
+                            FILE_FULL_EA_INFORMATION* eainfo;
+                            
+                            fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                            if (!fcb->ea_xattr.Buffer) {
+                                ERR("out of memory\n");
+                                free_fcb(fcb);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+                            
+                            RtlCopyMemory(fcb->ea_xattr.Buffer, &di->name[di->n], di->m);
+                            
+                            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = di->m;
+                             
+                            fcb->ealen = 4;
+                            
+                            // calculate ealen
+                            eainfo = (FILE_FULL_EA_INFORMATION*)&di->name[di->n];
+                            do {
+                                fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+                                
+                                if (eainfo->NextEntryOffset == 0)
+                                    break;
+                                
+                                eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                            } while (TRUE);
+                        }
+                    }
+                } else if (tp.item->key.offset == EA_DOSATTRIB_HASH && di->n == strlen(EA_DOSATTRIB) && RtlCompareMemory(EA_DOSATTRIB, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        if (get_file_attributes_from_xattr(&di->name[di->n], di->m, &fcb->atts)) {
+                            atts_set = TRUE;
+                            
+                            if (fcb->type == BTRFS_TYPE_DIRECTORY)
+                                fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
+                            else if (fcb->type == BTRFS_TYPE_SYMLINK)
+                                fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
+                        }
+                    }
+                } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == strlen(EA_NTACL) && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                        if (!fcb->sd) {
+                            ERR("out of memory\n");
+                            free_fcb(fcb);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+                        
+                        RtlCopyMemory(fcb->sd, &di->name[di->n], di->m);
+                        
+                        if (get_sd_from_xattr(fcb, di->m))
+                            sd_set = TRUE;
+                        else {
+                            ExFreePool(fcb->sd);
+                            fcb->sd = NULL;
+                        }
+                    }
+                } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        const char lzo[] = "lzo";
+                        const char zlib[] = "zlib";
+                        
+                        if (di->m == strlen(lzo) && RtlCompareMemory(&di->name[di->n], lzo, di->m) == di->m)
+                            fcb->prop_compression = PropCompression_LZO;
+                        else if (di->m == strlen(zlib) && RtlCompareMemory(&di->name[di->n], zlib, di->m) == di->m)
+                            fcb->prop_compression = PropCompression_Zlib;
+                        else
+                            fcb->prop_compression = PropCompression_None;
+                    }
                 }
-            } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH) {
-                UINT8* propdata;
-                UINT16 proplen;
                 
-                if (extract_xattr(tp.item->data, tp.item->size, EA_PROP_COMPRESSION, &propdata, &proplen)) {
-                    const char lzo[] = "lzo";
-                    const char zlib[] = "zlib";
-                    
-                    if (proplen == strlen(lzo) && RtlCompareMemory(propdata, lzo, strlen(lzo)) == strlen(lzo))
-                        fcb->prop_compression = PropCompression_LZO;
-                    else if (proplen == strlen(zlib) && RtlCompareMemory(propdata, zlib, strlen(zlib)) == strlen(zlib))
-                        fcb->prop_compression = PropCompression_Zlib;
-                    else
-                        fcb->prop_compression = PropCompression_None;
-                    
-                    ExFreePool(propdata);
-                }
-            }
+                len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+                
+                if (len < offsetof(DIR_ITEM, name[0]))
+                    break;
+                
+                di = (DIR_ITEM*)&di->name[di->m + di->n];
+            } while (TRUE);
         } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
             extent* ext;
             BOOL unique = FALSE;

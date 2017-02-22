@@ -365,7 +365,7 @@ static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
     return TRUE;
 }
 
-BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen) {
+static BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen) {
     DIR_ITEM* xa = (DIR_ITEM*)item;
     USHORT xasize;
     
