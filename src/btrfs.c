@@ -1570,8 +1570,12 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
     if (fr->fcb->fileref == fr)
         fr->fcb->fileref = NULL;
     
-    if (fr->dc)
+    if (fr->dc) {
+        if (fr->fcb->ads)
+            fr->dc->size = fr->fcb->adsdata.Length;
+        
         fr->dc->fileref = NULL;
+    }
 
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
