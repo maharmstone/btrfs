@@ -1921,7 +1921,10 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     if (fileref->dc) {
         ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
         RemoveEntryList(&fileref->dc->list_entry_index);
-        remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+
+        if (!fileref->fcb->ads)
+            remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+
         ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
         
         if (!fileref->oldutf8.Buffer)

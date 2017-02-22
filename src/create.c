@@ -1067,6 +1067,8 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             ULONG len;
             DIR_ITEM* di;
             
+            static char xapref[] = "user.";
+            
             if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
                 continue;
@@ -1170,6 +1172,68 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         else
                             fcb->prop_compression = PropCompression_None;
                     }
+                } else if (di->n > strlen(xapref) && RtlCompareMemory(xapref, di->name, strlen(xapref)) == strlen(xapref)) {
+                    dir_child* dc;
+                    ULONG utf16len;
+                    
+                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[strlen(xapref)], di->n - strlen(xapref));
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                    
+                    dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+                    if (!dc) {
+                        ERR("out of memory\n");
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlZeroMemory(dc, sizeof(dir_child));
+                    
+                    dc->utf8.MaximumLength = dc->utf8.Length = di->n - strlen(xapref);
+                    dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
+                    if (!dc->utf8.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(dc);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    RtlCopyMemory(dc->utf8.Buffer, &di->name[strlen(xapref)], dc->utf8.Length);
+                    
+                    dc->name.MaximumLength = dc->name.Length = utf16len;
+                    dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
+                    if (!dc->name.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(dc->utf8.Buffer);
+                        ExFreePool(dc);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    
+                    Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, dc->utf8.Buffer, dc->utf8.Length);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ExFreePool(dc->utf8.Buffer);
+                        ExFreePool(dc->name.Buffer);
+                        ExFreePool(dc);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                    
+                    Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, TRUE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                        ExFreePool(dc->utf8.Buffer);
+                        ExFreePool(dc->name.Buffer);
+                        ExFreePool(dc);
+                        free_fcb(fcb);
+                        return Status;
+                    }
+                    
+                    InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
                 }
                 
                 len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;

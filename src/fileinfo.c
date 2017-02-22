@@ -937,7 +937,10 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             if (me->fileref->dc) {
                 ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
-                remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
+                
+                if (!me->fileref->fcb->ads)
+                    remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
+                
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
                 
                 if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE) {
