@@ -445,28 +445,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fr->index = dirpos;
     
-    fr->filepart.MaximumLength = fr->filepart.Length = name->Length;
-    
-    fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
-    if (!fr->filepart.Buffer) {
-        ERR("out of memory\n");
-        free_fileref(Vcb, fr);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(fr->filepart.Buffer, name->Buffer, name->Length);
-    
-    Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(Vcb, fr);
-        goto end;
-    }
-    
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, name, NULL, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -1019,31 +1000,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     fr->index = dirpos;
     
-    fr->filepart.MaximumLength = fr->filepart.Length = nameus.Length;
-    fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
-    if (!fr->filepart.Buffer) {
-        ERR("out of memory\n");
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    RtlCopyMemory(fr->filepart.Buffer, nameus.Buffer, nameus.Length);
-    
-    Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-        goto end;
-    }
-    
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &fr->filepart, &fr->filepart_uc, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &nameus, NULL, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -1672,7 +1631,7 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
         fcb->atts_changed = TRUE;
         
         defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type,
-                                    fileref && fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
+                                    fileref && fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.', TRUE, Irp);
         
         fcb->atts_deleted = defda == fcb->atts;
     }

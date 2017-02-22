@@ -101,7 +101,8 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         LARGE_INTEGER time;
         BTRFS_TIME now;
         
-        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
+        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.',
+                                    TRUE, Irp);
         
         if (fcb->type == BTRFS_TYPE_DIRECTORY)
             fbi->FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
@@ -639,7 +640,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     me->fileref->fcb->inode_item.st_nlink = 1;
                     
                     defda = get_file_attributes(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode,
-                                                me->fileref->fcb->type, me->fileref->filepart.Length > 0 && me->fileref->filepart.Buffer[0] == '.', TRUE, Irp);
+                                                me->fileref->fcb->type, me->fileref->dc && me->fileref->dc->name.Length >= sizeof(WCHAR) && me->fileref->dc->name.Buffer[0] == '.',
+                                                TRUE, Irp);
                     
                     me->fileref->fcb->sd_dirty = !!me->fileref->fcb->sd;
                     me->fileref->fcb->atts_changed = defda != me->fileref->fcb->atts;
@@ -780,29 +782,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->dummyfileref->fcb = me->dummyfcb;
         
         InterlockedIncrement(&me->dummyfileref->fcb->refcount);
-
-        me->dummyfileref->filepart = me->fileref->filepart;
-        
-        if (le == move_list.Flink) // first item
-            me->fileref->filepart.Length = me->fileref->filepart.MaximumLength = fnus->Length;
-        else
-            me->fileref->filepart.MaximumLength = me->fileref->filepart.Length;
-        
-        me->fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart.MaximumLength, ALLOC_TAG);
-        
-        if (!me->fileref->filepart.Buffer) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-        
-        RtlCopyMemory(me->fileref->filepart.Buffer, le == move_list.Flink ? fnus->Buffer : me->dummyfileref->filepart.Buffer, me->fileref->filepart.Length);
-        
-        Status = RtlUpcaseUnicodeString(&me->fileref->filepart_uc, &me->fileref->filepart, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            goto end;
-        }
         
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
         
@@ -880,28 +859,24 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                         goto end;
                     }
                     
-                    me->fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart.Length, ALLOC_TAG);
+                    me->fileref->dc->utf8.Length = me->fileref->dc->utf8.MaximumLength = utf8->Length;
+                    RtlCopyMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length);
+                    
+                    me->fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus->Length, ALLOC_TAG);
                     if (!me->fileref->dc->name.Buffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto end;
                     }
                     
-                    me->fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->filepart_uc.Length, ALLOC_TAG);
-                    if (!me->fileref->dc->name_uc.Buffer) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                    me->fileref->dc->name.Length = me->fileref->dc->name.MaximumLength = fnus->Length;
+                    RtlCopyMemory(me->fileref->dc->name.Buffer, fnus->Buffer, fnus->Length);
+                    
+                    Status = RtlUpcaseUnicodeString(&fileref->dc->name_uc, &fileref->dc->name, TRUE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                         goto end;
                     }
-                    
-                    me->fileref->dc->utf8.Length = me->fileref->dc->utf8.MaximumLength = utf8->Length;
-                    RtlCopyMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length);
-                    
-                    me->fileref->dc->name.Length = me->fileref->dc->name.MaximumLength = me->fileref->filepart.Length;
-                    RtlCopyMemory(me->fileref->dc->name.Buffer, me->fileref->filepart.Buffer, me->fileref->filepart.Length);
-                    
-                    me->fileref->dc->name_uc.Length = me->fileref->dc->name_uc.MaximumLength = me->fileref->filepart_uc.Length;
-                    RtlCopyMemory(me->fileref->dc->name_uc.Buffer, me->fileref->filepart_uc.Buffer, me->fileref->filepart_uc.Length);
                     
                     me->fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
                     me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
@@ -987,7 +962,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             
             RtlCopyMemory(hl->utf8.Buffer, me->fileref->dc->utf8.Buffer, me->fileref->dc->utf8.Length);
             
-            hl->name.Length = hl->name.MaximumLength = me->fileref->filepart.Length;
+            hl->name.Length = hl->name.MaximumLength = me->fileref->dc->name.Length;
             hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
             if (!hl->name.Buffer) {
                 ERR("out of memory\n");
@@ -997,7 +972,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 goto end;
             }
             
-            RtlCopyMemory(hl->name.Buffer, me->fileref->filepart.Buffer, me->fileref->filepart.Length);
+            RtlCopyMemory(hl->name.Buffer, me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
             
             InsertTailList(&me->fileref->fcb->hardlinks, &hl->list_entry);
         }
@@ -1311,16 +1286,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     }
     
     if (related == fileref->parent) { // keeping file in same directory
-        UNICODE_STRING fnus2, oldfn, newfn;
+        UNICODE_STRING oldfn, newfn;
         USHORT name_offset;
         ULONG reqlen, oldutf8len;
-        
-        fnus2.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
-        if (!fnus2.Buffer) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
         
         oldfn.Length = oldfn.MaximumLength = 0;
         
@@ -1346,9 +1314,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        fnus2.Length = fnus2.MaximumLength = fnus.Length;
-        RtlCopyMemory(fnus2.Buffer, fnus.Buffer, fnus.Length);
-        
         oldutf8len = fileref->dc->utf8.Length;
         
         if (!fileref->created && !fileref->oldutf8.Buffer) {
@@ -1363,9 +1328,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             RtlCopyMemory(fileref->oldutf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         }
         
-        TRACE("renaming %.*S to %.*S\n", fileref->filepart.Length / sizeof(WCHAR), fileref->filepart.Buffer, fnus2.Length / sizeof(WCHAR), fnus.Buffer);
-        
-        fileref->filepart = fnus2;
+        TRACE("renaming %.*S to %.*S\n", fileref->dc->name.Length / sizeof(WCHAR), fileref->dc->name.Buffer, fnus.Length / sizeof(WCHAR), fnus.Buffer);
         
         newfn.Length = newfn.MaximumLength = 0;
         
@@ -1394,17 +1357,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        if (fileref->filepart_uc.Buffer)
-            ExFreePool(fileref->filepart_uc.Buffer);
-        
-        Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            ExFreePool(oldfn.Buffer);
-            ExFreePool(newfn.Buffer);
-            goto end;
-        }
-        
         mark_fileref_dirty(fileref);
         
         if (fileref->dc) {
@@ -1424,7 +1376,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 goto end;
             }
             
-            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
+            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
+            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
+            
+            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
             if (!fileref->dc->name.Buffer) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1434,24 +1389,17 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 goto end;
             }
             
-            fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart_uc.Length, ALLOC_TAG);
-            if (!fileref->dc->name_uc.Buffer) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
+            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fnus.Length;
+            RtlCopyMemory(fileref->dc->name.Buffer, fnus.Buffer, fnus.Length);
+
+            Status = RtlUpcaseUnicodeString(&fileref->dc->name_uc, &fileref->dc->name, TRUE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                 ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
                 ExFreePool(oldfn.Buffer);
                 ExFreePool(newfn.Buffer);
                 goto end;
             }
-            
-            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
-            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
-            
-            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fileref->filepart.Length;
-            RtlCopyMemory(fileref->dc->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
-            
-            fileref->dc->name_uc.Length = fileref->dc->name_uc.MaximumLength = fileref->filepart_uc.Length;
-            RtlCopyMemory(fileref->dc->name_uc.Buffer, fileref->filepart_uc.Buffer, fileref->filepart_uc.Length);
             
             remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
             
@@ -1511,8 +1459,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->fcb = fileref->fcb;
     fr2->fcb->refcount++;
     
-    fr2->filepart = fileref->filepart;
-    fr2->filepart_uc = fileref->filepart_uc;
     fr2->oldutf8 = fileref->oldutf8;
     fr2->index = fileref->index;
     fr2->delete_on_close = fileref->delete_on_close;
@@ -1540,22 +1486,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     Status = fcb_get_last_dir_index(related->fcb, &index, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        goto end;
-    }
-    
-    fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
-    if (!fileref->filepart.Buffer) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    fileref->filepart.Length = fileref->filepart.MaximumLength = fnus.Length;
-    RtlCopyMemory(fileref->filepart.Buffer, fnus.Buffer, fnus.Length);
-    
-    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
         goto end;
     }
     
@@ -1597,28 +1527,24 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
                 goto end;
             }
             
-            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
+            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
+            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
+            
+            fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
             if (!fileref->dc->name.Buffer) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
             
-            fileref->dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart_uc.Length, ALLOC_TAG);
-            if (!fileref->dc->name_uc.Buffer) {
-                ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
+            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fnus.Length;
+            RtlCopyMemory(fileref->dc->name.Buffer, fnus.Buffer, fnus.Length);
+            
+            Status = RtlUpcaseUnicodeString(&fileref->dc->name_uc, &fileref->dc->name, TRUE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                 goto end;
             }
-            
-            fileref->dc->utf8.Length = fileref->dc->utf8.MaximumLength = utf8.Length;
-            RtlCopyMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length);
-            
-            fileref->dc->name.Length = fileref->dc->name.MaximumLength = fileref->filepart.Length;
-            RtlCopyMemory(fileref->dc->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
-            
-            fileref->dc->name_uc.Length = fileref->dc->name_uc.MaximumLength = fileref->filepart_uc.Length;
-            RtlCopyMemory(fileref->dc->name_uc.Buffer, fileref->filepart_uc.Buffer, fileref->filepart_uc.Length);
             
             fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
@@ -1646,7 +1572,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         hl->parent = related->fcb->inode;
         hl->index = index;
         
-        hl->name.Length = hl->name.MaximumLength = fileref->filepart.Length;
+        hl->name.Length = hl->name.MaximumLength = fnus.Length;
         hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
         
         if (!hl->name.Buffer) {
@@ -1656,7 +1582,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
         
-        RtlCopyMemory(hl->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
+        RtlCopyMemory(hl->name.Buffer, fnus.Buffer, fnus.Length);
         
         hl->utf8.Length = hl->utf8.MaximumLength = fileref->dc->utf8.Length;
         hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
@@ -2162,26 +2088,10 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fr2->index = index;
     fr2->created = TRUE;
     fr2->parent = related;
-    
-    fr2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
-    if (!fr2->filepart.Buffer) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
-    
-    fr2->filepart.Length = fr2->filepart.MaximumLength = fnus.Length;
-    RtlCopyMemory(fr2->filepart.Buffer, fnus.Buffer, fnus.Length);
-    
-    Status = RtlUpcaseUnicodeString(&fr2->filepart_uc, &fr2->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        goto end;
-    }
-      
+
     insert_fileref_child(related, fr2, TRUE);
     
-    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fr2->filepart, &fr2->filepart_uc, fcb->type, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fnus, NULL, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -2200,8 +2110,8 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         hl->parent = fileref->parent->fcb->inode;
         hl->index = fileref->index;
         
-        hl->name.Length = hl->name.MaximumLength = fileref->filepart.Length;
-        hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+        hl->name.Length = hl->name.MaximumLength = fnus.Length;
+        hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
         
         if (!hl->name.Buffer) {
             ERR("out of memory\n");
@@ -2210,7 +2120,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
             goto end;
         }
         
-        RtlCopyMemory(hl->name.Buffer, fileref->filepart.Buffer, fileref->filepart.Length);
+        RtlCopyMemory(hl->name.Buffer, fnus.Buffer, fnus.Length);
         
         hl->utf8.Length = hl->utf8.MaximumLength = fileref->dc->utf8.Length;
         hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
@@ -2686,18 +2596,18 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         USHORT movelen;
         
         if (!overflow) {
-            if (fr->filepart.Length + sizeof(WCHAR) > fn->MaximumLength - fn->Length)
+            if (fr->dc->name.Length + sizeof(WCHAR) > fn->MaximumLength - fn->Length)
                 overflow = TRUE;
         }
         
         if (overflow)
-            movelen = fn->MaximumLength - fr->filepart.Length - sizeof(WCHAR);
+            movelen = fn->MaximumLength - fr->dc->name.Length - sizeof(WCHAR);
         else
             movelen = fn->Length;
         
-        if ((!overflow || fn->MaximumLength > fr->filepart.Length + sizeof(WCHAR)) && movelen > 0) {
-            RtlMoveMemory(&fn->Buffer[(fr->filepart.Length / sizeof(WCHAR)) + 1], fn->Buffer, movelen);
-            offset += fr->filepart.Length + sizeof(WCHAR);
+        if ((!overflow || fn->MaximumLength > fr->dc->name.Length + sizeof(WCHAR)) && movelen > 0) {
+            RtlMoveMemory(&fn->Buffer[(fr->dc->name.Length / sizeof(WCHAR)) + 1], fn->Buffer, movelen);
+            offset += fr->dc->name.Length + sizeof(WCHAR);
         }
         
         if (fn->MaximumLength >= sizeof(WCHAR)) {
@@ -2705,8 +2615,8 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
             fn->Length += sizeof(WCHAR);
             
             if (fn->MaximumLength > sizeof(WCHAR)) {
-                RtlCopyMemory(&fn->Buffer[1], fr->filepart.Buffer, min(fr->filepart.Length, fn->MaximumLength - sizeof(WCHAR)));
-                fn->Length += fr->filepart.Length;
+                RtlCopyMemory(&fn->Buffer[1], fr->dc->name.Buffer, min(fr->dc->name.Length, fn->MaximumLength - sizeof(WCHAR)));
+                fn->Length += fr->dc->name.Length;
             }
             
             if (fn->Length > fn->MaximumLength) {
@@ -2715,7 +2625,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
             }
         }
          
-        reqlen += sizeof(WCHAR) + fr->filepart.Length;
+        reqlen += sizeof(WCHAR) + fr->dc->name.Length;
         
         fr = fr->parent;
     }
@@ -3123,30 +3033,11 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     
     fr->index = hl->index;
     
-    fr->filepart.MaximumLength = fr->filepart.Length = hl->name.Length;
-    
-    if (fr->filepart.Length > 0) {
-        fr->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fr->filepart.MaximumLength, ALLOC_TAG);
-        if (!fr->filepart.Buffer) {
-            ERR("out of memory\n");
-            free_fileref(Vcb, fr);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        RtlCopyMemory(fr->filepart.Buffer, hl->name.Buffer, hl->name.Length);
-    }
-    
-    Status = RtlUpcaseUnicodeString(&fr->filepart_uc, &fr->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(Vcb, fr);
-        return Status;
-    }
-    
     fr->parent = parfr;
     
+    // FIXME
     Status = add_dir_child(parfr->fcb, fr->fcb->inode == SUBVOL_ROOT_INODE ? fr->fcb->subvol->id : fr->fcb->inode, fr->fcb->inode == SUBVOL_ROOT_INODE,
-                           fr->index, &hl->utf8, &fr->filepart, &fr->filepart_uc, fr->fcb->type, &dc);
+                           fr->index, &hl->utf8, &hl->name, NULL, fr->fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -3189,7 +3080,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
         if (fcb == fcb->Vcb->root_fileref->fcb)
             namelen = sizeof(WCHAR);
         else
-            namelen = fileref->filepart.Length;
+            namelen = fileref->dc->name.Length;
                     
         bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) - sizeof(WCHAR) + namelen;
         
@@ -3206,8 +3097,8 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                 feli->FileNameLength = 1;
                 feli->FileName[0] = '.';
             } else {
-                feli->FileNameLength = fileref->filepart.Length / sizeof(WCHAR);
-                RtlCopyMemory(feli->FileName, fileref->filepart.Buffer, fileref->filepart.Length);
+                feli->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
+                RtlCopyMemory(feli->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
             }
             
             fli->EntriesReturned++;
@@ -3218,7 +3109,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
         ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
     
         if (IsListEmpty(&fcb->hardlinks)) {
-            bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fileref->filepart.Length - sizeof(WCHAR);
+            bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fileref->dc->name.Length - sizeof(WCHAR);
             
             if (bytes_needed > *length)
                 overflow = TRUE;
@@ -3228,8 +3119,8 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
 
                 feli->NextEntryOffset = 0;
                 feli->ParentFileId = fileref->parent->fcb->inode;
-                feli->FileNameLength = fileref->filepart.Length / sizeof(WCHAR);
-                RtlCopyMemory(feli->FileName, fileref->filepart.Buffer, fileref->filepart.Length);
+                feli->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
+                RtlCopyMemory(feli->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
                 
                 fli->EntriesReturned++;
                 
@@ -3261,7 +3152,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                             deleted = fr2->deleted;
                             
                             if (!deleted)
-                                fn = &fr2->filepart;
+                                fn = &fr2->dc->name;
                             
                             break;
                         }

@@ -1288,7 +1288,7 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
                     deleted = fr2->deleted;
                     
                     if (!deleted)
-                        fn = &fr2->filepart;
+                        fn = &fr2->dc->name;
                     
                     break;
                 }
@@ -1550,12 +1550,6 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
     // FIXME - do we need a file_ref lock?
     
     // FIXME - do delete if needed
-    
-    if (fr->filepart.Buffer)
-        ExFreePool(fr->filepart.Buffer);
-    
-    if (fr->filepart_uc.Buffer)
-        ExFreePool(fr->filepart_uc.Buffer);
     
     if (fr->debug_desc)
         ExFreePool(fr->debug_desc);
@@ -1923,6 +1917,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     // remove dir_child from parent
     
     if (fileref->dc) {
+        TRACE("delete file %.*S\n", fileref->dc->name.Length / sizeof(WCHAR), fileref->dc->name.Buffer);
+        
         ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
         RemoveEntryList(&fileref->dc->list_entry_index);
 
@@ -1944,8 +1940,6 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
         
         fileref->dc = NULL;
     }
-    
-    TRACE("delete file %.*S\n", fileref->filepart.Length / sizeof(WCHAR), fileref->filepart.Buffer);
     
     // update INODE_ITEM of parent
     

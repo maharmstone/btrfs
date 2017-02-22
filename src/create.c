@@ -1302,23 +1302,6 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
         
         sf2->fcb = fcb;
 
-        sf2->filepart.MaximumLength = sf2->filepart.Length = dc->name.Length;
-        sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, sf2->filepart.MaximumLength, ALLOC_TAG);
-        if (!sf2->filepart.Buffer) {
-            ERR("out of memory\n");
-            free_fileref(Vcb, sf2);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
-
-        Status = RtlUpcaseUnicodeString(&sf2->filepart_uc, &sf2->filepart, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            free_fileref(Vcb, sf2);
-            return Status;
-        }
-
         sf2->parent = (struct _file_ref*)sf;
         insert_fileref_child(sf, sf2, TRUE);
         
@@ -1392,26 +1375,6 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
             sf2->index = dc->index;
             sf2->dc = dc;
             dc->fileref = sf2;
-            
-            sf2->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.Length, ALLOC_TAG);
-            if (!sf2->filepart.Buffer) {
-                ERR("out of memory\n");
-                free_fileref(Vcb, sf2);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            sf2->filepart_uc.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name_uc.Length, ALLOC_TAG);
-            if (!sf2->filepart_uc.Buffer) {
-                ERR("out of memory\n");
-                free_fileref(Vcb, sf2);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-            
-            sf2->filepart.Length = sf2->filepart.MaximumLength = dc->name.Length;
-            RtlCopyMemory(sf2->filepart.Buffer, dc->name.Buffer, dc->name.Length);
-            
-            sf2->filepart_uc.Length = sf2->filepart_uc.MaximumLength = dc->name_uc.Length;
-            RtlCopyMemory(sf2->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
             
             sf2->parent = (struct _file_ref*)sf;
             
@@ -1648,13 +1611,15 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, name_uc->Length, ALLOC_TAG);
-    if (!dc->name_uc.Buffer) {
-        ERR("out of memory\n");
-        ExFreePool(dc->utf8.Buffer);
-        ExFreePool(dc->name.Buffer);
-        ExFreePool(dc);
-        return STATUS_INSUFFICIENT_RESOURCES;
+    if (name_uc) {
+        dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, name_uc->Length, ALLOC_TAG);
+        if (!dc->name_uc.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(dc->utf8.Buffer);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
     }
     
     dc->key.obj_id = inode;
@@ -1670,8 +1635,21 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
     dc->name.Length = dc->name.MaximumLength = name->Length;
     RtlCopyMemory(dc->name.Buffer, name->Buffer, name->Length);
     
-    dc->name_uc.Length = dc->name_uc.MaximumLength = name_uc->Length;
-    RtlCopyMemory(dc->name_uc.Buffer, name_uc->Buffer, name_uc->Length);
+    if (name_uc) {
+        dc->name_uc.Length = dc->name_uc.MaximumLength = name_uc->Length;
+        RtlCopyMemory(dc->name_uc.Buffer, name_uc->Buffer, name_uc->Length);
+    } else {
+        NTSTATUS Status;
+        
+        Status = RtlUpcaseUnicodeString(&dc->name_uc, name, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ExFreePool(dc->utf8.Buffer);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc);
+            return Status;
+        }
+    }
     
     dc->hash = calc_crc32c(0xffffffff, (UINT8*)dc->name.Buffer, dc->name.Length);
     dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)dc->name_uc.Buffer, dc->name_uc.Length);
@@ -1908,29 +1886,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->fcb = fcb;
     fileref->index = dirpos;
     
-    fileref->filepart.Length = fileref->filepart.MaximumLength = fpus->Length;
-    
-    if (fileref->filepart.Length == 0)
-        fileref->filepart.Buffer = NULL;
-    else {
-        fileref->filepart.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->filepart.Length, ALLOC_TAG);
-        
-        if (!fileref->filepart.Buffer) {
-            ERR("out of memory\n");
-            free_fcb(fcb);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        RtlCopyMemory(fileref->filepart.Buffer, fpus->Buffer, fpus->Length);
-    }
-    
-    Status = RtlUpcaseUnicodeString(&fileref->filepart_uc, &fileref->filepart, TRUE);
-    if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-        free_fileref(Vcb, fileref);
-        return Status;
-    }
-
     if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
         
@@ -1957,7 +1912,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, &fileref->filepart, &fileref->filepart_uc, fcb->type, &dc);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, fpus, NULL, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -2210,34 +2165,6 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         free_fileref(Vcb, fileref);
         return Status;
     }
-    
-    fileref->filepart.MaximumLength = fileref->filepart.Length = dc->name.Length;
-    fileref->filepart.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart.MaximumLength, ALLOC_TAG);
-    if (!fileref->filepart.Buffer) {
-        ERR("out of memory\n");
-        ExFreePool(dc->utf8.Buffer);
-        ExFreePool(dc->name.Buffer);
-        ExFreePool(dc->name_uc.Buffer);
-        ExFreePool(dc);
-        free_fileref(Vcb, fileref);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(fileref->filepart.Buffer, dc->name.Buffer, dc->name.Length);
-    
-    fileref->filepart_uc.MaximumLength = fileref->filepart_uc.Length = dc->name_uc.Length;
-    fileref->filepart_uc.Buffer = ExAllocatePoolWithTag(pool_type, fileref->filepart_uc.MaximumLength, ALLOC_TAG);
-    if (!fileref->filepart.Buffer) {
-        ERR("out of memory\n");
-        ExFreePool(dc->utf8.Buffer);
-        ExFreePool(dc->name.Buffer);
-        ExFreePool(dc->name_uc.Buffer);
-        ExFreePool(dc);
-        free_fileref(Vcb, fileref);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(fileref->filepart_uc.Buffer, dc->name_uc.Buffer, dc->name_uc.Length);
     
     dc->fileref = fileref;
     fileref->dc = dc;
@@ -2901,7 +2828,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 fileref = related;
             else if (NT_SUCCESS(Status)) {
                 fnoff *= sizeof(WCHAR);
-                fnoff += related->filepart.Length + sizeof(WCHAR);
+                fnoff += related->dc ? (related->dc->name.Length + sizeof(WCHAR)) : 0;
                 
                 if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
                     Status = STATUS_REPARSE;
@@ -3315,7 +3242,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             oldatts = fileref->fcb->atts;
             
             defda = get_file_attributes(Vcb, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
-                                        fileref->filepart.Length > 0 && fileref->filepart.Buffer[0] == '.', TRUE, Irp);
+                                        fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.', TRUE, Irp);
             
             if (RequestedDisposition == FILE_SUPERSEDE)
                 fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
