@@ -257,13 +257,16 @@ end:
     return Status;
 }
 
-static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* num_parts, BOOL* stream) {
-    ULONG len, i, j, np;
+typedef struct {
+    UNICODE_STRING us;
+    LIST_ENTRY list_entry;
+} name_bit;
+
+static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream) {
+    ULONG len, i;
     BOOL has_stream;
-    UNICODE_STRING* ps;
     WCHAR* buf;
-    
-    np = 1;
+    name_bit* nb;
     
     len = path->Length / sizeof(WCHAR);
     if (len > 0 && (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\'))
@@ -272,41 +275,41 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
     has_stream = FALSE;
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
-            np++;
             has_stream = FALSE;
         } else if (path->Buffer[i] == ':') {
             has_stream = TRUE;
         }
     }
     
-    if (has_stream)
-        np++;
+    buf = path->Buffer;
     
-    ps = ExAllocatePoolWithTag(PagedPool, np * sizeof(UNICODE_STRING), ALLOC_TAG);
-    if (!ps) {
+    for (i = 0; i < len; i++) {
+        if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
+            nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
+            
+            if (!nb) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            nb->us.Buffer = buf;
+            nb->us.Length = nb->us.MaximumLength = (&path->Buffer[i] - buf) * sizeof(WCHAR);
+            InsertTailList(parts, &nb->list_entry);
+            
+            buf = &path->Buffer[i+1];
+        }
+    }
+
+    nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
+    
+    if (!nb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlZeroMemory(ps, np * sizeof(UNICODE_STRING));
-    
-    buf = path->Buffer;
-    
-    j = 0;
-    for (i = 0; i < len; i++) {
-        if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
-            ps[j].Buffer = buf;
-            ps[j].Length = (&path->Buffer[i] - buf) * sizeof(WCHAR);
-            ps[j].MaximumLength = ps[j].Length;
-            
-            buf = &path->Buffer[i+1];
-            j++;
-        }
-    }
-    
-    ps[j].Buffer = buf;
-    ps[j].Length = (&path->Buffer[i] - buf) * sizeof(WCHAR);
-    ps[j].MaximumLength = ps[j].Length;
+    nb->us.Buffer = buf;
+    nb->us.Length = nb->us.MaximumLength = (&path->Buffer[i] - buf) * sizeof(WCHAR);
+    InsertTailList(parts, &nb->list_entry);
     
     if (has_stream) {
         static WCHAR datasuf[] = {':','$','D','A','T','A',0};
@@ -315,15 +318,24 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
         dsus.Buffer = datasuf;
         dsus.Length = dsus.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
         
-        for (i = 0; i < ps[j].Length / sizeof(WCHAR); i++) {
-            if (ps[j].Buffer[i] == ':') {
-                ps[j+1].Buffer = &ps[j].Buffer[i+1];
-                ps[j+1].Length = ps[j].Length - (i * sizeof(WCHAR)) - sizeof(WCHAR);
+        for (i = 0; i < nb->us.Length / sizeof(WCHAR); i++) {
+            if (nb->us.Buffer[i] == ':') {
+                name_bit* nb2;
                 
-                ps[j].Length = i * sizeof(WCHAR);
-                ps[j].MaximumLength = ps[j].Length;
+                nb2 = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
+    
+                if (!nb2) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
                 
-                j++;
+                nb2->us.Buffer = &nb->us.Buffer[i+1];
+                nb2->us.Length = nb2->us.MaximumLength = nb->us.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR);
+                
+                nb->us.Length = i * sizeof(WCHAR);
+                nb->us.MaximumLength = nb->us.Length;
+                
+                nb = nb2;
                 
                 break;
             }
@@ -331,27 +343,24 @@ static NTSTATUS split_path(PUNICODE_STRING path, UNICODE_STRING** parts, ULONG* 
         
         // FIXME - should comparison be case-insensitive?
         // remove :$DATA suffix
-        if (ps[j].Length >= dsus.Length && RtlCompareMemory(&ps[j].Buffer[(ps[j].Length - dsus.Length)/sizeof(WCHAR)], dsus.Buffer, dsus.Length) == dsus.Length)
-            ps[j].Length -= dsus.Length;
+        if (nb->us.Length >= dsus.Length && RtlCompareMemory(&nb->us.Buffer[(nb->us.Length - dsus.Length)/sizeof(WCHAR)], dsus.Buffer, dsus.Length) == dsus.Length)
+            nb->us.Length -= dsus.Length;
         
-        if (ps[j].Length == 0) {
-            np--;
+        if (nb->us.Length == 0) {
+            RemoveTailList(parts);
+            ExFreePool(nb);
+            
             has_stream = FALSE;
         }
     }
     
     // if path is just stream name, remove first empty item
     if (has_stream && path->Length >= sizeof(WCHAR) && path->Buffer[0] == ':') {
-        ps[0] = ps[1];
-        np--;
+        name_bit *nb1 = CONTAINING_RECORD(RemoveHeadList(parts), name_bit, list_entry);
+        
+        ExFreePool(nb1);
     }
 
-//     for (i = 0; i < np; i++) {
-//         ERR("part %u: %u, (%.*S)\n", i, ps[i].Length, ps[i].Length / sizeof(WCHAR), ps[i].Buffer);
-//     }
-    
-    *num_parts = np;
-    *parts = ps;
     *stream = has_stream;
     
     return STATUS_SUCCESS;
@@ -1393,10 +1402,10 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
-    ULONG i, num_parts;
-    UNICODE_STRING* parts = NULL;
+    LIST_ENTRY parts;
     BOOL has_stream;
     NTSTATUS Status;
+    LIST_ENTRY* le;
     
     TRACE("(%p, %p, %p, %u, %p)\n", Vcb, pfr, related, parent, parsed);
 
@@ -1458,13 +1467,11 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         return STATUS_OBJECT_PATH_NOT_FOUND;
     }
     
-    if (fnus->Length == 0) {
-        num_parts = 0;
-    } else if (fnus->Length == wcslen(datastring) * sizeof(WCHAR) &&
-               RtlCompareMemory(fnus->Buffer, datastring, wcslen(datastring) * sizeof(WCHAR)) == wcslen(datastring) * sizeof(WCHAR)) {
-        num_parts = 0;
-    } else {
-        Status = split_path(&fnus2, &parts, &num_parts, &has_stream);
+    InitializeListHead(&parts);
+    
+    if (fnus->Length != 0 &&
+        (fnus->Length != wcslen(datastring) * sizeof(WCHAR) || RtlCompareMemory(fnus->Buffer, datastring, wcslen(datastring) * sizeof(WCHAR)) != wcslen(datastring) * sizeof(WCHAR))) {
+        Status = split_path(&fnus2, &parts, &has_stream);
         if (!NT_SUCCESS(Status)) {
             ERR("split_path returned %08x\n", Status);
             return Status;
@@ -1474,16 +1481,21 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     sf = dir;
     increase_fileref_refcount(dir);
     
-    if (parent) {
-        num_parts--;
+    if (parent && !IsListEmpty(&parts)) {
+        name_bit* nb;
         
-        if (has_stream && num_parts > 0) {
-            num_parts--;
+        nb = CONTAINING_RECORD(RemoveTailList(&parts), name_bit, list_entry);
+        ExFreePool(nb);
+        
+        if (has_stream && !IsListEmpty(&parts)) {
+            nb = CONTAINING_RECORD(RemoveTailList(&parts), name_bit, list_entry);
+            ExFreePool(nb);
+            
             has_stream = FALSE;
         }
     }
     
-    if (num_parts == 0) {
+    if (IsListEmpty(&parts)) {
         Status = STATUS_SUCCESS;
         *pfr = dir;
         
@@ -1493,10 +1505,13 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         goto end2;
     }
     
-    for (i = 0; i < num_parts; i++) {
-        BOOL lastpart = (i == num_parts-1) || (i == num_parts-2 && has_stream);
+    le = parts.Flink;
+    while (le != &parts) {
+        name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
+        BOOL lastpart = le->Flink == &parts || (has_stream && le->Flink->Flink == &parts);
+        BOOL streampart = has_stream && le->Flink == &parts;
         
-        Status = open_fileref_child(Vcb, sf, &parts[i], case_sensitive, lastpart, has_stream && i == num_parts - 1, pooltype, &sf2, Irp);
+        Status = open_fileref_child(Vcb, sf, &nb->us, case_sensitive, lastpart, streampart, pooltype, &sf2, Irp);
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
                 TRACE("open_fileref_child returned %08x\n", Status);
@@ -1506,9 +1521,13 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             goto end;
         }
         
-        if (i == num_parts - 1) {
-            if (fn_offset)
-                *fn_offset = parts[has_stream ? (num_parts - 2) : (num_parts - 1)].Buffer - fnus->Buffer;
+        if (le->Flink == &parts) { // last entry
+            if (fn_offset) {
+                if (has_stream)
+                    nb = CONTAINING_RECORD(le->Blink, name_bit, list_entry);
+                
+                *fn_offset = nb->us.Buffer - fnus->Buffer;
+            }
             
             break;
         }
@@ -1516,14 +1535,19 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
         if (sf2->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
             Status = STATUS_REPARSE;
             
-            if (parsed)
-                *parsed = (parts[i+1].Buffer - fnus->Buffer - 1) * sizeof(WCHAR);
+            if (parsed) {
+                name_bit* nb2 = CONTAINING_RECORD(le->Flink, name_bit, list_entry);
+                
+                *parsed = (nb2->us.Buffer - fnus->Buffer - 1) * sizeof(WCHAR);
+            }
             
             break;
         }
         
         free_fileref(Vcb, sf);
         sf = sf2;
+        
+        le = le->Flink;
     }
     
     if (Status != STATUS_REPARSE)
@@ -1533,10 +1557,12 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
 end:
     free_fileref(Vcb, sf);
     
-end2:
-    if (parts)
-        ExFreePool(parts);
+    while (!IsListEmpty(&parts)) {
+        name_bit* nb = CONTAINING_RECORD(RemoveHeadList(&parts), name_bit, list_entry);
+        ExFreePool(nb);
+    }
     
+end2:
     TRACE("returning %08x\n", Status);
     
     return Status;
