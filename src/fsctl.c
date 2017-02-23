@@ -77,7 +77,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
 static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* subvol, UINT64* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
     UINT8* buf;
     NTSTATUS Status;
-    write_data_context* wtc;
+    write_data_context wtc;
     LIST_ENTRY* le;
     tree t;
     tree_header* th;
@@ -89,15 +89,8 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
-    if (!wtc) {
-        ERR("out of memory\n");
-        ExFreePool(buf);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    wtc->parity1 = wtc->parity2 = wtc->scratch = NULL;
-    wtc->mdl = wtc->parity1_mdl = wtc->parity2_mdl = NULL;
+    wtc.parity1 = wtc.parity2 = wtc.scratch = NULL;
+    wtc.mdl = wtc.parity1_mdl = wtc.parity2_mdl = NULL;
     
     Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, NULL, Irp, 0, FALSE, 0);
     if (!NT_SUCCESS(Status)) {
@@ -180,21 +173,21 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     
     *((UINT32*)buf) = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
     
-    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
-    InitializeListHead(&wtc->stripes);
-    wtc->tree = TRUE;
-    wtc->stripes_left = 0;
+    KeInitializeEvent(&wtc.Event, NotificationEvent, FALSE);
+    InitializeListHead(&wtc.stripes);
+    wtc.tree = TRUE;
+    wtc.stripes_left = 0;
     
-    Status = write_data(Vcb, t.new_address, buf, Vcb->superblock.node_size, wtc, NULL, NULL, FALSE, 0);
+    Status = write_data(Vcb, t.new_address, buf, Vcb->superblock.node_size, &wtc, NULL, NULL, FALSE, 0);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         goto end;
     }
     
-    if (wtc->stripes.Flink != &wtc->stripes) {
+    if (wtc.stripes.Flink != &wtc.stripes) {
         // launch writes and wait
-        le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
+        le = wtc.stripes.Flink;
+        while (le != &wtc.stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
             if (stripe->status != WriteDataStatus_Ignore)
@@ -203,10 +196,10 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
             le = le->Flink;
         }
         
-        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&wtc.Event, Executive, KernelMode, FALSE, NULL);
         
-        le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
+        le = wtc.stripes.Flink;
+        while (le != &wtc.stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
@@ -217,7 +210,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
             le = le->Flink;
         }
         
-        free_write_data_stripes(wtc);
+        free_write_data_stripes(&wtc);
         buf = NULL;
     }
     
@@ -225,7 +218,6 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
         *newaddr = t.new_address;
     
 end:
-    ExFreePool(wtc);
     
     if (buf)
         ExFreePool(buf);
