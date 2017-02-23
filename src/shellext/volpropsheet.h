@@ -85,6 +85,8 @@ public:
     INT_PTR CALLBACK DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDevices(HWND hwndDlg);
     void ShowScrub(HWND hwndDlg);
+    INT_PTR CALLBACK StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void ShowStats(HWND hwndDlg, UINT64 devid);
     
     btrfs_device* devices;
     BOOL readonly;
@@ -98,4 +100,5 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     WCHAR fn[MAX_PATH];
+    UINT64 stats_dev;
 };

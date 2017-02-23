@@ -875,6 +875,94 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     EnableWindow(GetDlgItem(GetParent(devlist), IDC_DEVICE_REMOVE), num_rw_devices > 1);
 }
 
+INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            WCHAR s[255], t[255];
+            btrfs_device *bd, *dev = NULL;
+            int i;
+            
+            static int stat_ids[] = { IDC_WRITE_ERRS, IDC_READ_ERRS, IDC_FLUSH_ERRS, IDC_CORRUPTION_ERRS, IDC_GENERATION_ERRS };
+            
+            bd = devices;
+
+            while (TRUE) {
+                if (bd->dev_id == stats_dev) {
+                    dev = bd;
+                    break;
+                }
+
+                if (bd->next_entry > 0)
+                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                else
+                    break;
+            }
+            
+            if (!dev) {
+                EndDialog(hwndDlg, 0);
+                ShowStringError(hwndDlg, IDS_CANNOT_FIND_DEVICE);
+                return FALSE;
+            }
+            
+            GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
+            
+            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->dev_id) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                return FALSE;
+            
+            SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t);
+            
+            for (i = 0; i < 5; i++) {
+                GetDlgItemTextW(hwndDlg, stat_ids[i], s, sizeof(s) / sizeof(WCHAR));
+            
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->stats[i]) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    return FALSE;
+                
+                SetDlgItemTextW(hwndDlg, stat_ids[i], t);
+            }
+            
+            break;
+        }
+        
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                        return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+    
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsVolPropSheet* bvps;
+    
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bvps = (BtrfsVolPropSheet*)lParam;
+    } else {
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+    
+    if (bvps)
+        return bvps->StatsDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsVolPropSheet::ShowStats(HWND hwndDlg, UINT64 devid) {
+    stats_dev = devid;
+    
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICE_STATS), hwndDlg, stub_StatsDlgProc, (LPARAM)this);
+}
+
 INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -951,6 +1039,32 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                         case IDC_DEVICE_REFRESH:
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
                             return TRUE;
+
+                        case IDC_DEVICE_SHOW_STATS:
+                        {
+                            WCHAR sel[MAX_PATH];
+                            HWND devlist;
+                            int index;
+                            LVITEMW lvi;
+                            
+                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+                            
+                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+                            
+                            if (index == -1)
+                                return TRUE;
+                            
+                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                            lvi.mask = LVIF_TEXT;
+                            lvi.iItem = index;
+                            lvi.iSubItem = 0;
+                            lvi.pszText = sel;
+                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                            
+                            ShowStats(hwndDlg, _wtoi(sel));
+                            return TRUE;
+                        }
                             
                         case IDC_DEVICE_REMOVE:
                         {

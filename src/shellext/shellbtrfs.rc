@@ -266,6 +266,7 @@ BEGIN
     PUSHBUTTON      "&Add device...",IDC_DEVICE_ADD,7,182,76,14
     PUSHBUTTON      "&Refresh",IDC_DEVICE_REFRESH,7,159,76,14
     PUSHBUTTON      "Remove &device",IDC_DEVICE_REMOVE,93,182,76,14
+    PUSHBUTTON      "Show &stats...",IDC_DEVICE_SHOW_STATS,235,159,76,14
 END
 
 IDD_DEVICE_ADD DIALOGEX 0, 0, 261, 185
@@ -290,6 +291,25 @@ BEGIN
     PUSHBUTTON      "&Pause / resume",IDC_PAUSE_SCRUB,93,117,69,14
     PUSHBUTTON      "&Cancel scrub",IDC_CANCEL_SCRUB,173,117,69,14
     EDITTEXT        IDC_SCRUB_INFO,7,7,240,69,ES_MULTILINE | ES_READONLY | WS_VSCROLL
+END
+
+IDD_DEVICE_STATS DIALOGEX 0, 0, 159, 113
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Device stats"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,55,91,50,14
+    LTEXT           "Device %llx:",IDC_DEVICE_ID,7,7,40,8
+    LTEXT           "Write errors:",IDC_STATIC,7,21,79,8
+    LTEXT           "Read errors:",IDC_STATIC,7,34,79,8
+    LTEXT           "Flush errors:",IDC_STATIC,7,47,79,8
+    LTEXT           "Corruption errors:",IDC_STATIC,7,60,79,8
+    LTEXT           "Generation errors:",IDC_STATIC,7,73,79,8
+    RTEXT           "%llu",IDC_WRITE_ERRS,87,21,65,8
+    RTEXT           "%llu",IDC_READ_ERRS,87,34,65,8
+    RTEXT           "%llu",IDC_FLUSH_ERRS,87,47,65,8
+    RTEXT           "%llu",IDC_CORRUPTION_ERRS,87,60,65,8
+    RTEXT           "%llu",IDC_GENERATION_ERRS,87,73,65,8
 END
 
 
@@ -372,6 +392,14 @@ BEGIN
         TOPMARGIN, 7
         BOTTOMMARGIN, 155
     END
+
+    IDD_DEVICE_STATS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 152
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 105
+    END
 END
 #endif    // APSTUDIO_INVOKED
 
@@ -409,6 +437,7 @@ BEGIN
     IDS_INODE_SOCKET        "Socket"
     IDS_INODE_SYMLINK       "Symbolic link"
     IDS_INODE_UNKNOWN       "Unknown inode type %x"
+    IDS_CANNOT_FIND_DEVICE  "Cannot find device."
     IDS_SIZE_BYTE           "%s byte"
     IDS_SIZE_BYTES          "%s bytes"
     IDS_SIZE_KB             "%1.1f KB"

@@ -26,6 +26,7 @@
 #define IDS_INODE_SYMLINK               115
 #define IDS_INODE_UNKNOWN               116
 #define IDS_SET_INODE_INFO_ERROR        117
+#define IDS_CANNOT_FIND_DEVICE          117
 #define IDS_SIZE_BYTE                   118
 #define IDS_SIZE_BYTES                  119
 #define IDS_SIZE_KB                     120
@@ -80,6 +81,7 @@
 #define IDS_DEVLIST_ALLOC               168
 #define IDD_SCRUB                       168
 #define IDS_DEVLIST_ALLOC_PC            169
+#define IDD_DEVICE_STATS                169
 #define IDS_BALANCE_RUNNING_REMOVAL     170
 #define IDS_BALANCE_PAUSED_REMOVAL      171
 #define IDS_BALANCE_CANCELLED_REMOVAL   172
@@ -187,6 +189,7 @@
 #define IDC_DEVICE_REMOVE               1046
 #define IDC_VRANGE_START                1047
 #define IDC_BALANCE_STATUS              1047
+#define IDC_DEVICE_SHOW_STATS           1047
 #define IDC_LIMIT_END_SPINNER           1048
 #define IDC_START_BALANCE               1048
 #define IDC_LIMIT_END                   1049
@@ -213,14 +216,20 @@
 #define IDC_COMPRESS_TYPE               1061
 #define IDC_CHECK1                      1062
 #define IDC_SUBVOL_RO                   1062
+#define IDC_DEVICE_ID                   1063
+#define IDC_WRITE_ERRS                  1064
+#define IDC_READ_ERRS                   1065
+#define IDC_FLUSH_ERRS                  1066
+#define IDC_CORRUPTION_ERRS             1067
+#define IDC_GENERATION_ERRS             1068
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        169
+#define _APS_NEXT_RESOURCE_VALUE        170
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1063
+#define _APS_NEXT_CONTROL_VALUE         1065
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
