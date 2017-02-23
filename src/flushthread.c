@@ -65,30 +65,21 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
     LARGE_INTEGER offset;
     PIRP Irp;
     PIO_STACK_LOCATION IrpSp;
-    write_context* context = NULL;
+    write_context context;
     
     TRACE("(%p, %llx, %p, %x)\n", device, address, data, length);
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_context), ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    RtlZeroMemory(&context, sizeof(write_context));
     
-    RtlZeroMemory(context, sizeof(write_context));
-    
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
     
     offset.QuadPart = address;
-    
-//     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_WRITE, Vcb->device, data, length, &offset, NULL, &context->iosb);
     
     Irp = IoAllocateIrp(device->StackSize, FALSE);
     
     if (!Irp) {
         ERR("IoAllocateIrp failed\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit2;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     IrpSp = IoGetNextIrpStackLocation(Irp);
@@ -116,17 +107,17 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
     IrpSp->Parameters.Write.Length = length;
     IrpSp->Parameters.Write.ByteOffset = offset;
     
-    Irp->UserIosb = &context->iosb;
+    Irp->UserIosb = &context.iosb;
 
-    Irp->UserEvent = &context->Event;
+    Irp->UserEvent = &context.Event;
 
-    IoSetCompletionRoutine(Irp, write_completion, context, TRUE, TRUE, TRUE);
+    IoSetCompletionRoutine(Irp, write_completion, &context, TRUE, TRUE, TRUE);
 
     Status = IoCallDriver(device, Irp);
     
     if (Status == STATUS_PENDING) {
-        KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-        Status = context->iosb.Status;
+        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+        Status = context.iosb.Status;
     }
     
     if (!NT_SUCCESS(Status)) {
@@ -140,10 +131,6 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
     
 exit:
     IoFreeIrp(Irp);
-    
-exit2:
-    if (context)
-        ExFreePool(context);
     
     return Status;
 }
