@@ -1956,7 +1956,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
 
         fileref->parent->fcb->inode_item_changed = TRUE;
         
-        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+        if (fileref->parent->dc)
+            send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     }
     
     mark_fcb_dirty(fileref->parent->fcb);
