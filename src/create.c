@@ -1587,7 +1587,8 @@ end:
     return Status;
 }
 
-NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, PUNICODE_STRING name_uc, UINT8 type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc) {
+    NTSTATUS Status;
     dir_child* dc;
     
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
@@ -1611,17 +1612,6 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    if (name_uc) {
-        dc->name_uc.Buffer = ExAllocatePoolWithTag(PagedPool, name_uc->Length, ALLOC_TAG);
-        if (!dc->name_uc.Buffer) {
-            ERR("out of memory\n");
-            ExFreePool(dc->utf8.Buffer);
-            ExFreePool(dc->name.Buffer);
-            ExFreePool(dc);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-    }
-    
     dc->key.obj_id = inode;
     dc->key.obj_type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
     dc->key.offset = 0;
@@ -1634,21 +1624,14 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
     
     dc->name.Length = dc->name.MaximumLength = name->Length;
     RtlCopyMemory(dc->name.Buffer, name->Buffer, name->Length);
-    
-    if (name_uc) {
-        dc->name_uc.Length = dc->name_uc.MaximumLength = name_uc->Length;
-        RtlCopyMemory(dc->name_uc.Buffer, name_uc->Buffer, name_uc->Length);
-    } else {
-        NTSTATUS Status;
         
-        Status = RtlUpcaseUnicodeString(&dc->name_uc, name, TRUE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            ExFreePool(dc->utf8.Buffer);
-            ExFreePool(dc->name.Buffer);
-            ExFreePool(dc);
-            return Status;
-        }
+    Status = RtlUpcaseUnicodeString(&dc->name_uc, name, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc);
+        return Status;
     }
     
     dc->hash = calc_crc32c(0xffffffff, (UINT8*)dc->name.Buffer, dc->name.Length);
@@ -1912,7 +1895,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, fpus, NULL, fcb->type, &dc);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

@@ -2097,7 +2097,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
 
     insert_fileref_child(related, fr2, TRUE);
     
-    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fnus, NULL, fcb->type, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fnus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -3043,7 +3043,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     
     // FIXME
     Status = add_dir_child(parfr->fcb, fr->fcb->inode == SUBVOL_ROOT_INODE ? fr->fcb->subvol->id : fr->fcb->inode, fr->fcb->inode == SUBVOL_ROOT_INODE,
-                           fr->index, &hl->utf8, &hl->name, NULL, fr->fcb->type, &dc);
+                           fr->index, &hl->utf8, &hl->name, fr->fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

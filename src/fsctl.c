@@ -447,7 +447,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, name, NULL, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, name, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -1002,7 +1002,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &nameus, NULL, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &nameus, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
