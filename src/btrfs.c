@@ -118,7 +118,7 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     PIRP Irp;
     va_list ap;
     char *buf2 = NULL, *buf;
-    read_context* context = NULL;
+    read_context context;
     UINT32 length;
     
     buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
@@ -152,15 +152,9 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
         offset.u.LowPart = 0;
         offset.u.HighPart = 0;
         
-        context = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context), ALLOC_TAG);
-        if (!context) {
-            DbgPrint("Couldn't allocate context in debug_message\n");
-            return;
-        }
+        RtlZeroMemory(&context, sizeof(read_context));
         
-        RtlZeroMemory(context, sizeof(read_context));
-        
-        KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
 
     //     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
         
@@ -193,17 +187,17 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
         IrpSp->Parameters.Write.Length = length;
         IrpSp->Parameters.Write.ByteOffset = offset;
         
-        Irp->UserIosb = &context->iosb;
+        Irp->UserIosb = &context.iosb;
 
-        Irp->UserEvent = &context->Event;
+        Irp->UserEvent = &context.Event;
 
-        IoSetCompletionRoutine(Irp, dbg_completion, context, TRUE, TRUE, TRUE);
+        IoSetCompletionRoutine(Irp, dbg_completion, &context, TRUE, TRUE, TRUE);
 
         Status = IoCallDriver(comdo, Irp);
 
         if (Status == STATUS_PENDING) {
-            KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
-            Status = context->iosb.Status;
+            KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+            Status = context.iosb.Status;
         }
         
         if (comdo->Flags & DO_DIRECT_IO) {
@@ -232,9 +226,6 @@ exit:
     
 exit2:
     va_end(ap);
-    
-    if (context)
-        ExFreePool(context);
     
     if (buf2)
         ExFreePool(buf2);
