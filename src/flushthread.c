@@ -2048,45 +2048,132 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
     sb->num_devices = Vcb->superblock.num_devices;
 }
 
-static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device) {
-    NTSTATUS Status;
-    unsigned int i = 0;
-    UINT32 crc32;
+typedef struct {
+    void* context;
+    UINT8* buf;
+    PMDL mdl;
+    device* device;
+    PIRP Irp;
+    LIST_ENTRY list_entry;
+} write_superblocks_stripe;
+
+typedef struct _write_superblocks_context {
+    KEVENT Event;
+    LIST_ENTRY stripes;
+    LONG left;
+} write_superblocks_context;
+
+static NTSTATUS STDCALL write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+    write_superblocks_stripe* stripe = conptr;
+    write_superblocks_context* context = stripe->context;
     
-    RtlCopyMemory(&Vcb->superblock.dev_item, &device->devitem, sizeof(DEV_ITEM));
+    if (InterlockedDecrement(&context->left) == 0)
+        KeSetEvent(&context->Event, 0, FALSE);
+    
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device, write_superblocks_context* context) {
+    unsigned int i = 0;
     
     // All the documentation says that the Linux driver only writes one superblock
     // if it thinks a disk is an SSD, but this doesn't seem to be the case!
     
     while (superblock_addrs[i] > 0 && device->length >= superblock_addrs[i] + sizeof(superblock)) {
-        TRACE("writing superblock %u\n", i);
+        ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
+        superblock* sb;
+        UINT32 crc32;
+        write_superblocks_stripe* stripe;
+        PIO_STACK_LOCATION IrpSp;
         
-        Vcb->superblock.sb_phys_addr = superblock_addrs[i];
+        sb = ExAllocatePoolWithTag(NonPagedPool, sblen, ALLOC_TAG);
+        if (!sb) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
         
-        crc32 = calc_crc32c(0xffffffff, (UINT8*)&Vcb->superblock.uuid, (ULONG)sizeof(superblock) - sizeof(Vcb->superblock.checksum));
-        crc32 = ~crc32;
-        TRACE("crc32 is %08x\n", crc32);
-        RtlCopyMemory(&Vcb->superblock.checksum, &crc32, sizeof(UINT32));
+        RtlCopyMemory(sb, &Vcb->superblock, sizeof(superblock));
         
-        Status = write_data_phys(device->devobj, superblock_addrs[i], &Vcb->superblock, sizeof(superblock), (i == 0 && !Vcb->options.no_barrier) ? TRUE : FALSE);
+        if (sblen > sizeof(superblock))
+            RtlZeroMemory((UINT8*)sb + sizeof(superblock), sblen - sizeof(superblock));
         
-        if (!NT_SUCCESS(Status))
-            break;
+        RtlCopyMemory(&sb->dev_item, &device->devitem, sizeof(DEV_ITEM));
+        sb->sb_phys_addr = superblock_addrs[i];
+        
+        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        RtlCopyMemory(&sb->checksum, &crc32, sizeof(UINT32));
+        
+        stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_superblocks_stripe), ALLOC_TAG);
+        if (!sb) {
+            ERR("out of memory\n");
+            ExFreePool(sb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        stripe->buf = (UINT8*)sb;
+        
+        stripe->Irp = IoAllocateIrp(device->devobj->StackSize, FALSE);
+        if (!stripe->Irp) {
+            ERR("IoAllocateIrp failed\n");
+            ExFreePool(stripe);
+            ExFreePool(sb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+        IrpSp->MajorFunction = IRP_MJ_WRITE;
+        
+        if (i == 0)
+            IrpSp->Flags |= SL_WRITE_THROUGH;
+        
+        if (device->devobj->Flags & DO_BUFFERED_IO) {
+            stripe->Irp->AssociatedIrp.SystemBuffer = sb;
+            stripe->mdl = NULL;
+
+            stripe->Irp->Flags = IRP_BUFFERED_IO;
+        } else if (device->devobj->Flags & DO_DIRECT_IO) {
+            stripe->mdl = IoAllocateMdl(sb, sblen, FALSE, FALSE, NULL);
+            if (!stripe->mdl) {
+                ERR("IoAllocateMdl failed\n");
+                IoFreeIrp(stripe->Irp);
+                ExFreePool(stripe);
+                ExFreePool(sb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            
+            stripe->Irp->MdlAddress = stripe->mdl;
+            
+            MmBuildMdlForNonPagedPool(stripe->mdl);
+        } else {
+            stripe->Irp->UserBuffer = sb;
+            stripe->mdl = NULL;
+        }
+
+        IrpSp->Parameters.Write.Length = sblen;
+        IrpSp->Parameters.Write.ByteOffset.QuadPart = superblock_addrs[i];
+
+        IoSetCompletionRoutine(stripe->Irp, write_superblock_completion, stripe, TRUE, TRUE, TRUE);
+        
+        stripe->context = context;
+        stripe->device = device;
+        InsertTailList(&context->stripes, &stripe->list_entry);
+        
+        context->left++;
         
         i++;
     }
     
-    if (i == 0) {
+    if (i == 0)
         ERR("no superblocks written!\n");
-    }
 
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     UINT64 i;
     NTSTATUS Status;
     LIST_ENTRY* le;
+    write_superblocks_context context;
     
     TRACE("(%p)\n", Vcb);
     
@@ -2114,22 +2201,65 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     
     update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1], Irp);
     
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+    InitializeListHead(&context.stripes);
+    context.left = 0;
+    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
         if (dev->devobj && !dev->readonly) {
-            Status = write_superblock(Vcb, dev);
+            Status = write_superblock(Vcb, dev, &context);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_superblock returned %08x\n", Status);
-                return Status;
+                goto end;
             }
         }
         
         le = le->Flink;
     }
     
-    return STATUS_SUCCESS;
+    if (IsListEmpty(&context.stripes)) {
+        ERR("error - not writing any superblocks\n");
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+    
+    le = context.stripes.Flink;
+    while (le != &context.stripes) {
+        write_superblocks_stripe* stripe = CONTAINING_RECORD(le, write_superblocks_stripe, list_entry);
+        
+        IoCallDriver(stripe->device->devobj, stripe->Irp);
+        
+        le = le->Flink;
+    }
+    
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    while (!IsListEmpty(&context.stripes)) {
+        write_superblocks_stripe* stripe = CONTAINING_RECORD(RemoveHeadList(&context.stripes), write_superblocks_stripe, list_entry);
+
+        if (stripe->mdl) {
+            if (stripe->mdl->MdlFlags & MDL_PAGES_LOCKED)
+                MmUnlockPages(stripe->mdl);
+
+            IoFreeMdl(stripe->mdl);
+        }
+        
+        if (stripe->Irp)
+            IoFreeIrp(stripe->Irp);
+        
+        if (stripe->buf)
+            ExFreePool(stripe->buf);
+
+        ExFreePool(stripe);
+    }
+
+    return Status;
 }
 
 static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, PIRP Irp, LIST_ENTRY* rollback) {
