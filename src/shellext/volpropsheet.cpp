@@ -1143,6 +1143,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 break;
             }
         break;
+        
+        case WM_NOTIFY:
+            switch (((LPNMHDR)lParam)->code) {
+                case LVN_ITEMCHANGED:
+                {
+                    NMLISTVIEW* nmv = (NMLISTVIEW*)lParam;
+                    
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_SHOW_STATS), nmv->uNewState & LVIS_SELECTED);
+                    break;
+                }
+            }
+        break;
     }
     
     return FALSE;
