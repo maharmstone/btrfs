@@ -1357,7 +1357,7 @@ end:
 
 static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
     ULONG i;
-    scrub_context* context = NULL;
+    scrub_context context;
     CHUNK_ITEM_STRIPE* cis;
     NTSTATUS Status;
     UINT16 startoffstripe;
@@ -1366,23 +1366,16 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     
     TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context), ALLOC_TAG);
-    if (!context) {
+    context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!context.stripes) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
+    RtlZeroMemory(context.stripes, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes);
     
-    RtlZeroMemory(context->stripes, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes);
-    
-    context->stripes_left = 0;
+    context.stripes_left = 0;
     
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     
@@ -1395,18 +1388,18 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (startoffstripe > i)
-                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
             else if (startoffstripe == i)
-                context->stripes[i].start = startoff;
+                context.stripes[i].start = startoff;
             else
-                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
+                context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
             
             if (endoffstripe > i)
-                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context->stripes[i].start;
+                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start;
             else if (endoffstripe == i)
-                context->stripes[i].length = endoff + 1 - context->stripes[i].start;
+                context.stripes[i].length = endoff + 1 - context.stripes[i].start;
             else
-                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context->stripes[i].start;
+                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start;
         }
     } else if (type == BLOCK_FLAG_RAID10) {
         UINT64 startoff, endoff;
@@ -1426,22 +1419,22 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
         
         for (i = 0; i < c->chunk_item->num_stripes; i += sub_stripes) {
             if (startoffstripe > i)
-                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
             else if (startoffstripe == i)
-                context->stripes[i].start = startoff;
+                context.stripes[i].start = startoff;
             else
-                context->stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
+                context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
             
             if (endoffstripe > i)
-                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context->stripes[i].start;
+                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start;
             else if (endoffstripe == i)
-                context->stripes[i].length = endoff + 1 - context->stripes[i].start;
+                context.stripes[i].length = endoff + 1 - context.stripes[i].start;
             else
-                context->stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context->stripes[i].start;
+                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start;
             
             for (j = 1; j < sub_stripes; j++) {
-                context->stripes[i+j].start = context->stripes[i].start;
-                context->stripes[i+j].length = context->stripes[i].length;
+                context.stripes[i+j].start = context.stripes[i].start;
+                context.stripes[i+j].length = context.stripes[i].length;
             }
         }
         
@@ -1451,110 +1444,110 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        context->stripes[i].context = (struct _scrub_context*)context;
+        context.stripes[i].context = (struct _scrub_context*)&context;
         
         if (type == BLOCK_FLAG_DUPLICATE) {
-            context->stripes[i].start = offset - c->offset;
-            context->stripes[i].length = size;
+            context.stripes[i].start = offset - c->offset;
+            context.stripes[i].length = size;
         } else if (type != BLOCK_FLAG_RAID0 && type != BLOCK_FLAG_RAID10) {
             ERR("unexpected chunk type %x\n", type);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
         
-        if (context->stripes[i].length > 0) {
-            context->stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context->stripes[i].length, ALLOC_TAG);
+        if (context.stripes[i].length > 0) {
+            context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].length, ALLOC_TAG);
             
-            if (!context->stripes[i].buf) {
+            if (!context.stripes[i].buf) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
             
-            context->stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
+            context.stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
             
-            if (!context->stripes[i].Irp) {
+            if (!context.stripes[i].Irp) {
                 ERR("IoAllocateIrp failed\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
             
-            IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+            IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
             
             if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                context->stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, context->stripes[i].length, ALLOC_TAG);
-                if (!context->stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].length, ALLOC_TAG);
+                if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
                     ERR("out of memory\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
 
-                context->stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+                context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
 
-                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
             } else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                context->stripes[i].Irp->MdlAddress = IoAllocateMdl(context->stripes[i].buf, context->stripes[i].length, FALSE, FALSE, NULL);
-                if (!context->stripes[i].Irp->MdlAddress) {
+                context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, context.stripes[i].length, FALSE, FALSE, NULL);
+                if (!context.stripes[i].Irp->MdlAddress) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
                 
-                MmProbeAndLockPages(context->stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
             } else
-                context->stripes[i].Irp->UserBuffer = context->stripes[i].buf;
+                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
 
-            IrpSp->Parameters.Read.Length = context->stripes[i].length;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = context->stripes[i].start + cis[i].offset;
+            IrpSp->Parameters.Read.Length = context.stripes[i].length;
+            IrpSp->Parameters.Read.ByteOffset.QuadPart = context.stripes[i].start + cis[i].offset;
             
-            context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+            context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
             
-            IoSetCompletionRoutine(context->stripes[i].Irp, scrub_read_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context.stripes[i].Irp, scrub_read_completion, &context.stripes[i], TRUE, TRUE, TRUE);
             
-            context->stripes_left++;
+            context.stripes_left++;
             
-            Vcb->scrub.data_scrubbed += context->stripes[i].length;
+            Vcb->scrub.data_scrubbed += context.stripes[i].length;
         }
     }
     
-    if (context->stripes_left == 0) {
+    if (context.stripes_left == 0) {
         ERR("error - not reading any stripes\n");
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
     
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (context->stripes[i].length > 0)
-            IoCallDriver(c->devices[i]->devobj, context->stripes[i].Irp);
+        if (context.stripes[i].length > 0)
+            IoCallDriver(c->devices[i]->devobj, context.stripes[i].Irp);
     }
     
-    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
     
     // return an error if any of the stripes returned an error
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (!NT_SUCCESS(context->stripes[i].iosb.Status)) {
-            Status = context->stripes[i].iosb.Status;
+        if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
+            Status = context.stripes[i].iosb.Status;
             goto end;
         }
     }
     
     if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = scrub_extent_dup(Vcb, c, offset, csum, context);
+        Status = scrub_extent_dup(Vcb, c, offset, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_dup returned %08x\n", Status);
             goto end;
         }
     } else if (type == BLOCK_FLAG_RAID0) {
-        Status = scrub_extent_raid0(Vcb, c, offset, size, startoffstripe, csum, context);
+        Status = scrub_extent_raid0(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_raid0 returned %08x\n", Status);
             goto end;
         }
     } else if (type == BLOCK_FLAG_RAID10) {
-        Status = scrub_extent_raid10(Vcb, c, offset, size, startoffstripe, csum, context);
+        Status = scrub_extent_raid10(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_raid10 returned %08x\n", Status);
             goto end;
@@ -1562,28 +1555,24 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     }
     
 end:
-    if (context) {
-        if (context->stripes) {
-            for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                if (context->stripes[i].Irp) {
-                    if (c->devices[i]->devobj->Flags & DO_DIRECT_IO && context->stripes[i].Irp->MdlAddress) {
-                        MmUnlockPages(context->stripes[i].Irp->MdlAddress);
-                        IoFreeMdl(context->stripes[i].Irp->MdlAddress);
-                    }
-                    IoFreeIrp(context->stripes[i].Irp);
+    if (context.stripes) {
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (context.stripes[i].Irp) {
+                if (c->devices[i]->devobj->Flags & DO_DIRECT_IO && context.stripes[i].Irp->MdlAddress) {
+                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
+                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
                 }
-                
-                if (context->stripes[i].buf)
-                    ExFreePool(context->stripes[i].buf);
-                
-                if (context->stripes[i].bad_csums)
-                    ExFreePool(context->stripes[i].bad_csums);
+                IoFreeIrp(context.stripes[i].Irp);
             }
             
-            ExFreePool(context->stripes);
-        }
+            if (context.stripes[i].buf)
+                ExFreePool(context.stripes[i].buf);
             
-        ExFreePool(context);
+            if (context.stripes[i].bad_csums)
+                ExFreePool(context.stripes[i].bad_csums);
+        }
+        
+        ExFreePool(context.stripes);
     }
 
     return Status;
