@@ -28,6 +28,7 @@ typedef struct {
     UNICODE_STRING name;
     UINT8 type;
     enum DirEntryType dir_entry_type;
+    dir_child* dc;
 } dir_entry;
 
 ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, PIRP Irp) {
@@ -158,25 +159,13 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
         switch (de->dir_entry_type) {
             case DirEntryType_File:
             {
-                LIST_ENTRY* le;
                 BOOL found = FALSE;
                 
-                if (!IsListEmpty(&r->fcbs)) {
-                    le = r->fcbs.Flink;
-                    while (le != &r->fcbs) {
-                        struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
-                        
-                        if (fcb2->inode == inode && !fcb2->ads) {
-                            ii = fcb2->inode_item;
-                            atts = fcb2->atts;
-                            ealen = fcb2->ealen;
-                            found = TRUE;
-                            break;
-                        } else if (fcb2->inode > inode)
-                            break;
-                        
-                        le = le->Flink;
-                    }
+                if (de->dc && de->dc->fileref && de->dc->fileref->fcb) {
+                    ii = de->dc->fileref->fcb->inode_item;
+                    atts = de->dc->fileref->fcb->atts;
+                    ealen = de->dc->fileref->fcb->ealen;
+                    found = TRUE;
                 }
                 
                 if (!found) {
@@ -535,6 +524,7 @@ next:
     de->name = dc->name;
     de->type = dc->type;
     de->dir_entry_type = DirEntryType_File;
+    de->dc = dc;
     
     *offset = dc->index + 1;
     *pdc = dc;
@@ -736,6 +726,7 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
                             de.name = dc2->name;
                             de.type = dc2->type;
                             de.dir_entry_type = DirEntryType_File;
+                            de.dc = dc2;
                             
                             break;
                         }
@@ -759,6 +750,7 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
                             de.name = dc2->name;
                             de.type = dc2->type;
                             de.dir_entry_type = DirEntryType_File;
+                            de.dc = dc2;
                             
                             break;
                         }
