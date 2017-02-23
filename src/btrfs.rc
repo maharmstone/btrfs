@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileDescription", "WinBtrfs"
             VALUE "FileVersion", "0.8"
             VALUE "InternalName", "btrfs"
-            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016"
+            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-17"
             VALUE "OriginalFilename", "btrfs.sys"
             VALUE "ProductName", "WinBtrfs"
             VALUE "ProductVersion", "0.8"

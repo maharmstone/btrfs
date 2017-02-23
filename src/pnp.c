@@ -1,4 +1,4 @@
-/* Copyright (c) Mark Harmstone 2016
+/* Copyright (c) Mark Harmstone 2016-17
  * 
  * This file is part of WinBtrfs.
  * 

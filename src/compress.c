@@ -1,4 +1,4 @@
-/* Copyright (c) Mark Harmstone 2016
+/* Copyright (c) Mark Harmstone 2016-17
  * Copyright (c) Reimar Doeffinger 2006
  * Copyright (c) Markus Oberhumer 1996
  * 

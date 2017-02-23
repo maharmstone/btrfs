@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileDescription", "Btrfs formatting utility"
             VALUE "FileVersion", "0.8"
             VALUE "InternalName", "mkbtrfs"
-            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016"
+            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-17"
             VALUE "OriginalFilename", "mkbtrfs.exe"
             VALUE "ProductName", "WinBtrfs"
             VALUE "ProductVersion", "0.8"

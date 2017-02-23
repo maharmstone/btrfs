@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileDescription", "Btrfs utility DLL"
             VALUE "FileVersion", "0.8"
             VALUE "InternalName", "ubtrfs"
-            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016"
+            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-17"
             VALUE "OriginalFilename", "ubtrfs.dll"
             VALUE "ProductName", "WinBtrfs"
             VALUE "ProductVersion", "0.8"
