@@ -49,7 +49,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb->Header.NodeTypeCode = BTRFS_NODE_TYPE_FCB;
     fcb->Header.NodeByteSize = sizeof(struct _fcb);
     
-    fcb->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(struct _fcb_nonpaged), ALLOC_TAG);
+    fcb->nonpaged = ExAllocateFromNPagedLookasideList(&Vcb->fcb_np_lookaside);
     if (!fcb->nonpaged) {
         ERR("out of memory\n");
         
