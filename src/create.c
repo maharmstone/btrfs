@@ -323,6 +323,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
                 
                 nb2->us.Buffer = &nb->us.Buffer[i+1];
                 nb2->us.Length = nb2->us.MaximumLength = nb->us.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR);
+                InsertTailList(parts, &nb2->list_entry);
                 
                 nb->us.Length = i * sizeof(WCHAR);
                 nb->us.MaximumLength = nb->us.Length;
