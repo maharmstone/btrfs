@@ -2586,6 +2586,14 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
     NTSTATUS Status;
     
     InitializeListHead(&dev->space);
+
+    searchkey.obj_id = 0;
+    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.offset = dev->devitem.dev_id;
+    
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
+    if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey))
+        RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(UINT64) * 5, tp.item->size));
     
     searchkey.obj_id = dev->devitem.dev_id;
     searchkey.obj_type = TYPE_DEV_EXTENT;
@@ -2858,6 +2866,8 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
         } else
             TRACE("TRIM not supported\n");
     }
+    
+    RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
 }
 
 static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {

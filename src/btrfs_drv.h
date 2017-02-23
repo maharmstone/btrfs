@@ -374,6 +374,7 @@ typedef struct {
     UINT64 length;
     ULONG disk_num;
     ULONG part_num;
+    UINT64 stats[5];
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
     ULONG num_trim_entries;
