@@ -2255,25 +2255,19 @@ void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lock
 }
 
 NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset) {
-    write_data_context* wtc;
+    write_data_context wtc;
     NTSTATUS Status;
     UINT64 lockaddr, locklen;
 // #ifdef DEBUG_PARANOID
 //     UINT8* buf2;
 // #endif
     
-    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context), ALLOC_TAG);
-    if (!wtc) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    KeInitializeEvent(&wtc->Event, NotificationEvent, FALSE);
-    InitializeListHead(&wtc->stripes);
-    wtc->tree = FALSE;
-    wtc->stripes_left = 0;
-    wtc->parity1 = wtc->parity2 = wtc->scratch = NULL;
-    wtc->mdl = wtc->parity1_mdl = wtc->parity2_mdl = NULL;
+    KeInitializeEvent(&wtc.Event, NotificationEvent, FALSE);
+    InitializeListHead(&wtc.stripes);
+    wtc.tree = FALSE;
+    wtc.stripes_left = 0;
+    wtc.parity1 = wtc.parity2 = wtc.scratch = NULL;
+    wtc.mdl = wtc.parity1_mdl = wtc.parity2_mdl = NULL;
     
     if (!c) {
         c = get_chunk_from_address(Vcb, address);
@@ -2288,22 +2282,21 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
     
-    Status = write_data(Vcb, address, data, length, wtc, Irp, c, file_write, irp_offset);
+    Status = write_data(Vcb, address, data, length, &wtc, Irp, c, file_write, irp_offset);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         
         if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
             chunk_unlock_range(Vcb, c, lockaddr, locklen);
         
-        free_write_data_stripes(wtc);
-        ExFreePool(wtc);
+        free_write_data_stripes(&wtc);
         return Status;
     }
     
-    if (wtc->stripes.Flink != &wtc->stripes) {
+    if (wtc.stripes.Flink != &wtc.stripes) {
         // launch writes and wait
-        LIST_ENTRY* le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
+        LIST_ENTRY* le = wtc.stripes.Flink;
+        while (le != &wtc.stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
             if (stripe->status != WriteDataStatus_Ignore)
@@ -2312,10 +2305,10 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
             le = le->Flink;
         }
         
-        KeWaitForSingleObject(&wtc->Event, Executive, KernelMode, FALSE, NULL);
+        KeWaitForSingleObject(&wtc.Event, Executive, KernelMode, FALSE, NULL);
         
-        le = wtc->stripes.Flink;
-        while (le != &wtc->stripes) {
+        le = wtc.stripes.Flink;
+        while (le != &wtc.stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
@@ -2326,13 +2319,11 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
             le = le->Flink;
         }
         
-        free_write_data_stripes(wtc);
+        free_write_data_stripes(&wtc);
     }
     
     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
         chunk_unlock_range(Vcb, c, lockaddr, locklen);
-
-    ExFreePool(wtc);
 
 // #ifdef DEBUG_PARANOID
 //     buf2 = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
