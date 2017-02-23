@@ -994,7 +994,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     return STATUS_INTERNAL_ERROR;
                 }
                 
-                if (ed2->address == 0 && ed2->size == 0) // sparse
+                if (ed2->address == 0 || ed2->size == 0) // sparse
                     continue;
                 
                 if (ed2->size != 0 && is_tree_unique(Vcb, tp.tree, Irp))
