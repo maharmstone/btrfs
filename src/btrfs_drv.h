@@ -642,6 +642,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
     PAGED_LOOKASIDE_LIST fileref_lookaside;
     PAGED_LOOKASIDE_LIST fcb_lookaside;
+    PAGED_LOOKASIDE_LIST name_bit_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
@@ -729,6 +730,11 @@ typedef struct {
     UINT8* data;
     LIST_ENTRY list_entry;
 } tree_write;
+
+typedef struct {
+    UNICODE_STRING us;
+    LIST_ENTRY list_entry;
+} name_bit;
 
 static __inline void* map_user_buffer(PIRP Irp) {
     if (!Irp->MdlAddress) {

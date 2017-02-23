@@ -257,12 +257,7 @@ end:
     return Status;
 }
 
-typedef struct {
-    UNICODE_STRING us;
-    LIST_ENTRY list_entry;
-} name_bit;
-
-static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream) {
+static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream) {
     ULONG len, i;
     BOOL has_stream;
     WCHAR* buf;
@@ -285,8 +280,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream
     
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
-            nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
-            
+            nb = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
             if (!nb) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -300,8 +294,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream
         }
     }
 
-    nb = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
-    
+    nb = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
     if (!nb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -322,8 +315,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream
             if (nb->us.Buffer[i] == ':') {
                 name_bit* nb2;
                 
-                nb2 = ExAllocatePoolWithTag(PagedPool, sizeof(name_bit), ALLOC_TAG); // FIXME
-    
+                nb2 = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
                 if (!nb2) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
@@ -348,7 +340,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream
         
         if (nb->us.Length == 0) {
             RemoveTailList(parts);
-            ExFreePool(nb);
+            ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
             
             has_stream = FALSE;
         }
@@ -358,7 +350,7 @@ static NTSTATUS split_path(PUNICODE_STRING path, LIST_ENTRY* parts, BOOL* stream
     if (has_stream && path->Length >= sizeof(WCHAR) && path->Buffer[0] == ':') {
         name_bit *nb1 = CONTAINING_RECORD(RemoveHeadList(parts), name_bit, list_entry);
         
-        ExFreePool(nb1);
+        ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb1);
     }
 
     *stream = has_stream;
@@ -1471,7 +1463,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
     
     if (fnus->Length != 0 &&
         (fnus->Length != wcslen(datastring) * sizeof(WCHAR) || RtlCompareMemory(fnus->Buffer, datastring, wcslen(datastring) * sizeof(WCHAR)) != wcslen(datastring) * sizeof(WCHAR))) {
-        Status = split_path(&fnus2, &parts, &has_stream);
+        Status = split_path(Vcb, &fnus2, &parts, &has_stream);
         if (!NT_SUCCESS(Status)) {
             ERR("split_path returned %08x\n", Status);
             return Status;
@@ -1559,7 +1551,7 @@ end:
     
     while (!IsListEmpty(&parts)) {
         name_bit* nb = CONTAINING_RECORD(RemoveHeadList(&parts), name_bit, list_entry);
-        ExFreePool(nb);
+        ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
     }
     
 end2:

@@ -1805,6 +1805,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
     ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
     ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
+    ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
@@ -3891,6 +3892,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fileref_lookaside, NULL, NULL, 0, sizeof(file_ref), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fcb_lookaside, NULL, NULL, 0, sizeof(fcb), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->name_bit_lookaside, NULL, NULL, 0, sizeof(name_bit), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->fileref_np_lookaside, NULL, NULL, 0, sizeof(file_ref_nonpaged), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->fcb_np_lookaside, NULL, NULL, 0, sizeof(fcb_nonpaged), ALLOC_TAG, 0);
@@ -4146,6 +4148,7 @@ exit2:
                 ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
+                ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
