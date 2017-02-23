@@ -4154,104 +4154,33 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp;
+static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp) {
+    ULONG xasize;
     DIR_ITEM* xa;
-    NTSTATUS Status;
     
     TRACE("(%p, %llx, %llx, %s, %08x)\n", Vcb, subvol->id, inode, name, crc32);
     
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
-    searchkey.offset = crc32;
+    xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name);
     
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        return FALSE;
+    xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
+    if (!xa) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    if (!keycmp(tp.item->key, searchkey)) { // key exists
-        ULONG size = tp.item->size;
-        
-        if (tp.item->size < sizeof(DIR_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
-            
-            return FALSE;
-        } else {
-            xa = (DIR_ITEM*)tp.item->data;
-            
-            while (TRUE) {
-                ULONG oldxasize;
-                
-                if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-                        
-                    return FALSE;
-                }
-                
-                oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
-                
-                if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
-                    ULONG newsize;
-                    UINT8 *newdata, *dioff;
-                    
-                    newsize = tp.item->size - (sizeof(DIR_ITEM) - 1 + xa->n + xa->m);
-                    
-                    Status = delete_tree_item(Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08x\n", Status);
-                        return FALSE;
-                    }
-                    
-                    if (newsize == 0) {
-                        TRACE("xattr %s deleted\n", name);
-                        
-                        return TRUE;
-                    }
-
-                    // FIXME - deleting collisions almost certainly works, but we should test it properly anyway
-                    newdata = ExAllocatePoolWithTag(PagedPool, newsize, ALLOC_TAG);
-                    if (!newdata) {
-                        ERR("out of memory\n");
-                        return FALSE;
-                    }
-
-                    if ((UINT8*)xa > tp.item->data) {
-                        RtlCopyMemory(newdata, tp.item->data, (UINT8*)xa - tp.item->data);
-                        dioff = newdata + ((UINT8*)xa - tp.item->data);
-                    } else {
-                        dioff = newdata;
-                    }
-                    
-                    if ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data < tp.item->size)
-                        RtlCopyMemory(dioff, &xa->name[xa->n+xa->m], tp.item->size - ((UINT8*)&xa->name[xa->n+xa->m] - tp.item->data));
-                    
-                    Status = insert_tree_item(Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, newdata, newsize, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_tree_item returned %08x\n", Status);
-                        return FALSE;
-                    }
-                        
-                    return TRUE;
-                }
-                
-                if (xa->m + xa->n >= size) { // FIXME - test this works
-                    WARN("xattr %s not found\n", name);
-
-                    return FALSE;
-                } else {
-                    xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
-                    size -= oldxasize;
-                }
-            }
-        }
-    } else {
-        WARN("xattr %s not found\n", name);
-        
-        return FALSE;
-    }
+    xa->key.obj_id = 0;
+    xa->key.obj_type = 0;
+    xa->key.offset = 0;
+    xa->transid = Vcb->superblock.generation;
+    xa->m = 0;
+    xa->n = (UINT16)strlen(name);
+    xa->type = BTRFS_TYPE_EA;
+    RtlCopyMemory(xa->name, name, strlen(name));
+    
+    if (!insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_DeleteXattr))
+        return STATUS_INTERNAL_ERROR;
+    
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS insert_sparse_extent(fcb* fcb, UINT64 start, UINT64 length, PIRP Irp) {
@@ -4672,7 +4601,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     
     if (fcb->ads) {
         if (fcb->deleted)
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp);
         else {
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
             if (!NT_SUCCESS(Status)) {
@@ -5057,7 +4986,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp);
         
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -5071,7 +5000,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp);
         
         fcb->reparse_xattr_changed = FALSE;
     }
@@ -5084,14 +5013,14 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp);
         
         fcb->ea_changed = FALSE;
     }
     
     if (fcb->prop_compression_changed) {
         if (fcb->prop_compression == PropCompression_None)
-            delete_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, Irp);
         else if (fcb->prop_compression == PropCompression_Zlib) {
             const char zlib[] = "zlib";
             

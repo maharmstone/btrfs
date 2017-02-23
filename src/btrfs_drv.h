@@ -328,6 +328,7 @@ enum batch_operation {
     Batch_DeleteDirItem,
     Batch_DeleteInodeRef,
     Batch_DeleteInodeExtRef,
+    Batch_DeleteXattr,
 };
 
 typedef struct {

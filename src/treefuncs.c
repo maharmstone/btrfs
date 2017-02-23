@@ -1210,7 +1210,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
 static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead) {
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
-        bi->operation == Batch_DeleteInodeExtRef) {
+        bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
         UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
         
         switch (bi->operation) {
@@ -1681,6 +1681,78 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 break;
             }
             
+            case Batch_DeleteXattr: {
+                if (td->size < sizeof(DIR_ITEM)) {
+                    WARN("XATTR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
+                    return TRUE;
+                } else {
+                    DIR_ITEM *di, *deldi;
+                    LONG len;
+                    
+                    deldi = (DIR_ITEM*)bi->data;
+                    di = (DIR_ITEM*)td->data;
+                    len = td->size;
+                    
+                    do {
+                        if (di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n) == di->n) {
+                            ULONG newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                            
+                            if (newlen == 0)
+                                TRACE("deleting XATTR_ITEM\n");
+                            else {
+                                UINT8 *newdi = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *dioff;
+                                tree_data* td2;
+                                
+                                if (!newdi) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                TRACE("modifying XATTR_ITEM\n");
+
+                                if ((UINT8*)di > td->data) {
+                                    RtlCopyMemory(newdi, td->data, (UINT8*)di - td->data);
+                                    dioff = newdi + ((UINT8*)di - td->data);
+                                } else
+                                    dioff = newdi;
+                                
+                                if ((UINT8*)&di->name[di->n + di->m] - td->data < td->size)
+                                    RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((UINT8*)&di->name[di->n + di->m] - td->data));
+                                
+                                td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
+                                if (!td2) {
+                                    ERR("out of memory\n");
+                                    return TRUE;
+                                }
+                                
+                                td2->key = bi->key;
+                                td2->size = newlen;
+                                td2->data = newdi;
+                                td2->ignore = FALSE;
+                                td2->inserted = TRUE;
+                                
+                                InsertHeadList(td->list_entry.Blink, &td2->list_entry);
+                                
+                                t->header.num_items++;
+                                t->size += newlen + sizeof(leaf_node);
+                                t->write = TRUE;
+                            }
+                            
+                            break;
+                        }
+                        
+                        len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
+                        di = (DIR_ITEM*)&di->name[di->n + di->m];
+                        
+                        if (len == 0) {
+                            TRACE("could not find DIR_ITEM to delete\n");
+                            return TRUE;
+                        }
+                    } while (len > 0);
+                }
+                break;
+            }
+            
             case Batch_Delete:
                 break;
             
@@ -1803,8 +1875,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 }
             }
         } else {
-            if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem ||
-                bi->operation == Batch_DeleteInodeRef || bi->operation == Batch_DeleteInodeExtRef)
+            if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
+                bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr)
                 td = NULL;
             else {
                 td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1878,8 +1950,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     
                     ignore = FALSE;
                     
-                    if (bi2->operation == Batch_Delete || bi2->operation == Batch_DeleteDirItem ||
-                        bi2->operation == Batch_DeleteInodeRef || bi2->operation == Batch_DeleteInodeExtRef)
+                    if (bi2->operation == Batch_Delete || bi2->operation == Batch_DeleteDirItem || bi2->operation == Batch_DeleteInodeRef ||
+                        bi2->operation == Batch_DeleteInodeExtRef || bi2->operation == Batch_DeleteXattr)
                         td = NULL;
                     else {
                         td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1962,7 +2034,8 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         LIST_ENTRY* le = RemoveHeadList(&br->items);
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
         
-        if ((bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef || bi->operation == Batch_DeleteInodeExtRef) && bi->data)
+        if ((bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
+            bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) && bi->data)
             ExFreePool(bi->data);
         
         ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
