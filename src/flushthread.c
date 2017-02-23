@@ -60,7 +60,7 @@ static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length, BOOL fua) {
+NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
     NTSTATUS Status;
     LARGE_INTEGER offset;
     PIRP Irp;
@@ -84,9 +84,6 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
     
     IrpSp = IoGetNextIrpStackLocation(Irp);
     IrpSp->MajorFunction = IRP_MJ_WRITE;
-    
-    if (fua)
-        IrpSp->Flags |= SL_WRITE_THROUGH;
     
     if (device->Flags & DO_BUFFERED_IO) {
         Irp->AssociatedIrp.SystemBuffer = data;

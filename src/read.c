@@ -222,7 +222,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                         
                         if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
                             Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + context->stripes[stripe].stripestart,
-                                                     t2, Vcb->superblock.node_size, FALSE);
+                                                     t2, Vcb->superblock.node_size);
                             if (!NT_SUCCESS(Status))
                                 WARN("write_data_phys returned %08x\n", Status);
                         }
@@ -273,7 +273,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
                                 
                                 if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
                                     Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + context->stripes[stripe].stripestart + UInt32x32To64(i, Vcb->superblock.sector_size),
-                                                             sector, Vcb->superblock.sector_size, FALSE);
+                                                             sector, Vcb->superblock.sector_size);
                                     if (!NT_SUCCESS(Status))
                                         WARN("write_data_phys returned %08x\n", Status);
                                 }
@@ -467,7 +467,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                         
                         if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
                             Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
-                                                     t2, Vcb->superblock.node_size, FALSE);
+                                                     t2, Vcb->superblock.node_size);
                             if (!NT_SUCCESS(Status))
                                 WARN("write_data_phys returned %08x\n", Status);
                         }
@@ -532,7 +532,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                                 
                                 if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
                                     Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
-                                                             sector, Vcb->superblock.sector_size, FALSE);
+                                                             sector, Vcb->superblock.sector_size);
                                     if (!NT_SUCCESS(Status))
                                         WARN("write_data_phys returned %08x\n", Status);
                                 }
@@ -667,7 +667,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 recovered = TRUE;
                 
                 if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
-                    Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off, t2, Vcb->superblock.node_size, FALSE);
+                    Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off, t2, Vcb->superblock.node_size);
                     if (!NT_SUCCESS(Status))
                         WARN("write_data_phys returned %08x\n", Status);
                 }
@@ -747,7 +747,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                         
                         if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
                             Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off,
-                                                     sector, Vcb->superblock.sector_size, FALSE);
+                                                     sector, Vcb->superblock.sector_size);
                             if (!NT_SUCCESS(Status))
                                 WARN("write_data_phys returned %08x\n", Status);
                         }
@@ -988,7 +988,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     
                     if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
                         Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
-                                                 sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                                                 sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size);
                         if (!NT_SUCCESS(Status))
                             WARN("write_data_phys returned %08x\n", Status);
                     }
@@ -1030,7 +1030,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     
                     if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                         Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
-                                                 sector + (ci->num_stripes * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                                                 sector + (ci->num_stripes * Vcb->superblock.node_size), Vcb->superblock.node_size);
                         if (!NT_SUCCESS(Status))
                             WARN("write_data_phys returned %08x\n", Status);
                     }
@@ -1059,7 +1059,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     
                     if (!Vcb->readonly && devices[error_stripe_phys]->devobj && !devices[error_stripe_phys]->readonly) { // write good data over bad
                         Status = write_data_phys(devices[error_stripe_phys]->devobj, cis[error_stripe_phys].offset + off,
-                                                 sector + (error_stripe * Vcb->superblock.node_size), Vcb->superblock.node_size, FALSE);
+                                                 sector + (error_stripe * Vcb->superblock.node_size), Vcb->superblock.node_size);
                         if (!NT_SUCCESS(Status))
                             WARN("write_data_phys returned %08x\n", Status);
                     }
@@ -1155,7 +1155,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             
                             if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
-                                                         sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
+                                                         sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status))
                                     WARN("write_data_phys returned %08x\n", Status);
                             }
@@ -1194,7 +1194,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             
                             if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
-                                                         sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
+                                                         sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status))
                                     WARN("write_data_phys returned %08x\n", Status);
                             }
@@ -1223,7 +1223,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             
                             if (!Vcb->readonly && devices[error_stripe_phys]->devobj && !devices[error_stripe_phys]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[error_stripe_phys]->devobj, cis[error_stripe_phys].offset + off,
-                                                         sector + (error_stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size, FALSE);
+                                                         sector + (error_stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status))
                                     WARN("write_data_phys returned %08x\n", Status);
                             }
