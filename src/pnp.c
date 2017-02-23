@@ -49,33 +49,26 @@ static NTSTATUS STDCALL pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PV
 }
 
 static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
-    pnp_context* context;
+    pnp_context context;
     UINT64 num_devices, i;
     NTSTATUS Status;
     LIST_ENTRY* le;
     
-    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(pnp_context), ALLOC_TAG);
-    if (!context) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
-    RtlZeroMemory(context, sizeof(pnp_context));
-    KeInitializeEvent(&context->Event, NotificationEvent, FALSE);
+    RtlZeroMemory(&context, sizeof(pnp_context));
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
     
     num_devices = Vcb->superblock.num_devices;
     
-    context->stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(pnp_stripe) * num_devices, ALLOC_TAG);
-    if (!context->stripes) {
+    context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(pnp_stripe) * num_devices, ALLOC_TAG);
+    if (!context.stripes) {
         ERR("out of memory\n");
-        ExFreePool(context);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end2;
     }
     
-    RtlZeroMemory(context->stripes, sizeof(pnp_stripe) * num_devices);
+    RtlZeroMemory(context.stripes, sizeof(pnp_stripe) * num_devices);
     
     i = 0;
     le = Vcb->devices.Flink;
@@ -85,75 +78,73 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
         if (dev->devobj) {
-            context->stripes[i].context = (struct pnp_context*)context;
+            context.stripes[i].context = (struct pnp_context*)&context;
 
-            context->stripes[i].Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
+            context.stripes[i].Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
             
-            if (!context->stripes[i].Irp) {
+            if (!context.stripes[i].Irp) {
                 UINT64 j;
                 
                 ERR("IoAllocateIrp failed\n");
                 
                 for (j = 0; j < i; j++) {
-                    if (context->stripes[j].dev->devobj) {
-                        IoFreeIrp(context->stripes[j].Irp);
+                    if (context.stripes[j].dev->devobj) {
+                        IoFreeIrp(context.stripes[j].Irp);
                     }
                 }
-                ExFreePool(context->stripes);
-                ExFreePool(context);
+                ExFreePool(context.stripes);
                 
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end2;
             }
             
-            IrpSp = IoGetNextIrpStackLocation(context->stripes[i].Irp);
+            IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_PNP;
             IrpSp->MinorFunction = minor;
 
-            context->stripes[i].Irp->UserIosb = &context->stripes[i].iosb;
+            context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
             
-            IoSetCompletionRoutine(context->stripes[i].Irp, pnp_completion, &context->stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context.stripes[i].Irp, pnp_completion, &context.stripes[i], TRUE, TRUE, TRUE);
             
-            context->stripes[i].Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
-            context->stripes[i].dev = dev;
+            context.stripes[i].Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+            context.stripes[i].dev = dev;
             
-            context->left++;
+            context.left++;
         }
         
         le = le->Flink;
     }
     
-    if (context->left == 0) {
+    if (context.left == 0) {
         Status = STATUS_SUCCESS;
         goto end;
     }
     
     for (i = 0; i < num_devices; i++) {
-        if (context->stripes[i].Irp) {
-            IoCallDriver(context->stripes[i].dev->devobj, context->stripes[i].Irp);
+        if (context.stripes[i].Irp) {
+            IoCallDriver(context.stripes[i].dev->devobj, context.stripes[i].Irp);
         }
     }
     
-    KeWaitForSingleObject(&context->Event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
     
     Status = STATUS_SUCCESS;
     
     for (i = 0; i < num_devices; i++) {
-        if (context->stripes[i].Irp) {
-            if (context->stripes[i].Status != STATUS_SUCCESS)
-                Status = context->stripes[i].Status;
+        if (context.stripes[i].Irp) {
+            if (context.stripes[i].Status != STATUS_SUCCESS)
+                Status = context.stripes[i].Status;
         }
     }
     
 end:
     for (i = 0; i < num_devices; i++) {
-        if (context->stripes[i].Irp) {
-            IoFreeIrp(context->stripes[i].Irp);
+        if (context.stripes[i].Irp) {
+            IoFreeIrp(context.stripes[i].Irp);
         }
     }
 
-    ExFreePool(context->stripes);
-    ExFreePool(context);
+    ExFreePool(context.stripes);
     
 end2:
     ExReleaseResourceLite(&Vcb->tree_lock);
