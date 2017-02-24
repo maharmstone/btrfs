@@ -495,6 +495,12 @@ typedef struct {
     UINT8 reserved[32];
 } BALANCE_ITEM;
 
+#define BTRFS_DEV_STAT_WRITE_ERRORS          0
+#define BTRFS_DEV_STAT_READ_ERRORS           1
+#define BTRFS_DEV_STAT_FLUSH_ERRORS          2
+#define BTRFS_DEV_STAT_CORRUPTION_ERRORS     3
+#define BTRFS_DEV_STAT_GENERATION_ERRORS     4
+
 #pragma pack(pop)
 
 #endif
