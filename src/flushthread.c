@@ -6126,6 +6126,49 @@ nextdev:
     ExFreePool(context.stripes);
 }
 
+static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP Irp) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    ULONG statslen;
+    UINT64* stats;
+    
+    searchkey.obj_id = 0;
+    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.offset = dev->devitem.dev_id;
+    
+    Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (!keycmp(tp.item->key, searchkey)) {
+        Status = delete_tree_item(Vcb, &tp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    statslen = sizeof(UINT64) * 5;
+    stats = ExAllocatePoolWithTag(PagedPool, statslen, ALLOC_TAG);
+    if (!stats) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(stats, dev->stats, statslen);
+    
+    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, dev->devitem.dev_id, stats, statslen, NULL, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08x\n", Status);
+        return Status;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
@@ -6296,6 +6339,22 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_item_to_cache returned %08x\n", Status);
         return Status;
+    }
+    
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->stats_changed) {
+            Status = flush_changed_dev_stats(Vcb, dev, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("flush_changed_dev_stats returned %08x\n", Status);
+                return Status;
+            }
+            dev->stats_changed = FALSE;
+        }
+        
+        le = le->Flink;
     }
     
     do {

@@ -376,6 +376,7 @@ typedef struct {
     ULONG disk_num;
     ULONG part_num;
     UINT64 stats[5];
+    BOOL stats_changed;
     LIST_ENTRY space;
     LIST_ENTRY list_entry;
     ULONG num_trim_entries;
@@ -816,6 +817,7 @@ void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
+void log_device_error(device* dev, int error);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

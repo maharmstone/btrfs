@@ -2809,6 +2809,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     dev->readonly = dev->seeding;
     dev->reloc = FALSE;
     dev->num_trim_entries = 0;
+    dev->stats_changed = FALSE;
     InitializeListHead(&dev->trim_list);
     
     if (!dev->readonly) {
@@ -4620,6 +4621,11 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
     KeSetEvent(&c->range_locks_event, 0, FALSE);
     
     ExReleaseResourceLite(&c->range_locks_lock);
+}
+
+void log_device_error(device* dev, int error) {
+    dev->stats[error]++;
+    dev->stats_changed = TRUE;
 }
 
 #ifdef _DEBUG
