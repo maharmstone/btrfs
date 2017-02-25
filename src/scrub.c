@@ -1870,8 +1870,10 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                     UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                     
-                    if (crc32 != *((UINT32*)th->csum) || th->address != addr)
+                    if (crc32 != *((UINT32*)th->csum) || th->address != addr) {
                         RtlSetBits(&context->stripes[stripe].error, i, Vcb->superblock.node_size / Vcb->superblock.sector_size);
+                        log_device_error(c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    }
                     
                     off += Vcb->superblock.node_size / Vcb->superblock.sector_size;
                     stripeoff += Vcb->superblock.node_size / Vcb->superblock.sector_size;
@@ -1881,8 +1883,10 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 } else if (RtlCheckBit(&context->has_csum, off)) {
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + (stripeoff * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                     
-                    if (crc32 != context->csum[off])
+                    if (crc32 != context->csum[off]) {
                         RtlSetBit(&context->stripes[stripe].error, i);
+                        log_device_error(c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    }
                 }
             }
             
@@ -1982,6 +1986,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 context->stripes[parity1].rewrite = TRUE;
                 
                 log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
+                log_device_error(c->devices[parity1], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
             }
             
             if (RtlCheckBit(&context->stripes[parity2].error, i)) {
@@ -1995,6 +2000,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 context->stripes[parity2].rewrite = TRUE;
                 
                 log_error(Vcb, addr, c->devices[parity2]->devitem.dev_id, FALSE, TRUE, TRUE);
+                log_device_error(c->devices[parity2], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
             }
         } else if (num_errors == 1) {
             UINT32 crc32a, crc32b, len, stripe_num, bad_stripe_num;
@@ -2068,6 +2074,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                         context->stripes[parity1].rewrite = TRUE;
                     
                         log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
+                        log_device_error(c->devices[parity1], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     } else {
                         RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
                                       &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.node_size);
@@ -2095,6 +2102,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                             context->stripes[parity2].rewrite = TRUE;
                     
                             log_error(Vcb, addr, c->devices[parity2]->devitem.dev_id, FALSE, TRUE, TRUE);
+                            log_device_error(c->devices[parity2], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                         }
                     }
                     
@@ -2135,6 +2143,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                         context->stripes[parity1].rewrite = TRUE;
                     
                         log_error(Vcb, addr, c->devices[parity1]->devitem.dev_id, FALSE, TRUE, TRUE);
+                        log_device_error(c->devices[parity1], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     } else {
                         RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i * Vcb->superblock.sector_size)],
                                       &context->parity_scratch[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
@@ -2162,6 +2171,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                             context->stripes[parity2].rewrite = TRUE;
                     
                             log_error(Vcb, addr, c->devices[parity2]->devitem.dev_id, FALSE, TRUE, TRUE);
+                            log_device_error(c->devices[parity2], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                         }
                     }
                     
