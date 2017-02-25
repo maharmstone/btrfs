@@ -319,7 +319,8 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
-            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status); 
+            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status);
+            log_device_error(devices[i], BTRFS_DEV_STAT_READ_ERRORS);
             return context->stripes[i].iosb.Status;
         }
     }
@@ -338,12 +339,15 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 
             if (crc32 != *((UINT32*)th->csum)) {
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
+                log_device_error(devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 return STATUS_CRC_ERROR;
             } else if (addr != th->address) {
                 WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
+                log_device_error(devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 return STATUS_CRC_ERROR;
             } else if (generation != 0 && generation != th->generation) {
                 WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
+                log_device_error(devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
                 return STATUS_CRC_ERROR;
             }
         }
@@ -370,6 +374,8 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     
                     ERR("unrecoverable checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
                     
+                    log_device_error(devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+
                     return Status;
                 }
             }
