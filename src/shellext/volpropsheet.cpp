@@ -101,8 +101,10 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                         devices = (btrfs_device*)malloc(devsize);
                         
                         i++;
-                    } else
+                    } else {
+                        CloseHandle(h);
                         return E_FAIL;
+                    }
                 } else
                     break;
             }
