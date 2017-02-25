@@ -1629,6 +1629,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
                 
                 if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                     Status = stripe->iosb.Status;
+                    log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
                     break;
                 }
                 
