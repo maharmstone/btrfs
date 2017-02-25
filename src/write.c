@@ -2313,6 +2313,8 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
             
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
+                
+                log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
                 break;
             }
             
@@ -2335,7 +2337,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
 //     ExFreePool(buf2);
 // #endif
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
