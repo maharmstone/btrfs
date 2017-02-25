@@ -607,6 +607,7 @@ typedef struct _device_extension {
     LIST_ENTRY DirNotifyList;
     LONG open_trees;
     BOOL need_write;
+    BOOL stats_changed;
     UINT64 data_flags;
     UINT64 metadata_flags;
     UINT64 system_flags;
@@ -817,7 +818,7 @@ void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
 NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
-void log_device_error(device* dev, int error);
+void log_device_error(device_extension* Vcb, device* dev, int error);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

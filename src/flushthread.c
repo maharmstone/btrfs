@@ -1629,7 +1629,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
                 
                 if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                     Status = stripe->iosb.Status;
-                    log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+                    log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
                     break;
                 }
                 
@@ -2231,7 +2231,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
         
         if (!NT_SUCCESS(stripe->Status)) {
             ERR("device %llx returned %08x\n", stripe->device->devitem.dev_id, stripe->Status);
-            log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+            log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
             Status = stripe->Status;
             goto end;
         }
@@ -6359,20 +6359,24 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         return Status;
     }
     
-    le = Vcb->devices.Flink;
-    while (le != &Vcb->devices) {
-        device* dev = CONTAINING_RECORD(le, device, list_entry);
-        
-        if (dev->stats_changed) {
-            Status = flush_changed_dev_stats(Vcb, dev, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("flush_changed_dev_stats returned %08x\n", Status);
-                return Status;
+    if (Vcb->stats_changed) {
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+            
+            if (dev->stats_changed) {
+                Status = flush_changed_dev_stats(Vcb, dev, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("flush_changed_dev_stats returned %08x\n", Status);
+                    return Status;
+                }
+                dev->stats_changed = FALSE;
             }
-            dev->stats_changed = FALSE;
+            
+            le = le->Flink;
         }
         
-        le = le->Flink;
+        Vcb->stats_changed = FALSE;
     }
     
     do {

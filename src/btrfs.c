@@ -4623,9 +4623,10 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
     ExReleaseResourceLite(&c->range_locks_lock);
 }
 
-void log_device_error(device* dev, int error) {
+void log_device_error(device_extension* Vcb, device* dev, int error) {
     dev->stats[error]++;
     dev->stats_changed = TRUE;
+    Vcb->stats_changed = TRUE;
 }
 
 #ifdef _DEBUG

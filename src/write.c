@@ -980,7 +980,8 @@ typedef struct {
     PFN_NUMBER* pfns;
 } log_stripe;
 
-static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
+                                    UINT32 irp_offset, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -1430,7 +1431,7 @@ static NTSTATUS prepare_raid5_write(chunk* c, UINT64 address, void* data, UINT32
             if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
                 ERR("read returned %08x\n", Status);
-                log_device_error(context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
+                log_device_error(Vcb, context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
                 goto exit;
             }
         }
@@ -1484,7 +1485,8 @@ exit:
     return Status;
 }
 
-static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
+                                    UINT32 irp_offset, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity1;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -1969,7 +1971,7 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
             if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
                 ERR("read returned %08x\n", Status);
-                log_device_error(context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
+                log_device_error(Vcb, context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
                 goto exit;
             }
         }
@@ -2069,13 +2071,13 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             goto prepare_failed;
         }
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-        Status = prepare_raid5_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
+        Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
             goto prepare_failed;
         }
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-        Status = prepare_raid6_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
+        Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08x\n", Status);
             goto prepare_failed;
@@ -2321,7 +2323,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
                 
-                log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
                 break;
             }
             
