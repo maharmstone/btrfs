@@ -1056,6 +1056,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                          readlen) != readlen) {
                         context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
                         csum_error = TRUE;
+                        log_device_error(c->devices[(stripe * sub_stripes) + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     }
                 } else {
                     for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
@@ -1064,6 +1065,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                         if (crc32 != csum[(pos + j) / Vcb->superblock.sector_size]) {
                             csum_error = TRUE;
                             context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                            log_device_error(c->devices[(stripe * sub_stripes) + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                             break;
                         }
                     }
@@ -1087,6 +1089,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                          readlen) != readlen) {
                         context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
                         csum_error = TRUE;
+                        log_device_error(c->devices[(stripe * sub_stripes) + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     }
                 } else {
                     for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
@@ -1097,6 +1100,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                         if (crc32 != *((UINT32*)th->csum) || th->address != addr) {
                             csum_error = TRUE;
                             context->stripes[(stripe * sub_stripes) + k].csum_error = TRUE;
+                            log_device_error(c->devices[(stripe * sub_stripes) + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                             break;
                         }
                     }
@@ -1205,6 +1209,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                         
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("write_data_phys returned %08x\n", Status);
+                                    log_device_error(c->devices[j + k], BTRFS_DEV_STAT_WRITE_ERRORS);
                                     goto end;
                                 }
                             }
@@ -1297,6 +1302,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                         
                                         for (k = 0; k < sub_stripes; k++) {
                                             log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, FALSE, FALSE, FALSE);
+                                            log_device_error(c->devices[j + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                                         }
                                     }
                                 }
@@ -1318,14 +1324,15 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                                             if (m != k) {
                                                 tree_header* th2 = (tree_header*)&context->stripes[j + m].buf[so];
                                                 
-                                                if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] == *((UINT32*)th2->csum) && th2->address == addr) {
+                                                if (context->stripes[j + m].bad_csums[so / Vcb->superblock.node_size] == *((UINT32*)th2->csum) && th2->address == addr) {
                                                     log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, TRUE, TRUE, FALSE);
                                                     
                                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
                                                     
                                                     recovered = TRUE;
                                                     break;
-                                                }
+                                                } else
+                                                    log_device_error(c->devices[j + m], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                                             }
                                         }
                                         
@@ -1356,6 +1363,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                     
                             if (!NT_SUCCESS(Status)) {
                                 ERR("write_data_phys returned %08x\n", Status);
+                                log_device_error(c->devices[j + k], BTRFS_DEV_STAT_WRITE_ERRORS);
                                 goto end;
                             }
                         }
