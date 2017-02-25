@@ -2923,6 +2923,50 @@ static NTSTATUS query_uuid(device_extension* Vcb, void* data, ULONG length) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS reset_stats(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode) {
+    UINT64 devid;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    
+    if (length < sizeof(UINT64))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+    
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+    
+    devid = *((UINT64*)data);
+    
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
+    le = Vcb->devices.Flink;
+
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        
+        if (dev->devitem.dev_id == devid) {
+            RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
+            dev->stats_changed = TRUE;
+            Vcb->stats_changed = TRUE;
+            Vcb->need_write = TRUE;
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    WARN("device %llx not found\n", devid);
+    Status = STATUS_INVALID_PARAMETER;
+    
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -3468,6 +3512,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL 
         case FSCTL_BTRFS_STOP_SCRUB:
             Status = stop_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode);
             break;
+            
+        case FSCTL_BTRFS_RESET_STATS:
+            Status = reset_stats(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+        break;
 
         default:
             TRACE("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
