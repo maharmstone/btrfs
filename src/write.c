@@ -1694,6 +1694,7 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
                 else
                     len = stripes[stripe].start - parity_start;
                 
+                context.stripes[frag_num].dev = c->devices[stripe];
                 Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
                 if (!NT_SUCCESS(Status)) {
                     ERR("async_read_phys returned %08x\n", Status);
@@ -1723,6 +1724,7 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
                 ULONG len = parity_end - stripes[stripe].end;
                 PFN_NUMBER* pl;
                 
+                context.stripes[frag_num].dev = c->devices[stripe];
                 Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
                 if (!NT_SUCCESS(Status)) {
                     ERR("async_read_phys returned %08x\n", Status);
@@ -1967,6 +1969,7 @@ static NTSTATUS prepare_raid6_write(chunk* c, UINT64 address, void* data, UINT32
             if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
                 ERR("read returned %08x\n", Status);
+                log_device_error(context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
                 goto exit;
             }
         }
