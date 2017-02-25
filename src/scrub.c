@@ -2621,6 +2621,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
+                log_device_error(c->devices[i], BTRFS_DEV_STAT_READ_ERRORS);
                 goto end2;
             }
         }
@@ -2651,6 +2652,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08x\n", Status);
+                        log_device_error(c->devices[i], BTRFS_DEV_STAT_WRITE_ERRORS);
                         return Status;
                     }
                 }
