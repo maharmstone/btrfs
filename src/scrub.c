@@ -707,12 +707,14 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                      context->stripes[good_stripe].length) != context->stripes[i].length) {
                     context->stripes[i].csum_error = TRUE;
                     csum_error = TRUE;
+                    log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 }
             } else {
                 Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
                 if (Status == STATUS_CRC_ERROR) {
                     context->stripes[i].csum_error = TRUE;
                     csum_error = TRUE;
+                    log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 } else if (!NT_SUCCESS(Status)) {
                     ERR("check_csum returned %08x\n", Status);
                     return Status;
@@ -732,6 +734,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                      context->stripes[good_stripe].length) != context->stripes[i].length) {
                     context->stripes[i].csum_error = TRUE;
                     csum_error = TRUE;
+                    log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 }
             } else {
                 for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
@@ -741,6 +744,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     if (crc32 != *((UINT32*)th->csum) || th->address != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
                         context->stripes[i].csum_error = TRUE;
                         csum_error = TRUE;
+                        log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     }
                 }
                 
@@ -811,6 +815,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                 UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
                                 
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE, FALSE);
+                                log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                             }
                         }
                     } else {
@@ -818,8 +823,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                             UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
                             
-                            if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr)
+                            if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr) {
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE, FALSE);
+                                log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                            }
                         }
                     }
                 }
@@ -834,6 +841,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                     
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08x\n", Status);
+                        log_device_error(c->devices[i], BTRFS_DEV_STAT_WRITE_ERRORS);
                         return Status;
                     }
                 }
@@ -857,17 +865,20 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                         for (k = 0; k < c->chunk_item->num_stripes; k++) {
                             if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE, FALSE);
+                                log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                                 
                                 RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
-                                            context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                              context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                                 
                                 recovered = TRUE;
                                 break;
                             }
                         }
                         
-                        if (!recovered)
+                        if (!recovered) {
                             log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE, FALSE);
+                            log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                        }
                     }
                 }
             } else {
@@ -885,6 +896,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                 
                                 if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum) && th2->address == addr) {
                                     log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE, FALSE);
+                                    log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                                     
                                     RtlCopyMemory(th, th2, Vcb->superblock.node_size);
                                     
@@ -894,8 +906,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                             }
                         }
                         
-                        if (!recovered)
+                        if (!recovered) {
                             log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE, FALSE);
+                            log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                        }
                     }
                 }
             }
@@ -909,6 +923,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
                                          context->stripes[i].buf, context->stripes[i].length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
+                    log_device_error(c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     return Status;
                 }
             }
