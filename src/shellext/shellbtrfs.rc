@@ -298,7 +298,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSM
 CAPTION "Device stats"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,55,91,50,14
+    DEFPUSHBUTTON   "OK",IDOK,24,91,50,14
     LTEXT           "Device %llx:",IDC_DEVICE_ID,7,7,40,8
     LTEXT           "Write errors:",IDC_STATIC,7,21,79,8
     LTEXT           "Read errors:",IDC_STATIC,7,34,79,8
@@ -310,6 +310,7 @@ BEGIN
     RTEXT           "%llu",IDC_FLUSH_ERRS,87,47,65,8
     RTEXT           "%llu",IDC_CORRUPTION_ERRS,87,60,65,8
     RTEXT           "%llu",IDC_GENERATION_ERRS,87,73,65,8
+    PUSHBUTTON      "&Reset",IDC_RESET_STATS,85,91,50,14
 END
 
 

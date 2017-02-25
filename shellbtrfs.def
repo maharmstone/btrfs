@@ -10,4 +10,5 @@ EXPORTS
     PauseBalanceW		PRIVATE
     StopBalanceW		PRIVATE
     ShowScrubW			PRIVATE
+    ResetStatsW			PRIVATE
 

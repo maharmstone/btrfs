@@ -87,6 +87,7 @@ public:
     void ShowScrub(HWND hwndDlg);
     INT_PTR CALLBACK StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowStats(HWND hwndDlg, UINT64 devid);
+    void ResetStats(HWND hwndDlg);
     
     btrfs_device* devices;
     BOOL readonly;
