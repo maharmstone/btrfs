@@ -398,6 +398,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
                                  CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation, UINT64 offset) {
     UINT64 i;
+    UINT16 stripe;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
@@ -405,8 +406,10 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
             WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status);
+            log_device_error(devices[i], BTRFS_DEV_STAT_READ_ERRORS);
             return context->stripes[i].iosb.Status;
-        }
+        } else if (context->stripes[i].status == ReadDataStatus_Success)
+            stripe = i;
     }
     
     if (context->tree) {
@@ -416,12 +419,15 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         if (crc32 != *((UINT32*)th->csum)) {
             WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)th->csum));
             checksum_error = TRUE;
+            log_device_error(devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (addr != th->address) {
             WARN("address of tree was %llx, not %llx as expected\n", th->address, addr);
             checksum_error = TRUE;
+            log_device_error(devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (generation != 0 && generation != th->generation) {
             WARN("generation of tree was %llx, not %llx as expected\n", th->generation, generation);
             checksum_error = TRUE;
+            log_device_error(devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
         NTSTATUS Status;
@@ -452,7 +458,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         tree_header* t2;
         UINT16 j;
         UINT64 off;
-        UINT16 stripe, badsubstripe = 0;
+        UINT16 badsubstripe = 0;
         BOOL recovered = FALSE;
         
         t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -476,9 +482,10 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
                 Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
                                         Vcb->superblock.node_size, (UINT8*)t2, FALSE);
-                if (!NT_SUCCESS(Status))
+                if (!NT_SUCCESS(Status)) {
                     WARN("sync_read_phys returned %08x\n", Status);
-                else {
+                    log_device_error(devices[stripe + j], BTRFS_DEV_STAT_READ_ERRORS);
+                } else {
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&t2->fs_uuid, Vcb->superblock.node_size - sizeof(t2->csum));
                     
                     if (t2->address == addr && crc32 == *((UINT32*)t2->csum) && (generation == 0 || t2->generation == generation)) {
@@ -489,12 +496,17 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                         if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
                             Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
                                                      t2, Vcb->superblock.node_size);
-                            if (!NT_SUCCESS(Status))
+                            if (!NT_SUCCESS(Status)) {
                                 WARN("write_data_phys returned %08x\n", Status);
+                                log_device_error(devices[stripe + badsubstripe], BTRFS_DEV_STAT_WRITE_ERRORS);
+                            }
                         }
                         
                         break;
-                    }
+                    } else if (t2->address != addr || crc32 != *((UINT32*)t2->csum))
+                        log_device_error(devices[stripe + j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    else
+                        log_device_error(devices[stripe + j], BTRFS_DEV_STAT_GENERATION_ERRORS);
                 }
             }
         }
@@ -537,13 +549,16 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                     }
                 }
                 
+                log_device_error(devices[stripe + badsubstripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                
                 for (j = 0; j < ci->sub_stripes; j++) {
                     if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
                         Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
                                                 Vcb->superblock.sector_size, sector, FALSE);
-                        if (!NT_SUCCESS(Status))
+                        if (!NT_SUCCESS(Status)) {
                             WARN("sync_read_phys returned %08x\n", Status);
-                        else {
+                            log_device_error(devices[stripe + j], BTRFS_DEV_STAT_READ_ERRORS);
+                        } else {
                             UINT32 crc32b = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
                             
                             if (crc32b == context->csum[i]) {
@@ -554,12 +569,15 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                                 if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly) { // write good data over bad
                                     Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
                                                              sector, Vcb->superblock.sector_size);
-                                    if (!NT_SUCCESS(Status))
+                                    if (!NT_SUCCESS(Status)) {
                                         WARN("write_data_phys returned %08x\n", Status);
+                                        log_device_error(devices[stripe + badsubstripe], BTRFS_DEV_STAT_READ_ERRORS);
+                                    }
                                 }
                                 
                                 break;
-                            }
+                            } else
+                                log_device_error(devices[stripe + j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                         }
                     }
                 }
