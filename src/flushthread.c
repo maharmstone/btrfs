@@ -2037,6 +2037,7 @@ typedef struct {
     UINT8* buf;
     PMDL mdl;
     device* device;
+    NTSTATUS Status;
     PIRP Irp;
     LIST_ENTRY list_entry;
 } write_superblocks_stripe;
@@ -2050,6 +2051,8 @@ typedef struct _write_superblocks_context {
 static NTSTATUS STDCALL write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_superblocks_stripe* stripe = conptr;
     write_superblocks_context* context = stripe->context;
+    
+    stripe->Status = Irp->IoStatus.Status;
     
     if (InterlockedDecrement(&context->left) == 0)
         KeSetEvent(&context->Event, 0, FALSE);
@@ -2220,6 +2223,20 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     }
     
     KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+    
+    le = context.stripes.Flink;
+    while (le != &context.stripes) {
+        write_superblocks_stripe* stripe = CONTAINING_RECORD(le, write_superblocks_stripe, list_entry);
+        
+        if (!NT_SUCCESS(stripe->Status)) {
+            ERR("device %llx returned %08x\n", stripe->device->devitem.dev_id, stripe->Status);
+            log_device_error(stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+            Status = stripe->Status;
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
     
     Status = STATUS_SUCCESS;
     
