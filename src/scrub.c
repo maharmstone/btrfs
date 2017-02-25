@@ -973,6 +973,7 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
                     UINT64 addr = offset + pos;
                     
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, FALSE, FALSE, FALSE);
+                    log_device_error(c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 }
                 
                 pos += Vcb->superblock.sector_size;
@@ -984,8 +985,10 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
                 UINT64 addr = offset + pos;
                 
-                if (crc32 != *((UINT32*)th->csum) || th->address != addr)
+                if (crc32 != *((UINT32*)th->csum) || th->address != addr) {
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, TRUE, FALSE, FALSE);
+                    log_device_error(c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                }
                 
                 pos += Vcb->superblock.node_size;
                 stripeoff[stripe] += Vcb->superblock.node_size;
