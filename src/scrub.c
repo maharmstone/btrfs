@@ -1530,6 +1530,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
             Status = context.stripes[i].iosb.Status;
+            log_device_error(c->devices[i], BTRFS_DEV_STAT_READ_ERRORS);
             goto end;
         }
     }
