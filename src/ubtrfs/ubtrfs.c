@@ -904,6 +904,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
     BOOL ssd;
+    UINT64 metadata_flags;
     
     srand(time(0));
     get_uuid(&fsuuid);
@@ -928,8 +929,15 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
     
-    metadata_chunk = add_chunk(&chunks, BLOCK_FLAG_METADATA | (ssd ? 0 : BLOCK_FLAG_DUPLICATE) | (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS ? BLOCK_FLAG_DATA : 0),
-                               chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    metadata_flags = BLOCK_FLAG_METADATA;
+    
+    if (!ssd && !(incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS))
+        metadata_flags |= BLOCK_FLAG_DUPLICATE;
+    
+    if (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
+        metadata_flags |= BLOCK_FLAG_DATA;
+    
+    metadata_chunk = add_chunk(&chunks, metadata_flags, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
     
