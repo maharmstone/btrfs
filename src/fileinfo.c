@@ -2857,8 +2857,8 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     NTSTATUS Status;
     fcb* fcb;
     hardlink* hl;
+    BOOL hl_alloc = FALSE;
     file_ref *parfr, *fr;
-    dir_child* dc = NULL;
     
     Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -2943,8 +2943,8 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                         return Status;
                     }
                 }
-                    
-                InsertTailList(&fcb->hardlinks, &hl->list_entry);
+                
+                hl_alloc = TRUE;
             } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
                 INODE_EXTREF* ier;
                 hardlink* hl;
@@ -3001,58 +3001,50 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                     }
                 }
                 
-                InsertTailList(&fcb->hardlinks, &hl->list_entry);
+                hl_alloc = TRUE;
             }
         }
-    }
+    } else
+        hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
     
-    if (IsListEmpty(&fcb->hardlinks)) {
+    if (!hl) {
         ERR("subvol %llx, inode %llx has no hardlinks\n", subvol->id, inode);
         free_fcb(fcb);
-        return STATUS_INTERNAL_ERROR;
+        return STATUS_INVALID_PARAMETER;
     }
-    
-    hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
-    
-    // FIXME - does this work with subvols?
-    
-    if (hl->parent == inode) // root of subvol
-        parfr = NULL;
-    else {
-        Status = open_fileref_by_inode(Vcb, subvol, hl->parent, &parfr, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_by_inode returned %08x\n", Status);
-            free_fcb(fcb);
-            return Status;
-        }
-    }
-    
-    fr = create_fileref(Vcb);
-    if (!fr) {
-        ERR("out of memory\n");
-        free_fcb(fcb);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    fr->fcb = fcb;
-    fcb->fileref = fr;
-    
-    fr->index = hl->index;
-    
-    fr->parent = parfr;
-    
-    // FIXME
-    Status = add_dir_child(parfr->fcb, fr->fcb->inode == SUBVOL_ROOT_INODE ? fr->fcb->subvol->id : fr->fcb->inode, fr->fcb->inode == SUBVOL_ROOT_INODE,
-                           fr->index, &hl->utf8, &hl->name, fr->fcb->type, &dc);
-    if (!NT_SUCCESS(Status))
-        WARN("add_dir_child returned %08x\n", Status);
-    
-    fr->dc = dc;
-    dc->fileref = fr;
-    
-    insert_fileref_child(parfr, fr, TRUE);
 
+    Status = open_fileref_by_inode(Vcb, subvol, hl->parent, &parfr, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("open_fileref_by_inode returned %08x\n", Status);
+        free_fcb(fcb);
+        
+        if (hl_alloc)
+            ExFreePool(hl);
+        
+        return Status;
+    }
+
+    Status = open_fileref_child(Vcb, parfr, &hl->name, TRUE, TRUE, FALSE, PagedPool, &fr, Irp);
+    
+    if (!NT_SUCCESS(Status)) {
+        ERR("open_fileref_child returned %08x\n", Status);
+        
+        if (hl_alloc)
+            ExFreePool(hl);
+        
+        free_fcb(fcb);
+        free_fileref(Vcb, parfr);
+        
+        return Status;
+    }
+    
     *pfr = fr;
+
+    if (hl_alloc)
+        ExFreePool(hl);
+
+    free_fcb(fcb);
+    free_fileref(Vcb, parfr);
     
     return STATUS_SUCCESS;
 }
