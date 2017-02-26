@@ -630,17 +630,17 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         RtlCopyMemory(&fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
     
     if (fcb->type == 0) { // guess the type from the inode mode, if the caller doesn't know already
-        if (fcb->inode_item.st_mode & __S_IFDIR)
+        if ((fcb->inode_item.st_mode & __S_IFDIR) == __S_IFDIR)
             fcb->type = BTRFS_TYPE_DIRECTORY;
-        else if (fcb->inode_item.st_mode & __S_IFCHR)
+        else if ((fcb->inode_item.st_mode & __S_IFCHR) == __S_IFCHR)
             fcb->type = BTRFS_TYPE_CHARDEV;
-        else if (fcb->inode_item.st_mode & __S_IFBLK)
+        else if ((fcb->inode_item.st_mode & __S_IFBLK) == __S_IFBLK)
             fcb->type = BTRFS_TYPE_BLOCKDEV;
-        else if (fcb->inode_item.st_mode & __S_IFIFO)
+        else if ((fcb->inode_item.st_mode & __S_IFIFO) == __S_IFIFO)
             fcb->type = BTRFS_TYPE_FIFO;
-        else if (fcb->inode_item.st_mode & __S_IFLNK)
+        else if ((fcb->inode_item.st_mode & __S_IFLNK) == __S_IFLNK)
             fcb->type = BTRFS_TYPE_SYMLINK;
-        else if (fcb->inode_item.st_mode & __S_IFSOCK)
+        else if ((fcb->inode_item.st_mode & __S_IFSOCK) == __S_IFSOCK)
             fcb->type = BTRFS_TYPE_SOCKET;
         else
             fcb->type = BTRFS_TYPE_FILE;
