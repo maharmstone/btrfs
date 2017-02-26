@@ -2196,10 +2196,8 @@ end:
 
     if (stripes) ExFreePool(stripes);
     
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status))
         free_write_data_stripes(wtc);
-        ExFreePool(wtc);
-    }
     
     return Status;
     
