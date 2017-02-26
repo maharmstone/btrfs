@@ -2856,7 +2856,8 @@ static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LIN
 NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
-    hardlink* hl;
+    UINT64 parent = 0;
+    UNICODE_STRING name;
     BOOL hl_alloc = FALSE;
     file_ref *parfr, *fr;
     
@@ -2895,142 +2896,110 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
                 ir = (INODE_REF*)tp.item->data;
 
-                hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
-                if (!hl) {
-                    ERR("out of memory\n");
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                hl->parent = tp.item->key.offset;
-                hl->index = ir->index;
-                
-                hl->utf8.Length = hl->utf8.MaximumLength = ir->n;
-                
-                if (hl->utf8.Length > 0) {
-                    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
-                    RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
-                }
+                parent = tp.item->key.offset;
                 
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    ExFreePool(hl);
                     free_fcb(fcb);
                     return Status;
                 }
                 
-                hl->name.Length = hl->name.MaximumLength = stringlen;
+                name.Length = name.MaximumLength = stringlen;
                 
                 if (stringlen == 0)
-                    hl->name.Buffer = NULL;
+                    name.Buffer = NULL;
                 else {
-                    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+                    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
                     
-                    if (!hl->name.Buffer) {
+                    if (!name.Buffer) {
                         ERR("out of memory\n");
-                        ExFreePool(hl);
                         free_fcb(fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                    Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        ExFreePool(hl->name.Buffer);
-                        ExFreePool(hl);
+                        ExFreePool(name.Buffer);
                         free_fcb(fcb);
                         return Status;
                     }
+                    
+                    hl_alloc = TRUE;
                 }
-                
-                hl_alloc = TRUE;
             } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
                 INODE_EXTREF* ier;
-                hardlink* hl;
                 ULONG stringlen;
 
                 ier = (INODE_EXTREF*)tp.item->data;
-                
-                hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
-                if (!hl) {
-                    ERR("out of memory\n");
-                    free_fcb(fcb);
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                
-                hl->parent = ier->dir;
-                hl->index = ier->index;
-                
-                hl->utf8.Length = hl->utf8.MaximumLength = ier->n;
-                
-                if (hl->utf8.Length > 0) {
-                    hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
-                    RtlCopyMemory(hl->utf8.Buffer, ier->name, ier->n);
-                }
+
+                parent = ier->dir;
                 
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    ExFreePool(hl);
                     free_fcb(fcb);
                     return Status;
                 }
                 
-                hl->name.Length = hl->name.MaximumLength = stringlen;
+                name.Length = name.MaximumLength = stringlen;
                 
                 if (stringlen == 0)
-                    hl->name.Buffer = NULL;
+                    name.Buffer = NULL;
                 else {
-                    hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
+                    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
                     
-                    if (!hl->name.Buffer) {
+                    if (!name.Buffer) {
                         ERR("out of memory\n");
-                        ExFreePool(hl);
                         free_fcb(fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
-                    
-                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
+
+                    Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        ExFreePool(hl->name.Buffer);
-                        ExFreePool(hl);
+                        ExFreePool(name.Buffer);
                         free_fcb(fcb);
                         return Status;
                     }
+
+                    hl_alloc = TRUE;
                 }
-                
-                hl_alloc = TRUE;
+
             }
         }
-    } else
-        hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
+    } else {
+        hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
+        
+        name = hl->name;
+        parent = hl->parent;
+    }
     
-    if (!hl) {
+    if (parent == 0) {
         ERR("subvol %llx, inode %llx has no hardlinks\n", subvol->id, inode);
         free_fcb(fcb);
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = open_fileref_by_inode(Vcb, subvol, hl->parent, &parfr, Irp);
+    Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fileref_by_inode returned %08x\n", Status);
         free_fcb(fcb);
         
         if (hl_alloc)
-            ExFreePool(hl);
+            ExFreePool(name.Buffer);
         
         return Status;
     }
 
-    Status = open_fileref_child(Vcb, parfr, &hl->name, TRUE, TRUE, FALSE, PagedPool, &fr, Irp);
+    Status = open_fileref_child(Vcb, parfr, &name, TRUE, TRUE, FALSE, PagedPool, &fr, Irp);
     
     if (!NT_SUCCESS(Status)) {
         ERR("open_fileref_child returned %08x\n", Status);
         
         if (hl_alloc)
-            ExFreePool(hl);
+            ExFreePool(name.Buffer);
         
         free_fcb(fcb);
         free_fileref(Vcb, parfr);
@@ -3041,7 +3010,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     *pfr = fr;
 
     if (hl_alloc)
-        ExFreePool(hl);
+        ExFreePool(name.Buffer);
 
     free_fcb(fcb);
     free_fileref(Vcb, parfr);
