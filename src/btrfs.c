@@ -1935,22 +1935,24 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     
     // update INODE_ITEM of parent
     
+    ExAcquireResourceExclusiveLite(fileref->parent->fcb->Header.Resource, TRUE);
+    
+    fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
+    fileref->parent->fcb->inode_item.sequence++;
+    fileref->parent->fcb->inode_item.st_ctime = now;
+    
     if (!fileref->fcb->ads) {
-        ExAcquireResourceExclusiveLite(fileref->parent->fcb->Header.Resource, TRUE);
         TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
         fileref->parent->fcb->inode_item.st_size -= utf8len * 2;
         TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
-        fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
-        fileref->parent->fcb->inode_item.sequence++;
-        fileref->parent->fcb->inode_item.st_ctime = now;
         fileref->parent->fcb->inode_item.st_mtime = now;
-        ExReleaseResourceLite(fileref->parent->fcb->Header.Resource);
-
-        fileref->parent->fcb->inode_item_changed = TRUE;
-        
-        if (fileref->parent->dc)
-            send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     }
+    
+    fileref->parent->fcb->inode_item_changed = TRUE;
+    ExReleaseResourceLite(fileref->parent->fcb->Header.Resource);
+    
+    if (!fileref->fcb->ads && fileref->parent->dc)
+        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
     
     mark_fcb_dirty(fileref->parent->fcb);
     
