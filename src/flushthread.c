@@ -4645,8 +4645,6 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 #endif
     
     if (fcb->extents_changed) {
-        BOOL b;
-        traverse_ptr next_tp;
         LIST_ENTRY* le;
         BOOL prealloc = FALSE, extents_inline = FALSE;
         UINT64 last_end;
@@ -4762,34 +4760,11 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         if (!fcb->created) {
             // delete existing EXTENT_DATA items
             
-            searchkey.obj_id = fcb->inode;
-            searchkey.obj_type = TYPE_EXTENT_DATA;
-            searchkey.offset = 0;
-            
-            Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("error - find_item returned %08x\n", Status);
+            if (!insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, 0, NULL, 0, Batch_DeleteExtentData)) {
+                ERR("insert_tree_item_batch failed\n");
+                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
-            
-            do {
-                if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-                    Status = delete_tree_item(fcb->Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08x\n", Status);
-                        goto end;
-                    }
-                }
-                
-                b = find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp);
-                
-                if (b) {
-                    tp = next_tp;
-                    
-                    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
-                        break;
-                }
-            } while (b);
         }
         
         // add new EXTENT_DATAs

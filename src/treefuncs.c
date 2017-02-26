@@ -1874,6 +1874,79 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     }
                 }
             }
+        } else if (bi->operation == Batch_DeleteExtentData) {
+            if (tp.item->key.obj_id < bi->key.obj_id || (tp.item->key.obj_id == bi->key.obj_id && tp.item->key.obj_type < bi->key.obj_type)) {
+                traverse_ptr tp2;
+                
+                if (find_next_item(Vcb, &tp, &tp2, FALSE, Irp)) {
+                    if (tp2.item->key.obj_id == bi->key.obj_id && tp2.item->key.obj_type == bi->key.obj_type) {
+                        tp = tp2;
+                        find_tree_end(tp.tree, &tree_end, &no_end);
+                    }
+                }
+            }
+            
+            if (tp.item->key.obj_id == bi->key.obj_id && tp.item->key.obj_type == bi->key.obj_type) {
+                BOOL ended = FALSE;
+                
+                td = tp.item;
+                
+                if (!tp.item->ignore) {
+                    tp.item->ignore = TRUE;
+                    tp.tree->header.num_items--;
+                    tp.tree->size -= tp.item->size + sizeof(leaf_node);
+                    tp.tree->write = TRUE;
+                }
+                
+                le2 = tp.item->list_entry.Flink;
+                while (le2 != &tp.tree->itemlist) {
+                    td = CONTAINING_RECORD(le2, tree_data, list_entry);
+                    
+                    if (td->key.obj_id == bi->key.obj_id && td->key.obj_type == bi->key.obj_type) {
+                        if (!td->ignore) {
+                            td->ignore = TRUE;
+                            tp.tree->header.num_items--;
+                            tp.tree->size -= td->size + sizeof(leaf_node);
+                            tp.tree->write = TRUE;
+                        }
+                    } else {
+                        ended = TRUE;
+                        break;
+                    }
+                    
+                    le2 = le2->Flink;
+                }
+                
+                while (!ended) {
+                    traverse_ptr next_tp;
+                    
+                    tp.item = td;
+                    
+                    if (!find_next_item(Vcb, &tp, &next_tp, FALSE, Irp))
+                        break;
+                    
+                    tp = next_tp;
+                    
+                    le2 = &tp.item->list_entry;
+                    while (le2 != &tp.tree->itemlist) {
+                        td = CONTAINING_RECORD(le2, tree_data, list_entry);
+                        
+                        if (td->key.obj_id == bi->key.obj_id && td->key.obj_type == bi->key.obj_type) {
+                            if (!td->ignore) {
+                                td->ignore = TRUE;
+                                tp.tree->header.num_items--;
+                                tp.tree->size -= td->size + sizeof(leaf_node);
+                                tp.tree->write = TRUE;
+                            }
+                        } else {
+                            ended = TRUE;
+                            break;
+                        }
+                        
+                        le2 = le2->Flink;
+                    }
+                }
+            }
         } else {
             if (bi->operation == Batch_Delete || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
                 bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr)
@@ -1941,7 +2014,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
             while (le2 != &br->items) {
                 batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
                 
-                if (bi2->operation == Batch_DeleteInode)
+                if (bi2->operation == Batch_DeleteInode || bi2->operation == Batch_DeleteExtentData)
                     break;
                 
                 if (no_end || keycmp(bi2->key, tree_end) == -1) {
