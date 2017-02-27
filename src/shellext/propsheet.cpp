@@ -436,43 +436,48 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
                     fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
                 
                 if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
+                    CloseHandle(h);
                     ShowError(hDlg, GetLastError());
                     return;
                 }
             }
             
-            if (flags_changed) {
-                bsii.flags_changed = TRUE;
-                bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
+            if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {
+                if (flags_changed) {
+                    bsii.flags_changed = TRUE;
+                    bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
+                }
+                
+                if (perms_changed) {
+                    bsii.mode_changed = TRUE;
+                    bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
+                }
+                
+                if (uid_changed) {
+                    bsii.uid_changed = TRUE;
+                    bsii.st_uid = uid;
+                }
+                
+                if (gid_changed) {
+                    bsii.gid_changed = TRUE;
+                    bsii.st_gid = gid;
+                }
+                
+                if (compress_type_changed) {
+                    bsii.compression_type_changed = TRUE;
+                    bsii.compression_type = compress_type;
+                }
+                
+                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+                
+                if (!NT_SUCCESS(Status)) {
+                    ShowNtStatusError(hDlg, Status);
+                    CloseHandle(h);
+                    return;
+                }
             }
-            
-            if (perms_changed) {
-                bsii.mode_changed = TRUE;
-                bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
-            }
-            
-            if (uid_changed) {
-                bsii.uid_changed = TRUE;
-                bsii.st_uid = uid;
-            }
-            
-            if (gid_changed) {
-                bsii.gid_changed = TRUE;
-                bsii.st_gid = gid;
-            }
-            
-            if (compress_type_changed) {
-                bsii.compression_type_changed = TRUE;
-                bsii.compression_type = compress_type;
-            }
-            
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
-            CloseHandle(h);
 
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hDlg, Status);
-                return;
-            }
+            CloseHandle(h);
         }
     }
     
