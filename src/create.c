@@ -2966,7 +2966,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                            IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                            &granted_access, &Status)) {
             SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            TRACE("SeAccessCheck failed, returning %08x\n", Status);
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(Vcb, fileref);
