@@ -3213,7 +3213,7 @@ end:
     return ret;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, BOOL* done_deletions, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
@@ -3341,6 +3341,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
             nextparitem->ignore = TRUE;
             next_tree->parent->header.num_items--;
             next_tree->parent->size -= sizeof(internal_node);
+            
+            *done_deletions = TRUE;
         }
         
         par = next_tree->parent;
@@ -3700,7 +3702,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                 BOOL done;
                 
                 do {
-                    Status = try_tree_amalgamate(Vcb, t, &done, Irp, rollback);
+                    Status = try_tree_amalgamate(Vcb, t, &done, &done_deletions, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("try_tree_amalgamate returned %08x\n", Status);
                         return Status;
