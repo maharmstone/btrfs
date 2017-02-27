@@ -1269,7 +1269,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, FALSE, DELETE, 0, NULL,
                            IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
             SeReleaseSubjectContext(&subjcont);
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            TRACE("SeAccessCheck failed, returning %08x\n", Status);
             goto end;
         }
 
