@@ -1788,11 +1788,27 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
 
         if (t->write) {
 #ifdef DEBUG_PARANOID
+            BOOL first = TRUE;
+            KEY lastkey;
+            
             le2 = t->itemlist.Flink;
             while (le2 != &t->itemlist) {
                 tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
                 if (!td->ignore) {
                     num_items++;
+                    
+                    if (!first) {
+                        if (keycmp(td->key, lastkey) == 0) {
+                            ERR("(%llx,%x,%llx): duplicate key\n", td->key.obj_id, td->key.obj_type, td->key.offset);
+                            crash = TRUE;
+                        } else if (keycmp(td->key, lastkey) == -1) {
+                            ERR("(%llx,%x,%llx): key out of order\n", td->key.obj_id, td->key.obj_type, td->key.offset);
+                            crash = TRUE;
+                        }
+                    } else
+                        first = FALSE;
+                    
+                    lastkey = td->key;
                     
                     if (t->header.level == 0)
                         size += td->size;
