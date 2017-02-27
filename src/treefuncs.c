@@ -1804,7 +1804,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         
         TRACE("(%llx,%x,%llx)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
         
-        Status = find_item(Vcb, br->r, &tp, &bi->key, FALSE, Irp);
+        Status = find_item(Vcb, br->r, &tp, &bi->key, TRUE, Irp);
         if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND
             ERR("find_item returned %08x\n", Status);
             return;
@@ -1984,7 +1984,11 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     }
                 }
             } else if (cmp == 0) { // item already exists
-                ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items);
+                if (tp.item->ignore) {
+                    if (td)
+                        InsertHeadList(tp.item->list_entry.Blink, &td->list_entry);
+                } else
+                    ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items);
             } else if (td) {
                 InsertHeadList(&tp.item->list_entry, &td->list_entry);
             }
@@ -2044,22 +2048,29 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                     while (le3 != &tp.tree->itemlist) {
                         tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
                         
-                        if (!td2->ignore) {
-                            cmp = keycmp(bi2->key, td2->key);
+                        cmp = keycmp(bi2->key, td2->key);
 
-                            if (cmp == 0) {
-                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items);
-                                inserted = TRUE;
-                                break;
-                            } else if (cmp == -1) {
+                        if (cmp == 0) {
+                            if (td2->ignore) {
                                 if (td) {
                                     InsertHeadList(le3->Blink, &td->list_entry);
                                     inserted = TRUE;
                                 } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
                                     add_delete_inode_extref(Vcb, bi2, &br->items);
                                 }
-                                break;
+                            } else
+                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items);
+
+                            inserted = TRUE;
+                            break;
+                        } else if (cmp == -1) {
+                            if (td) {
+                                InsertHeadList(le3->Blink, &td->list_entry);
+                                inserted = TRUE;
+                            } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                                add_delete_inode_extref(Vcb, bi2, &br->items);
                             }
+                            break;
                         }
                         
                         le3 = le3->Flink;
