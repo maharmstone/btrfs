@@ -2049,7 +2049,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     if (!SeAccessCheck(related->fcb->sd, &subjcont, FALSE, FILE_ADD_FILE, 0, NULL,
                        IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
         SeReleaseSubjectContext(&subjcont);
-        WARN("SeAccessCheck failed, returning %08x\n", Status);
+        TRACE("SeAccessCheck failed, returning %08x\n", Status);
         goto end;
     }
 
@@ -2067,7 +2067,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, FALSE, DELETE, 0, NULL,
                            IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
             SeReleaseSubjectContext(&subjcont);
-            WARN("SeAccessCheck failed, returning %08x\n", Status);
+            TRACE("SeAccessCheck failed, returning %08x\n", Status);
             goto end;
         }
 
