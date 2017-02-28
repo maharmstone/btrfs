@@ -138,18 +138,178 @@ static DWORD WINAPI global_search_list_thread(LPVOID lpParameter) {
     return bps->search_list_thread();
 }
 
-HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
+HRESULT BtrfsPropSheet::check_file(std::wstring fn, UINT i, UINT num_files, UINT* sv) {
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
-    FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    else
+        can_change_perms = FALSE;
+    
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    else
+        can_change_owner = FALSE;
+    
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
+        h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        
+        readonly = TRUE;
+    }
+    
+    if (!readonly && num_files == 1 && (!can_change_perms || !can_change_owner))
+        show_admin_button = TRUE;
+    
+    if (h != INVALID_HANDLE_VALUE) {
+        BY_HANDLE_FILE_INFORMATION bhfi;
+        btrfs_inode_info bii2;
+        
+        if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            add_to_search_list((WCHAR*)fn.c_str());
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+            
+        if (NT_SUCCESS(Status) && !bii2.top) {
+            int j;
+            
+            LARGE_INTEGER filesize;
+            
+            if (i == 0) {
+                subvol = bii2.subvol;
+                inode = bii2.inode;
+                type = bii2.type;
+                uid = bii2.st_uid;
+                gid = bii2.st_gid;
+                rdev = bii2.st_rdev;
+            } else {
+                if (subvol != bii2.subvol)
+                    various_subvols = TRUE;
+                
+                if (inode != bii2.inode)
+                    various_inodes = TRUE;
+                
+                if (type != bii2.type)
+                    various_types = TRUE;
+                
+                if (uid != bii2.st_uid)
+                    various_uids = TRUE;
+
+                if (gid != bii2.st_gid)
+                    various_gids = TRUE;
+            }
+
+            if (bii2.inline_length > 0) {
+                totalsize += bii2.inline_length;
+                sizes[0] += bii2.inline_length;
+            }
+            
+            for (j = 0; j < 3; j++) {
+                if (bii2.disk_size[j] > 0) {
+                    totalsize += bii2.disk_size[j];
+                    sizes[j + 1] += bii2.disk_size[j];
+                }
+            }
+            
+            min_mode |= ~bii2.st_mode;
+            max_mode |= bii2.st_mode;
+            min_flags |= ~bii2.flags;
+            max_flags |= bii2.flags;
+            min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
+            max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
+            
+            if (bii2.inode == SUBVOL_ROOT_INODE) {
+                BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+                
+                has_subvols = TRUE;
+                
+                if (*sv == 0)
+                    ro_subvol = ro;
+                else {
+                    if (ro_subvol != ro)
+                        various_ro = TRUE;
+                }
+                
+                (*sv)++;
+            }
+            
+            ignore = FALSE;
+            
+            if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+                if (filesize.QuadPart != 0)
+                    can_change_nocow = FALSE;
+            }
+            
+            CloseHandle(h);
+        } else {
+            CloseHandle(h);
+            return E_FAIL;
+        }
+    } else
+        return E_FAIL;
+    
+    return S_OK;
+}
+
+HRESULT BtrfsPropSheet::load_file_list() {
     UINT num_files, i, sv = 0;
     WCHAR fn[MAX_PATH];
+    
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    
+    min_mode = 0;
+    max_mode = 0;
+    min_flags = 0;
+    max_flags = 0;
+    min_compression_type = 0xff;
+    max_compression_type = 0;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
+    
+    can_change_perms = TRUE;
+    can_change_owner = TRUE;
+    can_change_nocow = TRUE;
+    
+    for (i = 0; i < num_files; i++) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            HRESULT hr;
+            
+            hr = check_file(fn, i, num_files, &sv);
+            if (FAILED(hr))
+                return hr;
+        } else
+            return E_FAIL;
+    }
+    
+    min_mode = ~min_mode;
+    min_flags = ~min_flags;
+    
+    mode = min_mode;
+    mode_set = ~(min_mode ^ max_mode);
+    
+    flags = min_flags;
+    flags_set = ~(min_flags ^ max_flags);
+    
+    return S_OK;
+}
+
+HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
+    FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     HDROP hdrop;
+    HRESULT hr;
     
     if (pidlFolder)
         return E_FAIL;
-        
     
     if (!pdtobj)
         return E_FAIL;
@@ -168,151 +328,11 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         stgm_set = FALSE;
         return E_INVALIDARG;
     }
-        
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
     
-    min_mode = 0;
-    max_mode = 0;
-    min_flags = 0;
-    max_flags = 0;
-    min_compression_type = 0xff;
-    max_compression_type = 0;
-    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
-    
-    can_change_perms = TRUE;
-    can_change_owner = TRUE;
-    can_change_nocow = TRUE;
-    
-    for (i = 0; i < num_files; i++) {
-        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-            
-            if (h != INVALID_HANDLE_VALUE)
-                CloseHandle(h);
-            else
-                can_change_perms = FALSE;
-            
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-            
-            if (h != INVALID_HANDLE_VALUE)
-                CloseHandle(h);
-            else
-                can_change_owner = FALSE;
-            
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    hr = load_file_list();
+    if (FAILED(hr))
+        return hr;
 
-            if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
-                h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-                
-                readonly = TRUE;
-            }
-            
-            if (!readonly && num_files == 1 && (!can_change_perms || !can_change_owner))
-                show_admin_button = TRUE;
-            
-            if (h != INVALID_HANDLE_VALUE) {
-                BY_HANDLE_FILE_INFORMATION bhfi;
-                btrfs_inode_info bii2;
-                
-                if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                    add_to_search_list(fn);
-                
-                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
-                    
-                if (NT_SUCCESS(Status) && !bii2.top) {
-                    int j;
-                    
-                    LARGE_INTEGER filesize;
-                    
-                    if (i == 0) {
-                        subvol = bii2.subvol;
-                        inode = bii2.inode;
-                        type = bii2.type;
-                        uid = bii2.st_uid;
-                        gid = bii2.st_gid;
-                        rdev = bii2.st_rdev;
-                    } else {
-                        if (subvol != bii2.subvol)
-                            various_subvols = TRUE;
-                        
-                        if (inode != bii2.inode)
-                            various_inodes = TRUE;
-                        
-                        if (type != bii2.type)
-                            various_types = TRUE;
-                        
-                        if (uid != bii2.st_uid)
-                            various_uids = TRUE;
-
-                        if (gid != bii2.st_gid)
-                            various_gids = TRUE;
-                    }
-
-                    if (bii2.inline_length > 0) {
-                        totalsize += bii2.inline_length;
-                        sizes[0] += bii2.inline_length;
-                    }
-                    
-                    for (j = 0; j < 3; j++) {
-                        if (bii2.disk_size[j] > 0) {
-                            totalsize += bii2.disk_size[j];
-                            sizes[j + 1] += bii2.disk_size[j];
-                        }
-                    }
-                    
-                    min_mode |= ~bii2.st_mode;
-                    max_mode |= bii2.st_mode;
-                    min_flags |= ~bii2.flags;
-                    max_flags |= bii2.flags;
-                    min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
-                    max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
-                    
-                    if (bii2.inode == SUBVOL_ROOT_INODE) {
-                        BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
-                        
-                        has_subvols = TRUE;
-                        
-                        if (sv == 0)
-                            ro_subvol = ro;
-                        else {
-                            if (ro_subvol != ro)
-                                various_ro = TRUE;
-                        }
-                        
-                        sv++;
-                    }
-                    
-                    ignore = FALSE;
-                    
-                    if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
-                        if (filesize.QuadPart != 0)
-                            can_change_nocow = FALSE;
-                    }
-                    
-                    CloseHandle(h);
-                } else {
-                    CloseHandle(h);
-                    return E_FAIL;
-                }
-            } else
-                return E_FAIL;
-        } else
-            return E_FAIL;
-    }
-    
-    min_mode = ~min_mode;
-    min_flags = ~min_flags;
-    
-    mode = min_mode;
-    mode_set = ~(min_mode ^ max_mode);
-    
-    flags = min_flags;
-    flags_set = ~(min_flags ^ max_flags);
-    
     if (search_list.size() > 0) {
         thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
         
@@ -787,8 +807,194 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
 
             WaitForSingleObject(sei.hProcess, INFINITE);
             CloseHandle(sei.hProcess);
+            
+            load_file_list();
+            init_propsheet(hwndDlg);
         }
     }
+}
+
+void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
+    WCHAR s[255];
+    ULONG sr;
+    int i;
+    HWND comptype;
+
+    static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX, 0 };
+    static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, 0 };
+    static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
+    
+    if (various_subvols) {
+        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+    } else {
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s);
+    
+    if (various_inodes) {
+        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+    } else {
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", inode) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_INODE, s);
+    
+    if (various_types)
+        sr = IDS_VARIOUS;
+    else
+        sr = inode_type_to_string_ref(type);
+    
+    if (various_inodes) {
+        if (sr == IDS_INODE_CHAR)
+            sr = IDS_INODE_CHAR_SIMPLE;
+        else if (sr == IDS_INODE_BLOCK)
+            sr = IDS_INODE_BLOCK_SIMPLE;
+    }
+    
+    if (sr == IDS_INODE_UNKNOWN) {
+        WCHAR t[255];
+        
+        if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, type) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    } else if (sr == IDS_INODE_CHAR || sr == IDS_INODE_BLOCK) {
+        WCHAR t[255];
+        
+        if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, (UINT64)((rdev & 0xFFFFFFFFFFF) >> 20), (UINT32)(rdev & 0xFFFFF)) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    } else {
+        if (!LoadStringW(module, sr, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_TYPE, s);
+    
+    GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_format, sizeof(size_format) / sizeof(WCHAR));
+    set_size_on_disk(hwndDlg);
+    
+    if (thread)
+        SetTimer(hwndDlg, 1, 250, NULL);
+    
+    set_check_box(hwndDlg, IDC_NODATACOW, min_flags & BTRFS_INODE_NODATACOW, max_flags & BTRFS_INODE_NODATACOW);
+    set_check_box(hwndDlg, IDC_COMPRESS, min_flags & BTRFS_INODE_COMPRESS, max_flags & BTRFS_INODE_COMPRESS);
+    
+    comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
+    
+    if (min_compression_type != max_compression_type) {
+        SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)L"");
+        SendMessage(comptype, CB_SETCURSEL, 0, 0);
+    }
+
+    i = 0;
+    while (comp_types[i] != 0) {
+        WCHAR t[255];
+        
+        if (!LoadStringW(module, comp_types[i], t, sizeof(t) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)t);
+        
+        i++;
+    }
+    
+    if (min_compression_type == max_compression_type) {
+        SendMessage(comptype, CB_SETCURSEL, min_compression_type, 0);
+        compress_type = min_compression_type;
+    }
+    
+    EnableWindow(comptype, max_flags & BTRFS_INODE_COMPRESS);
+    
+    i = 0;
+    while (perm_controls[i] != 0) {
+        set_check_box(hwndDlg, perm_controls[i], min_mode & perms[i], max_mode & perms[i]);
+        i++;
+    }
+    
+    if (various_uids) {
+        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
+    } else {
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_UID, s);
+    
+    if (various_gids) {
+        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+        
+        EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
+    } else {
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+    }
+    
+    SetDlgItemTextW(hwndDlg, IDC_GID, s);
+    
+    ShowWindow(GetDlgItem(hwndDlg, IDC_SUBVOL_RO), has_subvols);
+    
+    if (has_subvols)
+        set_check_box(hwndDlg, IDC_SUBVOL_RO, ro_subvol, various_ro ? (!ro_subvol) : ro_subvol);
+    
+    if (!can_change_nocow)
+        EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
+    
+    if (!can_change_owner) {
+        EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
+    }
+    
+    if (!can_change_perms) {
+        EnableWindow(GetDlgItem(hwndDlg, IDC_USERR), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_USERW), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_USERX), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPR), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPW), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPX), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERR), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERW), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERX), 0);
+    }
+    
+    if (readonly) {
+        EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
+    }
+    
+    if (show_admin_button) {
+        SendMessageW(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), BCM_SETSHIELD, 0, TRUE);
+        ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_SHOW);
+    } else
+        ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_HIDE);
 }
 
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -797,190 +1003,12 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         {
             PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
             BtrfsPropSheet* bps = (BtrfsPropSheet*)psp->lParam;
-            WCHAR s[255];
-            ULONG sr;
-            int i;
-            HWND comptype;
-            
-            static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX, 0 };
-            static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, 0 };
-            static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
             
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
             
-            if (bps->various_subvols) {
-                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-            } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            }
-            
-            SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s);
-            
-            if (bps->various_inodes) {
-                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-            } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", bps->inode) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            }
-            
-            SetDlgItemTextW(hwndDlg, IDC_INODE, s);
-            
-            if (bps->various_types)
-                sr = IDS_VARIOUS;
-            else
-                sr = inode_type_to_string_ref(bps->type);
-            
-            if (bps->various_inodes) {
-                if (sr == IDS_INODE_CHAR)
-                    sr = IDS_INODE_CHAR_SIMPLE;
-                else if (sr == IDS_INODE_BLOCK)
-                    sr = IDS_INODE_BLOCK_SIMPLE;
-            }
-            
-            if (sr == IDS_INODE_UNKNOWN) {
-                WCHAR t[255];
-                
-                if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-                
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bps->type) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            } else if (sr == IDS_INODE_CHAR || sr == IDS_INODE_BLOCK) {
-                WCHAR t[255];
-                
-                if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-                
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, (UINT64)((bps->rdev & 0xFFFFFFFFFFF) >> 20), (UINT32)(bps->rdev & 0xFFFFF)) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            } else {
-                if (!LoadStringW(module, sr, s, sizeof(s) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-            }
-            
-            SetDlgItemTextW(hwndDlg, IDC_TYPE, s);
-            
-            GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, bps->size_format, sizeof(bps->size_format) / sizeof(WCHAR));
-            bps->set_size_on_disk(hwndDlg);
-            
-            if (bps->thread)
-                SetTimer(hwndDlg, 1, 250, NULL);
-            
-            set_check_box(hwndDlg, IDC_NODATACOW, bps->min_flags & BTRFS_INODE_NODATACOW, bps->max_flags & BTRFS_INODE_NODATACOW);
-            set_check_box(hwndDlg, IDC_COMPRESS, bps->min_flags & BTRFS_INODE_COMPRESS, bps->max_flags & BTRFS_INODE_COMPRESS);
-            
-            comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
-            
-            if (bps->min_compression_type != bps->max_compression_type) {
-                SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)L"");
-                SendMessage(comptype, CB_SETCURSEL, 0, 0);
-            }
-
-            i = 0;
-            while (comp_types[i] != 0) {
-                WCHAR t[255];
-                
-                if (!LoadStringW(module, comp_types[i], t, sizeof(t) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-                
-                SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)t);
-                
-                i++;
-            }
-            
-            if (bps->min_compression_type == bps->max_compression_type) {
-                SendMessage(comptype, CB_SETCURSEL, bps->min_compression_type, 0);
-                bps->compress_type = bps->min_compression_type;
-            }
-            
-            EnableWindow(comptype, bps->max_flags & BTRFS_INODE_COMPRESS);
-            
-            i = 0;
-            while (perm_controls[i] != 0) {
-                set_check_box(hwndDlg, perm_controls[i], bps->min_mode & perms[i], bps->max_mode & perms[i]);
-                i++;
-            }
-            
-            if (bps->various_uids) {
-                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-                
-                EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
-            } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            }
-            
-            SetDlgItemTextW(hwndDlg, IDC_UID, s);
-            
-            if (bps->various_gids) {
-                if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
-                    ShowError(hwndDlg, GetLastError());
-                    return FALSE;
-                }
-                
-                EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
-            } else {
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", bps->gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
-            }
-            
-            SetDlgItemTextW(hwndDlg, IDC_GID, s);
-            
-            ShowWindow(GetDlgItem(hwndDlg, IDC_SUBVOL_RO), bps->has_subvols);
-            
-            if (bps->has_subvols)
-                set_check_box(hwndDlg, IDC_SUBVOL_RO, bps->ro_subvol, bps->various_ro ? (!bps->ro_subvol) : bps->ro_subvol);
-            
-            if (!bps->can_change_nocow)
-                EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
-            
-            if (!bps->can_change_owner) {
-                EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
-            }
-            
-            if (!bps->can_change_perms) {
-                EnableWindow(GetDlgItem(hwndDlg, IDC_USERR), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_USERW), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_USERX), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPR), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPW), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPX), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERR), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERW), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERX), 0);
-            }
-            
-            if (bps->readonly) {
-                EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
-            }
-            
-            if (bps->show_admin_button)
-                SendMessageW(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), BCM_SETSHIELD, 0, TRUE);
-            else
-                ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_HIDE);
-        
+            bps->init_propsheet(hwndDlg);
             
             return FALSE;
         }

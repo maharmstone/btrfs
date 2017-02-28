@@ -134,6 +134,7 @@ public:
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
     
+    void init_propsheet(HWND hwndDlg);
     void change_inode_flag(HWND hDlg, UINT64 flag, UINT state);
     void change_perm_flag(HWND hDlg, ULONG perm, UINT state);
     void change_uid(HWND hDlg, UINT32 uid);
@@ -172,4 +173,6 @@ private:
     std::wstring filename;
     
     void apply_changes_file(HWND hDlg, std::wstring fn);
+    HRESULT check_file(std::wstring fn, UINT i, UINT num_files, UINT* sv);
+    HRESULT load_file_list();
 };
