@@ -101,7 +101,7 @@ END
 
 IDD_PROP_SHEET DIALOGEX 0, 0, 235, 245
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_DISABLED | WS_CAPTION
-CAPTION "s"
+CAPTION "Inode property sheet"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
     LTEXT           "Subvolume:",IDC_STATIC,14,21,38,8
@@ -130,14 +130,15 @@ BEGIN
     CONTROL         "",IDC_OTHERX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,135,168,16,10
     GROUPBOX        "Flags",IDC_STATIC,7,190,221,48
     CONTROL         "Disable Copy-on-Write",IDC_NODATACOW,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,204,86,10
-    LTEXT           "(blank)",IDC_SUBVOL,78,21,99,8
-    LTEXT           "(blank)",IDC_INODE,78,35,100,8
+    LTEXT           "(blank)",IDC_INODE,78,35,70,8
     LTEXT           "(blank)",IDC_TYPE,78,49,116,8
     CONTROL         "Compress",IDC_COMPRESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,218,46,10
     LTEXT           "Size on disk:",IDC_STATIC,14,63,61,8
     CONTROL         "%s (<a>Details</a>)",IDC_SIZE_ON_DISK,"SysLink",WS_TABSTOP,78,63,142,8
     COMBOBOX        IDC_COMPRESS_TYPE,63,217,48,13,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
     CONTROL         "Readonly subvolume",IDC_SUBVOL_RO,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,124,204,80,10
+    LTEXT           "(blank)",IDC_SUBVOL,78,21,70,8
+    PUSHBUTTON      "&Open as Admin",IDC_OPEN_ADMIN,151,21,70,14
 END
 
 IDD_SIZE_DETAILS DIALOGEX 0, 0, 212, 85
@@ -562,6 +563,11 @@ BEGIN
     IDS_COMPRESS_ANY        "(any)"
     IDS_COMPRESS_ZLIB       "Zlib"
     IDS_COMPRESS_LZO        "LZO"
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_STANDALONE_PROPSHEET_TITLE "Inode property sheet"
 END
 
 #endif    // English (U.K.) resources

@@ -211,6 +211,9 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                 readonly = TRUE;
             }
             
+            if (!readonly && num_files == 1 && (!can_change_perms || !can_change_owner))
+                show_admin_button = TRUE;
+            
             if (h != INVALID_HANDLE_VALUE) {
                 BY_HANDLE_FILE_INFORMATION bhfi;
                 btrfs_inode_info bii2;
@@ -320,6 +323,139 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     return S_OK;
 }
 
+void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    UINT sv = 0;
+    
+    min_mode = 0;
+    max_mode = 0;
+    min_flags = 0;
+    max_flags = 0;
+    min_compression_type = 0xff;
+    max_compression_type = 0;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
+    
+    can_change_perms = TRUE;
+    can_change_owner = TRUE;
+    can_change_nocow = TRUE;
+    
+    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    else
+        can_change_perms = FALSE;
+    
+    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    else
+        can_change_owner = FALSE;
+    
+    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
+        h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        
+        readonly = TRUE;
+    }
+    
+    if (h != INVALID_HANDLE_VALUE) {
+        BY_HANDLE_FILE_INFORMATION bhfi;
+        btrfs_inode_info bii2;
+        
+        if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            add_to_search_list((WCHAR*)cmdline.c_str());
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+            
+        if (NT_SUCCESS(Status) && !bii2.top) {
+            int j;
+            
+            LARGE_INTEGER filesize;
+            
+            subvol = bii2.subvol;
+            inode = bii2.inode;
+            type = bii2.type;
+            uid = bii2.st_uid;
+            gid = bii2.st_gid;
+            rdev = bii2.st_rdev;
+
+            if (bii2.inline_length > 0) {
+                totalsize += bii2.inline_length;
+                sizes[0] += bii2.inline_length;
+            }
+            
+            for (j = 0; j < 3; j++) {
+                if (bii2.disk_size[j] > 0) {
+                    totalsize += bii2.disk_size[j];
+                    sizes[j + 1] += bii2.disk_size[j];
+                }
+            }
+            
+            min_mode |= ~bii2.st_mode;
+            max_mode |= bii2.st_mode;
+            min_flags |= ~bii2.flags;
+            max_flags |= bii2.flags;
+            min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
+            max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
+            
+            if (bii2.inode == SUBVOL_ROOT_INODE) {
+                BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+                
+                has_subvols = TRUE;
+                
+                if (sv == 0)
+                    ro_subvol = ro;
+                else {
+                    if (ro_subvol != ro)
+                        various_ro = TRUE;
+                }
+                
+                sv++;
+            }
+            
+            ignore = FALSE;
+            
+            if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+                if (filesize.QuadPart != 0)
+                    can_change_nocow = FALSE;
+            }
+            
+            CloseHandle(h);
+        } else {
+            CloseHandle(h);
+            return;
+        }
+    } else
+        return;
+    
+    min_mode = ~min_mode;
+    min_flags = ~min_flags;
+    
+    mode = min_mode;
+    mode_set = ~(min_mode ^ max_mode);
+    
+    flags = min_flags;
+    flags_set = ~(min_flags ^ max_flags);
+    
+    if (search_list.size() > 0) {
+        thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
+        
+        if (!thread)
+            ShowError(NULL, GetLastError());
+    }
+    
+    this->filename = cmdline;
+}
+
 static ULONG inode_type_to_string_ref(UINT8 type) {
     switch (type) {    
         case BTRFS_TYPE_FILE:
@@ -367,13 +503,106 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
 }
 
-void BtrfsPropSheet::apply_changes(HWND hDlg) {
-    UINT num_files, i;
-    WCHAR fn[MAX_PATH]; // FIXME - is this long enough?
+void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     btrfs_set_inode_info bsii;
+    btrfs_inode_info bii2;
+    ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
+    
+    if (flags_changed || ro_changed)
+        perms |= FILE_WRITE_ATTRIBUTES;
+    
+    if (perms_changed)
+        perms |= WRITE_DAC;
+    
+    if (uid_changed || gid_changed)
+        perms |= WRITE_OWNER;
+    
+    h = CreateFileW(fn.c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowError(hDlg, GetLastError());
+        return;
+    }
+    
+    ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
+
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hDlg, Status);
+        CloseHandle(h);
+        return;
+    }
+    
+    if (bii2.inode == SUBVOL_ROOT_INODE && ro_changed) {
+        BY_HANDLE_FILE_INFORMATION bhfi;
+        FILE_BASIC_INFO fbi;
+        
+        if (!GetFileInformationByHandle(h, &bhfi)) {
+            ShowError(hDlg, GetLastError());
+            return;
+        }
+        
+        memset(&fbi, 0, sizeof(fbi));
+        fbi.FileAttributes = bhfi.dwFileAttributes;
+        
+        if (ro_subvol)
+            fbi.FileAttributes |= FILE_ATTRIBUTE_READONLY;
+        else
+            fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
+        
+        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
+            CloseHandle(h);
+            ShowError(hDlg, GetLastError());
+            return;
+        }
+    }
+    
+    if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {
+        if (flags_changed) {
+            bsii.flags_changed = TRUE;
+            bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
+        }
+        
+        if (perms_changed) {
+            bsii.mode_changed = TRUE;
+            bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
+        }
+        
+        if (uid_changed) {
+            bsii.uid_changed = TRUE;
+            bsii.st_uid = uid;
+        }
+        
+        if (gid_changed) {
+            bsii.gid_changed = TRUE;
+            bsii.st_gid = gid;
+        }
+        
+        if (compress_type_changed) {
+            bsii.compression_type_changed = TRUE;
+            bsii.compression_type = compress_type;
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+        
+        if (!NT_SUCCESS(Status)) {
+            ShowNtStatusError(hDlg, Status);
+            CloseHandle(h);
+            return;
+        }
+    }
+
+    CloseHandle(h);
+}
+
+void BtrfsPropSheet::apply_changes(HWND hDlg) {
+    UINT num_files, i;
+    WCHAR fn[MAX_PATH]; // FIXME - is this long enough?
     
     if (various_uids)
         uid_changed = FALSE;
@@ -384,100 +613,15 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     if (!flags_changed && !perms_changed && !uid_changed && !gid_changed && !compress_type_changed && !ro_changed)
         return;
 
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
-    
-    for (i = 0; i < num_files; i++) {
-        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-            ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
-            btrfs_inode_info bii2;
-            
-            if (flags_changed || ro_changed)
-                perms |= FILE_WRITE_ATTRIBUTES;
-            
-            if (perms_changed)
-                perms |= WRITE_DAC;
-            
-            if (uid_changed || gid_changed)
-                perms |= WRITE_OWNER;
-            
-            h = CreateFileW(fn, perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-            if (h == INVALID_HANDLE_VALUE) {
-                ShowError(hDlg, GetLastError());
-                return;
-            }
-            
-            ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
-                    
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    if (filename[0] != 0)
+        apply_changes_file(hDlg, filename);
+    else {
+        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
         
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hDlg, Status);
-                CloseHandle(h);
-                return;
+        for (i = 0; i < num_files; i++) {
+            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+                apply_changes_file(hDlg, fn);
             }
-            
-            if (bii2.inode == SUBVOL_ROOT_INODE && ro_changed) {
-                BY_HANDLE_FILE_INFORMATION bhfi;
-                FILE_BASIC_INFO fbi;
-                
-                if (!GetFileInformationByHandle(h, &bhfi)) {
-                    ShowError(hDlg, GetLastError());
-                    return;
-                }
-                
-                memset(&fbi, 0, sizeof(fbi));
-                fbi.FileAttributes = bhfi.dwFileAttributes;
-                
-                if (ro_subvol)
-                    fbi.FileAttributes |= FILE_ATTRIBUTE_READONLY;
-                else
-                    fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
-                
-                if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
-                    CloseHandle(h);
-                    ShowError(hDlg, GetLastError());
-                    return;
-                }
-            }
-            
-            if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {
-                if (flags_changed) {
-                    bsii.flags_changed = TRUE;
-                    bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
-                }
-                
-                if (perms_changed) {
-                    bsii.mode_changed = TRUE;
-                    bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
-                }
-                
-                if (uid_changed) {
-                    bsii.uid_changed = TRUE;
-                    bsii.st_uid = uid;
-                }
-                
-                if (gid_changed) {
-                    bsii.gid_changed = TRUE;
-                    bsii.st_gid = gid;
-                }
-                
-                if (compress_type_changed) {
-                    bsii.compression_type_changed = TRUE;
-                    bsii.compression_type = compress_type;
-                }
-                
-                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
-                
-                if (!NT_SUCCESS(Status)) {
-                    ShowNtStatusError(hDlg, Status);
-                    CloseHandle(h);
-                    return;
-                }
-            }
-
-            CloseHandle(h);
         }
     }
     
@@ -607,6 +751,43 @@ static void set_check_box(HWND hwndDlg, ULONG id, UINT64 min, UINT64 max) {
         SetWindowLongPtr(GetDlgItem(hwndDlg, id), GWL_STYLE, style);
         
         SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_INDETERMINATE, 0);
+    }
+}
+
+void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
+    ULONG num_files, i;
+    WCHAR fn[MAX_PATH];
+    
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    
+    for (i = 0; i < num_files; i++) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            WCHAR t[MAX_PATH + 100];
+            SHELLEXECUTEINFOW sei;
+
+            t[0] = '"';
+            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+            wcscat(t, L"\",ShowPropSheet ");
+            wcscat(t, fn);
+
+            RtlZeroMemory(&sei, sizeof(sei));
+
+            sei.cbSize = sizeof(sei);
+            sei.hwnd = hwndDlg;
+            sei.lpVerb = L"runas";
+            sei.lpFile = L"rundll32.exe";
+            sei.lpParameters = t;
+            sei.nShow = SW_SHOW;
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+            if (!ShellExecuteExW(&sei)) {
+                ShowError(hwndDlg, GetLastError());
+                return;
+            }
+
+            WaitForSingleObject(sei.hProcess, INFINITE);
+            CloseHandle(sei.hProcess);
+        }
     }
 }
 
@@ -795,6 +976,12 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
             }
             
+            if (bps->show_admin_button)
+                SendMessageW(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), BCM_SETSHIELD, 0, TRUE);
+            else
+                ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_HIDE);
+        
+            
             return FALSE;
         }
         
@@ -870,6 +1057,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                 }
                                 
                                 SendMessageW(GetParent(hwndDlg), PSM_CHANGED, 0, 0);
+                            break;
+                            
+                            case IDC_OPEN_ADMIN:
+                                bps->open_as_admin(hwndDlg);
                             break;
                         }
                         
@@ -1020,3 +1211,47 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
 HRESULT __stdcall BtrfsPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
     return S_OK;
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    BtrfsPropSheet* bps;
+    PROPSHEETPAGEW psp;
+    PROPSHEETHEADERW psh;
+    WCHAR title[255];
+    
+    set_dpi_aware();
+    
+    LoadStringW(module, IDS_STANDALONE_PROPSHEET_TITLE, title, sizeof(title) / sizeof(WCHAR));
+    
+    bps = new BtrfsPropSheet;
+    bps->set_cmdline(lpszCmdLine);
+    
+    psp.dwSize = sizeof(psp);
+    psp.dwFlags = PSP_USETITLE;
+    psp.hInstance = module;
+    psp.pszTemplate = MAKEINTRESOURCEW(IDD_PROP_SHEET);
+    psp.hIcon = 0;
+    psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
+    psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
+    psp.pfnCallback = NULL;
+    psp.lParam = (LPARAM)bps;
+    
+    memset(&psh, 0, sizeof(PROPSHEETHEADERW));
+    
+    psh.dwSize = sizeof(PROPSHEETHEADERW);
+    psh.dwFlags = PSH_PROPSHEETPAGE;
+    psh.hwndParent = hwnd;
+    psh.hInstance = psp.hInstance;
+    psh.pszCaption = title;
+    psh.nPages = 1;
+    psh.ppsp = &psp;
+    
+    PropertySheetW(&psh);
+}
+
+#ifdef __cplusplus
+}
+#endif

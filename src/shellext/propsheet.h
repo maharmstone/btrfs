@@ -17,6 +17,7 @@
 
 #include <shlobj.h>
 #include <deque>
+#include <string>
 #include "../btrfsioctl.h"
 
 #ifndef S_IRUSR
@@ -85,10 +86,12 @@ public:
         ro_changed = FALSE;
         can_change_perms = FALSE;
         can_change_owner = FALSE;
+        show_admin_button = FALSE;
         thread = NULL;
         mode = mode_set = 0;
         flags = flags_set = 0;
         has_subvols = FALSE;
+        filename = L"";
         
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
         totalsize = 0;
@@ -141,6 +144,8 @@ public:
     DWORD search_list_thread();
     void do_search(WCHAR* fn);
     void update_size_details_dialog(HWND hDlg);
+    void open_as_admin(HWND hwndDlg);
+    void set_cmdline(std::wstring cmdline);
  
     BOOL readonly;
     BOOL can_change_perms;
@@ -153,7 +158,8 @@ public:
     UINT64 subvol, inode, rdev;
     UINT8 type, min_compression_type, max_compression_type, compress_type;
     UINT32 uid, gid;
-    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols, ro_subvol, various_ro, ro_changed;
+    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols,
+         ro_subvol, various_ro, ro_changed, show_admin_button;
     
 private:
     LONG refcount;
@@ -163,4 +169,7 @@ private:
     BOOL flags_changed, perms_changed, uid_changed, gid_changed;
     UINT64 sizes[4], totalsize;
     std::deque<WCHAR*> search_list;
+    std::wstring filename;
+    
+    void apply_changes_file(HWND hDlg, std::wstring fn);
 };

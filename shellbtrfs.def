@@ -11,4 +11,5 @@ EXPORTS
     StopBalanceW		PRIVATE
     ShowScrubW			PRIVATE
     ResetStatsW			PRIVATE
+    ShowPropSheetW		PRIVATE
 

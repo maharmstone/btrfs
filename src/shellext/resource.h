@@ -120,6 +120,7 @@
 #define IDS_COMPRESS_ANY                205
 #define IDS_COMPRESS_ZLIB               206
 #define IDS_COMPRESS_LZO                207
+#define IDS_STANDALONE_PROPSHEET_TITLE  208
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -180,6 +181,7 @@
 #define IDC_DATA_OPTIONS                1044
 #define IDC_DEVICE_ADD                  1044
 #define IDC_RESET_STATS                 1044
+#define IDC_OPEN_ADMIN                  1044
 #define IDC_LIMIT_START                 1045
 #define IDC_BUTTON2                     1045
 #define IDC_METADATA_OPTIONS            1045
