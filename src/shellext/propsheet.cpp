@@ -500,7 +500,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
     
     flags_changed = TRUE;
     
-    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
 
 void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
@@ -660,7 +660,7 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
     
     perms_changed = TRUE;
     
-    SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+    SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
 
 void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
@@ -668,7 +668,7 @@ void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
         this->uid = uid;
         uid_changed = TRUE;
         
-        SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+        SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
     }
 }
 
@@ -677,7 +677,7 @@ void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
         this->gid = gid;
         gid_changed = TRUE;
         
-        SendMessageW(GetParent(hDlg), PSM_CHANGED, 0, 0);
+        SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
     }
 }
 
@@ -1056,7 +1056,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                     break;
                                 }
                                 
-                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, 0, 0);
+                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
                             break;
                             
                             case IDC_OPEN_ADMIN:
@@ -1108,7 +1108,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                     bps->compress_type_changed = TRUE;
                                 }
                                 
-                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, 0, 0);
+                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
                                 
                                 break;
                             }
