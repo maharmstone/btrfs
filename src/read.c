@@ -62,6 +62,7 @@ typedef struct {
 extern BOOL diskacc;
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
 extern tCcCopyReadEx CcCopyReadEx;
+extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 
 #define LINUX_PAGE_SIZE 4096
 
@@ -1344,7 +1345,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context context;
-    UINT64 i, type, offset;
+    UINT64 i, type, offset, total_reading = 0;
     NTSTATUS Status;
     device** devices;
     UINT16 startoffstripe, allowed_missing, missing_devices = 0;
@@ -2303,6 +2304,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             IrpSp->Parameters.Read.Length = context.stripes[i].stripeend - context.stripes[i].stripestart;
             IrpSp->Parameters.Read.ByteOffset.QuadPart = context.stripes[i].stripestart + cis[i].offset;
             
+            total_reading += IrpSp->Parameters.Read.Length;
+            
             context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
             
             IoSetCompletionRoutine(context.stripes[i].Irp, read_data_completion, &context.stripes[i], TRUE, TRUE, TRUE);
@@ -2331,6 +2334,9 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
     }
 #endif
+
+    if (diskacc)
+        FsRtlUpdateDiskCounters(total_reading, 0);
     
     // check if any of the devices return a "user-induced" error
     
