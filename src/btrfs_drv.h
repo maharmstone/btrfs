@@ -1305,6 +1305,8 @@ typedef BOOLEAN (*tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOff
 
 typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
 
+typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
+
 #undef RtlIsNtDdiVersionAvailable
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);

@@ -76,6 +76,7 @@ tPsUpdateDiskCounters PsUpdateDiskCounters;
 tCcCopyReadEx CcCopyReadEx;
 tCcCopyWriteEx CcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
+tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE volume_list_lock;
@@ -4798,6 +4799,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
             
             if (!PsUpdateDiskCounters)
                 diskacc = FALSE;
+            
+            RtlInitUnicodeString(&name, L"FsRtlUpdateDiskCounters");
+            FsRtlUpdateDiskCounters = (tFsRtlUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
         }
         
         RtlInitUnicodeString(&name, L"CcCopyReadEx");
@@ -4813,6 +4817,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
         CcCopyReadEx = NULL;
         CcCopyWriteEx = NULL;
         CcSetAdditionalCacheAttributesEx = NULL;
+        FsRtlUpdateDiskCounters = NULL;
     }
    
     drvobj = DriverObject;
