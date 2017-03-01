@@ -39,6 +39,8 @@ static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     
     fcb->lazy_writer_thread = KeGetCurrentThread();
     
+    IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
+    
     return TRUE;
 }
 
@@ -56,6 +58,9 @@ static void STDCALL release_from_lazy_write(PVOID Context) {
     ExReleaseResourceLite(fcb->Header.Resource);
     
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+    
+    if (IoGetTopLevelIrp() == (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP)
+        IoSetTopLevelIrp(NULL);
 }
 
 static BOOLEAN STDCALL acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
@@ -67,6 +72,8 @@ static BOOLEAN STDCALL acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, Wait))
         return FALSE;
     
+    IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
+    
     return TRUE;
 }
 
@@ -77,6 +84,9 @@ static void STDCALL release_from_read_ahead(PVOID Context) {
     TRACE("(%p)\n", Context);
     
     ExReleaseResourceLite(fcb->Header.Resource);
+    
+    if (IoGetTopLevelIrp() == (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP)
+        IoSetTopLevelIrp(NULL);
 }
 
 NTSTATUS STDCALL init_cache() {
