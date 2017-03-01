@@ -207,9 +207,54 @@ static VOID STDCALL fast_io_detach_device(PDEVICE_OBJECT SourceDevice, PDEVICE_O
     TRACE("STUB: fast_io_detach_device\n");
 }
 
-static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, BOOLEAN Wait, struct _FILE_NETWORK_OPEN_INFORMATION *Buffer, struct _IO_STATUS_BLOCK *IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_query_network_open_info\n");
-    return FALSE;
+static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, BOOLEAN Wait, FILE_NETWORK_OPEN_INFORMATION* fnoi,
+                                                       PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
+    INODE_ITEM* ii;
+    fcb* fcb;
+    ccb* ccb;
+    file_ref* fileref;
+    
+    TRACE("(%p, %u, %p, %p, %p)\n", FileObject, Wait, fnoi, IoStatus, DeviceObject);
+    
+    RtlZeroMemory(fnoi, sizeof(FILE_NETWORK_OPEN_INFORMATION));
+    
+    fcb = FileObject->FsContext;
+    
+    if (!fcb || fcb == fcb->Vcb->volume_fcb)
+        return FALSE;
+    
+    ccb = FileObject->FsContext2;
+    
+    if (!ccb)
+        return FALSE;
+    
+    fileref = ccb->fileref;
+    
+    if (fcb->ads) {
+        if (!fileref || !fileref->parent) {
+            ERR("no fileref for stream\n");
+            return FALSE;
+        }
+        
+        ii = &fileref->parent->fcb->inode_item;
+    } else
+        ii = &fcb->inode_item;
+    
+    fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+    fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+    fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+    fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    
+    if (fcb->ads) {
+        fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
+        fnoi->FileAttributes = fileref->parent->fcb->atts;
+    } else {
+        fnoi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fnoi->FileAttributes = fcb->atts;
+    }
+    
+    return TRUE;
 }
 
 static NTSTATUS STDCALL fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, PLARGE_INTEGER EndingOffset, struct _ERESOURCE **ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
