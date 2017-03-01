@@ -50,6 +50,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
 extern tCcCopyWriteEx CcCopyWriteEx;
+extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 extern BOOL diskacc;
 
 BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
@@ -2037,6 +2038,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     CHUNK_ITEM_STRIPE* cis;
     write_data_stripe* stripe;
     write_stripe* stripes = NULL;
+    UINT64 total_writing = 0;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
@@ -2181,6 +2183,8 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start;
             IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset;
             
+            total_writing += IrpSp->Parameters.Write.Length;
+            
             stripe->Irp->UserIosb = &stripe->iosb;
             wtc->stripes_left++;
 
@@ -2189,6 +2193,9 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
 
         InsertTailList(&wtc->stripes, &stripe->list_entry);
     }
+    
+    if (diskacc)
+        FsRtlUpdateDiskCounters(0, total_writing);
     
     Status = STATUS_SUCCESS;
     
