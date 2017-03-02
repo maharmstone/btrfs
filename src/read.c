@@ -68,6 +68,8 @@ extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
+    
+    UNUSED(DeviceObject);
 
     stripe->iosb = Irp->IoStatus;
     

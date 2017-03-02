@@ -683,6 +683,8 @@ static NTSTATUS STDCALL scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     scrub_context* context = (scrub_context*)stripe->context;
     ULONG left = InterlockedDecrement(&context->stripes_left);
     
+    UNUSED(DeviceObject);
+    
     stripe->iosb = Irp->IoStatus;
     
     if (left == 0)
@@ -1663,6 +1665,8 @@ static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject
     scrub_context_raid56_stripe* stripe = conptr;
     scrub_context_raid56* context = (scrub_context_raid56*)stripe->context;
     LONG left = InterlockedDecrement(&context->stripes_left);
+    
+    UNUSED(DeviceObject);
     
     stripe->iosb = Irp->IoStatus;
     

@@ -53,6 +53,8 @@ static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* 
 static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
     
+    UNUSED(DeviceObject);
+    
     context->iosb = Irp->IoStatus;
     KeSetEvent(&context->Event, 0, FALSE);
     
@@ -270,6 +272,9 @@ typedef struct {
 static NTSTATUS STDCALL ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     ioctl_context* context = (ioctl_context*)conptr;
     LONG left2 = InterlockedDecrement(&context->left);
+    
+    UNUSED(DeviceObject);
+    UNUSED(Irp);
     
     if (left2 == 0)
         KeSetEvent(&context->Event, 0, FALSE);
@@ -2073,6 +2078,8 @@ typedef struct _write_superblocks_context {
 static NTSTATUS STDCALL write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_superblocks_stripe* stripe = conptr;
     write_superblocks_context* context = stripe->context;
+    
+    UNUSED(DeviceObject);
     
     stripe->Status = Irp->IoStatus.Status;
     

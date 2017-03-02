@@ -185,7 +185,9 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
     UNICODE_STRING mmdevpath;
-        
+
+    UNUSED(DriverObject);
+    
     Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
@@ -483,6 +485,8 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     
     TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
     
+    UNUSED(DriverObject);
+    
     devpath2 = *devpath;
     
     if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
@@ -539,6 +543,8 @@ typedef struct {
 
 static void do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     pnp_callback_context* context = con;
+    
+    UNUSED(DeviceObject);
     
     context->func(context->DriverObject, &context->name);
     

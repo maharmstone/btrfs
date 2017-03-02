@@ -45,6 +45,8 @@
 #define DEBUG_PARANOID
 #endif
 
+#define UNUSED(x) (void)(x)
+
 #define BTRFS_NODE_TYPE_CCB 0x2295
 #define BTRFS_NODE_TYPE_FCB 0x2296
 

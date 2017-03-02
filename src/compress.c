@@ -300,10 +300,14 @@ NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen
 }
 
 static void* zlib_alloc(void* opaque, unsigned int items, unsigned int size) {
+    UNUSED(opaque);
+
     return ExAllocatePoolWithTag(PagedPool, items * size, ALLOC_TAG_ZLIB);
 }
 
 static void zlib_free(void* opaque, void* ptr) {
+    UNUSED(opaque);
+
     ExFreePool(ptr);
 }
 

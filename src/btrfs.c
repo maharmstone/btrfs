@@ -99,6 +99,8 @@ typedef struct {
 static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_context* context = conptr;
     
+    UNUSED(DeviceObject);
+    
 //     DbgPrint("dbg_completion\n");
     
     context->iosb = Irp->IoStatus;
@@ -873,6 +875,8 @@ end:
 
 static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_context* context = conptr;
+    
+    UNUSED(DeviceObject);
     
 //     DbgPrint("read_completion\n");
     

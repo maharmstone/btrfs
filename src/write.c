@@ -896,6 +896,8 @@ static NTSTATUS STDCALL async_read_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     read_context_stripe* stripe = conptr;
     LONG left = InterlockedDecrement(&stripe->context->left);
     
+    UNUSED(DeviceObject);
+    
     stripe->iosb = Irp->IoStatus;
     
     if (left == 0)
@@ -2358,6 +2360,8 @@ static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP 
     write_data_stripe* stripe = conptr;
     write_data_context* context = (write_data_context*)stripe->context;
     LIST_ENTRY* le;
+    
+    UNUSED(DeviceObject);
     
     // FIXME - we need a lock here
     

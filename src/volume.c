@@ -53,6 +53,8 @@ typedef struct {
 static NTSTATUS vol_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     vol_read_context* context = conptr;
     
+    UNUSED(DeviceObject);
+    
     context->iosb = Irp->IoStatus;
     KeSetEvent(&context->Event, 0, FALSE);
     
@@ -617,6 +619,9 @@ static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
 
 static NTSTATUS vol_ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     KEVENT* event = conptr;
+    
+    UNUSED(DeviceObject);
+    UNUSED(Irp);
     
     KeSetEvent(event, 0, FALSE);
     

@@ -38,6 +38,8 @@ static NTSTATUS STDCALL pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PV
     pnp_stripe* stripe = conptr;
     pnp_context* context = (pnp_context*)stripe->context;
     
+    UNUSED(DeviceObject);
+    
     stripe->Status = Irp->IoStatus.Status;
     
     InterlockedDecrement(&context->left);
