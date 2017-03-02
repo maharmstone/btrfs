@@ -1012,7 +1012,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 
 // in fsctl.c
-NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type, BOOL user);
+NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type);
 void do_unlock_volume(device_extension* Vcb);
 void trim_whole_device(device* dev);
 

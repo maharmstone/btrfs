@@ -4332,13 +4332,13 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
         case IRP_MN_KERNEL_CALL:
             TRACE("IRP_MN_KERNEL_CALL\n");
             
-            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, FALSE);
+            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
             break;
             
         case IRP_MN_USER_FS_REQUEST:
             TRACE("IRP_MN_USER_FS_REQUEST\n");
             
-            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode, TRUE);
+            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
             break;
             
         case IRP_MN_VERIFY_VOLUME:
