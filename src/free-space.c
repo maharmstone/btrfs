@@ -1407,7 +1407,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UI
         add_rollback_space(rollback, TRUE, list, list_size, address, length, c);
 }
 
-static void space_list_merge(device_extension* Vcb, LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
+static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
     LIST_ENTRY* le;
     
     if (!IsListEmpty(deleting)) {
@@ -1433,7 +1433,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     UINT32* checksums;
     LIST_ENTRY* le;
     
-    space_list_merge(Vcb, &c->space, &c->space_size, &c->deleting);
+    space_list_merge(&c->space, &c->space_size, &c->deleting);
     
     data = ExAllocatePoolWithTag(NonPagedPool, c->cache->inode_item.st_size, ALLOC_TAG);
     if (!data) {
