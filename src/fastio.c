@@ -248,8 +248,11 @@ static NTSTATUS STDCALL fast_io_acquire_for_ccflush(PFILE_OBJECT FileObject, PDE
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fast_io_release_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject){
+static NTSTATUS STDCALL fast_io_release_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject) {
     TRACE("STUB: fast_io_release_for_ccflush\n");
+    
+    UNUSED(FileObject);
+    UNUSED(DeviceObject);
     
     if (IoGetTopLevelIrp() == (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP)
         IoSetTopLevelIrp(NULL);
