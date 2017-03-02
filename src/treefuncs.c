@@ -1078,7 +1078,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 if (ri->type == ROLLBACK_ADD_SPACE)
                     space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
                 else
-                    space_list_add2(Vcb, rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
+                    space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
                 
                 if (rs->chunk) {
                     LIST_ENTRY* le2 = le->Blink;
@@ -1094,7 +1094,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                                 if (ri2->type == ROLLBACK_ADD_SPACE)
                                     space_list_subtract2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL, NULL);
                                 else
-                                    space_list_add2(Vcb, rs2->list, rs2->list_size, rs2->address, rs2->length, NULL, NULL);
+                                    space_list_add2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL, NULL);
                                 
                                 ExFreePool(rs2);
                                 RemoveEntryList(&ri2->list_entry);

@@ -5201,7 +5201,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                     
                     c->devices[i]->devitem.bytes_used -= de->length;
                     
-                    space_list_add2(Vcb, &c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
+                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
                 }
             } else
                 WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
@@ -5209,7 +5209,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             UINT64 len = c->chunk_item->size / factor;
             
             c->devices[i]->devitem.bytes_used -= len;
-            space_list_add2(Vcb, &c->devices[i]->space, NULL, cis[i].offset, len, NULL, rollback);
+            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, NULL, rollback);
         }
     }
     

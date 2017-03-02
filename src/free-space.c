@@ -1196,7 +1196,7 @@ static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list,
     add_rollback(rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
 }
 
-void space_list_add2(device_extension* Vcb, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {
+void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     space *s, *s2;
     
@@ -1415,7 +1415,7 @@ static void space_list_merge(device_extension* Vcb, LIST_ENTRY* spacelist, LIST_
         while (le != deleting) {
             space* s = CONTAINING_RECORD(le, space, list_entry);
             
-            space_list_add2(Vcb, spacelist, spacelist_size, s->address, s->size, NULL, NULL);
+            space_list_add2(spacelist, spacelist_size, s->address, s->size, NULL, NULL);
             
             le = le->Flink;
         }
@@ -1583,7 +1583,7 @@ void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 addre
     if (!c->list_entry_changed.Flink)
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
     
-    space_list_add2(Vcb, list, deleting ? NULL : &c->space_size, address, length, c, rollback);
+    space_list_add2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
 }
 
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {
