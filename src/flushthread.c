@@ -4239,7 +4239,7 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, r
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, UINT64 start, UINT64 length, PIRP Irp) {
+static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, UINT64 start, UINT64 length) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -4820,7 +4820,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             ext->inserted = FALSE;
             
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
-                Status = insert_sparse_extent(fcb, batchlist, last_end, ext->offset - last_end, Irp);
+                Status = insert_sparse_extent(fcb, batchlist, last_end, ext->offset - last_end);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08x\n", Status);
                     goto end;
@@ -4864,7 +4864,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         
         if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
             sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end) {
-            Status = insert_sparse_extent(fcb, batchlist, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end, Irp);
+            Status = insert_sparse_extent(fcb, batchlist, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08x\n", Status);
                 goto end;
