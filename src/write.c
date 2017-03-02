@@ -604,7 +604,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
         
-        space_list_subtract2(Vcb, &stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL);
+        space_list_subtract2(Vcb, &stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL, NULL);
     }
     
     success = TRUE;
