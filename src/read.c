@@ -132,8 +132,7 @@ NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                              CHUNK_ITEM* ci, device** devices, UINT64 generation) {
+static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_context* context, CHUNK_ITEM* ci, device** devices, UINT64 generation) {
     ULONG i;
     BOOL checksum_error = FALSE;
     UINT16 stripe = 0;
@@ -308,7 +307,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, UI
 }
 
 static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
-                                CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation, UINT64 offset) {
+                                CHUNK_ITEM* ci, device** devices, UINT64 generation, UINT64 offset) {
     UINT64 i;
     
     for (i = 0; i < ci->num_stripes; i++) {
@@ -389,8 +388,8 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     return STATUS_SUCCESS;    
 }
 
-static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context,
-                                 CHUNK_ITEM* ci, device** devices, UINT16 startoffstripe, UINT64 generation, UINT64 offset) {
+static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
+                                 CHUNK_ITEM* ci, device** devices, UINT64 generation, UINT64 offset) {
     UINT64 i;
     UINT16 stripe;
     NTSTATUS Status;
@@ -590,7 +589,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
+static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, UINT64 offset, UINT64 generation, chunk* c) {
     ULONG i;
     NTSTATUS Status;
@@ -911,7 +910,7 @@ static void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size
     }
 }
 
-static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, PIRP Irp, read_data_context* context, CHUNK_ITEM* ci,
+static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, UINT64 offset, UINT64 generation, chunk* c) {
     NTSTATUS Status;
     ULONG i;
@@ -2357,7 +2356,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     }
     
     if (type == BLOCK_FLAG_RAID0) {
-        Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, startoffstripe, generation, offset);
+        Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, generation, offset);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08x\n", Status);
             
@@ -2372,7 +2371,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID10) {
-        Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, startoffstripe, generation, offset);
+        Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, generation, offset);
         
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid10 returned %08x\n", Status);
@@ -2388,13 +2387,13 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = read_data_dup(Vcb, buf, addr, length, Irp, &context, ci, devices, generation);
+        Status = read_data_dup(Vcb, addr, &context, ci, devices, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08x\n", Status);
             goto exit;
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation, c);
+        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             
@@ -2409,7 +2408,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID6) {
-        Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, Irp, &context, ci, devices, offset, generation, c);
+        Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08x\n", Status);
             
