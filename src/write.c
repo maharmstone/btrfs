@@ -700,7 +700,7 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
         
         wtc->mdl = master_mdl;
         
