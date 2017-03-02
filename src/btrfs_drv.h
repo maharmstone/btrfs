@@ -776,7 +776,7 @@ static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 n
  * five for the inode, which should be good enough.
  * Inodes are also 64 bits on Linux, but the Linux driver seems to get round
  * this by tricking it into thinking subvols are separate volumes. */
-static UINT64 __inline make_file_id(root* r, UINT64 inode) {
+static __inline UINT64 make_file_id(root* r, UINT64 inode) {
     return (r->id << 40) | (inode & 0xffffffffff);
 }
 
