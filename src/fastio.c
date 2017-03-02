@@ -232,9 +232,12 @@ static NTSTATUS STDCALL fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, P
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_release_for_mod_write\n");
-    return STATUS_NOT_IMPLEMENTED;
+static NTSTATUS STDCALL fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
+    TRACE("(%p, %p, %p)\n", FileObject, ResourceToRelease, DeviceObject);
+    
+    ExReleaseResourceLite(ResourceToRelease);
+    
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL fast_io_acquire_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject){
