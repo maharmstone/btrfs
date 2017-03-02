@@ -179,8 +179,8 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
                 DbgPrint("IoAllocateMdl failed\n");
                 goto exit;
             }
-            
-            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+
+            MmBuildMdlForNonPagedPool(Irp->MdlAddress);
         } else {
             Irp->UserBuffer = buf2;
         }
@@ -201,10 +201,8 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
             Status = context.iosb.Status;
         }
         
-        if (comdo->Flags & DO_DIRECT_IO) {
-            MmUnlockPages(Irp->MdlAddress);
+        if (comdo->Flags & DO_DIRECT_IO)
             IoFreeMdl(Irp->MdlAddress);
-        }
         
         if (!NT_SUCCESS(Status)) {
             DbgPrint("failed to write to COM1 - error %08x\n", Status);
