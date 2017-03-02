@@ -55,7 +55,6 @@ typedef struct {
     UINT32* csum;
     BOOL tree;
     read_data_stripe* stripes;
-    KSPIN_LOCK spin_lock;
     UINT8* va;
 } read_data_context;
 
@@ -69,13 +68,7 @@ extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
-    LONG stripes_left;
-    KIRQL irql;
 
-    KeAcquireSpinLock(&context->spin_lock, &irql);
-    
-    stripes_left = InterlockedDecrement(&context->stripes_left);
-    
     stripe->iosb = Irp->IoStatus;
     
     if (NT_SUCCESS(Irp->IoStatus.Status))
@@ -83,9 +76,7 @@ static NTSTATUS STDCALL read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP I
     else
         stripe->status = ReadDataStatus_Error;
     
-    KeReleaseSpinLock(&context->spin_lock, irql);
-    
-    if (stripes_left == 0)
+    if (InterlockedDecrement(&context->stripes_left) == 0)
         KeSetEvent(&context->Event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
@@ -2234,8 +2225,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
         ExFreePool(stripeoff);
     }
-    
-    KeInitializeSpinLock(&context.spin_lock);
     
     context.address = addr;
     
