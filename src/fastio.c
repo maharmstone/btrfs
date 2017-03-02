@@ -19,14 +19,6 @@
 
 FAST_IO_DISPATCH FastIoDispatch;
 
-static void STDCALL acquire_file_for_create_section(PFILE_OBJECT FileObject) {
-    TRACE("STUB: acquire_file_for_create_section\n");
-}
-
-static void STDCALL release_file_for_create_section(PFILE_OBJECT FileObject) {
-    TRACE("STUB: release_file_for_create_section\n");
-}
-
 static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFILE_BASIC_INFORMATION fbi,
                                              PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
@@ -151,12 +143,6 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
     return TRUE;
 }
 
-static BOOLEAN STDCALL fast_io_query_open(PIRP Irp, PFILE_NETWORK_OPEN_INFORMATION  NetworkInformation, PDEVICE_OBJECT DeviceObject) {
-    TRACE("STUB: fast_io_query_open\n");
-    
-    return FALSE;
-}
-
 static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
                                          ULONG LockKey, BOOLEAN CheckForReadOperation, PIO_STATUS_BLOCK IoStatus,
                                          PDEVICE_OBJECT DeviceObject) {
@@ -176,35 +162,6 @@ static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE
     }
     
     return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_lock(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PLARGE_INTEGER Length, PEPROCESS ProcessId, ULONG Key, BOOLEAN FailImmediately, BOOLEAN ExclusiveLock, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_lock\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_unlock_single(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PLARGE_INTEGER Length, PEPROCESS ProcessId, ULONG Key, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_unlock_single\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_unlock_all(PFILE_OBJECT FileObject, PEPROCESS ProcessId, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_unlock_all\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_unlock_all_by_key(PFILE_OBJECT FileObject, PVOID ProcessId, ULONG Key, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_unlock_all_by_key\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_device_control(PFILE_OBJECT FileObject, BOOLEAN Wait, PVOID InputBuffer OPTIONAL, ULONG InputBufferLength, PVOID OutputBuffer OPTIONAL, ULONG OutputBufferLength, ULONG IoControlCode, PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_device_control\n");
-    return FALSE;
-}
-
-static VOID STDCALL fast_io_detach_device(PDEVICE_OBJECT SourceDevice, PDEVICE_OBJECT TargetDevice){
-    TRACE("STUB: fast_io_detach_device\n");
 }
 
 static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, BOOLEAN Wait, FILE_NETWORK_OPEN_INFORMATION* fnoi,
@@ -273,26 +230,6 @@ static NTSTATUS STDCALL fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, P
         return STATUS_CANT_WAIT;
     
     return STATUS_SUCCESS;
-}
-
-static BOOLEAN STDCALL fast_io_read_compressed(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, ULONG LockKey, PVOID Buffer, PMDL *MdlChain, PIO_STATUS_BLOCK IoStatus, struct _COMPRESSED_DATA_INFO *CompressedDataInfo, ULONG CompressedDataInfoLength, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_read_compressed\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_write_compressed(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, ULONG LockKey, PVOID Buffer, PMDL *MdlChain, PIO_STATUS_BLOCK IoStatus, struct _COMPRESSED_DATA_INFO *CompressedDataInfo, ULONG CompressedDataInfoLength, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_write_compressed\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_mdl_read_complete_compressed(PFILE_OBJECT FileObject, PMDL MdlChain, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_mdl_read_complete_compressed\n");
-    return FALSE;
-}
-
-static BOOLEAN STDCALL fast_io_mdl_write_complete_compressed(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PMDL MdlChain, PDEVICE_OBJECT DeviceObject){
-    TRACE("STUB: fast_io_mdl_write_complete_compressed\n");
-    return FALSE;
 }
 
 static NTSTATUS STDCALL fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease, PDEVICE_OBJECT DeviceObject){
@@ -372,21 +309,15 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.FastIoCheckIfPossible = fast_io_check_if_possible;
     FastIoDispatch.FastIoQueryBasicInfo = fast_query_basic_info;
     FastIoDispatch.FastIoQueryStandardInfo = fast_query_standard_info;
-    FastIoDispatch.FastIoLock = fast_io_lock;
-    FastIoDispatch.FastIoUnlockSingle = fast_io_unlock_single;
-    FastIoDispatch.FastIoUnlockAll = fast_io_unlock_all;
-    FastIoDispatch.FastIoUnlockAllByKey = fast_io_unlock_all_by_key;
-    FastIoDispatch.FastIoDeviceControl = fast_io_device_control;
-    FastIoDispatch.AcquireFileForNtCreateSection = acquire_file_for_create_section;
-    FastIoDispatch.ReleaseFileForNtCreateSection = release_file_for_create_section;
-    FastIoDispatch.FastIoDetachDevice = fast_io_detach_device;
+//     FastIoDispatch.FastIoLock = fast_io_lock;
+//     FastIoDispatch.FastIoUnlockSingle = fast_io_unlock_single;
+//     FastIoDispatch.FastIoUnlockAll = fast_io_unlock_all;
+//     FastIoDispatch.FastIoUnlockAllByKey = fast_io_unlock_all_by_key;
+//     FastIoDispatch.FastIoDeviceControl = fast_io_device_control;
+//     FastIoDispatch.AcquireFileForNtCreateSection = acquire_file_for_create_section;
+//     FastIoDispatch.ReleaseFileForNtCreateSection = release_file_for_create_section;
     FastIoDispatch.FastIoQueryNetworkOpenInfo = fast_io_query_network_open_info;
     FastIoDispatch.AcquireForModWrite = fast_io_acquire_for_mod_write;
-    FastIoDispatch.FastIoReadCompressed = fast_io_read_compressed;
-    FastIoDispatch.FastIoWriteCompressed = fast_io_write_compressed;
-    FastIoDispatch.MdlReadCompleteCompressed = fast_io_mdl_read_complete_compressed;
-    FastIoDispatch.MdlWriteCompleteCompressed = fast_io_mdl_write_complete_compressed;
-    FastIoDispatch.FastIoQueryOpen = fast_io_query_open;
     FastIoDispatch.ReleaseForModWrite = fast_io_release_for_mod_write;
     FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
     FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
