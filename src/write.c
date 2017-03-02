@@ -4787,7 +4787,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
 exit:
 //     if (locked) {
         if (NT_SUCCESS(Status))
-            clear_rollback(Vcb, &rollback);
+            clear_rollback(&rollback);
         else
             do_rollback(Vcb, &rollback);
 //         

@@ -922,7 +922,7 @@ NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
 tree* STDCALL free_tree(tree* t);
 NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp);
 NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp);
-void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
+void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);

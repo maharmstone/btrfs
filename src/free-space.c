@@ -124,7 +124,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     Status = STATUS_SUCCESS;
     
     if (NT_SUCCESS(Status))
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
     
@@ -629,7 +629,7 @@ clearcache:
         return Status;
     }
     
-    clear_rollback(Vcb, &rollback);
+    clear_rollback(&rollback);
     
     c->cache->deleted = TRUE;
     mark_fcb_dirty(c->cache);

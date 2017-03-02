@@ -2059,7 +2059,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     
                     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                     
-                    clear_rollback(Vcb, &rollback);
+                    clear_rollback(&rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
                     IO_STATUS_BLOCK iosb;
                     CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);

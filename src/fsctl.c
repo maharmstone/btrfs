@@ -505,7 +505,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
 
@@ -1875,7 +1875,7 @@ end:
     if (!NT_SUCCESS(Status))
         do_rollback(Vcb, &rollback);
     else
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     
     ExReleaseResourceLite(fcb->Header.Resource);
     ExReleaseResourceLite(&Vcb->tree_lock);

@@ -977,7 +977,7 @@ NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
-void clear_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
+void clear_rollback(LIST_ENTRY* rollback) {
     rollback_item* ri;
     
     while (!IsListEmpty(rollback)) {

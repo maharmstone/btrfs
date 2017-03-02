@@ -1151,7 +1151,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, BOOL* ch
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
     
@@ -1857,7 +1857,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     
 end:
     if (NT_SUCCESS(Status))
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
     

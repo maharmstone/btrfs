@@ -6574,7 +6574,7 @@ NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp) {
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
         do_rollback(Vcb, &rollback);
     } else
-        clear_rollback(Vcb, &rollback);
+        clear_rollback(&rollback);
     
     return Status;
 }
