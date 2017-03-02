@@ -4206,7 +4206,7 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32, PIRP Irp) {
+static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32) {
     NTSTATUS Status;
     ULONG xasize;
     DIR_ITEM* xa;
@@ -4657,7 +4657,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     
     if (fcb->ads) {
         if (fcb->deleted)
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash);
         else {
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
             if (!NT_SUCCESS(Status)) {
@@ -5020,7 +5020,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH);
         
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -5034,7 +5034,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH);
         
         fcb->reparse_xattr_changed = FALSE;
     }
@@ -5047,14 +5047,14 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH);
         
         fcb->ea_changed = FALSE;
     }
     
     if (fcb->prop_compression_changed) {
         if (fcb->prop_compression == PropCompression_None)
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, Irp);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH);
         else if (fcb->prop_compression == PropCompression_Zlib) {
             const char zlib[] = "zlib";
             
