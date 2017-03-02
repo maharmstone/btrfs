@@ -2729,7 +2729,7 @@ static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_IN
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, file_ref* fileref, PIRP Irp, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, file_ref* fileref, LONG* length) {
     ULONG reqsize;
     LIST_ENTRY* le;
     FILE_STREAM_INFORMATION *entry, *lastentry;
@@ -3419,7 +3419,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             
             TRACE("FileStreamInformation\n");
             
-            Status = fill_in_file_stream_information(fsi, fileref, Irp, &length);
+            Status = fill_in_file_stream_information(fsi, fileref, &length);
 
             break;
         }
