@@ -1810,7 +1810,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
             goto exit;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
         
         wtc->mdl = master_mdl;
     }
