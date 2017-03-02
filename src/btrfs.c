@@ -2649,7 +2649,7 @@ static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
     
     // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
     
-    space_list_subtract2(Vcb, &dev->space, NULL, 0, 0x100000, NULL, NULL);
+    space_list_subtract2(&dev->space, NULL, 0, 0x100000, NULL, NULL);
     
     return STATUS_SUCCESS;
 }
