@@ -643,7 +643,6 @@ typedef struct _device_extension {
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
-    PAGED_LOOKASIDE_LIST rollback_item_lookaside;
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
     PAGED_LOOKASIDE_LIST fileref_lookaside;
     PAGED_LOOKASIDE_LIST fcb_lookaside;
