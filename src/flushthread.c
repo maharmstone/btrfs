@@ -96,7 +96,7 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
             goto exit;
         }
         
-        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
     } else {
         Irp->UserBuffer = data;
     }
