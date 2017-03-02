@@ -2113,7 +2113,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
                     goto end;
                 }
                 
-                MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoWriteAccess);
+                MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoReadAccess);
             }
         }
     }
