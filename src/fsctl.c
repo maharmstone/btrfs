@@ -694,7 +694,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     ccb* ccb;
     file_ref* fileref;
     NTSTATUS Status;
-    LIST_ENTRY rollback;
     UINT64 id;
     root* r;
     LARGE_INTEGER time;
@@ -788,8 +787,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    InitializeListHead(&rollback);
-    
     // no need for fcb_lock as we have tree_lock exclusively
     Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, FALSE, Irp);
     
@@ -805,8 +802,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         ERR("open_fileref returned %08x\n", Status);
         goto end;
     }
-    
-    // FIXME - make sure rollback removes new roots from internal structures
     
     id = InterlockedIncrement64(&Vcb->root_root->lastinode);
     Status = create_root(Vcb, id, &r, FALSE, 0, Irp);
@@ -1058,11 +1053,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     Status = STATUS_SUCCESS;    
     
 end:
-    if (!NT_SUCCESS(Status))
-        do_rollback(Vcb, &rollback);
-    else
-        clear_rollback(Vcb, &rollback);
-    
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (NT_SUCCESS(Status)) {
