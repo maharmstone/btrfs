@@ -690,7 +690,7 @@ end2:
 }
 
 static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length, PIRP Irp) {
-    fcb *fcb, *rootfcb;
+    fcb *fcb, *rootfcb = NULL;
     ccb* ccb;
     file_ref* fileref;
     NTSTATUS Status;
@@ -1053,6 +1053,21 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     Status = STATUS_SUCCESS;    
     
 end:
+    if (!NT_SUCCESS(Status)) {
+        if (fr) {
+            fr->deleted = TRUE;
+            mark_fileref_dirty(fr);
+        } else if (rootfcb) {
+            rootfcb->deleted = TRUE;
+            mark_fcb_dirty(rootfcb);
+        }
+
+        if (r) {
+            RemoveEntryList(&r->list_entry);
+            InsertTailList(&Vcb->drop_roots, &r->list_entry);
+        }
+    }
+    
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (NT_SUCCESS(Status)) {
