@@ -660,8 +660,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     while (le2 != &me->fileref->fcb->extents) {
                         extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
                         
-                        if (!ext->ignore && ext->datalen >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2) &&
-                            (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                        if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
                             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
                                         
                             if (ed2->size != 0) {

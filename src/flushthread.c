@@ -4843,10 +4843,10 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
             
-            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_PREALLOC)
+            if (ed->type == EXTENT_TYPE_PREALLOC)
                 prealloc = TRUE;
             
-            if (ext->datalen >= sizeof(EXTENT_DATA) && ed->type == EXTENT_TYPE_INLINE)
+            if (ed->type == EXTENT_TYPE_INLINE)
                 extents_inline = TRUE;
             
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
@@ -5397,20 +5397,9 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 EXTENT_DATA* ed = &ext->extent_data;
                 
                 if (!ext->ignore) {
-                    if (ext->datalen < sizeof(EXTENT_DATA)) {
-                        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                        break;
-                    }
-                    
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                        
-                        if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                            ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen,
-                                sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                            break;
-                        }
-                        
+
                         if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
                             used_minus_cache -= ed2->size;
                     }

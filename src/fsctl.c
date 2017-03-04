@@ -1783,7 +1783,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
     
-    if (ext->datalen >= sizeof(EXTENT_DATA) && ext->extent_data.type == EXTENT_TYPE_INLINE) {
+    if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
         Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08x\n", Status);

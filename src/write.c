@@ -2470,21 +2470,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
         UINT64 len;
         
         if (!ext->ignore) {
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
-            
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) { 
-                if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("extent at %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
-                }
-                
+            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)
                 ed2 = (EXTENT_DATA2*)ed->data;
-            }
             
             len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
             
@@ -3163,22 +3150,12 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
 
     ed = &ext->extent_data;
     
-    if (ext->datalen < sizeof(EXTENT_DATA)) {
-        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-        return FALSE;
-    }
-    
     if (ed->type != EXTENT_TYPE_REGULAR && ed->type != EXTENT_TYPE_PREALLOC) {
         TRACE("not extending extent which is not regular or prealloc\n");
         return FALSE;
     }
     
     ed2 = (EXTENT_DATA2*)ed->data;
-    
-    if (ext->datalen < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-        ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
-        return FALSE;
-    }
 
     if (ext->offset + ed2->num_bytes != start_data) {
         TRACE("last EXTENT_DATA does not run up to start_data (%llx + %llx != %llx)\n", ext->offset, ed2->num_bytes, start_data);
@@ -3468,11 +3445,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
         if (ext) {
             EXTENT_DATA* ed = &ext->extent_data;
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-            
-            if (ext->datalen < sizeof(EXTENT_DATA)) {
-                ERR("extent %llx was %u bytes, expected at least %u\n", ext->offset, ext->datalen, sizeof(EXTENT_DATA));
-                return STATUS_INTERNAL_ERROR;
-            }
             
             oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes);
             cur_inline = ed->type == EXTENT_TYPE_INLINE;
