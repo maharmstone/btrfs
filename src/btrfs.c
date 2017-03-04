@@ -2723,7 +2723,6 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->removable = FALSE;
                 dev->disk_num = vc->disk_num;
                 dev->part_num = vc->part_num;
-                dev->length = vc->size;
                 dev->num_trim_entries = 0;
                 InitializeListHead(&dev->trim_list);
                 
@@ -2952,7 +2951,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, FALSE);
 
-                                dev->length = vc->size;
                                 dev->disk_num = vc->disk_num;
                                 dev->part_num = vc->part_num;
                                 add_device_to_list(Vcb, dev);
@@ -3841,7 +3839,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     dev->devobj = vc->devobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
-    dev->length = vc->size;
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     

@@ -2095,7 +2095,7 @@ static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device, 
     // All the documentation says that the Linux driver only writes one superblock
     // if it thinks a disk is an SSD, but this doesn't seem to be the case!
     
-    while (superblock_addrs[i] > 0 && device->length >= superblock_addrs[i] + sizeof(superblock)) {
+    while (superblock_addrs[i] > 0 && device->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
         ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
         superblock* sb;
         UINT32 crc32;

@@ -1352,7 +1352,6 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         
         dev->next_entry = 0;
         dev->dev_id = dev2->devitem.dev_id;
-        dev->size = dev2->length;
         dev->readonly = (Vcb->readonly || dev2->readonly) ? TRUE : FALSE;
         dev->device_number = dev2->disk_num;
         dev->partition_number = dev2->part_num;
@@ -2680,7 +2679,6 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
 
     dev->devobj = DeviceObject;
     dev->seeding = FALSE;
-    dev->length = size;
     init_device(Vcb, dev, TRUE);
     
     InitializeListHead(&dev->space);

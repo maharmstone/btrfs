@@ -375,7 +375,6 @@ typedef struct {
     BOOL trim;
     BOOL can_flush;
     ULONG change_count;
-    UINT64 length;
     ULONG disk_num;
     ULONG part_num;
     UINT64 stats[5];

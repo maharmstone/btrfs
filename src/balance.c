@@ -2253,7 +2253,7 @@ static NTSTATUS remove_superblocks(device* dev) {
     
     RtlZeroMemory(sb, sizeof(superblock));
     
-    while (superblock_addrs[i] > 0 && dev->length >= superblock_addrs[i] + sizeof(superblock)) {
+    while (superblock_addrs[i] > 0 && dev->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
         Status = write_data_phys(dev->devobj, superblock_addrs[i], sb, sizeof(superblock));
         
         if (!NT_SUCCESS(Status)) {
@@ -2530,8 +2530,8 @@ static void trim_unalloc_space(device_extension* Vcb, device* dev) {
         }
     } while (b);
     
-    if (lastoff < dev->length)
-        add_trim_entry_avoid_sb(Vcb, dev, lastoff, dev->length - lastoff);
+    if (lastoff < dev->devitem.num_bytes)
+        add_trim_entry_avoid_sb(Vcb, dev, lastoff, dev->devitem.num_bytes - lastoff);
     
     if (dev->num_trim_entries == 0)
         return;
