@@ -2873,6 +2873,9 @@ end2:
     if (pnp_name.Buffer)
         ExFreePool(pnp_name.Buffer);
     
+    if (NT_SUCCESS(Status))
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
+    
     return Status;
 }
 
