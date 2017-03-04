@@ -3021,6 +3021,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 if (c->chunk_item->type & BLOCK_FLAG_SYSTEM && c->chunk_item->type > Vcb->system_flags)
                     Vcb->system_flags = c->chunk_item->type;
                 
+                if (c->chunk_item->type & BLOCK_FLAG_RAID10 && c->chunk_item->sub_stripes == 0)
+                    c->chunk_item->sub_stripes = 1; // avoid potential division by zero
+                
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
                     UINT16 i;
