@@ -417,8 +417,6 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         le = le->Flink;
     }
     
-    fcb->last_dir_index = oldfcb->last_dir_index;
-    
     if (oldfcb->reparse_xattr.Buffer && oldfcb->reparse_xattr.Length > 0) {
         fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = oldfcb->reparse_xattr.Length;
         
@@ -821,17 +819,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->dummyfileref->fcb->fileref = me->dummyfileref;
         
         if (!me->parent) {
-            UINT64 index;
-            
             RemoveEntryList(&me->fileref->list_entry);
             
             increase_fileref_refcount(destdir);
-            
-            Status = fcb_get_last_dir_index(destdir->fcb, &index, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("fcb_get_last_dir_index returned %08x\n", Status);
-                goto end;
-            }
             
             if (me->fileref->dc) {
                 // remove from old parent
@@ -885,11 +875,19 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 
                 if (me->fileref->dc->key.obj_type == TYPE_INODE_ITEM)
                     me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
-
-                me->fileref->dc->index = index;
                 
                 // add to new parent
+                
                 ExAcquireResourceExclusiveLite(&destdir->fcb->nonpaged->dir_children_lock, TRUE);
+                
+                if (IsListEmpty(&destdir->fcb->dir_children_index))
+                    me->fileref->dc->index = 2;
+                else {
+                    dir_child* dc2 = CONTAINING_RECORD(destdir->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+                    
+                    me->fileref->dc->index = max(2, dc2->index + 1);
+                }
+                
                 InsertTailList(&destdir->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                 insert_dir_child_into_hash_lists(destdir->fcb, me->fileref->dc);
                 ExReleaseResourceLite(&destdir->fcb->nonpaged->dir_children_lock);
@@ -1129,7 +1127,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fcb *fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
-    UINT64 index;
     WCHAR* fn;
     ULONG fnlen, utf8len, origutf8len;
     UNICODE_STRING fnus;
@@ -1490,12 +1487,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     if (fr2->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr2->fcb->fileref = fr2;
-
-    Status = fcb_get_last_dir_index(related->fcb, &index, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        goto end;
-    }
     
     fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = 0;
     fileref->oldutf8.Buffer = NULL;
@@ -1555,10 +1546,17 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
         }
         
-        fileref->dc->index = index;
-        
         // add to new parent
         ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
+        
+        if (IsListEmpty(&related->fcb->dir_children_index))
+            fileref->dc->index = 2;
+        else {
+            dir_child* dc2 = CONTAINING_RECORD(related->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+            
+            fileref->dc->index = max(2, dc2->index + 1);
+        }
+        
         InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
         insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
         ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
@@ -1577,7 +1575,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
         
         hl->parent = related->fcb->inode;
-        hl->index = index;
+        hl->index = fileref->dc->index;
         
         hl->name.Length = hl->name.MaximumLength = fnus.Length;
         hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);
@@ -1906,7 +1904,6 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
-    UINT64 index;
     WCHAR* fn;
     ULONG fnlen, utf8len;
     UNICODE_STRING fnus;
@@ -2080,12 +2077,6 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
     }
     
-    Status = fcb_get_last_dir_index(related->fcb, &index, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        goto end;
-    }
-    
     fr2 = create_fileref(Vcb);
     
     fr2->fcb = fcb;
@@ -2094,7 +2085,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fr2->created = TRUE;
     fr2->parent = related;
 
-    Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fnus, fcb->type, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, FALSE, &utf8, &fnus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -2151,7 +2142,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     }
     
     hl->parent = related->fcb->inode;
-    hl->index = index;
+    hl->index = dc->index;
     
     hl->name.Length = hl->name.MaximumLength = fnus.Length;
     hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl->name.MaximumLength, ALLOC_TAG);

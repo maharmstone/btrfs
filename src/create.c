@@ -1539,52 +1539,7 @@ end2:
     return Status;
 }
 
-NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp) {
-    KEY searchkey;
-    traverse_ptr tp, prev_tp;
-    NTSTATUS Status;
-    
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
-    
-    if (fcb->last_dir_index != 0) {
-        *index = fcb->last_dir_index;
-        fcb->last_dir_index++;
-        Status = STATUS_SUCCESS;
-        goto end;
-    }
-    
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_DIR_INDEX + 1;
-    searchkey.offset = 0;
-    
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type >= searchkey.obj_type)) {
-        if (find_prev_item(fcb->Vcb, &tp, &prev_tp, Irp))
-            tp = prev_tp;
-    }
-    
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_DIR_INDEX) {
-        fcb->last_dir_index = tp.item->key.offset + 1;
-    } else
-        fcb->last_dir_index = 2;
-    
-    *index = fcb->last_dir_index;
-    fcb->last_dir_index++;
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    ExReleaseResourceLite(fcb->Header.Resource);
-    
-    return Status;
-}
-
-NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc) {
     NTSTATUS Status;
     dir_child* dc;
     
@@ -1612,7 +1567,6 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
     dc->key.obj_id = inode;
     dc->key.obj_type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
     dc->key.offset = 0;
-    dc->index = index;
     dc->type = type;
     dc->fileref = NULL;
     
@@ -1636,6 +1590,14 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_
     
     ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, TRUE);
     
+    if (IsListEmpty(&fcb->dir_children_index))
+        dc->index = 2;
+    else {
+        dir_child* dc2 = CONTAINING_RECORD(fcb->dir_children_index.Blink, dir_child, list_entry_index);
+        
+        dc->index = max(2, dc2->index + 1);
+    }
+    
     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
     
     insert_dir_child_into_hash_lists(fcb, dc);
@@ -1653,7 +1615,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb* fcb;
     ULONG utf8len;
     char* utf8 = NULL;
-    UINT64 dirpos, inode;
+    UINT64 inode;
     UINT8 type;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -1684,13 +1646,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     utf8[utf8len] = 0;
-    
-    Status = fcb_get_last_dir_index(parfileref->fcb, &dirpos, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        ExFreePool(utf8);
-        return Status;
-    }
     
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -1889,7 +1844,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, dirpos, &utf8as, fpus, fcb->type, &dc);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

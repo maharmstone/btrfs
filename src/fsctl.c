@@ -250,7 +250,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     root *r, *subvol = subvol_fcb->subvol;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 address, dirpos, *root_num;
+    UINT64 address, *root_num;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     fcb* fcb = parent->FsContext;
@@ -429,16 +429,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    Status = fcb_get_last_dir_index(fcb, &dirpos, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        free_fileref(Vcb, fr);
-        goto end;
-    }
-    
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, name, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, utf8, name, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -699,7 +692,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     ULONG len, irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
-    UINT64 dirpos;
     INODE_REF* ir;
     KEY searchkey;
     traverse_ptr tp;
@@ -974,19 +966,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     fr->fcb = rootfcb;
     
     mark_fcb_dirty(rootfcb);
-    
-    Status = fcb_get_last_dir_index(fcb, &dirpos, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_last_dir_index returned %08x\n", Status);
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-        free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-        goto end;
-    }
-    
+
     fr->parent = fileref;
     
-    Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, &utf8, &nameus, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, TRUE, &utf8, &nameus, BTRFS_TYPE_DIRECTORY, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     

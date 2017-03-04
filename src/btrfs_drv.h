@@ -168,7 +168,6 @@ typedef struct _fcb {
     WCHAR* debug_desc;
     BOOL csum_loaded;
     LIST_ENTRY extents;
-    UINT64 last_dir_index;
     ANSI_STRING reparse_xattr;
     ANSI_STRING ea_xattr;
     ULONG ealen;
@@ -1001,11 +1000,10 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock);
-NTSTATUS fcb_get_last_dir_index(fcb* fcb, UINT64* index, PIRP Irp);
 NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp);
 NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
 NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp);
-NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, UINT64 index, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc);
+NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc);
 NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
                             POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
