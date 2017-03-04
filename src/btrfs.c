@@ -2951,6 +2951,13 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                                 dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, FALSE);
 
+                                if (dev->devitem.num_bytes > vc->size) {
+                                    WARN("device %llx: DEV_ITEM says %llx bytes, but Windows only reports %llx\n", tp.item->key.offset,
+                                         dev->devitem.num_bytes, vc->size);
+
+                                    dev->devitem.num_bytes = vc->size;
+                                }
+
                                 dev->disk_num = vc->disk_num;
                                 dev->part_num = vc->part_num;
                                 add_device_to_list(Vcb, dev);
