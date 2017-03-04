@@ -2487,10 +2487,8 @@ static void trim_unalloc_space(device_extension* Vcb, device* dev) {
     traverse_ptr tp;
     NTSTATUS Status;
     BOOL b;
-    UINT64 lastoff = 0;
+    UINT64 lastoff = 0x100000; // don't TRIM the first megabyte, in case someone has been daft enough to install GRUB there
     LIST_ENTRY* le;
-    
-    // FIXME - avoid "bootloader area"?
     
     dev->num_trim_entries = 0;
     
