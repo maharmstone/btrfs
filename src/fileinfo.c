@@ -2588,7 +2588,8 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
             
             return STATUS_SUCCESS;
         } else {
-            *preqlen = sizeof(WCHAR);
+            if (preqlen)
+                *preqlen = sizeof(WCHAR);
             fn->Length = 0;
             
             return STATUS_BUFFER_OVERFLOW;
@@ -2639,7 +2640,8 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     offset += sizeof(WCHAR);
 
     if (overflow) {
-        *preqlen = reqlen;
+        if (preqlen)
+            *preqlen = reqlen;
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
         if (name_offset)
