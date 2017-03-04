@@ -3847,6 +3847,13 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     dev->devobj = vc->devobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     
+    if (dev->devitem.num_bytes > vc->size) {
+        WARN("device %llx: DEV_ITEM says %llx bytes, but Windows only reports %llx\n", dev->devitem.dev_id,
+                dev->devitem.num_bytes, vc->size);
+
+        dev->devitem.num_bytes = vc->size;
+    }
+    
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
     
     init_device(Vcb, dev, TRUE);
