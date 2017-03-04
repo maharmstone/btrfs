@@ -2717,6 +2717,7 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
                 dev->devobj = vc->devobj;
                 dev->devitem.device_uuid = *uuid;
                 dev->devitem.dev_id = vc->devid;
+                dev->devitem.num_bytes = vc->size;
                 dev->seeding = vc->seeding;
                 dev->readonly = dev->seeding;
                 dev->reloc = FALSE;
