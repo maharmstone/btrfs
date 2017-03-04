@@ -1340,6 +1340,7 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         dev->readonly = (Vcb->readonly || dev2->readonly) ? TRUE : FALSE;
         dev->device_number = dev2->disk_num;
         dev->partition_number = dev2->part_num;
+        dev->size = dev2->devitem.num_bytes;
         RtlCopyMemory(dev->stats, dev2->stats, sizeof(UINT64) * 5);
         
         length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
