@@ -2476,6 +2476,8 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
         }
     }
     
+    FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
+    
     return STATUS_SUCCESS;
 }
 
