@@ -1201,16 +1201,6 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     return STATUS_SUCCESS;
 }
 
-void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
-    if (do_lock)
-        ExAcquireResourceExclusiveLite(&parent->nonpaged->children_lock, TRUE);
-    
-    InsertTailList(&parent->children, &child->list_entry);
-    
-    if (do_lock)
-        ExReleaseResourceLite(&parent->nonpaged->children_lock);
-}
-
 NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
                             POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
     NTSTATUS Status;
@@ -1288,7 +1278,10 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
         sf2->dc = dc;
         dc->fileref = sf2;
 
-        insert_fileref_child(sf, sf2, TRUE);
+        ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
+        InsertTailList(&sf->children, &sf2->list_entry);
+        ExReleaseResourceLite(&sf->nonpaged->children_lock);
+
         increase_fileref_refcount(sf);
     } else {
         root* subvol;
@@ -1358,7 +1351,9 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
             
             sf2->parent = (struct _file_ref*)sf;
             
-            insert_fileref_child(sf, sf2, TRUE);
+            ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
+            InsertTailList(&sf->children, &sf2->list_entry);
+            ExReleaseResourceLite(&sf->nonpaged->children_lock);
             
             increase_fileref_refcount(sf);
         }
@@ -1853,7 +1848,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->dc = dc;
     dc->fileref = fileref;
     
-    insert_fileref_child(parfileref, fileref, TRUE);
+    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    
     increase_fileref_refcount(parfileref);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
@@ -2125,7 +2123,9 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     
     fileref->parent = (struct _file_ref*)parfileref;
     
-    insert_fileref_child(parfileref, fileref, TRUE);
+    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
     
     increase_fileref_refcount(parfileref);
     

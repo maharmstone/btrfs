@@ -438,7 +438,10 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->dc = dc;
     dc->fileref = fr;
     
-    insert_fileref_child(fileref, fr, TRUE);
+    ExAcquireResourceExclusiveLite(&fileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&fileref->children, &fr->list_entry);
+    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+    
     increase_fileref_refcount(fileref);
     
     fr->created = TRUE;
@@ -1000,7 +1003,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     RtlZeroMemory(fr->fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
     
-    insert_fileref_child(fileref, fr, TRUE);
+    ExAcquireResourceExclusiveLite(&fileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&fileref->children, &fr->list_entry);
+    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+        
     increase_fileref_refcount(fileref);
     
     if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)

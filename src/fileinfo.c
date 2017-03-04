@@ -811,7 +811,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
 
-        insert_fileref_child(me->dummyfileref->parent, me->dummyfileref, TRUE);
+        ExAcquireResourceExclusiveLite(&me->dummyfileref->parent->nonpaged->children_lock, TRUE);
+        InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
+        ExReleaseResourceLite(&me->dummyfileref->parent->nonpaged->children_lock);
        
         me->dummyfileref->debug_desc = me->fileref->debug_desc;
         
@@ -896,7 +898,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             free_fileref(fileref->fcb->Vcb, me->fileref->parent);
             me->fileref->parent = destdir;
             
-            insert_fileref_child(me->fileref->parent, me->fileref, TRUE);
+            ExAcquireResourceExclusiveLite(&me->fileref->parent->nonpaged->children_lock, TRUE);
+            InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
+            ExReleaseResourceLite(&me->fileref->parent->nonpaged->children_lock);
             
             TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
@@ -1562,7 +1566,9 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
     }
     
-    insert_fileref_child(related, fileref, TRUE);
+    ExAcquireResourceExclusiveLite(&related->nonpaged->children_lock, TRUE);
+    InsertTailList(&related->children, &fileref->list_entry);
+    ExReleaseResourceLite(&related->nonpaged->children_lock);
     
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
@@ -2092,7 +2098,9 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fr2->dc = dc;
     dc->fileref = fr2;
     
-    insert_fileref_child(related, fr2, TRUE);
+    ExAcquireResourceExclusiveLite(&related->nonpaged->children_lock, TRUE);
+    InsertTailList(&related->children, &fr2->list_entry);
+    ExReleaseResourceLite(&related->nonpaged->children_lock);
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {
