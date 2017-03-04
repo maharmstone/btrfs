@@ -1695,7 +1695,7 @@ UINT64 get_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 size, P
         return eiv0->refcount;
     } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
         ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
     
@@ -1872,7 +1872,7 @@ UINT64 get_extent_flags(device_extension* Vcb, UINT64 address, PIRP Irp) {
         return 0;
     else if (tp.item->size < sizeof(EXTENT_ITEM)) {
         ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
     
@@ -1913,7 +1913,7 @@ void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PI
         return;
     else if (tp.item->size < sizeof(EXTENT_ITEM)) {
         ERR("(%llx,%x,%llx) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return;
     }
     
