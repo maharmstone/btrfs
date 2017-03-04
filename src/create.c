@@ -3039,6 +3039,8 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 
                 goto exit;
             }
+            
+            IoUpdateShareAccess(FileObject, &fileref->fcb->share_access);
         } else {
             IoSetShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
         }
