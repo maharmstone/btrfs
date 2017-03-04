@@ -784,6 +784,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         InterlockedIncrement(&me->dummyfileref->fcb->refcount);
         
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
+        me->dummyfileref->oldindex = me->fileref->dc->index;
         
         if (le == move_list.Flink) {
             if (me->fileref->dc->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length)
