@@ -436,8 +436,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
     
-    fr->index = dirpos;
-    
     fr->parent = fileref;
     
     Status = add_dir_child(fileref->fcb, r->id, TRUE, dirpos, utf8, name, BTRFS_TYPE_DIRECTORY, &dc);
@@ -985,8 +983,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         ExReleaseResourceLite(&Vcb->fcb_lock);
         goto end;
     }
-    
-    fr->index = dirpos;
     
     fr->parent = fileref;
     

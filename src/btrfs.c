@@ -1844,25 +1844,27 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                     CcSetFileSizes(FileObject, &ccfs);
                 }
             }
-                
-            le = fileref->fcb->hardlinks.Flink;
-            while (le != &fileref->fcb->hardlinks) {
-                hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
-                
-                if (hl->parent == fileref->parent->fcb->inode && hl->index == fileref->index) {
-                    RemoveEntryList(&hl->list_entry);
+            
+            if (fileref->dc) {
+                le = fileref->fcb->hardlinks.Flink;
+                while (le != &fileref->fcb->hardlinks) {
+                    hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+
+                    if (hl->parent == fileref->parent->fcb->inode && hl->index == fileref->dc->index) {
+                        RemoveEntryList(&hl->list_entry);
+                        
+                        if (hl->name.Buffer)
+                            ExFreePool(hl->name.Buffer);
+                        
+                        if (hl->utf8.Buffer)
+                            ExFreePool(hl->utf8.Buffer);
+                        
+                        ExFreePool(hl);
+                        break;
+                    }
                     
-                    if (hl->name.Buffer)
-                        ExFreePool(hl->name.Buffer);
-                    
-                    if (hl->utf8.Buffer)
-                        ExFreePool(hl->utf8.Buffer);
-                    
-                    ExFreePool(hl);
-                    break;
+                    le = le->Flink;
                 }
-                
-                le = le->Flink;
             }
         } else { // subvolume
             if (fileref->fcb->subvol->root_item.num_references > 1) {
@@ -1901,6 +1903,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
             ExFreePool(fileref->dc->utf8.Buffer);
         
         utf8len = fileref->dc->utf8.Length;
+        
+        fileref->oldindex = fileref->dc->index;
         
         ExFreePool(fileref->dc->name.Buffer);
         ExFreePool(fileref->dc->name_uc.Buffer);

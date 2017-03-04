@@ -811,8 +811,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
-        
-        me->dummyfileref->index = me->fileref->index;
 
         insert_fileref_child(me->dummyfileref->parent, me->dummyfileref, TRUE);
        
@@ -822,11 +820,13 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->dummyfileref->fcb->fileref = me->dummyfileref;
         
         if (!me->parent) {
+            UINT64 index;
+            
             RemoveEntryList(&me->fileref->list_entry);
             
             increase_fileref_refcount(destdir);
             
-            Status = fcb_get_last_dir_index(destdir->fcb, &me->fileref->index, Irp);
+            Status = fcb_get_last_dir_index(destdir->fcb, &index, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("fcb_get_last_dir_index returned %08x\n", Status);
                 goto end;
@@ -885,7 +885,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 if (me->fileref->dc->key.obj_type == TYPE_INODE_ITEM)
                     me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
 
-                me->fileref->dc->index = me->fileref->index;
+                me->fileref->dc->index = index;
                 
                 // add to new parent
                 ExAcquireResourceExclusiveLite(&destdir->fcb->nonpaged->dir_children_lock, TRUE);
@@ -955,7 +955,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             }
             
             hl->parent = me->fileref->parent->fcb->inode;
-            hl->index = me->fileref->index;
+            hl->index = me->fileref->dc->index;
             
             hl->utf8.Length = hl->utf8.MaximumLength = me->fileref->dc->utf8.Length;
             hl->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl->utf8.MaximumLength, ALLOC_TAG);
@@ -1467,7 +1467,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     fr2->fcb->refcount++;
     
     fr2->oldutf8 = fileref->oldutf8;
-    fr2->index = fileref->index;
+    fr2->oldindex = fileref->dc->index;
     fr2->delete_on_close = fileref->delete_on_close;
     fr2->deleted = TRUE;
     fr2->created = fileref->created;
@@ -1498,7 +1498,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = 0;
     fileref->oldutf8.Buffer = NULL;
-    fileref->index = index;
     fileref->deleted = FALSE;
     fileref->created = TRUE;
     fileref->parent = related;
@@ -1507,8 +1506,6 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     InsertHeadList(&fileref->list_entry, &fr2->list_entry);
     RemoveEntryList(&fileref->list_entry);
     ExReleaseResourceLite(&fileref->parent->nonpaged->children_lock);
-    
-    insert_fileref_child(related, fileref, TRUE);
     
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
@@ -1557,7 +1554,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
         }
         
-        fileref->dc->index = fileref->index;
+        fileref->dc->index = index;
         
         // add to new parent
         ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
@@ -1565,6 +1562,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
         ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
     }
+    
+    insert_fileref_child(related, fileref, TRUE);
     
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
@@ -1613,7 +1612,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     while (le != &fcb->hardlinks) {
         hl = CONTAINING_RECORD(le, hardlink, list_entry);
         
-        if (hl->parent == fr2->parent->fcb->inode && hl->index == fr2->index) {
+        if (hl->parent == fr2->parent->fcb->inode && hl->index == fr2->oldindex) {
             RemoveEntryList(&hl->list_entry);
             
             if (hl->utf8.Buffer)
@@ -2091,18 +2090,17 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
     fr2->fcb = fcb;
     fcb->refcount++;
     
-    fr2->index = index;
     fr2->created = TRUE;
     fr2->parent = related;
 
-    insert_fileref_child(related, fr2, TRUE);
-    
     Status = add_dir_child(related->fcb, fcb->inode, FALSE, index, &utf8, &fnus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
     fr2->dc = dc;
     dc->fileref = fr2;
+    
+    insert_fileref_child(related, fr2, TRUE);
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {
@@ -2114,7 +2112,7 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         }
         
         hl->parent = fileref->parent->fcb->inode;
-        hl->index = fileref->index;
+        hl->index = fileref->dc->index;
         
         hl->name.Length = hl->name.MaximumLength = fnus.Length;
         hl->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus.Length, ALLOC_TAG);
@@ -3116,7 +3114,7 @@ static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fl
                     while (le2 != &parfr->children) {
                         file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
                         
-                        if (fr2->index == hl->index) {
+                        if (fr2->dc->index == hl->index) {
                             found = TRUE;
                             deleted = fr2->deleted;
                             

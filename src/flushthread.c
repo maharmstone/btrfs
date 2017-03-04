@@ -5768,8 +5768,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         
         RtlCopyMemory(di2, di, disize);
 
-        Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX, fileref->index,
-                                        di, disize, Batch_Insert);
+        Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
+                                        fileref->dc->index, di, disize, Batch_Insert);
         if (!NT_SUCCESS(Status)) { 
             ERR("insert_tree_item_batch returned %08x\n", Status);
             return Status;
@@ -5791,7 +5791,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            ir->index = fileref->index;
+            ir->index = fileref->dc->index;
             ir->n = fileref->dc->utf8.Length;
             RtlCopyMemory(ir->name, fileref->dc->utf8.Buffer, ir->n);
         
@@ -5814,7 +5814,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
             
             rr->dir = fileref->parent->fcb->inode;
-            rr->index = fileref->index;
+            rr->index = fileref->dc->index;
             rr->n = fileref->dc->utf8.Length;
             RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
             
@@ -5873,7 +5873,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
-            ir->index = fileref->index;
+            ir->index = fileref->oldindex;
             ir->n = name->Length;
             RtlCopyMemory(ir->name, name->Buffer, name->Length);
 
@@ -5900,7 +5900,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_INDEX (0x60)
         
         Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                        fileref->index, NULL, 0, Batch_Delete);
+                                        fileref->oldindex, NULL, 0, Batch_Delete);
         if (!NT_SUCCESS(Status)) { 
             ERR("insert_tree_item_batch returned %08x\n", Status);
             return Status;
@@ -5994,7 +5994,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            ir->index = fileref->index;
+            ir->index = fileref->dc->index;
             ir->n = oldutf8->Length;
             RtlCopyMemory(ir->name, oldutf8->Buffer, ir->n);
         
@@ -6013,7 +6013,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            ir2->index = fileref->index;
+            ir2->index = fileref->dc->index;
             ir2->n = fileref->dc->utf8.Length;
             RtlCopyMemory(ir2->name, fileref->dc->utf8.Buffer, ir2->n);
         
@@ -6043,7 +6043,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
             
             rr->dir = fileref->parent->fcb->inode;
-            rr->index = fileref->index;
+            rr->index = fileref->dc->index;
             rr->n = fileref->dc->utf8.Length;
             RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
             
@@ -6063,7 +6063,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // delete DIR_INDEX (0x60)
         
         Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                        fileref->index, NULL, 0, Batch_Delete);
+                                        fileref->dc->index, NULL, 0, Batch_Delete);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
             return Status;
@@ -6072,7 +6072,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         // add DIR_INDEX (0x60)
         
        Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_INDEX,
-                                       fileref->index, di2, disize, Batch_Insert);
+                                       fileref->dc->index, di2, disize, Batch_Insert);
        if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
             return Status;

@@ -1205,28 +1205,7 @@ void insert_fileref_child(file_ref* parent, file_ref* child, BOOL do_lock) {
     if (do_lock)
         ExAcquireResourceExclusiveLite(&parent->nonpaged->children_lock, TRUE);
     
-    if (IsListEmpty(&parent->children))
-        InsertTailList(&parent->children, &child->list_entry);
-    else {
-        LIST_ENTRY* le = parent->children.Flink;
-        file_ref* fr1 = CONTAINING_RECORD(le, file_ref, list_entry);
-        
-        if (child->index < fr1->index)
-            InsertHeadList(&parent->children, &child->list_entry);
-        else {
-            while (le != &parent->children) {
-                file_ref* fr2 = (le->Flink == &parent->children) ? NULL : CONTAINING_RECORD(le->Flink, file_ref, list_entry);
-                
-                if (child->index >= fr1->index && (!fr2 || fr2->index > child->index)) {
-                    InsertHeadList(&fr1->list_entry, &child->list_entry);
-                    break;
-                }
-                
-                fr1 = fr2;
-                le = le->Flink;
-            }
-        }
-    }
+    InsertTailList(&parent->children, &child->list_entry);
     
     if (do_lock)
         ExReleaseResourceLite(&parent->nonpaged->children_lock);
@@ -1305,12 +1284,12 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
         sf2->fcb = fcb;
 
         sf2->parent = (struct _file_ref*)sf;
-        insert_fileref_child(sf, sf2, TRUE);
-        
-        increase_fileref_refcount(sf);
         
         sf2->dc = dc;
         dc->fileref = sf2;
+
+        insert_fileref_child(sf, sf2, TRUE);
+        increase_fileref_refcount(sf);
     } else {
         root* subvol;
         UINT64 inode;
@@ -1374,7 +1353,6 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
             if (dc->type == BTRFS_TYPE_DIRECTORY)
                 fcb->fileref = sf2;
             
-            sf2->index = dc->index;
             sf2->dc = dc;
             dc->fileref = sf2;
             
@@ -1886,7 +1864,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     }
     
     fileref->fcb = fcb;
-    fileref->index = dirpos;
     
     if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, TRUE, NULL, rollback);
@@ -1909,12 +1886,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     fileref->parent = parfileref;
 
-    insert_fileref_child(parfileref, fileref, TRUE);
-    
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = utf8len;
     
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, fileref->index, &utf8as, fpus, fcb->type, &dc);
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, dirpos, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08x\n", Status);
     
@@ -1923,6 +1898,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fileref->dc = dc;
     dc->fileref = fileref;
     
+    insert_fileref_child(parfileref, fileref, TRUE);
     increase_fileref_refcount(parfileref);
     
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {

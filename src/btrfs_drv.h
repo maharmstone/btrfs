@@ -215,7 +215,7 @@ typedef struct {
 typedef struct _file_ref {
     fcb* fcb;
     ANSI_STRING oldutf8;
-    UINT64 index;
+    UINT64 oldindex;
     BOOL delete_on_close;
     BOOL deleted;
     BOOL created;
