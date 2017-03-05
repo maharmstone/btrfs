@@ -30,8 +30,6 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
     BOOL inserted;
     LIST_ENTRY* le;
     
-    TRACE("(%p, %llx)\n", Vcb, addr);
-    
     buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
     if (!buf) {
         ERR("out of memory\n");
@@ -354,8 +352,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
     tree_data *td, *lasttd;
     KEY key2;
     
-    TRACE("(%p, %p, %p, %p, %u)\n", Vcb, t, tp, searchkey, ignore);
-    
     cmp = 1;
     td = first_item(t);
     lasttd = NULL;
@@ -465,8 +461,6 @@ NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, con
     BOOL loaded;
 //     KIRQL irql;
     
-    TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
-    
     if (!r->treeholder.tree) {
         Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -493,8 +487,6 @@ NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, con
 NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
-    
-    TRACE("(%p, %p, %p, %p)\n", Vcb, r, tp, searchkey);
     
     if (!r->treeholder.tree) {
         Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
