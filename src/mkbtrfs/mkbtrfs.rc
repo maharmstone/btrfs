@@ -70,12 +70,12 @@ BEGIN
         BLOCK "080904b0"
         BEGIN
             VALUE "FileDescription", "Btrfs formatting utility"
-            VALUE "FileVersion", "0.8"
+            VALUE "FileVersion", "0.9"
             VALUE "InternalName", "mkbtrfs"
             VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-17"
             VALUE "OriginalFilename", "mkbtrfs.exe"
             VALUE "ProductName", "WinBtrfs"
-            VALUE "ProductVersion", "0.8"
+            VALUE "ProductVersion", "0.9"
         END
     END
     BLOCK "VarFileInfo"

@@ -1,4 +1,4 @@
-WinBtrfs v0.8
+WinBtrfs v0.9
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
@@ -59,16 +59,17 @@ Features
 * Balancing (including resuming balances started on Linux)
 * Device addition and removal
 * Creation of new filesystems with `mkbtrfs.exe` and `ubtrfs.dll`
+* Scrubbing
+* TRIM/DISCARD
 
 Todo
 ----
 
-* New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
-* Scrubbing
-* Passthrough of permissions etc. for LXSS
-* TRIM/DISCARD
-* Subvol send and receive
 * Reflink copy
+* Subvol send and receive
+* Degraded mounts
+* New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
+* Passthrough of permissions etc. for LXSS
 
 Installation
 ------------
@@ -135,12 +136,6 @@ The driver assumes that all filenames are encoded in UTF-8. This should be the
 default on most setups nowadays - if you're not using UTF-8, it's probably worth
 looking into converting your files.
 
-* Windows thinks it's an NTFS volume
-
-Unfortunately we have to lie about this - the function MPR!MprGetConnection checks
-the filesystem type against an internal whitelist, and fails if it's not found, which
-prevents UAC from working. Thanks Microsoft!
-
 * `btrfs check` reports errors in the extent tree
 
 There's a bug in btrfs-progs v4.7, which causes it to return false positives when
@@ -163,7 +158,8 @@ to appear in the first place, but unfortunately this confuses diskmgmt.msc too m
 * How do I format a partition as Btrfs?
 
 Use the included command line program mkbtrfs.exe. We can't add Btrfs to Windows' own
-dialog box, unfortunately, as its list of filesystems has been hardcoded.
+dialog box, unfortunately, as its list of filesystems has been hardcoded. You can also
+run `format /fs:btrfs`, if you don't need to set any Btrfs-specific options.
 
 * I can't reformat a mounted Btrfs filesystem
 
@@ -172,6 +168,18 @@ flag, e.g. `format /fs:ntfs D:`.
 
 Changelog
 ---------
+
+v0.9 (2017-03-05):
+* Scrubbing
+* TRIM/DISCARD
+* Better handling of multi-device volumes
+* Performance increases when reading from RAID filesystems
+* No longer lies about being NTFS, except when it has to
+* Volumes will now go readonly if there is an unrecoverable error, rather than blue-screening
+* Filesystems can now be created with Windows' inbuilt format.com
+* Zlib upgraded to version 1.2.11
+* Miscellaneous performance increases
+* Miscellaneous bug fixes
 
 v0.8 (2016-12-30):
 * Volume property sheet, for:
@@ -321,12 +329,6 @@ sheet; it's in hex there, as opposed to decimal on the Linux tools. The default 
 via `btrfs subvolume set-default`; or, failing that, subvolume 5. The equivalent parameter on Linux is
 called `subvolid`.
 
-* `Raid5Recalculation` and `Raid6Recalculation` (DWORD): the number of devices we will skip when reading
-from a RAID5 or 6 chunk. Because disk I/O is so much slower than CPU operations, it can be quicker to
-recalculate a stripe from the others than to read it in the first place. Valid values are 0 and 1 for
-RAID5, and 0, 1, and 2 for RAID6. You might want to experiment with which is quicker for you; for SSDs
-this probably should be 0. The default for both options is 1.
-
 * `SkipBalance` (DWORD): set to 1 to tell the driver not to attempt resuming a balance which was running
 when the system last powered down. The default is 0. The equivalent parameter on Linux is `skip_balance`.
 
@@ -341,7 +343,7 @@ Copyright
 
 This code also contains portions of zlib, which is licensed as follows:
 
-  Copyright (C) 1995-2013 Jean-loup Gailly and Mark Adler
+  Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
