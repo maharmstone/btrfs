@@ -3761,7 +3761,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     NewDeviceObject->Flags |= DO_DIRECT_IO;
-    NewDeviceObject->SectorSize = DeviceToMount->SectorSize;
+    
+    // Some programs seem to expect that the sector size will be 512, for
+    // FILE_NO_INTERMEDIATE_BUFFERING and the like.
+    NewDeviceObject->SectorSize = min(DeviceToMount->SectorSize, 512);
+    
     Vcb = (PVOID)NewDeviceObject->DeviceExtension;
     RtlZeroMemory(Vcb, sizeof(device_extension));
     Vcb->type = VCB_TYPE_FS;
