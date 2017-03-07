@@ -2981,6 +2981,20 @@ static NTSTATUS get_integrity_information(device_extension* Vcb, PFILE_OBJECT Fi
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS set_integrity_information(PFILE_OBJECT FileObject, void* data, ULONG datalen) {
+    TRACE("FSCTL_SET_INTEGRITY_INFORMATION\n");
+    
+    // STUB
+
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!data || datalen < sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER))
+        return STATUS_INVALID_PARAMETER;
+    
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -3450,6 +3464,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
         case FSCTL_GET_INTEGRITY_INFORMATION:
             Status = get_integrity_information(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp),
                                                IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            break;
+
+        case FSCTL_SET_INTEGRITY_INFORMATION:
+            Status = set_integrity_information(IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
             break;
 
         case FSCTL_BTRFS_GET_FILE_IDS:
