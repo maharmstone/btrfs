@@ -92,6 +92,20 @@
 #define finally if (1)
 #endif
 
+#ifndef FILE_SUPPORTS_BLOCK_REFCOUNTING
+#define FILE_SUPPORTS_BLOCK_REFCOUNTING 0x08000000
+
+typedef struct _DUPLICATE_EXTENTS_DATA {
+    HANDLE FileHandle;
+    LARGE_INTEGER SourceFileOffset;
+    LARGE_INTEGER TargetFileOffset;
+    LARGE_INTEGER ByteCount;
+} DUPLICATE_EXTENTS_DATA, *PDUPLICATE_EXTENTS_DATA;
+
+#define FSCTL_DUPLICATE_EXTENTS_TO_FILE CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 209, METHOD_BUFFERED, FILE_WRITE_ACCESS)
+
+#endif
+
 struct _device_extension;
 
 typedef struct _fcb_nonpaged {
