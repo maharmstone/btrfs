@@ -2913,7 +2913,7 @@ end:
     return Status;
 }
 
-static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
+void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     rollback_extent* re;
     
     re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);

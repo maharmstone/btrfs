@@ -2995,6 +2995,217 @@ static NTSTATUS set_integrity_information(PFILE_OBJECT FileObject, void* data, U
     return STATUS_SUCCESS;
 }
 
+static void add_extent_to_list(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    
+    // FIXME - add optional parameter to start looking from last extent inserted
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (oldext->offset > ext->offset) {
+            InsertHeadList(le->Blink, &ext->list_entry);
+            goto end;
+        }
+        
+        le = le->Flink;
+    }
+    
+    InsertTailList(&fcb->extents, &ext->list_entry);
+    
+end:
+    add_insert_extent_rollback(rollback, fcb, ext);
+}
+
+static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
+    DUPLICATE_EXTENTS_DATA* ded = (DUPLICATE_EXTENTS_DATA*)data;
+    fcb *fcb = FileObject ? FileObject->FsContext : NULL, *sourcefcb;
+    ccb *ccb = FileObject ? FileObject->FsContext2 : NULL, *sourceccb;
+    NTSTATUS Status;
+    PFILE_OBJECT sourcefo;
+    UINT64 sourcelen;
+    LIST_ENTRY rollback, *le;
+
+    if (!ded || datalen < sizeof(DUPLICATE_EXTENTS_DATA))
+        return STATUS_BUFFER_TOO_SMALL;
+    
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+
+    if ((ded->SourceFileOffset.QuadPart & (Vcb->superblock.sector_size - 1)) || (ded->TargetFileOffset.QuadPart & (Vcb->superblock.sector_size - 1)))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (ded->ByteCount.QuadPart & (Vcb->superblock.sector_size - 1))
+        return STATUS_INVALID_PARAMETER;
+    
+    if (ded->ByteCount.QuadPart == 0)
+        return STATUS_SUCCESS;
+    
+    if (!fcb || !ccb || fcb == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+        return STATUS_ACCESS_DENIED;
+    
+    if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_DATA)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    if (!fcb->ads && fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)
+        return STATUS_INVALID_PARAMETER;
+
+    Status = ObReferenceObjectByHandle(ded->FileHandle, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&sourcefo, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+        return Status;
+    }
+    
+    if (sourcefo->DeviceObject != FileObject->DeviceObject) {
+        WARN("source and destination are on different volumes\n");
+        ObDereferenceObject(sourcefo);
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    sourcefcb = sourcefo->FsContext;
+    sourceccb = sourcefo->FsContext2;
+    
+    if (!sourcefcb || !sourceccb || sourcefcb == Vcb->volume_fcb) {
+        ObDereferenceObject(sourcefo);
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (Irp->RequestorMode == UserMode && (!(sourceccb->access & FILE_READ_DATA) || !(sourceccb->access & FILE_READ_ATTRIBUTES))) {
+        WARN("insufficient privileges\n");
+        ObDereferenceObject(sourcefo);
+        return STATUS_ACCESS_DENIED;
+    }
+    
+    if (!sourcefcb->ads && sourcefcb->type != BTRFS_TYPE_FILE && sourcefcb->type != BTRFS_TYPE_SYMLINK) {
+        ObDereferenceObject(sourcefo);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    sourcelen = sourcefcb->ads ? sourcefcb->adsdata.Length : sourcefcb->inode_item.st_size;
+    
+    if (sector_align(sourcelen, Vcb->superblock.sector_size) < ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart) {
+        ObDereferenceObject(sourcefo);
+        return STATUS_NOT_SUPPORTED;
+    }
+    
+    // FIXME - if source and dest are same file, make sure no overlap
+    // FIXME - fail if nocsum flag set on one file but not the other
+    
+    InitializeListHead(&rollback);
+    
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    // FIXME - check for locks exclusively on destination
+    // FIXME - check for locks non-exclusively on source
+
+    Status = excise_extents(Vcb, fcb, ded->TargetFileOffset.QuadPart, ded->ByteCount.QuadPart, Irp, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        goto end;
+    }
+    
+    le = sourcefcb->extents.Flink;
+    while (le != &sourcefcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (!ext->ignore && ext->offset >= ded->SourceFileOffset.QuadPart) {
+            if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                // FIXME
+            } else {
+                ULONG extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                extent* ext2;
+                EXTENT_DATA2 *ed2s, *ed2d;
+
+                if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
+                    break;
+                
+                ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
+                if (!ext2) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                if (ext->offset < ded->SourceFileOffset.QuadPart)
+                    ext2->offset = ded->TargetFileOffset.QuadPart;
+                else
+                    ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
+
+                ext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                ext2->unique = FALSE;
+                ext2->ignore = FALSE;
+                ext2->inserted = TRUE;
+                
+                if (ext->csum) {
+                    // FIXME - copy over csum
+                    ext2->csum = NULL; // FIXME
+                } else
+                    ext2->csum = NULL;
+
+                ext2->extent_data.generation = Vcb->superblock.generation;
+                ext2->extent_data.decoded_size = ext->extent_data.decoded_size;
+                ext2->extent_data.compression = ext->extent_data.compression;
+                ext2->extent_data.encryption = ext->extent_data.encryption;
+                ext2->extent_data.encoding = ext->extent_data.encoding;
+                ext2->extent_data.type = ext->extent_data.type;
+                
+                ed2s = (EXTENT_DATA2*)ext->extent_data.data;
+                ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
+                
+                ed2d->address = ed2s->address;
+                ed2d->size = ed2s->size;
+                
+                if (ext->offset < ded->SourceFileOffset.QuadPart) {
+                    ed2d->offset = ed2s->offset + ded->SourceFileOffset.QuadPart - ext->offset;
+                    ed2d->num_bytes = min(ded->ByteCount.QuadPart, ed2s->num_bytes + ext->offset - ded->SourceFileOffset.QuadPart);
+                } else {
+                    ed2d->offset = ed2s->offset;
+                    ed2d->num_bytes = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart - ext->offset, ed2s->num_bytes);
+                }
+                
+                add_extent_to_list(fcb, ext2, &rollback);
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
+    // FIXME - clear unique flag in source
+    // FIXME - update refcounts
+    // FIXME - update destination's INODE_ITEM (time, seq, nbytes)
+    // FIXME - send write notification
+    
+    // FIXME - make this work for streams
+    // FIXME - make sure this works when source and dest are same file
+    
+    fcb->extents_changed = TRUE;
+    mark_fcb_dirty(fcb);
+    
+    Status = STATUS_SUCCESS;
+
+end:
+    ObDereferenceObject(sourcefo);
+    
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+    
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -3468,6 +3679,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
 
         case FSCTL_SET_INTEGRITY_INFORMATION:
             Status = set_integrity_information(IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            break;
+
+        case FSCTL_DUPLICATE_EXTENTS_TO_FILE:
+            Status = duplicate_extents(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                       IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
 
         case FSCTL_BTRFS_GET_FILE_IDS:
