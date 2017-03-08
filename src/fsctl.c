@@ -3097,7 +3097,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     }
     
     // FIXME - if source and dest are same file, make sure no overlap
-    // FIXME - fail if nocsum flag set on one file but not the other
+    
+    // fail if nocsum flag set on one file but not the other
+    if (!fcb->ads && !sourcefcb->ads && (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) != (sourcefcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+        ObDereferenceObject(sourcefo);
+        return STATUS_INVALID_PARAMETER;
+    }
     
     InitializeListHead(&rollback);
     
