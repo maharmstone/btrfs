@@ -3123,6 +3123,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 ULONG extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                 extent* ext2;
                 EXTENT_DATA2 *ed2s, *ed2d;
+                chunk* c;
 
                 if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
                     break;
@@ -3172,6 +3173,20 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 }
                 
                 add_extent_to_list(fcb, ext2, &rollback);
+
+                c = get_chunk_from_address(Vcb, ed2s->address);
+                if (!c) {
+                    ERR("get_chunk_from_address(%llx) failed\n", ed2s->address);
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
+
+                Status = update_changed_extent_ref(Vcb, c, ed2s->address, ed2s->size, fcb->subvol->id, fcb->inode, ext2->offset - ed2d->offset,
+                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("update_changed_extent_ref returned %08x\n", Status);
+                    goto end;
+                }
             }
         }
         
@@ -3179,7 +3194,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     }
     
     // FIXME - clear unique flag in source
-    // FIXME - update refcounts
     // FIXME - update destination's INODE_ITEM (time, seq, nbytes)
     // FIXME - send write notification
     
