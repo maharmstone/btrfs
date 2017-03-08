@@ -3148,12 +3148,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 ext2->unique = FALSE;
                 ext2->ignore = FALSE;
                 ext2->inserted = TRUE;
-                
-                if (ext->csum) {
-                    // FIXME - copy over csum
-                    ext2->csum = NULL; // FIXME
-                } else
-                    ext2->csum = NULL;
 
                 ext2->extent_data.generation = Vcb->superblock.generation;
                 ext2->extent_data.decoded_size = ext->extent_data.decoded_size;
@@ -3175,6 +3169,32 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                     ed2d->offset = ed2s->offset;
                     ed2d->num_bytes = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart - ext->offset, ed2s->num_bytes);
                 }
+                
+                if (ext->csum) {
+                    if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
+                        ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                        if (!ext2->csum) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            ExFreePool(ext2);
+                            goto end;
+                        }
+                        
+                        RtlCopyMemory(ext2->csum, &ext->csum[(ed2d->offset - ed2s->offset) / Vcb->superblock.sector_size],
+                                      ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                    } else {
+                        ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                        if (!ext2->csum) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            ExFreePool(ext2);
+                            goto end;
+                        }
+                        
+                        RtlCopyMemory(ext2->csum, ext->csum, ed2s->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                    }
+                } else
+                    ext2->csum = NULL;
                 
                 add_extent_to_list(fcb, ext2, &rollback);
 
