@@ -3280,6 +3280,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     NTSTATUS Status;
     
     switch (type) {
+        case FSCTL_REQUEST_OPLOCK:
+            WARN("STUB: FSCTL_REQUEST_OPLOCK\n");
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
         case FSCTL_REQUEST_OPLOCK_LEVEL_1:
             WARN("STUB: FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
             Status = STATUS_INVALID_DEVICE_REQUEST;
