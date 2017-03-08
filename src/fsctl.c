@@ -3246,7 +3246,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         
         if (!ccb->user_set_write_time) {
             fcb->inode_item.st_mtime = now;
-            // FIXME - send FILE_NOTIFY_CHANGE_LAST_WRITE notification
+            send_notification_fcb(ccb->fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
         }
 
         fcb->inode_item_changed = TRUE;
