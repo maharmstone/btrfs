@@ -3024,8 +3024,10 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     ccb *ccb = FileObject ? FileObject->FsContext2 : NULL, *sourceccb;
     NTSTATUS Status;
     PFILE_OBJECT sourcefo;
-    UINT64 sourcelen;
+    UINT64 sourcelen, nbytes;
     LIST_ENTRY rollback, *le;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
 
     if (!ded || datalen < sizeof(DUPLICATE_EXTENTS_DATA))
         return STATUS_BUFFER_TOO_SMALL;
@@ -3112,6 +3114,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         goto end;
     }
     
+    nbytes = 0;
+    
     le = sourcefcb->extents.Flink;
     while (le != &sourcefcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -3187,6 +3191,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                     ERR("update_changed_extent_ref returned %08x\n", Status);
                     goto end;
                 }
+                
+                nbytes += ed2d->num_bytes;
             }
         }
         
@@ -3194,14 +3200,38 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     }
     
     // FIXME - clear unique flag in source
-    // FIXME - update destination's INODE_ITEM (time, seq, nbytes)
-    // FIXME - send write notification
+
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    if (fcb->ads) {
+        ccb->fileref->parent->fcb->inode_item.sequence++;
+
+        if (!ccb->user_set_change_time)
+            ccb->fileref->parent->fcb->inode_item.st_ctime = now;
+
+        ccb->fileref->parent->fcb->inode_item_changed = TRUE;
+        mark_fcb_dirty(ccb->fileref->parent->fcb);
+    } else {
+        fcb->inode_item.st_blocks += nbytes;
+        fcb->inode_item.sequence++;
+        
+        if (!ccb->user_set_change_time)
+            fcb->inode_item.st_ctime = now;
+        
+        if (!ccb->user_set_write_time) {
+            fcb->inode_item.st_mtime = now;
+            // FIXME - send FILE_NOTIFY_CHANGE_LAST_WRITE notification
+        }
+
+        fcb->inode_item_changed = TRUE;
+        fcb->extents_changed = TRUE;
+    }
+
+    mark_fcb_dirty(fcb);
     
     // FIXME - make this work for streams
     // FIXME - make sure this works when source and dest are same file
-    
-    fcb->extents_changed = TRUE;
-    mark_fcb_dirty(fcb);
     
     Status = STATUS_SUCCESS;
 
