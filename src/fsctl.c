@@ -3094,6 +3094,9 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
+    if (fcb != sourcefcb)
+        ExAcquireResourceSharedLite(sourcefcb->Header.Resource, TRUE);
+    
     // FIXME - check for locks exclusively on destination
     // FIXME - check for locks non-exclusively on source
     
@@ -3220,6 +3223,35 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         goto end;
     }
     
+    // clear unique flags in source fcb
+    le = sourcefcb->extents.Flink;
+    while (le != &sourcefcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (!ext->ignore && ext->unique && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+            EXTENT_DATA2* ed2s = (EXTENT_DATA2*)ext->extent_data.data;
+            LIST_ENTRY* le2;
+            
+            le2 = newexts.Flink;
+            while (le2 != &newexts) {
+                extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+                
+                if (ext2->extent_data.type == EXTENT_TYPE_REGULAR || ext2->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
+                    
+                    if (ed2d->address == ed2s->address && ed2d->size == ed2s->size) {
+                        ext->unique = FALSE;
+                        break;
+                    }
+                }
+                
+                le2 = le2->Flink;
+            }
+        }
+        
+        le = le->Flink;
+    }
+    
     if (!IsListEmpty(&newexts)) {
         LIST_ENTRY* lastextle = NULL;
         
@@ -3243,8 +3275,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         newexts.Flink->Blink = lastextle;
         lastextle->Flink = newexts.Flink;
     }
-    
-    // FIXME - clear unique flag in source
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
@@ -3286,6 +3316,9 @@ end:
         clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
+    
+    if (fcb != sourcefcb)
+        ExReleaseResourceLite(sourcefcb->Header.Resource);
 
     ExReleaseResourceLite(fcb->Header.Resource);
     
