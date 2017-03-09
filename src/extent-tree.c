@@ -1708,7 +1708,7 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
-    UINT64 rc, rcrun, root = 0, inode = 0;
+    UINT64 rc, rcrun, root = 0, inode = 0, offset = 0;
     UINT32 len;
     EXTENT_ITEM* ei;
     UINT8* ptr;
@@ -1787,7 +1787,8 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
             if (root == 0 && inode == 0) {
                 root = sectedr->root;
                 inode = sectedr->objid;
-            } else if (root != sectedr->root || inode != sectedr->objid)
+                offset = sectedr->offset;
+            } else if (root != sectedr->root || inode != sectedr->objid || offset != sectedr->offset)
                 return FALSE;
         } else
             return FALSE;
@@ -1817,7 +1818,8 @@ BOOL is_extent_unique(device_extension* Vcb, UINT64 address, UINT64 size, PIRP I
             if (root == 0 && inode == 0) {
                 root = edr->root;
                 inode = edr->objid;
-            } else if (root != edr->root || inode != edr->objid)
+                offset = edr->offset;
+            } else if (root != edr->root || inode != edr->objid || offset != edr->offset)
                 return FALSE;
             
             rcrun += edr->count;
