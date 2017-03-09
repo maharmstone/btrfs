@@ -2995,29 +2995,6 @@ static NTSTATUS set_integrity_information(PFILE_OBJECT FileObject, void* data, U
     return STATUS_SUCCESS;
 }
 
-static void add_extent_to_list(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
-    LIST_ENTRY* le;
-    
-    // FIXME - add optional parameter to start looking from last extent inserted
-    
-    le = fcb->extents.Flink;
-    while (le != &fcb->extents) {
-        extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (oldext->offset > ext->offset) {
-            InsertHeadList(le->Blink, &ext->list_entry);
-            goto end;
-        }
-        
-        le = le->Flink;
-    }
-    
-    InsertTailList(&fcb->extents, &ext->list_entry);
-    
-end:
-    add_insert_extent_rollback(rollback, fcb, ext);
-}
-
 static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     DUPLICATE_EXTENTS_DATA* ded = (DUPLICATE_EXTENTS_DATA*)data;
     fcb *fcb = FileObject ? FileObject->FsContext : NULL, *sourcefcb;
@@ -3025,7 +3002,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     NTSTATUS Status;
     PFILE_OBJECT sourcefo;
     UINT64 sourcelen, nbytes;
-    LIST_ENTRY rollback, *le;
+    LIST_ENTRY rollback, *le, newexts;
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
@@ -3111,6 +3088,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     }
     
     InitializeListHead(&rollback);
+    InitializeListHead(&newexts);
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
@@ -3118,12 +3096,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     
     // FIXME - check for locks exclusively on destination
     // FIXME - check for locks non-exclusively on source
-
-    Status = excise_extents(Vcb, fcb, ded->TargetFileOffset.QuadPart, ded->ByteCount.QuadPart, Irp, &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents returned %08x\n", Status);
-        goto end;
-    }
     
     nbytes = 0;
     
@@ -3131,7 +3103,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     while (le != &sourcefcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
-        if (!ext->ignore && ext->offset >= ded->SourceFileOffset.QuadPart) {
+        if (!ext->ignore) {
             if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
                 // FIXME
             } else {
@@ -3142,6 +3114,13 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
                 if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
                     break;
+                
+                ed2s = (EXTENT_DATA2*)ext->extent_data.data;
+                
+                if (ext->offset + ed2s->num_bytes <= ded->SourceFileOffset.QuadPart) {
+                    le = le->Flink;
+                    continue;
+                }
                 
                 ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
                 if (!ext2) {
@@ -3167,7 +3146,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 ext2->extent_data.encoding = ext->extent_data.encoding;
                 ext2->extent_data.type = ext->extent_data.type;
                 
-                ed2s = (EXTENT_DATA2*)ext->extent_data.data;
                 ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
                 
                 ed2d->address = ed2s->address;
@@ -3207,7 +3185,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 } else
                     ext2->csum = NULL;
                 
-                add_extent_to_list(fcb, ext2, &rollback);
+                InsertTailList(&newexts, &ext2->list_entry);
 
                 c = get_chunk_from_address(Vcb, ed2s->address);
                 if (!c) {
@@ -3228,6 +3206,42 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         }
         
         le = le->Flink;
+    }
+
+    Status = excise_extents(Vcb, fcb, ded->TargetFileOffset.QuadPart, ded->TargetFileOffset.QuadPart + ded->ByteCount.QuadPart, Irp, &rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        
+        while (!IsListEmpty(&newexts)) {
+            extent* ext = CONTAINING_RECORD(RemoveHeadList(&newexts), extent, list_entry);
+            ExFreePool(ext);
+        }
+        
+        goto end;
+    }
+    
+    if (!IsListEmpty(&newexts)) {
+        LIST_ENTRY* lastextle = NULL;
+        
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
+            
+            if (oldext->offset > ded->TargetFileOffset.QuadPart) {
+                lastextle = oldext->list_entry.Blink;
+                break;
+            }
+            
+            le = le->Flink;
+        }
+        
+        if (!lastextle)
+            lastextle = fcb->extents.Blink;
+        
+        newexts.Blink->Flink = lastextle->Flink;
+        lastextle->Flink->Blink = newexts.Blink;
+        newexts.Flink->Blink = lastextle;
+        lastextle->Flink = newexts.Flink;
     }
     
     // FIXME - clear unique flag in source
@@ -3262,7 +3276,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     mark_fcb_dirty(fcb);
     
     // FIXME - make this work for streams
-    // FIXME - make sure this works when source and dest are same file
     
     Status = STATUS_SUCCESS;
 
