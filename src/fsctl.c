@@ -3097,9 +3097,16 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     if (fcb != sourcefcb)
         ExAcquireResourceSharedLite(sourcefcb->Header.Resource, TRUE);
     
-    // FIXME - check for locks exclusively on destination
-    // FIXME - check for locks non-exclusively on source
+    if (!FsRtlFastCheckLockForWrite(&fcb->lock, &ded->TargetFileOffset, &ded->ByteCount, 0, FileObject, PsGetCurrentProcess())) {
+        Status = STATUS_FILE_LOCK_CONFLICT;
+        goto end;
+    }
     
+    if (!FsRtlFastCheckLockForRead(&sourcefcb->lock, &ded->SourceFileOffset, &ded->ByteCount, 0, FileObject, PsGetCurrentProcess())) {
+        Status = STATUS_FILE_LOCK_CONFLICT;
+        goto end;
+    }
+
     nbytes = 0;
     
     le = sourcefcb->extents.Flink;
