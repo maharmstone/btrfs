@@ -3114,17 +3114,61 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
         
         if (!ext->ignore) {
+            if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
+                break;
+            
             if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
-                // FIXME
+                UINT64 start, end;
+                ULONG datalen, extlen;
+                extent* ext2;
+                
+                if (ext->offset + ext->extent_data.decoded_size <= ded->SourceFileOffset.QuadPart) {
+                    le = le->Flink;
+                    continue;
+                }
+                
+                start = max(ded->SourceFileOffset.QuadPart, ext->offset);
+                end = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart, ext->offset + ext->extent_data.decoded_size);
+                
+                datalen = end - start;
+                extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + datalen;
+                
+                ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
+                if (!ext2) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+                
+                if (ext->offset < ded->SourceFileOffset.QuadPart)
+                    ext2->offset = ded->TargetFileOffset.QuadPart;
+                else
+                    ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
+
+                ext2->datalen = sizeof(EXTENT_DATA) - 1 + datalen;
+                ext2->unique = FALSE;
+                ext2->ignore = FALSE;
+                ext2->inserted = TRUE;
+                ext2->csum = NULL;
+
+                ext2->extent_data.generation = Vcb->superblock.generation;
+                ext2->extent_data.decoded_size = end - start;
+                ext2->extent_data.compression = ext->extent_data.compression;
+                ext2->extent_data.encryption = ext->extent_data.encryption;
+                ext2->extent_data.encoding = ext->extent_data.encoding;
+                ext2->extent_data.type = ext->extent_data.type;
+                
+                RtlCopyMemory(ext2->extent_data.data, &ext->extent_data.data[start - ext->offset], end - start);
+                
+                InsertTailList(&newexts, &ext2->list_entry);
+                
+                nbytes += end - start;
             } else {
                 ULONG extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
                 extent* ext2;
                 EXTENT_DATA2 *ed2s, *ed2d;
                 chunk* c;
 
-                if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
-                    break;
-                
                 ed2s = (EXTENT_DATA2*)ext->extent_data.data;
                 
                 if (ext->offset + ed2s->num_bytes <= ded->SourceFileOffset.QuadPart) {
