@@ -3307,6 +3307,9 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     
     // FIXME - make this work for streams
     
+    if (fcb->nonpaged->segment_object.DataSectionObject)
+        CcPurgeCacheSection(&fcb->nonpaged->segment_object, &ded->TargetFileOffset, ded->ByteCount.QuadPart, FALSE);
+    
     Status = STATUS_SUCCESS;
 
 end:
