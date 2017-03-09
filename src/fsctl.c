@@ -3096,7 +3096,13 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         return STATUS_NOT_SUPPORTED;
     }
     
-    // FIXME - if source and dest are same file, make sure no overlap
+    if (fcb == sourcefcb &&
+        ((ded->SourceFileOffset.QuadPart >= ded->TargetFileOffset.QuadPart && ded->SourceFileOffset.QuadPart < ded->TargetFileOffset.QuadPart + ded->ByteCount.QuadPart) || 
+        (ded->TargetFileOffset.QuadPart >= ded->SourceFileOffset.QuadPart && ded->TargetFileOffset.QuadPart < ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart))) {
+        WARN("source and destination are the same, and the ranges overlap\n");
+        ObDereferenceObject(sourcefo);
+        return STATUS_INVALID_PARAMETER;
+    }
     
     // fail if nocsum flag set on one file but not the other
     if (!fcb->ads && !sourcefcb->ads && (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) != (sourcefcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
