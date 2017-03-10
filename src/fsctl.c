@@ -3001,7 +3001,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     ccb *ccb = FileObject ? FileObject->FsContext2 : NULL, *sourceccb;
     NTSTATUS Status;
     PFILE_OBJECT sourcefo;
-    UINT64 sourcelen, nbytes;
+    UINT64 sourcelen, nbytes = 0;
     LIST_ENTRY rollback, *le, newexts;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -3012,12 +3012,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
 
-    if ((ded->SourceFileOffset.QuadPart & (Vcb->superblock.sector_size - 1)) || (ded->TargetFileOffset.QuadPart & (Vcb->superblock.sector_size - 1)))
-        return STATUS_INVALID_PARAMETER;
-    
-    if (ded->ByteCount.QuadPart & (Vcb->superblock.sector_size - 1))
-        return STATUS_INVALID_PARAMETER;
-    
     if (ded->ByteCount.QuadPart == 0)
         return STATUS_SUCCESS;
     
@@ -3053,6 +3047,18 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     if (!sourcefcb || !sourceccb || sourcefcb == Vcb->volume_fcb) {
         ObDereferenceObject(sourcefo);
         return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!sourcefcb->ads && !fcb->ads) {
+        if ((ded->SourceFileOffset.QuadPart & (Vcb->superblock.sector_size - 1)) || (ded->TargetFileOffset.QuadPart & (Vcb->superblock.sector_size - 1))) {
+            ObDereferenceObject(sourcefo);
+            return STATUS_INVALID_PARAMETER;
+        }
+        
+        if (ded->ByteCount.QuadPart & (Vcb->superblock.sector_size - 1)) {
+            ObDereferenceObject(sourcefo);
+            return STATUS_INVALID_PARAMETER;
+        }
     }
     
     if (Irp->RequestorMode == UserMode && (!(sourceccb->access & FILE_READ_DATA) || !(sourceccb->access & FILE_READ_ATTRIBUTES))) {
@@ -3107,224 +3113,328 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         goto end;
     }
 
-    nbytes = 0;
-    
-    le = sourcefcb->extents.Flink;
-    while (le != &sourcefcb->extents) {
-        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+    if (fcb->ads || sourcefcb->ads) {
+        UINT8* data;
+        ULONG bytes_read, dataoff, datalen;
+        BOOL make_inline;
         
-        if (!ext->ignore) {
-            if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
-                break;
+        make_inline = fcb->ads ? FALSE : fcb->inode_item.st_size <= Vcb->options.max_inline;
+        
+        if (make_inline) {
+            dataoff = ded->TargetFileOffset.QuadPart;
+            datalen = fcb->inode_item.st_size;
+        } else if (fcb->ads) {
+            dataoff = 0;
+            datalen = ded->ByteCount.QuadPart;
+        } else {
+            dataoff = ded->TargetFileOffset.QuadPart % Vcb->superblock.sector_size;
+            datalen = sector_align(ded->ByteCount.QuadPart + dataoff, Vcb->superblock.sector_size);
+        }
+        
+        data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        
+        if (dataoff > 0) {
+            if (make_inline)
+                Status = read_file(fcb, data, 0, datalen, NULL, Irp);
+            else
+                Status = read_file(fcb, data, ded->TargetFileOffset.QuadPart - dataoff, dataoff, NULL, Irp);
             
-            if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
-                UINT64 start, end;
-                ULONG datalen, extlen;
-                extent* ext2;
-                
-                if (ext->offset + ext->extent_data.decoded_size <= ded->SourceFileOffset.QuadPart) {
-                    le = le->Flink;
-                    continue;
-                }
-                
-                start = max(ded->SourceFileOffset.QuadPart, ext->offset);
-                end = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart, ext->offset + ext->extent_data.decoded_size);
-                
-                datalen = end - start;
-                extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + datalen;
-                
-                ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
-                if (!ext2) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                if (ext->offset < ded->SourceFileOffset.QuadPart)
-                    ext2->offset = ded->TargetFileOffset.QuadPart;
-                else
-                    ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_file returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+        }
 
-                ext2->datalen = sizeof(EXTENT_DATA) - 1 + datalen;
-                ext2->unique = FALSE;
-                ext2->ignore = FALSE;
-                ext2->inserted = TRUE;
-                ext2->csum = NULL;
-
-                ext2->extent_data.generation = Vcb->superblock.generation;
-                ext2->extent_data.decoded_size = end - start;
-                ext2->extent_data.compression = ext->extent_data.compression;
-                ext2->extent_data.encryption = ext->extent_data.encryption;
-                ext2->extent_data.encoding = ext->extent_data.encoding;
-                ext2->extent_data.type = ext->extent_data.type;
-                
-                RtlCopyMemory(ext2->extent_data.data, &ext->extent_data.data[start - ext->offset], end - start);
-                
-                InsertTailList(&newexts, &ext2->list_entry);
-                
-                nbytes += end - start;
-            } else {
-                ULONG extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
-                extent* ext2;
-                EXTENT_DATA2 *ed2s, *ed2d;
-                chunk* c;
-
-                ed2s = (EXTENT_DATA2*)ext->extent_data.data;
-                
-                if (ext->offset + ed2s->num_bytes <= ded->SourceFileOffset.QuadPart) {
-                    le = le->Flink;
-                    continue;
-                }
-                
-                ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
-                if (!ext2) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                if (ext->offset < ded->SourceFileOffset.QuadPart)
-                    ext2->offset = ded->TargetFileOffset.QuadPart;
-                else
-                    ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
-
-                ext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
-                ext2->unique = FALSE;
-                ext2->ignore = FALSE;
-                ext2->inserted = TRUE;
-
-                ext2->extent_data.generation = Vcb->superblock.generation;
-                ext2->extent_data.decoded_size = ext->extent_data.decoded_size;
-                ext2->extent_data.compression = ext->extent_data.compression;
-                ext2->extent_data.encryption = ext->extent_data.encryption;
-                ext2->extent_data.encoding = ext->extent_data.encoding;
-                ext2->extent_data.type = ext->extent_data.type;
-                
-                ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
-                
-                ed2d->address = ed2s->address;
-                ed2d->size = ed2s->size;
-                
-                if (ext->offset < ded->SourceFileOffset.QuadPart) {
-                    ed2d->offset = ed2s->offset + ded->SourceFileOffset.QuadPart - ext->offset;
-                    ed2d->num_bytes = min(ded->ByteCount.QuadPart, ed2s->num_bytes + ext->offset - ded->SourceFileOffset.QuadPart);
-                } else {
-                    ed2d->offset = ed2s->offset;
-                    ed2d->num_bytes = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart - ext->offset, ed2s->num_bytes);
-                }
-                
-                if (ext->csum) {
-                    if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
-                        ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
-                        if (!ext2->csum) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            ExFreePool(ext2);
-                            goto end;
-                        }
-                        
-                        RtlCopyMemory(ext2->csum, &ext->csum[(ed2d->offset - ed2s->offset) / Vcb->superblock.sector_size],
-                                      ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
-                    } else {
-                        ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
-                        if (!ext2->csum) {
-                            ERR("out of memory\n");
-                            Status = STATUS_INSUFFICIENT_RESOURCES;
-                            ExFreePool(ext2);
-                            goto end;
-                        }
-                        
-                        RtlCopyMemory(ext2->csum, ext->csum, ed2s->size * sizeof(UINT32) / Vcb->superblock.sector_size);
-                    }
-                } else
-                    ext2->csum = NULL;
-                
-                InsertTailList(&newexts, &ext2->list_entry);
-
-                c = get_chunk_from_address(Vcb, ed2s->address);
-                if (!c) {
-                    ERR("get_chunk_from_address(%llx) failed\n", ed2s->address);
-                    Status = STATUS_INTERNAL_ERROR;
-                    goto end;
-                }
-
-                Status = update_changed_extent_ref(Vcb, c, ed2s->address, ed2s->size, fcb->subvol->id, fcb->inode, ext2->offset - ed2d->offset,
-                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("update_changed_extent_ref returned %08x\n", Status);
-                    goto end;
-                }
-                
-                nbytes += ed2d->num_bytes;
+        if (sourcefcb->ads) {
+            Status = read_stream(sourcefcb, data + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read);
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_stream returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+        } else {
+            Status = read_file(sourcefcb, data + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_file returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
             }
         }
         
-        le = le->Flink;
-    }
-
-    Status = excise_extents(Vcb, fcb, ded->TargetFileOffset.QuadPart, ded->TargetFileOffset.QuadPart + ded->ByteCount.QuadPart, Irp, &rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents returned %08x\n", Status);
+        if (dataoff + bytes_read < datalen)
+            RtlZeroMemory(data + dataoff + bytes_read, datalen - bytes_read);
         
-        while (!IsListEmpty(&newexts)) {
-            extent* ext = CONTAINING_RECORD(RemoveHeadList(&newexts), extent, list_entry);
-            ExFreePool(ext);
+        if (fcb->ads)
+            RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data, min(ded->ByteCount.QuadPart, fcb->adsdata.Length - ded->TargetFileOffset.QuadPart));
+        else if (make_inline) {
+            ULONG edsize;
+            EXTENT_DATA* ed;
+            
+            Status = excise_extents(Vcb, fcb, 0, fcb->inode_item.st_size, Irp, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("excise_extents returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
+            
+            edsize = sizeof(EXTENT_DATA) - 1 + datalen;
+            
+            ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+            if (!ed) {
+                ERR("out of memory\n");
+                ExFreePool(data);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+            
+            ed->generation = Vcb->superblock.generation;
+            ed->decoded_size = fcb->inode_item.st_size;
+            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encoding = BTRFS_ENCODING_NONE;
+            ed->type = EXTENT_TYPE_INLINE;
+            
+            RtlCopyMemory(ed->data, data, datalen);
+            
+            if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, &rollback)) {
+                ERR("add_extent_to_fcb failed\n");
+                ExFreePool(data);
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+            
+            fcb->inode_item.st_blocks += datalen;
+        } else {
+            UINT64 start = ded->TargetFileOffset.QuadPart - (ded->TargetFileOffset.QuadPart % Vcb->superblock.sector_size);
+            
+            Status = do_write_file(fcb, start, start + datalen, data, Irp, FALSE, 0, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_write_file returned %08x\n", Status);
+                ExFreePool(data);
+                goto end;
+            }
         }
         
-        goto end;
-    }
-    
-    // clear unique flags in source fcb
-    le = sourcefcb->extents.Flink;
-    while (le != &sourcefcb->extents) {
-        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        
-        if (!ext->ignore && ext->unique && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
-            EXTENT_DATA2* ed2s = (EXTENT_DATA2*)ext->extent_data.data;
-            LIST_ENTRY* le2;
+        ExFreePool(data);
+    } else {
+        le = sourcefcb->extents.Flink;
+        while (le != &sourcefcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
             
-            le2 = newexts.Flink;
-            while (le2 != &newexts) {
-                extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+            if (!ext->ignore) {
+                if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
+                    break;
                 
-                if (ext2->extent_data.type == EXTENT_TYPE_REGULAR || ext2->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
+                if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                    UINT64 start, end;
+                    ULONG datalen, extlen;
+                    extent* ext2;
                     
-                    if (ed2d->address == ed2s->address && ed2d->size == ed2s->size) {
-                        ext->unique = FALSE;
-                        break;
+                    if (ext->offset + ext->extent_data.decoded_size <= ded->SourceFileOffset.QuadPart) {
+                        le = le->Flink;
+                        continue;
                     }
+                    
+                    start = max(ded->SourceFileOffset.QuadPart, ext->offset);
+                    end = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart, ext->offset + ext->extent_data.decoded_size);
+                    
+                    datalen = end - start;
+                    extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + datalen;
+                    
+                    ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
+                    if (!ext2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    if (ext->offset < ded->SourceFileOffset.QuadPart)
+                        ext2->offset = ded->TargetFileOffset.QuadPart;
+                    else
+                        ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
+
+                    ext2->datalen = sizeof(EXTENT_DATA) - 1 + datalen;
+                    ext2->unique = FALSE;
+                    ext2->ignore = FALSE;
+                    ext2->inserted = TRUE;
+                    ext2->csum = NULL;
+
+                    ext2->extent_data.generation = Vcb->superblock.generation;
+                    ext2->extent_data.decoded_size = end - start;
+                    ext2->extent_data.compression = ext->extent_data.compression;
+                    ext2->extent_data.encryption = ext->extent_data.encryption;
+                    ext2->extent_data.encoding = ext->extent_data.encoding;
+                    ext2->extent_data.type = ext->extent_data.type;
+                    
+                    RtlCopyMemory(ext2->extent_data.data, &ext->extent_data.data[start - ext->offset], end - start);
+                    
+                    InsertTailList(&newexts, &ext2->list_entry);
+                    
+                    nbytes += end - start;
+                } else {
+                    ULONG extlen = offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    extent* ext2;
+                    EXTENT_DATA2 *ed2s, *ed2d;
+                    chunk* c;
+
+                    ed2s = (EXTENT_DATA2*)ext->extent_data.data;
+                    
+                    if (ext->offset + ed2s->num_bytes <= ded->SourceFileOffset.QuadPart) {
+                        le = le->Flink;
+                        continue;
+                    }
+                    
+                    ext2 = ExAllocatePoolWithTag(PagedPool, extlen, ALLOC_TAG);
+                    if (!ext2) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end;
+                    }
+                    
+                    if (ext->offset < ded->SourceFileOffset.QuadPart)
+                        ext2->offset = ded->TargetFileOffset.QuadPart;
+                    else
+                        ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
+
+                    ext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                    ext2->unique = FALSE;
+                    ext2->ignore = FALSE;
+                    ext2->inserted = TRUE;
+
+                    ext2->extent_data.generation = Vcb->superblock.generation;
+                    ext2->extent_data.decoded_size = ext->extent_data.decoded_size;
+                    ext2->extent_data.compression = ext->extent_data.compression;
+                    ext2->extent_data.encryption = ext->extent_data.encryption;
+                    ext2->extent_data.encoding = ext->extent_data.encoding;
+                    ext2->extent_data.type = ext->extent_data.type;
+                    
+                    ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
+                    
+                    ed2d->address = ed2s->address;
+                    ed2d->size = ed2s->size;
+                    
+                    if (ext->offset < ded->SourceFileOffset.QuadPart) {
+                        ed2d->offset = ed2s->offset + ded->SourceFileOffset.QuadPart - ext->offset;
+                        ed2d->num_bytes = min(ded->ByteCount.QuadPart, ed2s->num_bytes + ext->offset - ded->SourceFileOffset.QuadPart);
+                    } else {
+                        ed2d->offset = ed2s->offset;
+                        ed2d->num_bytes = min(ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart - ext->offset, ed2s->num_bytes);
+                    }
+                    
+                    if (ext->csum) {
+                        if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
+                            ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                            if (!ext2->csum) {
+                                ERR("out of memory\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                ExFreePool(ext2);
+                                goto end;
+                            }
+                            
+                            RtlCopyMemory(ext2->csum, &ext->csum[(ed2d->offset - ed2s->offset) / Vcb->superblock.sector_size],
+                                        ed2d->num_bytes * sizeof(UINT32) / Vcb->superblock.sector_size);
+                        } else {
+                            ext2->csum = ExAllocatePoolWithTag(PagedPool, ed2d->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+                            if (!ext2->csum) {
+                                ERR("out of memory\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                ExFreePool(ext2);
+                                goto end;
+                            }
+                            
+                            RtlCopyMemory(ext2->csum, ext->csum, ed2s->size * sizeof(UINT32) / Vcb->superblock.sector_size);
+                        }
+                    } else
+                        ext2->csum = NULL;
+                    
+                    InsertTailList(&newexts, &ext2->list_entry);
+
+                    c = get_chunk_from_address(Vcb, ed2s->address);
+                    if (!c) {
+                        ERR("get_chunk_from_address(%llx) failed\n", ed2s->address);
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto end;
+                    }
+
+                    Status = update_changed_extent_ref(Vcb, c, ed2s->address, ed2s->size, fcb->subvol->id, fcb->inode, ext2->offset - ed2d->offset,
+                                                    1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("update_changed_extent_ref returned %08x\n", Status);
+                        goto end;
+                    }
+                    
+                    nbytes += ed2d->num_bytes;
                 }
-                
-                le2 = le2->Flink;
             }
+            
+            le = le->Flink;
+        }
+
+        Status = excise_extents(Vcb, fcb, ded->TargetFileOffset.QuadPart, ded->TargetFileOffset.QuadPart + ded->ByteCount.QuadPart, Irp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            
+            while (!IsListEmpty(&newexts)) {
+                extent* ext = CONTAINING_RECORD(RemoveHeadList(&newexts), extent, list_entry);
+                ExFreePool(ext);
+            }
+            
+            goto end;
         }
         
-        le = le->Flink;
-    }
-    
-    if (!IsListEmpty(&newexts)) {
-        LIST_ENTRY* lastextle = NULL;
-        
-        le = fcb->extents.Flink;
-        while (le != &fcb->extents) {
-            extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
+        // clear unique flags in source fcb
+        le = sourcefcb->extents.Flink;
+        while (le != &sourcefcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
             
-            if (oldext->offset > ded->TargetFileOffset.QuadPart) {
-                lastextle = oldext->list_entry.Blink;
-                break;
+            if (!ext->ignore && ext->unique && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                EXTENT_DATA2* ed2s = (EXTENT_DATA2*)ext->extent_data.data;
+                LIST_ENTRY* le2;
+                
+                le2 = newexts.Flink;
+                while (le2 != &newexts) {
+                    extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
+                    
+                    if (ext2->extent_data.type == EXTENT_TYPE_REGULAR || ext2->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                        EXTENT_DATA2* ed2d = (EXTENT_DATA2*)ext2->extent_data.data;
+                        
+                        if (ed2d->address == ed2s->address && ed2d->size == ed2s->size) {
+                            ext->unique = FALSE;
+                            break;
+                        }
+                    }
+                    
+                    le2 = le2->Flink;
+                }
             }
             
             le = le->Flink;
         }
         
-        if (!lastextle)
-            lastextle = fcb->extents.Blink;
-        
-        newexts.Blink->Flink = lastextle->Flink;
-        lastextle->Flink->Blink = newexts.Blink;
-        newexts.Flink->Blink = lastextle;
-        lastextle->Flink = newexts.Flink;
+        if (!IsListEmpty(&newexts)) {
+            LIST_ENTRY* lastextle = NULL;
+            
+            le = fcb->extents.Flink;
+            while (le != &fcb->extents) {
+                extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
+                
+                if (oldext->offset > ded->TargetFileOffset.QuadPart) {
+                    lastextle = oldext->list_entry.Blink;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+            
+            if (!lastextle)
+                lastextle = fcb->extents.Blink;
+            
+            newexts.Blink->Flink = lastextle->Flink;
+            lastextle->Flink->Blink = newexts.Blink;
+            newexts.Flink->Blink = lastextle;
+            lastextle->Flink = newexts.Flink;
+        }
     }
 
     KeQuerySystemTime(&time);
@@ -3355,8 +3465,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     }
 
     mark_fcb_dirty(fcb);
-    
-    // FIXME - make this work for streams
     
     if (fcb->nonpaged->segment_object.DataSectionObject)
         CcPurgeCacheSection(&fcb->nonpaged->segment_object, &ded->TargetFileOffset, ded->ByteCount.QuadPart, FALSE);

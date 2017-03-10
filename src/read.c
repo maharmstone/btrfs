@@ -2454,7 +2454,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* pbr) {
+NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* pbr) {
     ULONG readlen;
     NTSTATUS Status;
     
