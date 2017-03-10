@@ -2456,7 +2456,6 @@ exit:
 
 NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* pbr) {
     ULONG readlen;
-    NTSTATUS Status;
     
     TRACE("(%p, %p, %llx, %llx, %p)\n", fcb, data, start, length, pbr);
     
@@ -2482,9 +2481,7 @@ NTSTATUS STDCALL read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, 
     
     if (pbr) *pbr = readlen;
     
-    Status = STATUS_SUCCESS;
-       
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
