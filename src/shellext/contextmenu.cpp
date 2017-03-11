@@ -20,6 +20,7 @@
 #include <strsafe.h>
 #include <winternl.h>
 #include <string>
+#include <sstream>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
@@ -323,7 +324,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
 BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
     WCHAR* name;
-    std::wstring newpath;
+    std::wstring dirw, newpath;
     BOOL ret = FALSE;
     FILE_STANDARD_INFO fsi;
     FILE_BASIC_INFO fbi;
@@ -341,11 +342,12 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
 
     name = PathFindFileNameW(fn);
     
-    newpath = dir;
+    dirw = dir;
     
     if (dir[0] != 0 && dir[wcslen(dir) - 1] != '\\')
-        newpath += L"\\";
+        dirw += L"\\";
     
+    newpath = dirw;
     newpath += name;
     
     // FIXME - check same filesystem
@@ -358,9 +360,49 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
     
     dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
     if (dest == INVALID_HANDLE_VALUE) {
-        ShowError(hwnd, GetLastError());
-        CloseHandle(dest);
-        return FALSE;
+        int num = 2;
+        
+        if (GetLastError() != ERROR_FILE_EXISTS) {
+            ShowError(hwnd, GetLastError());
+            CloseHandle(source);
+            return FALSE;
+        }
+        
+        do {
+            WCHAR* ext;
+            std::wstringstream ss;
+            
+            ext = PathFindExtensionW(fn);
+
+            ss << dirw;
+            
+            if (*ext == 0) {
+                ss << name;
+                ss << L" (";
+                ss << num;
+                ss << L")";
+            } else {
+                std::wstring namew = name;
+                
+                ss << namew.substr(0, ext - name);
+                ss << L" (";
+                ss << num;
+                ss << L")";
+                ss << ext;
+            }
+            
+            dest = CreateFileW(ss.str().c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+            if (dest == INVALID_HANDLE_VALUE) {
+                if (GetLastError() != ERROR_FILE_EXISTS) {
+                    ShowError(hwnd, GetLastError());
+                    CloseHandle(source);
+                    return FALSE;
+                }
+                
+                num++;
+            } else
+                break;
+        } while (TRUE);
     }
     
     fdi.DeleteFile = TRUE;
@@ -426,8 +468,8 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
     SetFileTime(dest, NULL, &atime, &mtime);
     
-    // FIXME - handle collisions
     // FIXME - handle directories
+    // FIXME - handle subvols (do snapshot instead)
     // FIXME - handle streams
     // FIXME - copy hidden xattrs
     // FIXME - copy inode flags
