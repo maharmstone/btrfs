@@ -334,6 +334,11 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     BOOL ret = FALSE;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
+    btrfs_inode_info bii;
+    btrfs_set_inode_info bsii;
+    ULONG bytesret;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
     
     // Thanks to 0xbadfca11, whose version of reflink for Windows provided a few pointers on what
     // to do here - https://github.com/0xbadfca11/reflink
@@ -424,6 +429,28 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         } while (TRUE);
     }
 
+    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwnd, Status);
+        goto end;
+    }
+    
+    memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+    
+    bsii.flags_changed = TRUE;
+    bsii.flags = bii.flags;
+    
+    if (bii.flags & BTRFS_INODE_COMPRESS) {
+        bsii.compression_type_changed = TRUE;
+        bsii.compression_type = bii.compression_type;
+    }
+
+    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwnd, Status);
+        goto end;
+    }
+
     if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         HANDLE h;
         WIN32_FIND_DATAW fff;
@@ -455,7 +482,6 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     } else {
         HANDLE h;
         WIN32_FIND_STREAM_DATA fsd;
-        ULONG bytesret;
         
         if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
             reparse_header rh;
@@ -614,7 +640,6 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     
     // FIXME - handle subvols (do snapshot instead)
     // FIXME - copy hidden xattrs
-    // FIXME - copy inode flags
     // FIXME - check EAs are copied
     
     ret = TRUE;
