@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+#include <string>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
@@ -36,10 +37,35 @@
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 
-typedef struct _KEY_NAME_INFORMATION {
-    ULONG NameLength;
-    WCHAR Name[1];
-} KEY_NAME_INFORMATION;
+#ifndef FILE_SUPPORTS_BLOCK_REFCOUNTING
+
+typedef struct _DUPLICATE_EXTENTS_DATA {
+    HANDLE FileHandle;
+    LARGE_INTEGER SourceFileOffset;
+    LARGE_INTEGER TargetFileOffset;
+    LARGE_INTEGER ByteCount;
+} DUPLICATE_EXTENTS_DATA, *PDUPLICATE_EXTENTS_DATA;
+
+#define FSCTL_DUPLICATE_EXTENTS_TO_FILE CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 209, METHOD_BUFFERED, FILE_WRITE_ACCESS)
+
+typedef struct _FSCTL_GET_INTEGRITY_INFORMATION_BUFFER {
+    WORD ChecksumAlgorithm;
+    WORD Reserved;
+    DWORD Flags;
+    DWORD ChecksumChunkSizeInBytes;
+    DWORD ClusterSizeInBytes;
+} FSCTL_GET_INTEGRITY_INFORMATION_BUFFER, *PFSCTL_GET_INTEGRITY_INFORMATION_BUFFER;
+
+typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
+    WORD ChecksumAlgorithm;
+    WORD Reserved;
+    DWORD Flags;
+} FSCTL_SET_INTEGRITY_INFORMATION_BUFFER, *PFSCTL_SET_INTEGRITY_INFORMATION_BUFFER;
+
+#define FSCTL_GET_INTEGRITY_INFORMATION CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 159, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_SET_INTEGRITY_INFORMATION CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 160, METHOD_BUFFERED, FILE_READ_DATA | FILE_WRITE_DATA)
+
+#endif
 
 // FIXME - don't assume subvol's top inode is 0x100
 
@@ -91,7 +117,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
         num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
         
         for (i = 0; i < num_files; i++) {
-            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
                 h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     
                 if (h != INVALID_HANDLE_VALUE) {
@@ -183,8 +209,9 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     
     entries = 1;
     
-    // FIXME - only do if files on clipboard
-    if (idCmdFirst + 1 <= idCmdLast) {
+    // FIXME - only show if files are on same volume?
+    // FIXME - don't show if FS readonly
+    if (idCmdFirst + 1 <= idCmdLast && IsClipboardFormatAvailable(CF_HDROP)) {
         if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
             return E_FAIL;
 
@@ -293,7 +320,137 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
         ShowError(hwnd, GetLastError());
 }
 
-HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
+BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
+    HANDLE source, dest;
+    WCHAR* name;
+    std::wstring newpath;
+    BOOL ret = FALSE;
+    FILE_STANDARD_INFO fsi;
+    FILE_BASIC_INFO fbi;
+    FILE_DISPOSITION_INFO fdi;
+    FILE_END_OF_FILE_INFO feofi;
+    FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
+    FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
+    DUPLICATE_EXTENTS_DATA ded;
+    INT64 offset;
+    ULONG bytesret, maxdup;
+    FILETIME atime, mtime;
+    
+    // Thanks to 0xbadfca11, whose version of reflink for Windows provided a few pointers on what
+    // to do here - https://github.com/0xbadfca11/reflink
+
+    name = PathFindFileNameW(fn);
+    
+    newpath = dir;
+    
+    if (dir[0] != 0 && dir[wcslen(dir) - 1] != '\\')
+        newpath += L"\\";
+    
+    newpath += name;
+    
+    // FIXME - check same filesystem
+    
+    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (source == INVALID_HANDLE_VALUE) {
+        ShowError(hwnd, GetLastError());
+        return FALSE;
+    }
+    
+    dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+    if (dest == INVALID_HANDLE_VALUE) {
+        ShowError(hwnd, GetLastError());
+        CloseHandle(dest);
+        return FALSE;
+    }
+    
+    fdi.DeleteFile = TRUE;
+    if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO))) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+    
+    if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+        if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+    }
+
+    fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
+    fsiib.Reserved = 0;
+    fsiib.Flags = fgiib.Flags;
+    if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    feofi.EndOfFile = fsi.EndOfFile;
+    if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    ded.FileHandle = source;
+    maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
+
+    offset = 0;
+    while (offset < fsi.AllocationSize.QuadPart) {
+        ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
+        ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
+        if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+        
+        offset += ded.ByteCount.QuadPart;
+    }
+
+    atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
+    atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
+    mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
+    mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
+    SetFileTime(dest, NULL, &atime, &mtime);
+    
+    // FIXME - handle collisions
+    // FIXME - handle directories
+    // FIXME - handle streams
+    // FIXME - copy hidden xattrs
+    // FIXME - copy inode flags
+    // FIXME - check EAs are copied
+    
+    fdi.DeleteFile = FALSE;
+    if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO))) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+    
+    ret = TRUE;
+    
+end:
+    CloseHandle(dest);
+    CloseHandle(source);
+    
+    return ret;
+}
+
+HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
+    LPCMINVOKECOMMANDINFOEX pici = (LPCMINVOKECOMMANDINFOEX)picia;
+    
     if (ignore)
         return E_INVALIDARG;
     
@@ -311,7 +468,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
                 return E_FAIL;
             
             for (i = 0; i < num_files; i++) {
-                if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+                if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
                     create_snapshot(pici->hwnd, fn);
                 }
             }
@@ -388,7 +545,44 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         
         return S_OK;
     } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
-        // FIXME
+        HDROP hdrop;
+
+        if (!IsClipboardFormatAvailable(CF_HDROP))
+            return S_OK;
+        
+        if (!OpenClipboard(pici->hwnd)) {
+            ShowError(pici->hwnd, GetLastError());
+            return E_FAIL;
+        }
+        
+        hdrop = (HDROP)GetClipboardData(CF_HDROP);
+        
+        if (hdrop) {
+            HANDLE lh;
+            
+            lh = GlobalLock(hdrop);
+            
+            if (lh) {
+                ULONG num_files, i;
+                WCHAR fn[MAX_PATH];
+                
+                num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+                
+                for (i = 0; i < num_files; i++) {
+                    if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                        if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
+                            GlobalUnlock(lh);
+                            CloseClipboard();
+                            return E_FAIL;
+                        }
+                    }
+                }
+                
+                GlobalUnlock(lh);
+            }
+        }
+        
+        CloseClipboard();
     }
     
     return E_FAIL;

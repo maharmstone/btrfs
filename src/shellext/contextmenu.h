@@ -71,4 +71,6 @@ private:
     WCHAR path[MAX_PATH];
     STGMEDIUM stgm;
     BOOL stgm_set;
+    
+    BOOL reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir);
 };
