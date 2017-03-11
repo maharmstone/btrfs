@@ -321,20 +321,12 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
         ShowError(hwnd, GetLastError());
 }
 
-BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
+BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
     WCHAR* name;
     std::wstring dirw, newpath;
     BOOL ret = FALSE;
-    FILE_STANDARD_INFO fsi;
     FILE_BASIC_INFO fbi;
-    FILE_DISPOSITION_INFO fdi;
-    FILE_END_OF_FILE_INFO feofi;
-    FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
-    FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
-    DUPLICATE_EXTENTS_DATA ded;
-    INT64 offset;
-    ULONG bytesret, maxdup;
     FILETIME atime, mtime;
     
     // Thanks to 0xbadfca11, whose version of reflink for Windows provided a few pointers on what
@@ -352,17 +344,30 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
     
     // FIXME - check same filesystem
     
-    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         return FALSE;
     }
     
-    dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
+        ShowError(hwnd, GetLastError());
+        CloseHandle(source);
+        return FALSE;
+    }
+
+    if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        if (CreateDirectoryExW(fn, newpath.c_str(), NULL))
+            dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        else
+            dest = INVALID_HANDLE_VALUE;
+    } else
+        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+
     if (dest == INVALID_HANDLE_VALUE) {
         int num = 2;
         
-        if (GetLastError() != ERROR_FILE_EXISTS) {
+        if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS && wcscmp(fn, newpath.c_str())) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
             return FALSE;
@@ -390,10 +395,18 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
                 ss << L")";
                 ss << ext;
             }
-            
-            dest = CreateFileW(ss.str().c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+
+            newpath = ss.str();
+            if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                if (CreateDirectoryExW(fn, newpath.c_str(), NULL))
+                    dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                else
+                    dest = INVALID_HANDLE_VALUE;
+            } else
+                dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+
             if (dest == INVALID_HANDLE_VALUE) {
-                if (GetLastError() != ERROR_FILE_EXISTS) {
+                if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
                     ShowError(hwnd, GetLastError());
                     CloseHandle(source);
                     return FALSE;
@@ -404,62 +417,87 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
                 break;
         } while (TRUE);
     }
-    
-    fdi.DeleteFile = TRUE;
-    if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO))) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-    
-    if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
 
-    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-    if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-    if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-        if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
-    }
-
-    fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
-    fsiib.Reserved = 0;
-    fsiib.Flags = fgiib.Flags;
-    if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-    feofi.EndOfFile = fsi.EndOfFile;
-    if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-    ded.FileHandle = source;
-    maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
-
-    offset = 0;
-    while (offset < fsi.AllocationSize.QuadPart) {
-        ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
-        ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
-        if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
+    if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        HANDLE h;
+        WIN32_FIND_DATAW fff;
+        std::wstring qs;
         
-        offset += ded.ByteCount.QuadPart;
+        qs = fn;
+        qs += L"\\*";
+        
+        h = FindFirstFileW(qs.c_str(), &fff);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstring fn2;
+
+                if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
+                    continue;
+                
+                fn2 = fn;
+                fn2 += L"\\";
+                fn2 += fff.cFileName;
+
+                if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
+                    goto end;
+            } while (FindNextFileW(h, &fff));
+            
+            FindClose(h);
+        }
+    } else {
+        FILE_STANDARD_INFO fsi;
+        FILE_END_OF_FILE_INFO feofi;
+        FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
+        FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
+        DUPLICATE_EXTENTS_DATA ded;
+        INT64 offset;
+        ULONG bytesret, maxdup;
+        
+        if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+
+        if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+
+        if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+            if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+        }
+
+        fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
+        fsiib.Reserved = 0;
+        fsiib.Flags = fgiib.Flags;
+        if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+
+        feofi.EndOfFile = fsi.EndOfFile;
+        if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
+            ShowError(hwnd, GetLastError());
+            goto end;
+        }
+
+        ded.FileHandle = source;
+        maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
+
+        offset = 0;
+        while (offset < fsi.AllocationSize.QuadPart) {
+            ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
+            ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
+            if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+            
+            offset += ded.ByteCount.QuadPart;
+        }
     }
 
     atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
@@ -468,22 +506,23 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir) {
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
     SetFileTime(dest, NULL, &atime, &mtime);
     
-    // FIXME - handle directories
     // FIXME - handle subvols (do snapshot instead)
     // FIXME - handle streams
     // FIXME - copy hidden xattrs
     // FIXME - copy inode flags
     // FIXME - check EAs are copied
     
-    fdi.DeleteFile = FALSE;
-    if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO))) {
-        ShowError(hwnd, GetLastError());
-        goto end;
-    }
-    
     ret = TRUE;
     
 end:
+    if (!ret) {
+        FILE_DISPOSITION_INFO fdi;
+
+        fdi.DeleteFile = TRUE;
+        if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
+            ShowError(hwnd, GetLastError());
+    }
+    
     CloseHandle(dest);
     CloseHandle(source);
     

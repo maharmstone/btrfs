@@ -72,5 +72,5 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     
-    BOOL reflink_copy(HWND hwnd, WCHAR* fn, const WCHAR* dir);
+    BOOL reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
 };
