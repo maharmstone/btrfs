@@ -444,6 +444,8 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             
             FindClose(h);
         }
+
+        // CreateDirectoryExW also copies streams, no need to do it here
     } else {
         FILE_STANDARD_INFO fsi;
         FILE_END_OF_FILE_INFO feofi;
@@ -452,6 +454,8 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         DUPLICATE_EXTENTS_DATA ded;
         INT64 offset;
         ULONG bytesret, maxdup;
+        HANDLE h;
+        WIN32_FIND_STREAM_DATA fsd;
         
         if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
             ShowError(hwnd, GetLastError());
@@ -498,6 +502,72 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             
             offset += ded.ByteCount.QuadPart;
         }
+        
+        h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstring sn;
+                
+                sn = fsd.cStreamName;
+                
+                if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
+                    HANDLE stream;
+                    UINT8* data = NULL;
+
+                    if (fsd.StreamSize.QuadPart > 0) {
+                        std::wstring fn2;
+                        
+                        fn2 = fn;
+                        fn2 += sn;
+                        
+                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+                        
+                        if (stream == INVALID_HANDLE_VALUE) {
+                            ShowError(hwnd, GetLastError());
+                            goto end;
+                        }
+                        
+                        // We can get away with this because our streams are guaranteed to be below 64 KB -
+                        // don't do this on NTFS!
+                        data = (UINT8*)malloc(fsd.StreamSize.QuadPart);
+                        
+                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                            ShowError(hwnd, GetLastError());
+                            free(data);
+                            CloseHandle(stream);
+                            goto end;
+                        }
+
+                        CloseHandle(stream);
+                    }
+                    
+                    stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, NULL);
+                    
+                    if (stream == INVALID_HANDLE_VALUE) {
+                        ShowError(hwnd, GetLastError());
+
+                        if (data) free(data);
+
+                        goto end;
+                    }
+                    
+                    if (data) {
+                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                            ShowError(hwnd, GetLastError());
+                            free(data);
+                            CloseHandle(stream);
+                            goto end;
+                        }
+
+                        free(data);
+                    }
+                    
+                    CloseHandle(stream);
+                }
+            } while (FindNextStreamW(h, &fsd));
+            
+            FindClose(h);
+        }
     }
 
     atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
@@ -507,7 +577,6 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     SetFileTime(dest, NULL, &atime, &mtime);
     
     // FIXME - handle subvols (do snapshot instead)
-    // FIXME - handle streams
     // FIXME - copy hidden xattrs
     // FIXME - copy inode flags
     // FIXME - check EAs are copied
