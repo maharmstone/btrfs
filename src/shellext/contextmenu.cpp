@@ -329,7 +329,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
 
 BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
-    WCHAR* name;
+    WCHAR* name, volpath1[255], volpath2[255];
     std::wstring dirw, newpath;
     BOOL ret = FALSE;
     FILE_BASIC_INFO fbi;
@@ -353,14 +353,25 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     newpath = dirw;
     newpath += name;
     
-    // FIXME - check same filesystem
+    if (!GetVolumePathNameW(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
+        ShowError(hwnd, GetLastError());
+        return FALSE;
+    }
+
+    if (!GetVolumePathNameW(dir, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
+        ShowError(hwnd, GetLastError());
+        return FALSE;
+    }
     
+    if (wcscmp(volpath1, volpath2)) // different filesystems
+        return FALSE;
+
     source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         return FALSE;
     }
-    
+
     Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
