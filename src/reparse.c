@@ -76,15 +76,21 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             
             reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
             
+            if (buflen >= offsetof(REPARSE_DATA_BUFFER, ReparseDataLength))
+                rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+            
+            if (buflen >= offsetof(REPARSE_DATA_BUFFER, Reserved))
+                rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+            
+            if (buflen >= offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.SubstituteNameOffset))
+                rdb->Reserved = 0;
+            
             if (buflen < reqlen) {
                 Status = STATUS_BUFFER_OVERFLOW;
+                *retlen = min(buflen, offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.SubstituteNameOffset));
                 goto end;
             }
-            
-            rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-            rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
-            rdb->Reserved = 0;
-            
+
             rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
             rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = subnamelen;
             rdb->SymbolicLinkReparseBuffer.PrintNameOffset = subnamelen;
