@@ -68,6 +68,12 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 
 #endif
 
+typedef struct {
+    ULONG  ReparseTag;
+    USHORT ReparseDataLength;
+    USHORT Reserved;
+} reparse_header;
+
 // FIXME - don't assume subvol's top inode is 0x100
 
 HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
@@ -344,7 +350,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     
     // FIXME - check same filesystem
     
-    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         return FALSE;
@@ -447,60 +453,90 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         // CreateDirectoryExW also copies streams, no need to do it here
     } else {
-        FILE_STANDARD_INFO fsi;
-        FILE_END_OF_FILE_INFO feofi;
-        FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
-        FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
-        DUPLICATE_EXTENTS_DATA ded;
-        INT64 offset;
-        ULONG bytesret, maxdup;
         HANDLE h;
         WIN32_FIND_STREAM_DATA fsd;
+        ULONG bytesret;
         
-        if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
+        if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            reparse_header rh;
+            ULONG rplen;
+            UINT8* rp;
 
-        if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
-
-        if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-            if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
-                ShowError(hwnd, GetLastError());
-                goto end;
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
+                if (GetLastError() != ERROR_MORE_DATA) {
+                    ShowError(hwnd, GetLastError());
+                    goto end;
+                }
             }
-        }
-
-        fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
-        fsiib.Reserved = 0;
-        fsiib.Flags = fgiib.Flags;
-        if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
-
-        feofi.EndOfFile = fsi.EndOfFile;
-        if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
-            ShowError(hwnd, GetLastError());
-            goto end;
-        }
-
-        ded.FileHandle = source;
-        maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
-
-        offset = 0;
-        while (offset < fsi.AllocationSize.QuadPart) {
-            ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
-            ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
-            if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
+            
+            rplen = sizeof(reparse_header) + rh.ReparseDataLength;
+            rp = (UINT8*)malloc(rplen);
+            
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL)) {
                 ShowError(hwnd, GetLastError());
                 goto end;
             }
             
-            offset += ded.ByteCount.QuadPart;
+            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, NULL, 0, &bytesret, NULL)) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+
+            free(rp);
+        } else {
+            FILE_STANDARD_INFO fsi;
+            FILE_END_OF_FILE_INFO feofi;
+            FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
+            FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
+            DUPLICATE_EXTENTS_DATA ded;
+            INT64 offset;
+            ULONG maxdup;
+            
+            if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+
+            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+
+            if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
+                    ShowError(hwnd, GetLastError());
+                    goto end;
+                }
+            }
+
+            fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
+            fsiib.Reserved = 0;
+            fsiib.Flags = fgiib.Flags;
+            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+
+            feofi.EndOfFile = fsi.EndOfFile;
+            if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
+                ShowError(hwnd, GetLastError());
+                goto end;
+            }
+
+            ded.FileHandle = source;
+            maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
+
+            offset = 0;
+            while (offset < fsi.AllocationSize.QuadPart) {
+                ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
+                ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
+                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
+                    ShowError(hwnd, GetLastError());
+                    goto end;
+                }
+                
+                offset += ded.ByteCount.QuadPart;
+            }
         }
         
         h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
