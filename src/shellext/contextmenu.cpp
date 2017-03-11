@@ -193,9 +193,7 @@ static BOOL show_reflink_paste(WCHAR* path) {
     HANDLE lh;
     ULONG num_files;
     WCHAR fn[MAX_PATH], volpath1[255], volpath2[255];
-    
-    // FIXME - don't show if FS readonly
-    
+
     if (!IsClipboardFormatAvailable(CF_HDROP))
         return FALSE;
     
