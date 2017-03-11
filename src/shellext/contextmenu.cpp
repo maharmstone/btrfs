@@ -188,6 +188,64 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     return S_OK;
 }
 
+static BOOL show_reflink_paste(WCHAR* path) {
+    HDROP hdrop;
+    HANDLE lh;
+    ULONG num_files;
+    WCHAR fn[MAX_PATH], volpath1[255], volpath2[255];
+    
+    // FIXME - don't show if FS readonly
+    
+    if (!IsClipboardFormatAvailable(CF_HDROP))
+        return FALSE;
+    
+    if (!GetVolumePathNameW(path, volpath1, sizeof(volpath1) / sizeof(WCHAR)))
+        return FALSE;
+    
+    if (!OpenClipboard(NULL))
+        return FALSE;
+
+    hdrop = (HDROP)GetClipboardData(CF_HDROP);
+
+    if (!hdrop) {
+        CloseClipboard();
+        return FALSE;
+    }
+
+    lh = GlobalLock(hdrop);
+        
+    if (!lh) {
+        CloseClipboard();
+        return FALSE;
+    }
+    
+    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+    
+    if (num_files == 0) {
+        GlobalUnlock(lh);
+        CloseClipboard();
+        return FALSE;
+    }
+    
+    if (!DragQueryFileW(hdrop, 0, fn, sizeof(fn) / sizeof(WCHAR))) {
+        GlobalUnlock(lh);
+        CloseClipboard();
+        return FALSE;
+    }
+    
+    if (!GetVolumePathNameW(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
+        GlobalUnlock(lh);
+        CloseClipboard();
+        return FALSE;
+    }
+
+    GlobalUnlock(lh);
+
+    CloseClipboard();
+    
+    return !wcscmp(volpath1, volpath2);
+}
+
 HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags) {
     WCHAR str[256];
     ULONG entries = 0;
@@ -216,9 +274,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     
     entries = 1;
     
-    // FIXME - only show if files are on same volume?
-    // FIXME - don't show if FS readonly
-    if (idCmdFirst + 1 <= idCmdLast && IsClipboardFormatAvailable(CF_HDROP)) {
+    if (idCmdFirst + 1 <= idCmdLast && show_reflink_paste(path)) {
         if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
             return E_FAIL;
 
