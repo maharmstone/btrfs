@@ -1169,7 +1169,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     ccb* ccb;
     
     if (length < sizeof(btrfs_set_inode_info))
-        return STATUS_BUFFER_OVERFLOW;
+        return STATUS_INVALID_PARAMETER;
     
     if (!FileObject)
         return STATUS_INVALID_PARAMETER;
