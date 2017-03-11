@@ -31,6 +31,8 @@
 #define NEW_SUBVOL_VERBW L"newsubvol"
 #define SNAPSHOT_VERBA "snapshot"
 #define SNAPSHOT_VERBW L"snapshot"
+#define REFLINK_VERBA "reflink"
+#define REFLINK_VERBW L"reflink"
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 
@@ -155,6 +157,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
 HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags) {
     WCHAR str[256];
+    ULONG entries = 0;
     
     if (ignore)
         return E_INVALIDARG;
@@ -177,8 +180,21 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
 
     if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
         return E_FAIL;
+    
+    entries = 1;
+    
+    // FIXME - only do if files on clipboard
+    if (idCmdFirst + 1 <= idCmdLast) {
+        if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            return E_FAIL;
 
-    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
+        if (!InsertMenuW(hmenu, indexMenu + 1, MF_BYPOSITION, idCmdFirst + 1, str))
+            return E_FAIL;
+        
+        entries++;
+    }
+
+    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, entries);
 }
 
 static void create_snapshot(HWND hwnd, WCHAR* fn) {
@@ -306,7 +322,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         return E_FAIL;
     }
     
-    if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA)) {
+    if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
@@ -371,6 +387,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO pici) {
         CloseHandle(h);
         
         return S_OK;
+    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
+        // FIXME
     }
     
     return E_FAIL;
@@ -383,30 +401,60 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     if (idCmd != 0)
         return E_INVALIDARG;
     
-    switch (uFlags) {
-        case GCS_HELPTEXTA:
-            if (LoadStringA(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
+    if (idCmd == 0) {
+        switch (uFlags) {
+            case GCS_HELPTEXTA:
+                if (LoadStringA(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_HELPTEXTW:
+                if (LoadStringW(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, (LPWSTR)pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_VALIDATEA:
+            case GCS_VALIDATEW:
                 return S_OK;
-            else
-                return E_FAIL;
-            
-        case GCS_HELPTEXTW:
-            if (LoadStringW(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, (LPWSTR)pszName, cchMax))
+                
+            case GCS_VERBA:
+                return StringCchCopyA(pszName, cchMax, bg ? NEW_SUBVOL_VERBA : SNAPSHOT_VERBA);
+                
+            case GCS_VERBW:
+                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, bg ? NEW_SUBVOL_VERBW : SNAPSHOT_VERBW);
+                
+            default:
+                return E_INVALIDARG;
+        }
+    } else if (idCmd == 1 && bg) {
+        switch (uFlags) {
+            case GCS_HELPTEXTA:
+                if (LoadStringA(module, IDS_REFLINK_PASTE_HELP, pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_HELPTEXTW:
+                if (LoadStringW(module, IDS_REFLINK_PASTE_HELP, (LPWSTR)pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_VALIDATEA:
+            case GCS_VALIDATEW:
                 return S_OK;
-            else
-                return E_FAIL;
-            
-        case GCS_VALIDATEA:
-        case GCS_VALIDATEW:
-            return S_OK;
-            
-        case GCS_VERBA:
-            return StringCchCopyA(pszName, cchMax, bg ? NEW_SUBVOL_VERBA : SNAPSHOT_VERBA);
-            
-        case GCS_VERBW:
-            return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, bg ? NEW_SUBVOL_VERBW : SNAPSHOT_VERBW);
-            
-        default:
-            return E_INVALIDARG;
-    }
+                
+            case GCS_VERBA:
+                return StringCchCopyA(pszName, cchMax, REFLINK_VERBA);
+                
+            case GCS_VERBW:
+                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, REFLINK_VERBW);
+                
+            default:
+                return E_INVALIDARG;
+        }
+    } else
+        return E_INVALIDARG;
 }

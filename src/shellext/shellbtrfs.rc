@@ -421,7 +421,7 @@ END
 STRINGTABLE 
 BEGIN
     IDS_NEW_SUBVOL_HELP_TEXT "Creates a new Btrfs subvolume."
-    IDS_NEW_SUBVOL          "New subvolume"
+    IDS_NEW_SUBVOL          "&New subvolume"
     IDS_NEW_SUBVOL_FILENAME "New subvolume"
     IDS_CREATE_SNAPSHOT     "Create snapshot"
     IDS_CREATE_SNAPSHOT_HELP_TEXT "Creates a snapshot of a Btrfs subvolume."
@@ -568,6 +568,8 @@ END
 STRINGTABLE 
 BEGIN
     IDS_STANDALONE_PROPSHEET_TITLE "Inode property sheet"
+    IDS_REFLINK_PASTE       "Ref&link Paste"
+    IDS_REFLINK_PASTE_HELP  "Do a lightweight copy of files using reference counting."
 END
 
 #endif    // English (U.K.) resources
