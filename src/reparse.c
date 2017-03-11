@@ -143,6 +143,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 RtlCopyMemory(buffer, fcb->reparse_xattr.Buffer, *retlen);
             } else
                 *retlen = 0;
+            
+            Status = *retlen == fcb->reparse_xattr.Length ? STATUS_SUCCESS : STATUS_BUFFER_OVERFLOW;
         } else
             Status = STATUS_NOT_A_REPARSE_POINT;
     } else {
