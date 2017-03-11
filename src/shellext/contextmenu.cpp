@@ -355,10 +355,78 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     
     // FIXME - check same filesystem
     
-    source = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         return FALSE;
+    }
+    
+    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwnd, Status);
+        CloseHandle(source);
+        return FALSE;
+    }
+    
+    // if subvol, do snapshot instead
+    if (bii.inode == SUBVOL_ROOT_INODE) {
+        btrfs_create_snapshot* bcs;
+        HANDLE dirh, fff;
+        std::wstring destname, search;
+        WIN32_FIND_DATAW wfd;
+        int num = 2;
+        
+        dirh = CreateFileW(dir, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (dirh == INVALID_HANDLE_VALUE) {
+            ShowError(hwnd, GetLastError());
+            CloseHandle(source);
+            return FALSE;
+        }
+        
+        search = dirw;
+        search += name;
+        destname = name;
+        
+        fff = FindFirstFileW(search.c_str(), &wfd);
+            
+        if (fff != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstringstream ss;
+                
+                FindClose(fff);
+
+                ss << name;
+                ss << L" (";
+                ss << num;
+                ss << L")";
+                destname = ss.str();
+                
+                search = dirw + destname;
+
+                fff = FindFirstFileW(search.c_str(), &wfd);
+                num++;
+            } while (fff != INVALID_HANDLE_VALUE);
+        }
+        
+        bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + (destname.length() * sizeof(WCHAR)));
+        bcs->subvol = source;
+        bcs->namelen = destname.length() * sizeof(WCHAR);
+        memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
+        
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, NULL, 0, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen);
+        
+        free(bcs);
+    
+        if (!NT_SUCCESS(Status)) {
+            ShowNtStatusError(hwnd, Status);
+            CloseHandle(source);
+            CloseHandle(dirh);
+            return FALSE;
+        }
+        
+        CloseHandle(source);
+        CloseHandle(dirh);
+        return TRUE;
     }
     
     if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
@@ -427,12 +495,6 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             } else
                 break;
         } while (TRUE);
-    }
-
-    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwnd, Status);
-        goto end;
     }
     
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
@@ -638,7 +700,6 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
     SetFileTime(dest, NULL, &atime, &mtime);
     
-    // FIXME - handle subvols (do snapshot instead)
     // FIXME - copy hidden xattrs
     // FIXME - check EAs are copied
     
