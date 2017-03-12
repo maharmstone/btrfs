@@ -766,8 +766,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     SetFileTime(dest, NULL, &atime, &mtime);
     
     // FIXME - copy hidden xattrs
-    // FIXME - check EAs are copied
-    
+
     ret = TRUE;
     
 end:
