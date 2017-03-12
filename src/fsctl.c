@@ -2995,6 +2995,22 @@ static NTSTATUS set_integrity_information(PFILE_OBJECT FileObject, void* data, U
     return STATUS_SUCCESS;
 }
 
+static BOOL fcb_is_inline(fcb* fcb) {
+    LIST_ENTRY* le;
+    
+    le = fcb->extents.Flink;
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+        
+        if (!ext->ignore)
+            return ext->extent_data.type == EXTENT_TYPE_INLINE;
+        
+        le = le->Flink;
+    }
+    
+    return FALSE;
+}
+
 static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     DUPLICATE_EXTENTS_DATA* ded = (DUPLICATE_EXTENTS_DATA*)data;
     fcb *fcb = FileObject ? FileObject->FsContext : NULL, *sourcefcb;
@@ -3005,6 +3021,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     LIST_ENTRY rollback, *le, newexts;
     LARGE_INTEGER time;
     BTRFS_TIME now;
+    BOOL make_inline;
 
     if (!ded || datalen < sizeof(DUPLICATE_EXTENTS_DATA))
         return STATUS_BUFFER_TOO_SMALL;
@@ -3113,13 +3130,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         goto end;
     }
 
-    if (fcb->ads || sourcefcb->ads) {
+    make_inline = fcb->ads ? FALSE : (fcb->inode_item.st_size <= Vcb->options.max_inline || fcb_is_inline(fcb));
+
+    if (fcb->ads || sourcefcb->ads || (!make_inline && fcb_is_inline(sourcefcb))) {
         UINT8* data;
         ULONG bytes_read, dataoff, datalen;
-        BOOL make_inline;
-        
-        make_inline = fcb->ads ? FALSE : fcb->inode_item.st_size <= Vcb->options.max_inline;
-        
+
         if (make_inline) {
             dataoff = ded->TargetFileOffset.QuadPart;
             datalen = fcb->inode_item.st_size;
