@@ -233,24 +233,6 @@ exit2:
 }
 #endif
 
-UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment )
-{
-    if( Alignment & ( Alignment - 1 ) )
-    {
-        //
-        //  Alignment not a power of 2
-        //  Just returning
-        //
-        return NumberToBeAligned;
-    }
-    if( ( NumberToBeAligned & ( Alignment - 1 ) ) != 0 )
-    {
-        NumberToBeAligned = NumberToBeAligned + Alignment;
-        NumberToBeAligned = NumberToBeAligned & ( ~ (Alignment-1) );
-    }
-    return NumberToBeAligned;
-}
-
 BOOL is_top_level(PIRP Irp) {
     if (!IoGetTopLevelIrp()) {
         IoSetTopLevelIrp(Irp);

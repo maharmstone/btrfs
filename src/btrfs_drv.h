@@ -818,9 +818,15 @@ static __inline UINT64 make_file_id(root* r, UINT64 inode) {
     ((key1.offset > key2.offset) ? 1 :\
     0))))))
 
+static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
+    if (n & (a - 1))
+        n = (n + a) & ~(a - 1);
+
+    return n;
+}
+
 // in btrfs.c
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
-UINT64 sector_align( UINT64 NumberToBeAligned, UINT64 Alignment );
 BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
