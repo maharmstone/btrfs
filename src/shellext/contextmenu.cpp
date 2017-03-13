@@ -381,6 +381,13 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
         ShowError(hwnd, GetLastError());
 }
 
+static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
+    if (n & (a - 1))
+        n = (n + a) & ~(a - 1);
+
+    return n;
+}
+
 BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
     WCHAR* name, volpath1[255], volpath2[255];
@@ -642,7 +649,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
             FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
             DUPLICATE_EXTENTS_DATA ded;
-            INT64 offset;
+            UINT64 offset, alloc_size;
             ULONG maxdup;
             
             if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
@@ -679,10 +686,12 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             ded.FileHandle = source;
             maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
 
+            alloc_size = sector_align(fsi.EndOfFile.QuadPart, fgiib.ClusterSizeInBytes);
+
             offset = 0;
-            while (offset < fsi.AllocationSize.QuadPart) {
+            while (offset < alloc_size) {
                 ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
-                ded.ByteCount.QuadPart = maxdup < (fsi.AllocationSize.QuadPart - offset) ? maxdup : (fsi.AllocationSize.QuadPart - offset);
+                ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
                 if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
                     ShowError(hwnd, GetLastError());
                     goto end;
