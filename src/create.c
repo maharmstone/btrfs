@@ -122,7 +122,7 @@ file_ref* create_fileref(device_extension* Vcb) {
     return fr;
 }
 
-static NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive) {
+NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
     UINT32 hash;

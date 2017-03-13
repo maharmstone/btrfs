@@ -19,6 +19,7 @@
 #include "btrfsioctl.h"
 #include <ntddstor.h>
 #include <ntdddisk.h>
+#include <sys/stat.h>
 
 #ifndef FSCTL_CSV_CONTROL
 #define FSCTL_CSV_CONTROL CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 181, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -31,6 +32,8 @@
 #ifndef _MSC_VER // not in mingw yet
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
 #endif
+
+#define SEF_SACL_AUTO_INHERIT 0x02
 
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
@@ -3505,6 +3508,344 @@ end:
     return Status;
 }
 
+static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen) {
+    NTSTATUS Status;
+    btrfs_mknod* bmn;
+    fcb *parfcb, *fcb;
+    ccb* parccb;
+    file_ref *parfileref, *fileref;
+    UNICODE_STRING name;
+    root* subvol;
+    UINT64 inode;
+    dir_child* dc;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+    LIST_ENTRY* lastle;
+    ANSI_STRING utf8;
+    ULONG len, i;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    PSID owner;
+    BOOLEAN defaulted;
+
+    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+    
+    if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+    
+    parfcb = FileObject->FsContext;
+    
+    if (parfcb->type != BTRFS_TYPE_DIRECTORY) {
+        WARN("trying to create file in something other than a directory\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (parfcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+        return STATUS_ACCESS_DENIED;
+
+    parccb = FileObject->FsContext2;
+    parfileref = parccb->fileref;
+    
+    if (!parfileref)
+        return STATUS_INVALID_PARAMETER;
+
+    if (datalen < sizeof(btrfs_mknod))
+        return STATUS_INVALID_PARAMETER;
+
+    bmn = (btrfs_mknod*)data;
+    
+    if (datalen < offsetof(btrfs_mknod, name[0]) + bmn->namelen || bmn->namelen < sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
+
+    if (bmn->type == BTRFS_TYPE_UNKNOWN || bmn->type > BTRFS_TYPE_SYMLINK)
+        return STATUS_INVALID_PARAMETER;
+
+    if ((bmn->type == BTRFS_TYPE_DIRECTORY && !(parccb->access & FILE_ADD_SUBDIRECTORY)) ||
+        (bmn->type != BTRFS_TYPE_DIRECTORY && !(parccb->access & FILE_ADD_FILE))) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    for (i = 0; i < bmn->namelen / sizeof(WCHAR); i++) {
+        if (bmn->name[i] == 0 || bmn->name[i] == '/')
+            return STATUS_OBJECT_NAME_INVALID;
+    }
+
+    // don't allow files called . or ..
+    if (bmn->name[0] == '.' && (bmn->namelen == sizeof(WCHAR) || (bmn->namelen == 2 * sizeof(WCHAR) && bmn->name[1] == '.')))
+        return STATUS_OBJECT_NAME_INVALID;
+
+    Status = RtlUnicodeToUTF8N(NULL, 0, &len, bmn->name, bmn->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N return %08x\n", Status);
+        return Status;
+    }
+    
+    if (len == 0) {
+        ERR("RtlUnicodeToUTF8N returned a length of 0\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    utf8.MaximumLength = utf8.Length = len;
+    utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
+
+    if (!utf8.Buffer) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, bmn->name, bmn->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ExFreePool(utf8.Buffer);
+        return Status;
+    }
+    
+    name.Length = name.MaximumLength = bmn->namelen;
+    name.Buffer = bmn->name;
+    
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    
+    Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, TRUE);
+    if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
+        ERR("find_file_in_dir returned %08x\n", Status);
+        goto end;
+    }
+    
+    if (NT_SUCCESS(Status)) {
+        WARN("filename already exists\n");
+        Status = STATUS_OBJECT_NAME_COLLISION;
+        goto end;
+    }
+
+    if (bmn->inode == 0) {
+        inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
+        lastle = parfcb->subvol->fcbs.Blink;
+    } else {
+        if (bmn->inode > parfcb->subvol->lastinode) {
+            inode = parfcb->subvol->lastinode = bmn->inode;
+            lastle = parfcb->subvol->fcbs.Blink;
+        } else {
+            LIST_ENTRY* le = parfcb->subvol->fcbs.Flink;
+            
+            lastle = parfcb->subvol->fcbs.Blink;;
+            while (le != &parfcb->subvol->fcbs) {
+                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+                
+                if (fcb2->inode == bmn->inode) {
+                    WARN("inode collision\n");
+                    Status = STATUS_INVALID_PARAMETER;
+                    goto end;
+                } else if (fcb2->inode > bmn->inode) {
+                    lastle = fcb2->list_entry.Blink;
+                    break;
+                }
+                
+                le = le->Flink;
+            }
+            
+            inode = bmn->inode;
+        }
+    }
+
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    fcb = create_fcb(Vcb, PagedPool);
+    if (!fcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    fcb->Vcb = Vcb;
+
+    fcb->inode_item.generation = Vcb->superblock.generation;
+    fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.st_size = 0;
+    fcb->inode_item.st_blocks = 0;
+    fcb->inode_item.block_group = 0;
+    fcb->inode_item.st_nlink = 1;
+    fcb->inode_item.st_uid = UID_NOBODY;
+    fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+    fcb->inode_item.st_mode = parfcb->inode_item.st_mode & ~S_IFDIR; // use parent's permissions by default
+    fcb->inode_item.st_rdev = bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV ? bmn->st_rdev : 0;
+    fcb->inode_item.flags = 0;
+    fcb->inode_item.sequence = 1;
+    fcb->inode_item.st_atime = now;
+    fcb->inode_item.st_ctime = now;
+    fcb->inode_item.st_mtime = now;
+    fcb->inode_item.otime = now;
+
+    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+        fcb->inode_item.st_mode |= __S_IFDIR;
+    else if (bmn->type == BTRFS_TYPE_CHARDEV)
+        fcb->inode_item.st_mode |= __S_IFCHR;
+    else if (bmn->type == BTRFS_TYPE_BLOCKDEV)
+        fcb->inode_item.st_mode |= __S_IFBLK;
+    else if (bmn->type == BTRFS_TYPE_FIFO)
+        fcb->inode_item.st_mode |= __S_IFIFO;
+    else if (bmn->type == BTRFS_TYPE_SOCKET)
+        fcb->inode_item.st_mode |= __S_IFSOCK;
+    else if (bmn->type == BTRFS_TYPE_SYMLINK)
+        fcb->inode_item.st_mode |= __S_IFLNK;
+    else
+        fcb->inode_item.st_mode |= __S_IFREG;
+
+    if (bmn->type != BTRFS_TYPE_DIRECTORY)
+        fcb->inode_item.st_mode &= ~(S_IXUSR | S_IXGRP | S_IXOTH); // remove executable bit if not directory
+
+    // inherit nodatacow flag from parent directory
+    if (parfcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
+        fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
+        
+        if (bmn->type != BTRFS_TYPE_DIRECTORY)
+            fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
+    }
+
+    if (parfcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+        fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+
+    fcb->prop_compression = parfcb->prop_compression;
+    fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+
+    fcb->inode_item_changed = TRUE;
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize.QuadPart = 0;
+    fcb->Header.FileSize.QuadPart = 0;
+    fcb->Header.ValidDataLength.QuadPart = 0;
+
+    fcb->atts = 0;
+
+    if (bmn->name[0] == '.')
+        fcb->atts |= FILE_ATTRIBUTE_HIDDEN;
+
+    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+        fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
+
+    fcb->atts_changed = FALSE;
+
+    InterlockedIncrement(&parfcb->refcount);
+    fcb->subvol = parfcb->subvol;
+    fcb->inode = inode;
+    fcb->type = bmn->type;
+
+    SeCaptureSubjectContext(&subjcont);
+
+    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+                                SEF_SACL_AUTO_INHERIT, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("SeAssignSecurityEx returned %08x\n", Status);
+        free_fcb(fcb);
+        goto end;
+    }
+
+    Status = RtlGetOwnerSecurityDescriptor(fcb->sd, &owner, &defaulted);
+    if (!NT_SUCCESS(Status)) {
+        WARN("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
+        fcb->sd_dirty = TRUE;
+    } else {
+        fcb->inode_item.st_uid = sid_to_uid(owner);
+        fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
+    }
+
+    fileref = create_fileref(Vcb);
+    if (!fileref) {
+        ERR("out of memory\n");
+        free_fcb(fcb);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+    
+    fileref->fcb = fcb;
+    
+    fcb->created = TRUE;
+    mark_fcb_dirty(fcb);
+    
+    fileref->created = TRUE;
+    mark_fileref_dirty(fileref);
+    
+    fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
+    fcb->subvol->root_item.ctime = now;
+    
+    fileref->parent = parfileref;
+
+    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, &utf8, &name, fcb->type, &dc);
+    if (!NT_SUCCESS(Status))
+        WARN("add_dir_child returned %08x\n", Status);
+    
+    fileref->dc = dc;
+    dc->fileref = fileref;
+
+    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+
+    increase_fileref_refcount(parfileref);
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs) {
+            ERR("out of memory\n");
+            free_fileref(Vcb, fileref);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+        
+        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs_uc) {
+            ERR("out of memory\n");
+            free_fileref(Vcb, fileref);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+        
+        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    }
+
+    InsertHeadList(lastle, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+    
+    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+        fileref->fcb->fileref = fileref;
+
+    ExAcquireResourceExclusiveLite(parfcb->Header.Resource, TRUE);
+    parfcb->inode_item.st_size += utf8.Length * 2;
+    parfcb->inode_item.transid = Vcb->superblock.generation;
+    parfcb->inode_item.sequence++;
+
+    if (!parccb->user_set_change_time)
+        parfcb->inode_item.st_ctime = now;
+
+    if (!parccb->user_set_write_time)
+        parfcb->inode_item.st_mtime = now;
+
+    ExReleaseResourceLite(parfcb->Header.Resource);
+    
+    parfcb->inode_item_changed = TRUE;
+    mark_fcb_dirty(parfcb);
+
+    send_notification_fileref(fileref, bmn->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
+    
+    if (!parccb->user_set_write_time)
+        send_notification_fcb(parfileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+    
+    Status = STATUS_SUCCESS;
+    
+end:
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+    
+    ExFreePool(utf8.Buffer);
+    
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -4072,7 +4413,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             
         case FSCTL_BTRFS_RESET_STATS:
             Status = reset_stats(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
-        break;
+            break;
+
+        case FSCTL_BTRFS_MKNOD:
+            Status = mknod(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            break;
 
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

@@ -1045,6 +1045,7 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, P
 NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
                             POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
+NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type);

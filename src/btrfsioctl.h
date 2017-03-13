@@ -26,6 +26,7 @@
 #define FSCTL_BTRFS_STOP_SCRUB CTL_CODE(FILE_DEVICE_UNKNOWN, 0x83d, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define IOCTL_BTRFS_PROBE_VOLUME CTL_CODE(FILE_DEVICE_UNKNOWN, 0x83e, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_RESET_STATS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x83f, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define FSCTL_BTRFS_MKNOD CTL_CODE(FILE_DEVICE_UNKNOWN, 0x840, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 
 typedef struct {
     UINT64 subvol;
@@ -200,5 +201,13 @@ typedef struct {
     UINT32 num_errors;
     btrfs_scrub_error errors;
 } btrfs_query_scrub;
+
+typedef struct {
+    UINT64 inode;
+    UINT8 type;
+    UINT64 st_rdev;
+    UINT16 namelen;
+    WCHAR name[1];
+} btrfs_mknod;
 
 #endif
