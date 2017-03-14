@@ -2479,6 +2479,9 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
         // 0x10007 = 0xffff (maximum length of data buffer) + 8 bytes header
         size = min(0x10007, fcb->inode_item.st_size);
         
+        if (size == 0)
+            return STATUS_INVALID_PARAMETER;
+        
         *data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
         if (!*data) {
             ERR("out of memory\n");
