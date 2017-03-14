@@ -914,7 +914,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         ofn.hInstance = module;
         ofn.lpstrFile = file;
         ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
-        ofn.Flags = OFN_FILEMUSTEXIST;
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
         if (GetOpenFileNameW(&ofn)) {
             BtrfsRecv* recv = new BtrfsRecv;
