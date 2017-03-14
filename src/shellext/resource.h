@@ -123,6 +123,8 @@
 #define IDS_STANDALONE_PROPSHEET_TITLE  208
 #define IDS_REFLINK_PASTE               209
 #define IDS_REFLINK_PASTE_HELP          210
+#define IDS_RECV_SUBVOL                 211
+#define IDS_RECV_SUBVOL_HELP            212
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

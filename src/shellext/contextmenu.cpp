@@ -35,6 +35,8 @@
 #define SNAPSHOT_VERBW L"snapshot"
 #define REFLINK_VERBA "reflink"
 #define REFLINK_VERBW L"reflink"
+#define RECV_VERBA "recvsubvol"
+#define RECV_VERBW L"recvsubvol"
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 
@@ -272,11 +274,21 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     
     entries = 1;
     
-    if (idCmdFirst + 1 <= idCmdLast && show_reflink_paste(path)) {
-        if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+    if (idCmdFirst + 1 <= idCmdLast) {
+        if (LoadStringW(module, IDS_RECV_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
             return E_FAIL;
 
         if (!InsertMenuW(hmenu, indexMenu + 1, MF_BYPOSITION, idCmdFirst + 1, str))
+            return E_FAIL;
+        
+        entries++;
+    }
+    
+    if (idCmdFirst + 2 <= idCmdLast && show_reflink_paste(path)) {
+        if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            return E_FAIL;
+
+        if (!InsertMenuW(hmenu, indexMenu + 2, MF_BYPOSITION, idCmdFirst + 2, str))
             return E_FAIL;
         
         entries++;
@@ -889,7 +901,9 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         CloseHandle(h);
         
         return S_OK;
-    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
+    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
+        // FIXME
+    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
         HDROP hdrop;
 
         if (!IsClipboardFormatAvailable(CF_HDROP))
@@ -968,6 +982,33 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
                 return E_INVALIDARG;
         }
     } else if (idCmd == 1 && bg) {
+        switch (uFlags) {
+            case GCS_HELPTEXTA:
+                if (LoadStringA(module, IDS_RECV_SUBVOL_HELP, pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_HELPTEXTW:
+                if (LoadStringW(module, IDS_RECV_SUBVOL_HELP, (LPWSTR)pszName, cchMax))
+                    return S_OK;
+                else
+                    return E_FAIL;
+                
+            case GCS_VALIDATEA:
+            case GCS_VALIDATEW:
+                return S_OK;
+                
+            case GCS_VERBA:
+                return StringCchCopyA(pszName, cchMax, RECV_VERBA);
+                
+            case GCS_VERBW:
+                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, RECV_VERBW);
+                
+            default:
+                return E_INVALIDARG;
+        }
+    } else if (idCmd == 2 && bg) {
         switch (uFlags) {
             case GCS_HELPTEXTA:
                 if (LoadStringA(module, IDS_REFLINK_PASTE_HELP, pszName, cchMax))
