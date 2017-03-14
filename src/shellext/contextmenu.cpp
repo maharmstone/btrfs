@@ -26,6 +26,7 @@
 #include <shlwapi.h>
 
 #include "contextmenu.h"
+#include "recv.h"
 #include "resource.h"
 #include "../btrfsioctl.h"
 
@@ -902,7 +903,26 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         
         return S_OK;
     } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
-        // FIXME
+        OPENFILENAMEW ofn;
+        WCHAR file[MAX_PATH];
+        
+        file[0] = 0;
+        
+        memset(&ofn, 0, sizeof(OPENFILENAMEW));
+        ofn.lStructSize = sizeof(OPENFILENAMEW);
+        ofn.hwndOwner = pici->hwnd;
+        ofn.hInstance = module;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
+        ofn.Flags = OFN_FILEMUSTEXIST;
+
+        if (GetOpenFileNameW(&ofn)) {
+            BtrfsRecv* recv = new BtrfsRecv;
+            
+            recv->Open(pici->hwnd, file);
+
+            delete recv;
+        }
     } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
         HDROP hdrop;
 

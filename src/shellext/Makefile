@@ -1,10 +1,10 @@
-OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o devices.o balance.o scrub.o
+OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o devices.o balance.o scrub.o recv.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
 CFLAGS = -Wall $(INCLUDES) -fvtable-verify=none
 
-LIBS = -lole32 -luuid -lntdll -luxtheme -lshlwapi -lcomctl32 -lsetupapi
+LIBS = -lole32 -luuid -lntdll -luxtheme -lshlwapi -lcomctl32 -lsetupapi -lcomdlg32
 
 CC = i686-w64-mingw32-g++
 
@@ -35,6 +35,9 @@ balance.o: balance.cpp balance.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 scrub.o: scrub.cpp scrub.h shellext.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+recv.o: recv.cpp recv.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)
