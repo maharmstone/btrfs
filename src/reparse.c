@@ -48,6 +48,11 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             
             *retlen = reqlen;
         } else {
+            if (fcb->inode_item.st_size == 0) {
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+            
             data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
             if (!data) {
                 ERR("out of memory\n");
