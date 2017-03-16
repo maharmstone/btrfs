@@ -17,6 +17,8 @@
 
 #include "shellext.h"
 #include <windows.h>
+#include <stddef.h>
+#include <sys/stat.h>
 #include <string>
 #include "recv.h"
 #include "resource.h"
@@ -120,7 +122,138 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char *name, *pathlink;
+    UINT64 *inode, *rdev = NULL, *mode = NULL;
+    ULONG namelen, inodelen, bmnsize;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_mknod* bmn;
+    std::wstring nameu, pathlinku;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&name, &namelen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_INODE, (void**)&inode, &inodelen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"inode");
+        return FALSE;
+    }
+    
+    if (inodelen < sizeof(UINT64)) {
+        ShowStringError(hwnd, IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
+        ULONG rdevlen, modelen;
+        
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_RDEV, (void**)&rdev, &rdevlen)) {
+            ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"rdev");
+            return FALSE;
+        }
+        
+        if (rdevlen < sizeof(UINT64)) {
+            ShowStringError(hwnd, IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(UINT64));
+            return FALSE;
+        }
+
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
+            ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"mode");
+            return FALSE;
+        }
+
+        if (modelen < sizeof(UINT64)) {
+            ShowStringError(hwnd, IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT64));
+            return FALSE;
+        }
+    } else if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
+        ULONG pathlinklen;
+        
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&pathlink, &pathlinklen)) {
+            ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path_link");
+            return FALSE;
+        }
+
+        if (!utf8_to_utf16(hwnd, pathlink, pathlinklen, &pathlinku))
+            return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
+        return FALSE;
+
+    bmnsize = sizeof(btrfs_mknod) - sizeof(WCHAR) + (nameu.length() * sizeof(WCHAR));
+    bmn = (btrfs_mknod*)malloc(bmnsize);
+
+    bmn->inode = *inode;
+
+    if (cmd->cmd == BTRFS_SEND_CMD_MKDIR)
+        bmn->type = BTRFS_TYPE_DIRECTORY;
+    else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD)
+        bmn->type = *mode & S_IFCHR ? BTRFS_TYPE_CHARDEV : BTRFS_TYPE_BLOCKDEV;
+    else if (cmd->cmd == BTRFS_SEND_CMD_MKFIFO)
+        bmn->type = BTRFS_TYPE_FIFO;
+    else if (cmd->cmd == BTRFS_SEND_CMD_MKSOCK)
+        bmn->type = BTRFS_TYPE_SOCKET;
+    else
+        bmn->type = BTRFS_TYPE_FILE;
+
+    // FIXME - for mknod and mkfifo, do chmod afterwards
+
+    bmn->st_rdev = rdev ? *rdev : 0;
+    bmn->namelen = nameu.length() * sizeof(WCHAR);
+    memcpy(bmn->name, nameu.c_str(), bmn->namelen);
+
+    Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowStringError(hwnd, IDS_RECV_MKNOD_FAILED, Status);
+        free(bmn);
+        return FALSE;
+    }
+
+    free(bmn);
+    
+    if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
+        HANDLE h;
+        REPARSE_DATA_BUFFER* rdb;
+        ULONG rdblen;
+        
+        rdblen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer[0]) + (2 * pathlinku.length() * sizeof(WCHAR));
+        
+        rdb = (REPARSE_DATA_BUFFER*)malloc(rdblen);
+        
+        rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
+        rdb->ReparseDataLength = rdblen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+        rdb->Reserved = 0;
+        rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
+        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = pathlinku.length() * sizeof(WCHAR);
+        rdb->SymbolicLinkReparseBuffer.PrintNameOffset = pathlinku.length() * sizeof(WCHAR);
+        rdb->SymbolicLinkReparseBuffer.PrintNameLength = pathlinku.length() * sizeof(WCHAR);
+        rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
+        
+        memcpy(rdb->SymbolicLinkReparseBuffer.PathBuffer, pathlinku.c_str(), rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
+        memcpy(rdb->SymbolicLinkReparseBuffer.PathBuffer + (rdb->SymbolicLinkReparseBuffer.SubstituteNameLength / sizeof(WCHAR)),
+                pathlinku.c_str(), rdb->SymbolicLinkReparseBuffer.PrintNameLength);
+
+        h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, (subvolpath + nameu).c_str(), GetLastError());
+            free(rdb);
+            return FALSE;
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowStringError(hwnd, IDS_RECV_SET_REPARSE_POINT_FAILED, Status);
+            free(rdb);
+            CloseHandle(h);
+            return FALSE;
+        }
+        
+        free(rdb);
+        CloseHandle(h);
+    }
 
     return TRUE;
 }

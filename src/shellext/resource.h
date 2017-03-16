@@ -133,6 +133,9 @@
 #define IDS_RECV_RTLUTF8TOUNICODEN_FAILED 218
 #define IDS_RECV_CREATE_SUBVOL_FAILED   219
 #define IDS_RECV_MISSING_PARAM          220
+#define IDS_RECV_SHORT_PARAM            221
+#define IDS_RECV_MKNOD_FAILED           222
+#define IDS_RECV_SET_REPARSE_POINT_FAILED 223
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
