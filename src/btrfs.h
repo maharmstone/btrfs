@@ -501,6 +501,70 @@ typedef struct {
 #define BTRFS_DEV_STAT_CORRUPTION_ERRORS     3
 #define BTRFS_DEV_STAT_GENERATION_ERRORS     4
 
+#define BTRFS_SEND_CMD_SUBVOL          1
+#define BTRFS_SEND_CMD_SNAPSHOT        2
+#define BTRFS_SEND_CMD_MKFILE          3
+#define BTRFS_SEND_CMD_MKDIR           4
+#define BTRFS_SEND_CMD_MKNOD           5
+#define BTRFS_SEND_CMD_MKFIFO          6
+#define BTRFS_SEND_CMD_MKSOCK          7
+#define BTRFS_SEND_CMD_SYMLINK         8
+#define BTRFS_SEND_CMD_RENAME          9
+#define BTRFS_SEND_CMD_LINK           10
+#define BTRFS_SEND_CMD_UNLINK         11
+#define BTRFS_SEND_CMD_RMDIR          12
+#define BTRFS_SEND_CMD_SET_XATTR      13
+#define BTRFS_SEND_CMD_REMOVE_XATTR   14
+#define BTRFS_SEND_CMD_WRITE          15
+#define BTRFS_SEND_CMD_CLONE          16
+#define BTRFS_SEND_CMD_TRUNCATE       17
+#define BTRFS_SEND_CMD_CHMOD          18
+#define BTRFS_SEND_CMD_CHOWN          19
+#define BTRFS_SEND_CMD_UTIMES         20
+#define BTRFS_SEND_CMD_END            21
+#define BTRFS_SEND_CMD_UPDATE_EXTENT  22
+
+#define BTRFS_SEND_TLV_UUID             1
+#define BTRFS_SEND_TLV_TRANSID          2
+#define BTRFS_SEND_TLV_INODE            3
+#define BTRFS_SEND_TLV_SIZE             4
+#define BTRFS_SEND_TLV_MODE             5
+#define BTRFS_SEND_TLV_UID              6
+#define BTRFS_SEND_TLV_GID              7
+#define BTRFS_SEND_TLV_RDEV             8
+#define BTRFS_SEND_TLV_CTIME            9
+#define BTRFS_SEND_TLV_MTIME           10
+#define BTRFS_SEND_TLV_ATIME           11
+#define BTRFS_SEND_TLV_OTIME           12
+#define BTRFS_SEND_TLV_XATTR_NAME      13
+#define BTRFS_SEND_TLV_XATTR_DATA      14
+#define BTRFS_SEND_TLV_PATH            15
+#define BTRFS_SEND_TLV_PATH_TO         16
+#define BTRFS_SEND_TLV_PATH_LINK       17
+#define BTRFS_SEND_TLV_OFFSET          18
+#define BTRFS_SEND_TLV_DATA            19
+#define BTRFS_SEND_TLV_CLONE_UUID      20
+#define BTRFS_SEND_TLV_CLONE_CTRANSID  21
+#define BTRFS_SEND_TLV_CLONE_PATH      22
+#define BTRFS_SEND_TLV_CLONE_OFFSET    23
+#define BTRFS_SEND_TLV_CLONE_LENGTH    24
+
+typedef struct {
+    UINT8 magic[13];
+    UINT32 version;
+} btrfs_send_header;
+
+typedef struct {
+    UINT32 length;
+    UINT16 cmd;
+    UINT32 csum;
+} btrfs_send_command;
+
+typedef struct {
+    UINT16 type;
+    UINT16 length;
+} btrfs_send_tlv;
+
 #pragma pack(pop)
 
 #endif
