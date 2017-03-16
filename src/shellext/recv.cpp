@@ -508,8 +508,55 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+static __inline UINT64 unix_time_to_win(BTRFS_TIME* t) {
+    return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
+}
+
 BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char* path;
+    ULONG pathlen;
+    std::wstring pathu;
+    HANDLE h;
+    FILE_BASIC_INFO fbi;
+    BTRFS_TIME* time;
+    ULONG timelen;
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+    
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+    
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        return FALSE;
+    }
+    
+    memset(&fbi, 0, sizeof(FILE_BASIC_INFO));
+
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_OTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+        fbi.CreationTime.QuadPart = unix_time_to_win(time);
+    
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_ATIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+        fbi.LastAccessTime.QuadPart = unix_time_to_win(time);
+    
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+        fbi.LastWriteTime.QuadPart = unix_time_to_win(time);
+
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_CTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+        fbi.ChangeTime.QuadPart = unix_time_to_win(time);
+
+    if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
+        ShowStringError(hwnd, IDS_RECV_SETFILEINFO_FAILED, GetLastError());
+        CloseHandle(h);
+        return FALSE;
+    }
+    
+    CloseHandle(h);
 
     return TRUE;
 }

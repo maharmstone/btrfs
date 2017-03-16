@@ -594,6 +594,8 @@ BEGIN
                             "CreateHardLink (%s -> %s) failed (error %u)."
     IDS_RECV_SETENDOFFILE_FAILED "SetEndOfFile failed (error %u)."
     IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u)."
+    IDS_RECV_SETFILEINFO_FAILED 
+                            "SetFileInformationByHandle failed (error %u)."
 END
 
 #endif    // English (U.K.) resources
