@@ -125,6 +125,14 @@
 #define IDS_REFLINK_PASTE_HELP          210
 #define IDS_RECV_SUBVOL                 211
 #define IDS_RECV_SUBVOL_HELP            212
+#define IDS_RECV_CANT_OPEN_FILE         213
+#define IDS_RECV_READFILE_FAILED        214
+#define IDS_OUT_OF_MEMORY               215
+#define IDS_RECV_UNKNOWN_COMMAND        216
+#define IDS_RECV_CANT_OPEN_PATH         217
+#define IDS_RECV_RTLUTF8TOUNICODEN_FAILED 218
+#define IDS_RECV_CREATE_SUBVOL_FAILED   219
+#define IDS_RECV_MISSING_PARAM          220
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

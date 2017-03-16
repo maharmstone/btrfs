@@ -919,7 +919,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         if (GetOpenFileNameW(&ofn)) {
             BtrfsRecv* recv = new BtrfsRecv;
             
-            recv->Open(pici->hwnd, file);
+            recv->Open(pici->hwnd, file, path);
 
             delete recv;
         }

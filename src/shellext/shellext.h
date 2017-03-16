@@ -51,6 +51,12 @@
 #define BTRFS_TYPE_SOCKET    6
 #define BTRFS_TYPE_SYMLINK   7
 
+#ifdef _MSC_VER
+#define funcname __FUNCTION__
+#else
+#define funcname __func__
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,6 +64,10 @@ NTSYSCALLAPI NTSTATUS NTAPI NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO
 
 NTSTATUS NTAPI NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                           ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+
+NTSTATUS WINAPI RtlUTF8ToUnicodeN(PWSTR UnicodeStringDestination, ULONG UnicodeStringMaxWCharCount,
+                                  PULONG UnicodeStringActualWCharCount, PCCH UTF8StringSource,
+                                  ULONG UTF8StringByteCount);
 #ifdef __cplusplus
 }
 #endif

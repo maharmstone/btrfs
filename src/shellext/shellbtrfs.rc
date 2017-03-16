@@ -572,6 +572,14 @@ BEGIN
     IDS_REFLINK_PASTE_HELP  "Do a lightweight copy of files using reference counting."
     IDS_RECV_SUBVOL         "Re&ceive subvolume..."
     IDS_RECV_SUBVOL_HELP    "Recreate a previously exported subvolume."
+    IDS_RECV_CANT_OPEN_FILE "Couldn't open %s for reading (error %u)."
+    IDS_RECV_READFILE_FAILED "ReadFile failed (error %u)."
+    IDS_OUT_OF_MEMORY       "Out of memory."
+    IDS_RECV_UNKNOWN_COMMAND "Unrecognized command %u encountered."
+    IDS_RECV_CANT_OPEN_PATH "Couldn't open path %s (error %u)."
+    IDS_RECV_RTLUTF8TOUNICODEN_FAILED "RtlUTF8ToUnicodeN returned %08x."
+    IDS_RECV_CREATE_SUBVOL_FAILED "FSCTL_BTRFS_CREATE_SUBVOL returned %08x."
+    IDS_RECV_MISSING_PARAM  "%s: could not find %s parameter."
 END
 
 #endif    // English (U.K.) resources

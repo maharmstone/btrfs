@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <shlobj.h>
+#include "../btrfs.h"
 
 extern LONG objs_loaded;
 
@@ -27,5 +28,11 @@ public:
     virtual ~BtrfsRecv() {
     }
     
-    void Open(HWND hwnd, WCHAR* file);
+    void Open(HWND hwnd, WCHAR* file, WCHAR* path);
+    
+private:
+    BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    
+    HANDLE dir;
+    std::wstring dirpath, subvolpath;
 };
