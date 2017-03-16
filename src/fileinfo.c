@@ -1783,7 +1783,7 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only) {
+static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, BOOL prealloc) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -1853,7 +1853,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
         
         TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
         
-        Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, TRUE, NULL, &rollback);
+        Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, prealloc, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - extend_file failed\n");
             goto end;
@@ -2300,7 +2300,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
                 break;
             }
             
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, FALSE);
+            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, FALSE, TRUE);
             break;
         }
 
@@ -2344,7 +2344,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
                 break;
             }
             
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly);
+            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly, FALSE);
             
             break;
         }
