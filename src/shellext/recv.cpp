@@ -381,7 +381,53 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char* path;
+    UINT64* size;
+    ULONG pathlen, sizelen;
+    std::wstring pathu;
+    HANDLE h;
+    LARGE_INTEGER sizeli;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_SIZE, (void**)&size, &sizelen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"size");
+        return FALSE;
+    }
+
+    if (sizelen < sizeof(UINT64)) {
+        ShowStringError(hwnd, IDS_RECV_SHORT_PARAM, funcname, L"size", sizelen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        return FALSE;
+    }
+
+    sizeli.QuadPart = *size;
+
+    if (SetFilePointer(h, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+        ShowStringError(hwnd, IDS_RECV_SETFILEPOINTER_FAILED, GetLastError());
+        CloseHandle(h);
+        return FALSE;
+    }
+
+    if (!SetEndOfFile(h)) {
+        ShowStringError(hwnd, IDS_RECV_SETENDOFFILE_FAILED, GetLastError());
+        CloseHandle(h);
+        return FALSE;
+    }
+
+    CloseHandle(h);
 
     return TRUE;
 }
