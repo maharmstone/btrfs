@@ -572,7 +572,7 @@ BEGIN
     IDS_REFLINK_PASTE_HELP  "Do a lightweight copy of files using reference counting."
     IDS_RECV_SUBVOL         "Re&ceive subvolume..."
     IDS_RECV_SUBVOL_HELP    "Recreate a previously exported subvolume."
-    IDS_RECV_CANT_OPEN_FILE "Couldn't open %s for reading (error %u)."
+    IDS_RECV_CANT_OPEN_FILE "Couldn't open %s (error %u)."
     IDS_RECV_READFILE_FAILED "ReadFile failed (error %u)."
     IDS_OUT_OF_MEMORY       "Out of memory."
     IDS_RECV_UNKNOWN_COMMAND "Unrecognized command %u encountered."
@@ -588,6 +588,8 @@ END
 STRINGTABLE 
 BEGIN
     IDS_RECV_MOVEFILE_FAILED "MoveFile (%s -> %s) failed (error %u)."
+    IDS_RECV_SETFILEPOINTER_FAILED "SetFilePointer failed (error %u)."
+    IDS_RECV_WRITEFILE_FAILED "WriteFile failed (error %u)."
 END
 
 #endif    // English (U.K.) resources
