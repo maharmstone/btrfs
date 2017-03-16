@@ -585,6 +585,11 @@ BEGIN
     IDS_RECV_SET_REPARSE_POINT_FAILED "FSCTL_SET_REPARSE_POINT returned %08x."
 END
 
+STRINGTABLE 
+BEGIN
+    IDS_RECV_MOVEFILE_FAILED "MoveFile (%s -> %s) failed (error %u)."
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

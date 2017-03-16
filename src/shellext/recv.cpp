@@ -259,7 +259,30 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char *path, *path_to;
+    ULONG path_len, path_to_len;
+    std::wstring pathu, path_tou;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_TO, (void**)&path_to, &path_to_len)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path_to");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, path_len, &pathu))
+        return FALSE;
+
+    if (!utf8_to_utf16(hwnd, path_to, path_to_len, &path_tou))
+        return FALSE;
+
+    if (!MoveFileW((subvolpath + pathu).c_str(), (subvolpath + path_tou).c_str())) {
+        ShowStringError(hwnd, IDS_RECV_MOVEFILE_FAILED, pathu.c_str(), path_tou.c_str(), GetLastError());
+        return FALSE;
+    }
 
     return TRUE;
 }
