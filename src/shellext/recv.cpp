@@ -23,6 +23,12 @@
 #include "recv.h"
 #include "resource.h"
 
+#define EA_NTACL "security.NTACL"
+#define EA_DOSATTRIB "user.DOSATTRIB"
+#define EA_REPARSE "system.reparse"
+#define EA_EA "user.EA"
+#define XATTR_USER "user."
+
 static BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {
     ULONG off = 0;
 
@@ -317,7 +323,65 @@ BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char *path, *xattrname;
+    UINT8* xattrdata;
+    ULONG pathlen, xattrnamelen, xattrdatalen;
+    std::wstring pathu;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrname, &xattrnamelen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_DATA, (void**)&xattrdata, &xattrdatalen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"xattr_data");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen)) {
+        // FIXME - security.NTACL
+    } else if (xattrnamelen == strlen(EA_DOSATTRIB) && !memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) {
+        // FIXME - user.DOSATTRIB
+    } else if (xattrnamelen == strlen(EA_REPARSE) && !memcmp(xattrname, EA_REPARSE, xattrnamelen)) {
+        // FIXME - system.reparse
+    } else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen)) {
+        // FIXME - user.EA
+    } else if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER))) {
+        HANDLE h;
+        std::wstring streamname;
+
+        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
+            return FALSE;
+
+        streamname = streamname.substr(5);
+
+        h = CreateFileW((subvolpath + pathu + L":" + streamname).c_str(), GENERIC_WRITE, 0,
+                        NULL, CREATE_ALWAYS, 0, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowStringError(hwnd, IDS_RECV_CANT_CREATE_FILE, (pathu + L":" + streamname).c_str(), GetLastError());
+            return FALSE;
+        }
+
+        if (xattrdatalen > 0) {
+            if (!WriteFile(h, xattrdata, xattrdatalen, NULL, NULL)) {
+                ShowStringError(hwnd, IDS_RECV_WRITEFILE_FAILED, GetLastError());
+                CloseHandle(h);
+                return FALSE;
+            }
+        }
+
+        CloseHandle(h);
+    } else {
+        // FIXME - hidden xattrs
+    }
 
     return TRUE;
 }
