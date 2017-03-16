@@ -119,6 +119,60 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
+BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    // FIXME
+
+    return TRUE;
+}
+
 void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
     HANDLE f;
     btrfs_send_header header;
@@ -186,26 +240,57 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
             case BTRFS_SEND_CMD_SUBVOL:
                 b = cmd_subvol(hwnd, &cmd, data);
             break;
-            
+
             // FIXME - BTRFS_SEND_CMD_SNAPSHOT
-            // FIXME - BTRFS_SEND_CMD_MKFILE
-            // FIXME - BTRFS_SEND_CMD_MKDIR
-            // FIXME - BTRFS_SEND_CMD_MKNOD
-            // FIXME - BTRFS_SEND_CMD_MKFIFO
-            // FIXME - BTRFS_SEND_CMD_MKSOCK
-            // FIXME - BTRFS_SEND_CMD_SYMLINK
-            // FIXME - BTRFS_SEND_CMD_RENAME
-            // FIXME - BTRFS_SEND_CMD_LINK
+
+            case BTRFS_SEND_CMD_MKFILE:
+            case BTRFS_SEND_CMD_MKDIR:
+            case BTRFS_SEND_CMD_MKNOD:
+            case BTRFS_SEND_CMD_MKFIFO:
+            case BTRFS_SEND_CMD_MKSOCK:
+            case BTRFS_SEND_CMD_SYMLINK:
+                b = cmd_mkfile(hwnd, &cmd, data);
+            break;
+
+            case BTRFS_SEND_CMD_RENAME:
+                b = cmd_rename(hwnd, &cmd, data);
+            break;
+
+            case BTRFS_SEND_CMD_LINK:
+                b = cmd_link(hwnd, &cmd, data);
+            break;
+
             // FIXME - BTRFS_SEND_CMD_UNLINK
             // FIXME - BTRFS_SEND_CMD_RMDIR
-            // FIXME - BTRFS_SEND_CMD_SET_XATTR
+
+            case BTRFS_SEND_CMD_SET_XATTR:
+                b = cmd_setxattr(hwnd, &cmd, data);
+            break;
+
             // FIXME - BTRFS_SEND_CMD_REMOVE_XATTR
-            // FIXME - BTRFS_SEND_CMD_WRITE
+
+            case BTRFS_SEND_CMD_WRITE:
+                b = cmd_write(hwnd, &cmd, data);
+            break;
+
             // FIXME - BTRFS_SEND_CMD_CLONE
-            // FIXME - BTRFS_SEND_CMD_TRUNCATE
-            // FIXME - BTRFS_SEND_CMD_CHMOD
-            // FIXME - BTRFS_SEND_CMD_CHOWN
-            // FIXME - BTRFS_SEND_CMD_UTIMES
+
+            case BTRFS_SEND_CMD_TRUNCATE:
+                b = cmd_truncate(hwnd, &cmd, data);
+            break;
+
+            case BTRFS_SEND_CMD_CHMOD:
+                b = cmd_chmod(hwnd, &cmd, data);
+            break;
+
+            case BTRFS_SEND_CMD_CHOWN:
+                b = cmd_chown(hwnd, &cmd, data);
+            break;
+
+            case BTRFS_SEND_CMD_UTIMES:
+                b = cmd_utimes(hwnd, &cmd, data);
+            break;
+
             // FIXME - BTRFS_SEND_CMD_UPDATE_EXTENT
 
             default:
