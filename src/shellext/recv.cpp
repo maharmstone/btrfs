@@ -288,8 +288,31 @@ BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    char *path, *path_link;
+    ULONG path_len, path_link_len;
+    std::wstring pathu, path_linku;
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&path_link, &path_link_len)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path_link");
+        return FALSE;
+    }
+    
+    if (!utf8_to_utf16(hwnd, path, path_len, &pathu))
+        return FALSE;
+    
+    if (!utf8_to_utf16(hwnd, path_link, path_link_len, &path_linku))
+        return FALSE;
 
+    if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), NULL)) {
+        ShowStringError(hwnd, IDS_RECV_CREATEHARDLINK_FAILED, pathu.c_str(), path_linku.c_str(), GetLastError());
+        return FALSE;
+    }
+    
     return TRUE;
 }
 

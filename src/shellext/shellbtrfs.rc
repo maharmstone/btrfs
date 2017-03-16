@@ -590,6 +590,8 @@ BEGIN
     IDS_RECV_MOVEFILE_FAILED "MoveFile (%s -> %s) failed (error %u)."
     IDS_RECV_SETFILEPOINTER_FAILED "SetFilePointer failed (error %u)."
     IDS_RECV_WRITEFILE_FAILED "WriteFile failed (error %u)."
+    IDS_RECV_CREATEHARDLINK_FAILED 
+                            "CreateHardLink (%s -> %s) failed (error %u)."
 END
 
 #endif    // English (U.K.) resources

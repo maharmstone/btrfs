@@ -139,6 +139,7 @@
 #define IDS_RECV_MOVEFILE_FAILED        224
 #define IDS_RECV_SETFILEPOINTER_FAILED  225
 #define IDS_RECV_WRITEFILE_FAILED       226
+#define IDS_RECV_CREATEHARDLINK_FAILED  227
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
