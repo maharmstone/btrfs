@@ -3517,6 +3517,10 @@ end:
     return Status;
 }
 
+// based on functions in sys/sysmacros.h
+#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
+#define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
+
 static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen) {
     NTSTATUS Status;
     btrfs_mknod* bmn;
@@ -3680,7 +3684,12 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.st_uid = UID_NOBODY;
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     fcb->inode_item.st_mode = parfcb->inode_item.st_mode & ~S_IFDIR; // use parent's permissions by default
-    fcb->inode_item.st_rdev = bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV ? bmn->st_rdev : 0;
+
+    if (bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV)
+        fcb->inode_item.st_rdev = (minor(bmn->st_rdev) & 0xFFFFF) | ((major(bmn->st_rdev) & 0xFFFFFFFFFFF) << 20);
+    else
+        fcb->inode_item.st_rdev = 0;
+
     fcb->inode_item.flags = 0;
     fcb->inode_item.sequence = 1;
     fcb->inode_item.st_atime = now;
