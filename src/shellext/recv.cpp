@@ -624,13 +624,15 @@ void BtrfsRecv::ShowRecvError(int resid, ...) {
     
     va_end(ap);
     
-    // FIXME - set progress bar to error state
+    SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
 }
 
 DWORD BtrfsRecv::recv_thread() {
     HANDLE f;
     btrfs_send_header header;
     BOOL b = TRUE;
+    LARGE_INTEGER size;
+    UINT64 pos = 0;
 
     f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (f == INVALID_HANDLE_VALUE) {
@@ -638,11 +640,15 @@ DWORD BtrfsRecv::recv_thread() {
         goto end;
     }
     
+    size.LowPart = GetFileSize(f, (LPDWORD)&size.HighPart);
+    
     if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
         ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError());
         CloseHandle(f);
         goto end;
     }
+    
+    pos = sizeof(btrfs_send_header);
 
     // FIXME - check magic and version are acceptable
 
@@ -654,9 +660,15 @@ DWORD BtrfsRecv::recv_thread() {
         goto end;
     }
     
+    SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)65536);
+    
     while (TRUE) {
         btrfs_send_command cmd;
         UINT8* data;
+        ULONG progress;
+
+        progress = (ULONG)((float)pos * 65536.0f / (float)size.QuadPart);
+        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
 
         if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), NULL, NULL)) {
             if (GetLastError() != ERROR_HANDLE_EOF) {
@@ -666,6 +678,8 @@ DWORD BtrfsRecv::recv_thread() {
             
             break;
         }
+        
+        pos += sizeof(btrfs_send_command);
 
         if (cmd.cmd == BTRFS_SEND_CMD_END)
             break;
@@ -684,6 +698,8 @@ DWORD BtrfsRecv::recv_thread() {
                 ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError());
                 break;
             }
+            
+            pos += cmd.length;
         } else
             data = NULL;
 
@@ -758,6 +774,8 @@ DWORD BtrfsRecv::recv_thread() {
     
     if (b) {
         WCHAR s[255];
+        
+        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
         
         if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
             ShowError(hwnd, GetLastError());
