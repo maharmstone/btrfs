@@ -1074,6 +1074,9 @@ end2:
     return Status;
 }
 
+// based on function in sys/sysmacros.h
+#define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((UINT64)((minor) & ~0xFF)) << 12) | (((UINT64)((major) & ~0xFFF)) << 32))
+
 static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_inode_info* bii = data;
     fcb* fcb;
@@ -1109,7 +1112,12 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     bii->st_uid = fcb->inode_item.st_uid;
     bii->st_gid = fcb->inode_item.st_gid;
     bii->st_mode = fcb->inode_item.st_mode;
-    bii->st_rdev = fcb->inode_item.st_rdev;
+
+    if (fcb->inode_item.st_rdev == 0)
+        bii->st_rdev = 0;
+    else
+        bii->st_rdev = makedev((fcb->inode_item.st_rdev & 0xFFFFFFFFFFF) >> 20, fcb->inode_item.st_rdev & 0xFFFFF);
+
     bii->flags = fcb->inode_item.flags;
     
     bii->inline_length = 0;
