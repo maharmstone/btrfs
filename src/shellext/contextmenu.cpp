@@ -15,10 +15,12 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
+#define UNICODE
 #include "shellext.h"
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+#include <wincodec.h>
 #include <string>
 #include <sstream>
 
@@ -247,6 +249,39 @@ static BOOL show_reflink_paste(WCHAR* path) {
     return !wcscmp(volpath1, volpath2);
 }
 
+// The code for putting an icon against a menu item comes from:
+// http://web.archive.org/web/20070208005514/http://shellrevealed.com/blogs/shellblog/archive/2007/02/06/Vista-Style-Menus_2C00_-Part-1-_2D00_-Adding-icons-to-standard-menus.aspx
+
+static void InitBitmapInfo(BITMAPINFO* pbmi, ULONG cbInfo, LONG cx, LONG cy, WORD bpp) {
+    ZeroMemory(pbmi, cbInfo);
+    pbmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    pbmi->bmiHeader.biPlanes = 1;
+    pbmi->bmiHeader.biCompression = BI_RGB;
+    
+    pbmi->bmiHeader.biWidth = cx;
+    pbmi->bmiHeader.biHeight = cy;
+    pbmi->bmiHeader.biBitCount = bpp;
+}
+
+static HRESULT Create32BitHBITMAP(HDC hdc, const SIZE *psize, void **ppvBits, HBITMAP* phBmp) {
+    BITMAPINFO bmi;
+    HDC hdcUsed;
+
+    *phBmp = NULL;
+
+    InitBitmapInfo(&bmi, sizeof(bmi), psize->cx, psize->cy, 32);
+    
+    hdcUsed = hdc ? hdc : GetDC(NULL);
+
+    if (hdcUsed) {
+        *phBmp = CreateDIBSection(hdcUsed, &bmi, DIB_RGB_COLORS, ppvBits, NULL, 0);
+        if (hdc != hdcUsed)
+            ReleaseDC(NULL, hdcUsed);
+    }
+
+    return !*phBmp ? E_OUTOFMEMORY : S_OK;
+}
+
 HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags) {
     WCHAR str[256];
     ULONG entries = 0;
@@ -276,10 +311,59 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
     entries = 1;
     
     if (idCmdFirst + 1 <= idCmdLast) {
+        MENUITEMINFOW mii;
+        IWICImagingFactory* factory = NULL;
+        IWICBitmap* bitmap;
+        HRESULT hr;
+
         if (LoadStringW(module, IDS_RECV_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
             return E_FAIL;
+        
+        if (!uacicon) {
+            hr = CoCreateInstance(CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+            
+            if (SUCCEEDED(hr)) {
+                HANDLE icon;
 
-        if (!InsertMenuW(hmenu, indexMenu + 1, MF_BYPOSITION, idCmdFirst + 1, str))
+                // We can't use IDI_SHIELD, as that will only give us the full-size icon
+                icon = LoadImageW(GetModuleHandleW(L"user32.dll"), MAKEINTRESOURCEW(106)/* UAC shield */, IMAGE_ICON,
+                                  GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+
+                hr = factory->CreateBitmapFromHICON((HICON)icon, &bitmap);
+                if (SUCCEEDED(hr)) {
+                    UINT cx, cy;
+
+                    hr = bitmap->GetSize(&cx, &cy);
+                    if (SUCCEEDED(hr)) {
+                        SIZE sz;
+                        BYTE* buf;
+                        
+                        sz.cx = (int)cx;
+                        sz.cy = -(int)cy;
+
+                        hr = Create32BitHBITMAP(NULL, &sz, (void**)&buf, &uacicon);
+                        if (SUCCEEDED(hr)) {
+                            UINT stride = cx * sizeof(DWORD);
+                            UINT buflen = cy * stride;
+                            bitmap->CopyPixels(NULL, stride, buflen, buf);
+                        }
+                    }
+
+                    bitmap->Release();
+                }
+                
+                factory->Release();
+            }
+        }
+        
+        memset(&mii, 0, sizeof(MENUITEMINFOW));
+        mii.cbSize = sizeof(MENUITEMINFOW);
+        mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
+        mii.dwTypeData = str;
+        mii.wID = idCmdFirst + 1;
+        mii.hbmpItem = uacicon;
+
+        if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
             return E_FAIL;
         
         entries++;

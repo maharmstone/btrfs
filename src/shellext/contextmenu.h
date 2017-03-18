@@ -25,6 +25,7 @@ public:
         refcount = 0;
         ignore = TRUE;
         stgm_set = FALSE;
+        uacicon = NULL;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -33,6 +34,9 @@ public:
             GlobalUnlock(stgm.hGlobal);
             ReleaseStgMedium(&stgm);
         }
+        
+        if (uacicon)
+            DeleteObject(uacicon);
         
         InterlockedDecrement(&objs_loaded);
     }
@@ -71,6 +75,7 @@ private:
     WCHAR path[MAX_PATH];
     STGMEDIUM stgm;
     BOOL stgm_set;
+    HBITMAP uacicon;
     
     BOOL reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
 };
