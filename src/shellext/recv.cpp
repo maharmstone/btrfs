@@ -611,6 +611,7 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 DWORD BtrfsRecv::recv_thread() {
     HANDLE f;
     btrfs_send_header header;
+    BOOL b = TRUE;
 
     f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (f == INVALID_HANDLE_VALUE) {
@@ -635,7 +636,6 @@ DWORD BtrfsRecv::recv_thread() {
     }
     
     while (TRUE) {
-        BOOL b;
         btrfs_send_command cmd;
         UINT8* data;
 
@@ -736,6 +736,20 @@ DWORD BtrfsRecv::recv_thread() {
         if (!b)
             break;
     }
+    
+    if (b) {
+        WCHAR s[255];
+        
+        if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
+            ShowError(hwnd, GetLastError());
+        else
+            SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+        
+        if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+            ShowError(hwnd, GetLastError());
+        else
+            SetDlgItemTextW(hwnd, IDCANCEL, s);
+    }
 
     CloseHandle(dir);
     CloseHandle(f);
@@ -769,7 +783,8 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
                     switch (LOWORD(wParam)) {
                         case IDOK:
                         case IDCANCEL:
-                            EndDialog(hwndDlg, 0); // FIXME
+                            // FIXME - cancel if still running
+                            EndDialog(hwndDlg, 1);
                             return TRUE;
                     }
                 break;

@@ -615,6 +615,8 @@ BEGIN
     IDS_RECV_SETFILEINFO_FAILED 
                             "SetFileInformationByHandle failed (error %u)."
     IDS_RECV_SETINODEINFO_FAILED "FSCTL_BTRFS_SET_INODE_INFO returned %08x."
+    IDS_RECV_SUCCESS        "Subvolume received successfully."
+    IDS_RECV_BUTTON_OK      "OK"
 END
 
 #endif    // English (U.K.) resources

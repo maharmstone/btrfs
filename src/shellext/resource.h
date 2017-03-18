@@ -145,6 +145,8 @@
 #define IDS_RECV_CANT_CREATE_FILE       229
 #define IDS_RECV_SETFILEINFO_FAILED     230
 #define IDS_RECV_SETINODEINFO_FAILED    231
+#define IDS_RECV_SUCCESS                232
+#define IDS_RECV_BUTTON_OK              233
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
