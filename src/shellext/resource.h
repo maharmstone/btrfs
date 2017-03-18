@@ -152,6 +152,7 @@
 #define IDS_RECV_CSUM_ERROR             236
 #define IDS_RECV_NOT_A_SEND_STREAM      237
 #define IDS_RECV_UNSUPPORTED_VERSION    238
+#define IDS_RECV_SETEAFILE_FAILED       239
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

@@ -506,7 +506,25 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         CloseHandle(h);
     } else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen)) {
-        // FIXME - user.EA
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS Status;
+        
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_EA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            return FALSE;
+        }
+        
+        Status = NtSetEaFile(h, &iosb, xattrdata, xattrdatalen);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETEAFILE_FAILED, Status);
+            CloseHandle(h);
+            return FALSE;
+        }
+        
+        CloseHandle(h);
     } else if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER))) {
         HANDLE h;
         std::wstring streamname;
