@@ -44,6 +44,8 @@ private:
     BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring* utf16);
+    void ShowRecvError(int resid, ...);
 
     HANDLE dir, thread;
     HWND hwnd;
