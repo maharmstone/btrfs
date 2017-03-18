@@ -655,6 +655,33 @@ void BtrfsRecv::ShowRecvError(int resid, ...) {
     SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
 }
 
+static void delete_directory(std::wstring dir) {
+    HANDLE h;
+    WIN32_FIND_DATAW fff;
+
+    h = FindFirstFileW((dir + L"*").c_str(), &fff);
+
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    do {
+        std::wstring file;
+        
+        file = fff.cFileName;
+        
+        if (file != L"." && file != L"..") {
+            if (fff.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                delete_directory(dir + file + L"\\");
+            else
+                DeleteFileW((dir + file).c_str());
+        }
+    } while (FindNextFileW(h, &fff));
+
+    FindClose(h);
+
+    RemoveDirectoryW(dir.c_str());
+}
+
 DWORD BtrfsRecv::recv_thread() {
     HANDLE f;
     btrfs_send_header header;
@@ -831,6 +858,9 @@ DWORD BtrfsRecv::recv_thread() {
 
     CloseHandle(dir);
     CloseHandle(f);
+    
+    if (!b && subvolpath != L"")
+        delete_directory(subvolpath);
 
 end:
     thread = NULL;
