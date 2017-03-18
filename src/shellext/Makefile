@@ -2,7 +2,7 @@ OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o d
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
-CFLAGS = -Wall $(INCLUDES) -fvtable-verify=none
+CFLAGS = -Wall $(INCLUDES) -fvtable-verify=none -msse4.2
 
 LIBS = -lole32 -luuid -lntdll -luxtheme -lshlwapi -lcomctl32 -lsetupapi -lcomdlg32
 

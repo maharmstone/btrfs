@@ -619,6 +619,7 @@ BEGIN
     IDS_RECV_BUTTON_OK      "OK"
     IDS_RECV_SETFILEATTRIBUTES_FAILED "SetFileAttributes failed (error %u)."
     IDS_RECV_GETFILEATTRIBUTES_FAILED "GetFileAttributes failed (error %u)."
+    IDS_RECV_CSUM_ERROR     "Checksum error."
 END
 
 #endif    // English (U.K.) resources
