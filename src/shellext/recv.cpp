@@ -245,7 +245,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, (subvolpath + nameu).c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, nameu.c_str(), GetLastError());
             free(rdb);
             return FALSE;
         }
@@ -397,7 +397,25 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             }
         }
     } else if (xattrnamelen == strlen(EA_REPARSE) && !memcmp(xattrname, EA_REPARSE, xattrnamelen)) {
-        // FIXME - system.reparse
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS Status;
+        
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            return FALSE;
+        }
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, xattrdata, xattrdatalen, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        CloseHandle(h);
     } else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen)) {
         // FIXME - user.EA
     } else if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER))) {
