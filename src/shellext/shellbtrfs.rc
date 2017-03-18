@@ -314,6 +314,16 @@ BEGIN
     PUSHBUTTON      "&Reset",IDC_RESET_STATS,85,91,50,14
 END
 
+IDD_RECV_PROGRESS DIALOGEX 0, 0, 188, 83
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Receiving subvolume"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,69,62,50,14
+    CONTROL         "",IDC_RECV_PROGRESS,"msctls_progress32",WS_BORDER,7,33,174,24
+    LTEXT           "Receiving subvolume...",IDC_RECV_MSG,7,7,174,18
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -401,6 +411,14 @@ BEGIN
         RIGHTMARGIN, 152
         TOPMARGIN, 7
         BOTTOMMARGIN, 105
+    END
+
+    IDD_RECV_PROGRESS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 181
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 76
     END
 END
 #endif    // APSTUDIO_INVOKED

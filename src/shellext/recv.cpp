@@ -608,34 +608,31 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
+DWORD BtrfsRecv::recv_thread() {
     HANDLE f;
     btrfs_send_header header;
 
-    f = CreateFileW(file, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (f == INVALID_HANDLE_VALUE) {
-        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, file, GetLastError());
-        return;
+        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, streamfile.c_str(), GetLastError());
+        goto end;
     }
     
     if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
         ShowStringError(hwnd, IDS_RECV_READFILE_FAILED, GetLastError());
         CloseHandle(f);
-        return;
+        goto end;
     }
-    
+
     // FIXME - check magic and version are acceptable
 
-    dir = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    dir = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (dir == INVALID_HANDLE_VALUE) {
-        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_PATH, path, GetLastError());
+        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError());
         CloseHandle(f);
-        return;
+        goto end;
     }
-
-    dirpath = path;
-    subvolpath = L"";
     
     while (TRUE) {
         BOOL b;
@@ -742,4 +739,68 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
 
     CloseHandle(dir);
     CloseHandle(f);
+
+end:
+    thread = NULL;
+
+    return 0;
+}
+
+static DWORD WINAPI global_recv_thread(LPVOID lpParameter) {
+    BtrfsRecv* br = (BtrfsRecv*)lpParameter;
+
+    return br->recv_thread();
+}
+
+INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG:
+            this->hwnd = hwndDlg;
+            thread = CreateThread(NULL, 0, global_recv_thread, this, 0, NULL);
+
+            if (!thread) {
+                ShowError(hwndDlg, GetLastError()); // FIXME - set error message on dialog box
+            }
+        break;
+
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0); // FIXME
+                            return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsRecv* br;
+
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        br = (BtrfsRecv*)lParam;
+    } else {
+        br = (BtrfsRecv*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    }
+
+    if (br)
+        return br->RecvProgressDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
+    streamfile = file;
+    dirpath = path;
+    subvolpath = L"";
+
+    if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RECV_PROGRESS), hwnd, stub_RecvProgressDlgProc, (LPARAM)this) <= 0)
+        ShowError(hwnd, GetLastError());
 }

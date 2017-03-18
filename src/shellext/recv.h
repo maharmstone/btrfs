@@ -23,12 +23,15 @@ extern LONG objs_loaded;
 class BtrfsRecv {
 public:
     BtrfsRecv() {
+        thread = NULL;
     }
 
     virtual ~BtrfsRecv() {
     }
     
     void Open(HWND hwnd, WCHAR* file, WCHAR* path);
+    DWORD recv_thread();
+    INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
 private:
     BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
@@ -41,7 +44,8 @@ private:
     BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    
-    HANDLE dir;
-    std::wstring dirpath, subvolpath;
+
+    HANDLE dir, thread;
+    HWND hwnd;
+    std::wstring streamfile, dirpath, subvolpath;
 };
