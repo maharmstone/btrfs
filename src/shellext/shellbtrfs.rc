@@ -620,6 +620,8 @@ BEGIN
     IDS_RECV_SETFILEATTRIBUTES_FAILED "SetFileAttributes failed (error %u)."
     IDS_RECV_GETFILEATTRIBUTES_FAILED "GetFileAttributes failed (error %u)."
     IDS_RECV_CSUM_ERROR     "Checksum error."
+    IDS_RECV_NOT_A_SEND_STREAM "File was not a send stream."
+    IDS_RECV_UNSUPPORTED_VERSION "Unsupported version %u."
 END
 
 #endif    // English (U.K.) resources

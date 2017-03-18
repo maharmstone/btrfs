@@ -899,7 +899,17 @@ DWORD BtrfsRecv::recv_thread() {
     
     pos = sizeof(btrfs_send_header);
 
-    // FIXME - check magic and version are acceptable
+    if (memcmp(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic))) {
+        ShowRecvError(IDS_RECV_NOT_A_SEND_STREAM);
+        CloseHandle(f);
+        goto end;
+    }
+    
+    if (header.version > 1) {
+        ShowRecvError(IDS_RECV_UNSUPPORTED_VERSION, header.version);
+        CloseHandle(f);
+        goto end;
+    }
 
     dir = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
