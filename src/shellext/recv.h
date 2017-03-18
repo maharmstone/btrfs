@@ -47,7 +47,7 @@ private:
     BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring* utf16);
     void ShowRecvError(int resid, ...);
 
-    HANDLE dir, thread;
+    HANDLE dir, thread, lastwritefile;
     HWND hwnd;
-    std::wstring streamfile, dirpath, subvolpath;
+    std::wstring streamfile, dirpath, subvolpath, lastwritepath;
 };

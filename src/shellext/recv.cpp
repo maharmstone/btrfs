@@ -432,13 +432,19 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
         return FALSE;
-
-    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
-                        FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
-        return FALSE;
-    }
+    
+    if (lastwritepath != pathu) {
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
+                            FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            return FALSE;
+        }
+        
+        lastwritepath = pathu;
+        lastwritefile = h;
+    } else
+        h = lastwritefile;
 
     offli.QuadPart = *offset;
 
@@ -453,8 +459,6 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         CloseHandle(h);
         return FALSE;
     }
-
-    CloseHandle(h);
 
     return TRUE;
 }
@@ -677,6 +681,9 @@ DWORD BtrfsRecv::recv_thread() {
     
     SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)65536);
     
+    lastwritefile = INVALID_HANDLE_VALUE;
+    lastwritepath = L"";
+    
     while (TRUE) {
         btrfs_send_command cmd;
         UINT8* data;
@@ -717,6 +724,13 @@ DWORD BtrfsRecv::recv_thread() {
             pos += cmd.length;
         } else
             data = NULL;
+        
+        if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_CMD_WRITE) {
+            CloseHandle(lastwritefile);
+            
+            lastwritefile = INVALID_HANDLE_VALUE;
+            lastwritepath = L"";
+        }
 
         switch (cmd.cmd) {
             case BTRFS_SEND_CMD_SUBVOL:
@@ -786,6 +800,9 @@ DWORD BtrfsRecv::recv_thread() {
         if (!b)
             break;
     }
+    
+    if (lastwritefile != NULL)
+        CloseHandle(lastwritefile);
     
     if (b) {
         WCHAR s[255];
