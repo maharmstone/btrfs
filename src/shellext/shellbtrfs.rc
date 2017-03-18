@@ -429,12 +429,12 @@ BEGIN
     IDS_PROP_SHEET_TITLE    "Btrfs properties"
     IDS_INODE_FILE          "File"
     IDS_INODE_DIR           "Directory"
-    IDS_INODE_CHAR          "Character device (major %llu, minor %u)"
+    IDS_INODE_CHAR          "Character device (major %llu, minor %llu)"
 END
 
 STRINGTABLE 
 BEGIN
-    IDS_INODE_BLOCK         "Block device (major %llu, minor %u)"
+    IDS_INODE_BLOCK         "Block device (major %llu, minor %llu)"
     IDS_INODE_FIFO          "FIFO"
     IDS_INODE_SOCKET        "Socket"
     IDS_INODE_SYMLINK       "Symbolic link"

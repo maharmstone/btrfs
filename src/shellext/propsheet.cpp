@@ -814,6 +814,10 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     }
 }
 
+// based on functions in sys/sysmacros.h
+#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
+#define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
+
 void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     WCHAR s[255];
     ULONG sr;
@@ -878,7 +882,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
             return;
         }
         
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, (UINT64)((rdev & 0xFFFFFFFFFFF) >> 20), (UINT32)(rdev & 0xFFFFF)) == STRSAFE_E_INSUFFICIENT_BUFFER)
+        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, major(rdev), minor(rdev)) == STRSAFE_E_INSUFFICIENT_BUFFER)
             return;
     } else {
         if (!LoadStringW(module, sr, s, sizeof(s) / sizeof(WCHAR))) {
