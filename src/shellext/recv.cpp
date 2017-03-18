@@ -497,7 +497,54 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    HANDLE h;
+    char* path;
+    UINT32* mode;
+    ULONG pathlen, modelen;
+    std::wstring pathu;
+    btrfs_set_inode_info bsii;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
+        ShowStringError(hwnd, IDS_RECV_MISSING_PARAM, funcname, L"mode");
+        return FALSE;
+    }
+    
+    if (modelen < sizeof(UINT32)) {
+        ShowStringError(hwnd, IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT32));
+        return FALSE;
+    }
+    
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+    
+    h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowStringError(hwnd, IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        return FALSE;
+    }
+    
+    memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+    
+    bsii.mode_changed = TRUE;
+    bsii.st_mode = *mode;
+    
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
+                             &bsii, sizeof(btrfs_set_inode_info));
+    if (!NT_SUCCESS(Status)) {
+        ShowStringError(hwnd, IDS_RECV_SETINODEINFO_FAILED, Status);
+        CloseHandle(h);
+        return FALSE;
+    }
+
+    CloseHandle(h);
 
     return TRUE;
 }

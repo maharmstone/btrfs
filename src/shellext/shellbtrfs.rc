@@ -596,6 +596,7 @@ BEGIN
     IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u)."
     IDS_RECV_SETFILEINFO_FAILED 
                             "SetFileInformationByHandle failed (error %u)."
+    IDS_RECV_SETINODEINFO_FAILED "FSCTL_BTRFS_SET_INODE_INFO returned %08x."
 END
 
 #endif    // English (U.K.) resources
