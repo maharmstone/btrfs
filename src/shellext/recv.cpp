@@ -364,7 +364,38 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen)) {
         // FIXME - security.NTACL
     } else if (xattrnamelen == strlen(EA_DOSATTRIB) && !memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) {
-        // FIXME - user.DOSATTRIB
+        if (xattrdatalen > 2 && xattrdata[0] == '0' && xattrdata[1] == 'x') {
+            DWORD attrib = 0;
+            ULONG xp = 2;
+            BOOL valid = TRUE;
+            
+            while (xp < xattrdatalen) {
+                attrib <<= 4;
+                
+                if (xattrdata[xp] >= '0' && xattrdata[xp] <= '9')
+                    attrib += xattrdata[xp] - '0';
+                else if (xattrdata[xp] >= 'a' && xattrdata[xp] <= 'f')
+                    attrib += xattrdata[xp] - 'a' + 0xa;
+                else if (xattrdata[xp] >= 'A' && xattrdata[xp] <= 'F')
+                    attrib += xattrdata[xp] - 'A' + 0xa;
+                else {
+                    valid = FALSE;
+                    break;
+                }
+                
+                xp++;
+            }
+            
+            if (valid) {
+                if (pathu == L"")
+                    attrib &= ~FILE_ATTRIBUTE_READONLY;
+                
+                if (!SetFileAttributesW((subvolpath + pathu).c_str(), attrib)) {
+                    ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+                    return FALSE;
+                }
+            }
+        }
     } else if (xattrnamelen == strlen(EA_REPARSE) && !memcmp(xattrname, EA_REPARSE, xattrnamelen)) {
         // FIXME - system.reparse
     } else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen)) {
@@ -435,6 +466,28 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     
     if (lastwritepath != pathu) {
         FILE_BASIC_INFO fbi;
+        
+        if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+                return FALSE;
+            }
+        }
+        
+        CloseHandle(lastwritefile);
+        
+        lastwriteatt = GetFileAttributesW((subvolpath + pathu).c_str());
+        if (lastwriteatt == INVALID_FILE_ATTRIBUTES) {
+            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError());
+            return FALSE;
+        }
+        
+        if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), lastwriteatt & ~FILE_ATTRIBUTE_READONLY)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+                return FALSE;
+            }
+        }
 
         h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
                             FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -479,6 +532,7 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     std::wstring pathu;
     HANDLE h;
     LARGE_INTEGER sizeli;
+    DWORD att;
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
         ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
@@ -497,6 +551,19 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
         return FALSE;
+    
+    att = GetFileAttributesW((subvolpath + pathu).c_str());
+    if (att == INVALID_FILE_ATTRIBUTES) {
+        ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError());
+        return FALSE;
+    }
+    
+    if (att & FILE_ATTRIBUTE_READONLY) {
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
+            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+            return FALSE;
+        }
+    }
 
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -520,6 +587,13 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     }
 
     CloseHandle(h);
+
+    if (att & FILE_ATTRIBUTE_READONLY) {
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
+            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+            return FALSE;
+        }
+    }
 
     return TRUE;
 }
@@ -719,6 +793,7 @@ DWORD BtrfsRecv::recv_thread() {
     
     lastwritefile = INVALID_HANDLE_VALUE;
     lastwritepath = L"";
+    lastwriteatt = 0;
     
     while (TRUE) {
         btrfs_send_command cmd;
@@ -762,10 +837,18 @@ DWORD BtrfsRecv::recv_thread() {
             data = NULL;
         
         if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_CMD_WRITE) {
+            if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+                if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
+                    ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+                    return FALSE;
+                }
+            }
+
             CloseHandle(lastwritefile);
-            
+
             lastwritefile = INVALID_HANDLE_VALUE;
             lastwritepath = L"";
+            lastwriteatt = 0;
         }
 
         switch (cmd.cmd) {
@@ -837,8 +920,16 @@ DWORD BtrfsRecv::recv_thread() {
             break;
     }
     
-    if (lastwritefile != NULL)
+    if (lastwritefile != INVALID_HANDLE_VALUE) {
+        if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError());
+                return FALSE;
+            }
+        }
+
         CloseHandle(lastwritefile);
+    }
     
     if (b) {
         WCHAR s[255];

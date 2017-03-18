@@ -50,4 +50,5 @@ private:
     HANDLE dir, thread, lastwritefile;
     HWND hwnd;
     std::wstring streamfile, dirpath, subvolpath, lastwritepath;
+    DWORD lastwriteatt;
 };

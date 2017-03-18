@@ -617,6 +617,8 @@ BEGIN
     IDS_RECV_SETINODEINFO_FAILED "FSCTL_BTRFS_SET_INODE_INFO returned %08x."
     IDS_RECV_SUCCESS        "Subvolume received successfully."
     IDS_RECV_BUTTON_OK      "OK"
+    IDS_RECV_SETFILEATTRIBUTES_FAILED "SetFileAttributes failed (error %u)."
+    IDS_RECV_GETFILEATTRIBUTES_FAILED "GetFileAttributes failed (error %u)."
 END
 
 #endif    // English (U.K.) resources
