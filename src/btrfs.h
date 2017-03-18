@@ -549,6 +549,8 @@ typedef struct {
 #define BTRFS_SEND_TLV_CLONE_OFFSET    23
 #define BTRFS_SEND_TLV_CLONE_LENGTH    24
 
+#define BTRFS_SEND_MAGIC "btrfs-stream\0"
+
 typedef struct {
     UINT8 magic[13];
     UINT32 version;
