@@ -434,7 +434,9 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     
     if (lastwritepath != pathu) {
-        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
+        FILE_BASIC_INFO fbi;
+
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
                             FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
@@ -443,6 +445,15 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         
         lastwritepath = pathu;
         lastwritefile = h;
+        
+        memset(&fbi, 0, sizeof(FILE_BASIC_INFO));
+        
+        fbi.LastWriteTime.QuadPart = -1;
+
+        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
+            ShowRecvError(IDS_RECV_SETFILEINFO_FAILED, GetLastError());
+            return FALSE;
+        }
     } else
         h = lastwritefile;
 
@@ -450,13 +461,11 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (SetFilePointer(h, offli.LowPart, &offli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
         ShowRecvError(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError());
-        CloseHandle(h);
         return FALSE;
     }
 
     if (!WriteFile(h, writedata, datalen, NULL, NULL)) {
         ShowRecvError(IDS_RECV_WRITEFILE_FAILED, GetLastError());
-        CloseHandle(h);
         return FALSE;
     }
 
