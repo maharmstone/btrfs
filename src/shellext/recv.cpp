@@ -223,6 +223,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         HANDLE h;
         REPARSE_DATA_BUFFER* rdb;
         ULONG rdblen;
+        btrfs_set_inode_info bsii;
         
         rdblen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer[0]) + (2 * pathlinku.length() * sizeof(WCHAR));
         
@@ -241,7 +242,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         memcpy(rdb->SymbolicLinkReparseBuffer.PathBuffer + (rdb->SymbolicLinkReparseBuffer.SubstituteNameLength / sizeof(WCHAR)),
                 pathlinku.c_str(), rdb->SymbolicLinkReparseBuffer.PrintNameLength);
 
-        h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, (subvolpath + nameu).c_str(), GetLastError());
@@ -252,6 +253,20 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, NULL, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status);
+            free(rdb);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+
+        bsii.mode_changed = TRUE;
+        bsii.st_mode = 0777;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
+                                 &bsii, sizeof(btrfs_set_inode_info));
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status);
             free(rdb);
             CloseHandle(h);
             return FALSE;
