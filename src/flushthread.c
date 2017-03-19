@@ -3864,7 +3864,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
         return Status;
     }
     
-    // remove entry in uuid root (tree 9)
+    // remove entries in uuid root (tree 9)
     if (Vcb->uuid_root) {
         RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid.uuid[0], sizeof(UINT64));
         searchkey.obj_type = TYPE_SUBVOL_UUID;
@@ -3880,6 +3880,70 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08x\n", Status);
                         return Status;
+                    }
+                } else
+                    WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            }
+        }
+        
+        if (r->root_item.rtransid > 0) {
+            RtlCopyMemory(&searchkey.obj_id, &r->root_item.received_uuid.uuid[0], sizeof(UINT64));
+            searchkey.obj_type = TYPE_SUBVOL_REC_UUID;
+            RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+            
+            Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
+            if (!NT_SUCCESS(Status))
+                WARN("find_item returned %08x\n", Status);
+            else {
+                if (!keycmp(tp.item->key, searchkey)) {
+                    if (tp.item->size == sizeof(UINT64)) {
+                        UINT64* id = (UINT64*)tp.item->data;
+                        
+                        if (*id == r->id) {
+                            Status = delete_tree_item(Vcb, &tp);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("delete_tree_item returned %08x\n", Status);
+                                return Status;
+                            }
+                        }
+                    } else if (tp.item->size > sizeof(UINT64)) {
+                        ULONG i;
+                        UINT64* ids = (UINT64*)tp.item->data;
+                        
+                        for (i = 0; i < tp.item->size / sizeof(UINT64); i++) {
+                            if (ids[i] == r->id) {
+                                UINT64* ne;
+
+                                ne = ExAllocatePoolWithTag(PagedPool, tp.item->size - sizeof(UINT64), ALLOC_TAG);
+                                if (!ne) {
+                                    ERR("out of memory\n");
+                                    return STATUS_INSUFFICIENT_RESOURCES;
+                                }
+
+                                if (i > 0)
+                                    RtlCopyMemory(ne, ids, sizeof(UINT64) * i);
+
+                                if ((i + 1) * sizeof(UINT64) < tp.item->size)
+                                    RtlCopyMemory(&ne[i], &ids[i + 1], tp.item->size - ((i + 1) * sizeof(UINT64)));
+
+                                Status = delete_tree_item(Vcb, &tp);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("delete_tree_item returned %08x\n", Status);
+                                    ExFreePool(ne);
+                                    return Status;
+                                }
+                                
+                                Status = insert_tree_item(Vcb, Vcb->uuid_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                          ne, tp.item->size - sizeof(UINT64), NULL, Irp);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("insert_tree_item returned %08x\n", Status);
+                                    ExFreePool(ne);
+                                    return Status;
+                                }
+                                
+                                break;
+                            }
+                        }
                     }
                 } else
                     WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
