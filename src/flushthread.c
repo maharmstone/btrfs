@@ -6268,6 +6268,61 @@ static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
+    NTSTATUS Status;
+
+    if (r != Vcb->root_root && r != Vcb->chunk_root) {
+        KEY searchkey;
+        traverse_ptr tp;
+        ROOT_ITEM* ri;
+        
+        searchkey.obj_id = r->id;
+        searchkey.obj_type = TYPE_ROOT_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+        
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+            ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+            return STATUS_INTERNAL_ERROR;
+        }
+        
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+        if (!ri) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        
+        RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
+        
+        Status = delete_tree_item(Vcb, &tp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08x\n", Status);
+            return Status;
+        }
+        
+        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08x\n", Status);
+            return Status;
+        }
+    }
+    
+    if (r->received) {
+        // FIXME - add entry to uuid tree
+
+        r->received = FALSE;
+    }
+
+    r->dirty = FALSE;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
@@ -6392,6 +6447,17 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
 
     ERR("flushed %llu fcbs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
 #endif
+
+    // no need to get dirty_subvols_lock here, as we have tree_lock exclusively
+    while (!IsListEmpty(&Vcb->dirty_subvols)) {
+        root* r = CONTAINING_RECORD(RemoveHeadList(&Vcb->dirty_subvols), root, list_entry_dirty);
+        
+        Status = flush_subvol(Vcb, r, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_subvol returned %08x\n", Status);
+            return Status;
+        }
+    }
 
     if (!IsListEmpty(&Vcb->drop_roots)) {
         Status = drop_roots(Vcb, Irp, rollback);

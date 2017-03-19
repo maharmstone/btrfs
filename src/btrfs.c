@@ -921,6 +921,8 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->treeholder.tree = no_tree ? NULL : t;
     r->lastinode = 0;
     r->path.Buffer = NULL;
+    r->dirty = FALSE;
+    r->received = FALSE;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
     InitializeListHead(&r->fcbs);
@@ -1747,6 +1749,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     ExDeleteResourceLite(&Vcb->chunk_lock);
     ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
     ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);
+    ExDeleteResourceLite(&Vcb->dirty_subvols_lock);
     ExDeleteResourceLite(&Vcb->scrub.stats_lock);
     
     ExDeletePagedLookasideList(&Vcb->tree_data_lookaside);
@@ -2357,6 +2360,8 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     
     r->id = id;
     r->path.Buffer = NULL;
+    r->dirty = FALSE;
+    r->received = FALSE;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
     r->treeholder.generation = generation;
@@ -3761,6 +3766,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExInitializeResourceLite(&Vcb->chunk_lock);
     ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
     ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
+    ExInitializeResourceLite(&Vcb->dirty_subvols_lock);
     ExInitializeResourceLite(&Vcb->scrub.stats_lock);
 
     ExInitializeResourceLite(&Vcb->load_lock);
@@ -3865,6 +3871,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->all_fcbs);
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
+    InitializeListHead(&Vcb->dirty_subvols);
     
     InitializeListHead(&Vcb->DirNotifyList);
     InitializeListHead(&Vcb->scrub.errors);
@@ -4153,6 +4160,7 @@ exit2:
             ExDeleteResourceLite(&Vcb->chunk_lock);
             ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
             ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);
+            ExDeleteResourceLite(&Vcb->dirty_subvols_lock);
             ExDeleteResourceLite(&Vcb->scrub.stats_lock);
 
             if (Vcb->devices.Flink) {

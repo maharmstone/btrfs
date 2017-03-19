@@ -3864,6 +3864,68 @@ end:
     return Status;
 }
 
+static void mark_subvol_dirty(device_extension* Vcb, root* r) {
+    if (!r->dirty) {
+        r->dirty = TRUE;
+
+        ExAcquireResourceExclusiveLite(&Vcb->dirty_subvols_lock, TRUE);
+        InsertTailList(&Vcb->dirty_subvols, &r->list_entry_dirty);
+        ExReleaseResourceLite(&Vcb->dirty_subvols_lock);
+    }
+
+    Vcb->need_write = TRUE;
+}
+
+static NTSTATUS recvd_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, KPROCESSOR_MODE processor_mode) {
+    btrfs_received_subvol* brs = (btrfs_received_subvol*)data;
+    fcb* fcb;
+    NTSTATUS Status;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+
+    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+
+    if (!data || datalen < sizeof(btrfs_received_subvol))
+        return STATUS_INVALID_PARAMETER;
+
+    if (!FileObject || !FileObject->FsContext || FileObject->FsContext == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+
+    if (!fcb->subvol)
+        return STATUS_INVALID_PARAMETER;
+    
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
+    if (fcb->subvol->root_item.rtransid != 0) {
+        WARN("subvol already has received information set\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+    
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    RtlCopyMemory(&fcb->subvol->root_item.received_uuid, &brs->uuid, sizeof(BTRFS_UUID));
+    fcb->subvol->root_item.stransid = brs->generation;
+    fcb->subvol->root_item.rtransid = Vcb->superblock.generation;
+    fcb->subvol->root_item.rtime = now;
+
+    fcb->subvol->received = TRUE;
+    mark_subvol_dirty(Vcb, fcb->subvol);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+    
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -4435,6 +4497,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
 
         case FSCTL_BTRFS_MKNOD:
             Status = mknod(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            break;
+
+        case FSCTL_BTRFS_RECEIVED_SUBVOL:
+            Status = recvd_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                  IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
             break;
 
         default:

@@ -345,8 +345,11 @@ typedef struct _root {
     root_nonpaged* nonpaged;
     ROOT_ITEM root_item;
     UNICODE_STRING path;
+    BOOL dirty;
+    BOOL received;
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_dirty;
 } root;
 
 enum batch_operation {
@@ -664,6 +667,8 @@ typedef struct _device_extension {
     ERESOURCE dirty_fcbs_lock;
     LIST_ENTRY dirty_filerefs;
     ERESOURCE dirty_filerefs_lock;
+    LIST_ENTRY dirty_subvols;
+    ERESOURCE dirty_subvols_lock;
     ERESOURCE chunk_lock;
     HANDLE flush_thread_handle;
     KTIMER flush_thread_timer;
