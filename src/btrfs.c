@@ -1437,6 +1437,12 @@ void free_fcb(fcb* fcb) {
         ExFreePool(hl);
     }
     
+    while (!IsListEmpty(&fcb->xattrs)) {
+        xattr* xa = CONTAINING_RECORD(RemoveHeadList(&fcb->xattrs), xattr, list_entry);
+
+        ExFreePool(xa);
+    }
+
     while (!IsListEmpty(&fcb->dir_children_index)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->dir_children_index);
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);

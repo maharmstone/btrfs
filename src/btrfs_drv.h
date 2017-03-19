@@ -180,6 +180,13 @@ enum prop_compression_type {
     PropCompression_LZO
 };
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    ULONG namelen;
+    ULONG valuelen;
+    char data[1];
+} xattr;
+
 typedef struct _fcb {
     FSRTL_ADVANCED_FCB_HEADER Header;
     struct _fcb_nonpaged* nonpaged;
@@ -206,6 +213,7 @@ typedef struct _fcb {
     struct _file_ref* fileref;
     BOOL inode_item_changed;
     enum prop_compression_type prop_compression;
+    LIST_ENTRY xattrs;
     
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;

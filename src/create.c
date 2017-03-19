@@ -82,6 +82,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     
     InitializeListHead(&fcb->extents);
     InitializeListHead(&fcb->hardlinks);
+    InitializeListHead(&fcb->xattrs);
     
     InitializeListHead(&fcb->dir_children_index);
     InitializeListHead(&fcb->dir_children_hash);
@@ -960,6 +961,21 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     dc->size = di->m;
                     
                     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+                } else {
+                    xattr* xa;
+
+                    xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + di->m + di->n, ALLOC_TAG);
+                    if (!xa) {
+                        ERR("out of memory\n");
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    xa->namelen = di->n;
+                    xa->valuelen = di->m;
+                    RtlCopyMemory(xa->data, di->name, di->m + di->n);
+
+                    InsertTailList(&fcb->xattrs, &xa->list_entry);
                 }
                 
                 len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
