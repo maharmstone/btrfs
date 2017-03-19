@@ -474,7 +474,51 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
 
     if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen)) {
-        // FIXME - security.NTACL
+        HANDLE h;
+        NTSTATUS Status;
+        SECURITY_INFORMATION si;
+        SECURITY_DESCRIPTOR *xasd = (SECURITY_DESCRIPTOR*)xattrdata, *sd;
+        ULONG perms = WRITE_OWNER;
+
+        si = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION;
+
+        if (xasd->Control & SE_DACL_PRESENT) {
+            si |= DACL_SECURITY_INFORMATION;
+            perms |= WRITE_DAC;
+        }
+
+        if (xasd->Control & SE_SACL_PRESENT) {
+            si |= SACL_SECURITY_INFORMATION;
+            perms |= ACCESS_SYSTEM_SECURITY;
+        }
+
+        h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            return FALSE;
+        }
+
+        sd = (SECURITY_DESCRIPTOR*)malloc(xattrdatalen); // needs to be aligned
+        if (!sd) {
+            ShowRecvError(IDS_OUT_OF_MEMORY);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        memcpy(sd, xattrdata, xattrdatalen);
+
+        Status = NtSetSecurityObject(h, si, sd);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETSECURITYOBJECT_FAILED, Status);
+            free(sd);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        free(sd);
+
+        CloseHandle(h);
     } else if (xattrnamelen == strlen(EA_DOSATTRIB) && !memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) {
         if (xattrdatalen > 2 && xattrdata[0] == '0' && xattrdata[1] == 'x') {
             DWORD attrib = 0;
@@ -1287,8 +1331,9 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     WCHAR file[MAX_PATH];
     BtrfsRecv* recv;
     HANDLE token;
-    TOKEN_PRIVILEGES tp;
+    TOKEN_PRIVILEGES* tp;
     LUID luid;
+    ULONG tplen;
     
     set_dpi_aware();
 
@@ -1296,19 +1341,50 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         ShowError(hwnd, GetLastError());
         return;
     }
-
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
+    
+    tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
+    tp = (TOKEN_PRIVILEGES*)malloc(tplen);
+    if (!tp) {
+        ShowStringError(hwnd, IDS_OUT_OF_MEMORY);
         CloseHandle(token);
         return;
     }
 
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    tp->PrivilegeCount = 3;
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
+        free(tp);
+        CloseHandle(token);
+        return;
+    }
+
+    tp->Privileges[0].Luid = luid;
+    tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeSecurityPrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        free(tp);
+        CloseHandle(token);
+        return;
+    }
+    
+    tp->Privileges[1].Luid = luid;
+    tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
+    
+    if (!LookupPrivilegeValueW(NULL, L"SeRestorePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        free(tp);
+        CloseHandle(token);
+        return;
+    }
+    
+    tp->Privileges[2].Luid = luid;
+    tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        free(tp);
         CloseHandle(token);
         return;
     }
@@ -1331,5 +1407,6 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         delete recv;
     }
 
+    free(tp);
     CloseHandle(token);
 }
