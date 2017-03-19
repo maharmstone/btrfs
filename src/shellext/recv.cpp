@@ -357,8 +357,6 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     else
         bmn->type = BTRFS_TYPE_FILE;
 
-    // FIXME - for mknod and mkfifo, do chmod afterwards
-
     bmn->st_rdev = rdev ? *rdev : 0;
     bmn->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bmn->name, nameu.c_str(), bmn->namelen);
@@ -410,6 +408,8 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             CloseHandle(h);
             return FALSE;
         }
+        
+        free(rdb);
 
         memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
@@ -420,13 +420,46 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
                                  &bsii, sizeof(btrfs_set_inode_info));
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-            free(rdb);
             CloseHandle(h);
             return FALSE;
         }
-        
-        free(rdb);
+
         CloseHandle(h);
+    } else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
+        UINT64* mode;
+        ULONG modelen;
+
+        if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
+            HANDLE h;
+            btrfs_set_inode_info bsii;
+
+            if (modelen < sizeof(UINT64)) {
+                ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT64));
+                return FALSE;
+            }
+
+            h = CreateFileW((subvolpath + nameu).c_str(), WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            if (h == INVALID_HANDLE_VALUE) {
+                ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+                return FALSE;
+            }
+
+            memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+            
+            bsii.mode_changed = TRUE;
+            bsii.st_mode = *mode;
+            
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
+                                     &bsii, sizeof(btrfs_set_inode_info));
+            if (!NT_SUCCESS(Status)) {
+                ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
+                CloseHandle(h);
+                return FALSE;
+            }
+
+            CloseHandle(h);
+        }
     }
 
     return TRUE;
