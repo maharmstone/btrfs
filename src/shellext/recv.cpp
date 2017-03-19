@@ -158,14 +158,15 @@ static std::wstring format_ntstatus(NTSTATUS Status) {
     return s;
 }
 
-static BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {
+BOOL BtrfsRecv::find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {
     ULONG off = 0;
 
     while (off < datalen) {
         btrfs_send_tlv* tlv = (btrfs_send_tlv*)(data + off);
         UINT8* payload = data + off + sizeof(btrfs_send_tlv);
 
-        // FIXME - make sure no overflow
+        if (off + sizeof(btrfs_send_tlv) + tlv->length > datalen) // file is truncated
+            return FALSE;
 
         if (tlv->type == type) {
             *value = payload;
