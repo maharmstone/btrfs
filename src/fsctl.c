@@ -693,7 +693,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     file_ref* fileref;
     NTSTATUS Status;
     UINT64 id;
-    root* r;
+    root* r = NULL;
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG len, irsize;
