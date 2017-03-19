@@ -630,6 +630,7 @@ BEGIN
     IDS_RECV_RECEIVED_SUBVOL_FAILED 
                             "FSCTL_BTRFS_RECEIVED_SUBVOL returned %08x."
     IDS_RECV_SETSECURITYOBJECT_FAILED "NtSetSecurityObject returned %08x."
+    IDS_RECV_SETXATTR_FAILED "FSCTL_BTRFS_SET_XATTR returned %08x."
 END
 
 #endif    // English (U.K.) resources

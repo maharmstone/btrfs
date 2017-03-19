@@ -155,6 +155,7 @@
 #define IDS_RECV_SETEAFILE_FAILED       239
 #define IDS_RECV_RECEIVED_SUBVOL_FAILED 240
 #define IDS_RECV_SETSECURITYOBJECT_FAILED 241
+#define IDS_RECV_SETXATTR_FAILED        242
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

@@ -618,7 +618,42 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         CloseHandle(h);
     } else {
-        // FIXME - hidden xattrs
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS Status;
+        ULONG bsxalen;
+        btrfs_set_xattr* bsxa;
+
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
+            return FALSE;
+        }
+
+        bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrnamelen + xattrdatalen;
+        bsxa = (btrfs_set_xattr*)malloc(bsxalen);
+        if (!bsxa) {
+            ShowRecvError(IDS_OUT_OF_MEMORY);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        bsxa->namelen = xattrnamelen;
+        bsxa->valuelen = xattrdatalen;
+        memcpy(bsxa->data, xattrname, xattrnamelen);
+        memcpy(&bsxa->data[xattrnamelen], xattrdata, xattrdatalen);
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status);
+            free(bsxa);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        free(bsxa);
+        CloseHandle(h);
     }
 
     return TRUE;
