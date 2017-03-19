@@ -598,7 +598,7 @@ BEGIN
     IDS_RECV_RTLUTF8TOUNICODEN_FAILED "RtlUTF8ToUnicodeN returned %08x."
     IDS_RECV_CREATE_SUBVOL_FAILED "FSCTL_BTRFS_CREATE_SUBVOL returned %08x."
     IDS_RECV_MISSING_PARAM  "%S: could not find %s parameter."
-    IDS_RECV_SHORT_PARAM    "%S: length of parameter %s was %u, expeceted %u."
+    IDS_RECV_SHORT_PARAM    "%S: length of parameter %s was %u, expected %u."
     IDS_RECV_MKNOD_FAILED   "FSCTL_BTRFS_MKNOD returned %08x."
     IDS_RECV_SET_REPARSE_POINT_FAILED "FSCTL_SET_REPARSE_POINT returned %08x."
 END
