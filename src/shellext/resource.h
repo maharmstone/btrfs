@@ -157,6 +157,7 @@
 #define IDS_RECV_SETSECURITYOBJECT_FAILED 241
 #define IDS_RECV_SETXATTR_FAILED        242
 #define IDS_RECV_CREATETHREAD_FAILED    243
+#define IDS_RECV_FILE_TRUNCATED         244
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

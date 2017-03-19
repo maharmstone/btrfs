@@ -1163,9 +1163,13 @@ DWORD BtrfsRecv::recv_thread() {
         
         pos += sizeof(btrfs_send_command);
 
-        // FIXME - check length doesn't go beyond file
-
         if (cmd.length > 0) {
+            if (pos + cmd.length > (UINT64)size.QuadPart) {
+                ShowRecvError(IDS_RECV_FILE_TRUNCATED);
+                b = FALSE;
+                break;
+            }
+
             data = (UINT8*)malloc(cmd.length);
             if (!data) {
                 ShowRecvError(IDS_OUT_OF_MEMORY);
