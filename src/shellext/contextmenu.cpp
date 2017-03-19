@@ -19,6 +19,7 @@
 #include "shellext.h"
 #include <windows.h>
 #include <strsafe.h>
+#include <stddef.h>
 #include <winternl.h>
 #include <wincodec.h>
 #include <string>
@@ -924,8 +925,9 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        ULONG pathlen, searchpathlen, pathend;
+        ULONG pathlen, searchpathlen, pathend, bcslen;
         WCHAR name[MAX_PATH], *searchpath;
+        btrfs_create_subvol* bcs;
         HANDLE fff;
         WIN32_FIND_DATAW wfd;
         
@@ -972,9 +974,17 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             } while (fff != INVALID_HANDLE_VALUE);
         }
         
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0, &searchpath[pathend], wcslen(&searchpath[pathend]) * sizeof(WCHAR));
+        bcslen = offsetof(btrfs_create_subvol, name[0]) + (wcslen(&searchpath[pathend]) * sizeof(WCHAR));
+        bcs = (btrfs_create_subvol*)malloc(bcslen);
+        
+        bcs->readonly = FALSE;
+        bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
+        memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
+        
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
         
         free(searchpath);
+        free(bcs);
         
         if (!NT_SUCCESS(Status)) {
             CloseHandle(h);

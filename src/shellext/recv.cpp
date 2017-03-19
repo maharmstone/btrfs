@@ -218,7 +218,8 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char* name;
     BTRFS_UUID* uuid;
     UINT64* gen;
-    ULONG namelen, uuidlen, genlen;
+    ULONG namelen, uuidlen, genlen, bcslen;
+    btrfs_create_subvol* bcs;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     std::wstring nameu;
@@ -253,10 +254,16 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
         return FALSE;
+    
+    bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
+    bcs = (btrfs_create_subvol*)malloc(bcslen);
+    
+    bcs->readonly = FALSE;
+    bcs->namelen = nameu.length() * sizeof(WCHAR);
+    memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
     // FIXME - make sure case-sensitive and that Linux-only names allowed
-    Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0,
-                             (PVOID)nameu.c_str(), nameu.length() * sizeof(WCHAR));
+    Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
