@@ -922,6 +922,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->lastinode = 0;
     r->dirty = FALSE;
     r->received = FALSE;
+    r->reserved = NULL;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
     InitializeListHead(&r->fcbs);
@@ -2003,7 +2004,13 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
             do_unlock_volume(Vcb);
             FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
         }
-        
+
+        if (ccb && ccb->reserving) {
+            fcb->subvol->reserved = NULL;
+            ccb->reserving = FALSE;
+            // FIXME - flush all of subvol's fcbs
+        }
+
         if (fileref && oc == 0) {
             if (!Vcb->removing) {
                 LIST_ENTRY rollback;
@@ -2366,6 +2373,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->id = id;
     r->dirty = FALSE;
     r->received = FALSE;
+    r->reserved = NULL;
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
     r->treeholder.generation = generation;

@@ -551,7 +551,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_ACCESS_DENIED;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
     
     nameus.Buffer = bcs->name;
@@ -743,7 +743,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_ACCESS_DENIED;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
     if (!data || datalen < sizeof(btrfs_create_subvol))
@@ -1189,7 +1189,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
+static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length, PIRP Irp) {
     btrfs_set_inode_info* bsii = data;
     NTSTATUS Status;
     fcb* fcb;
@@ -1229,7 +1229,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_LZO)
         return STATUS_INVALID_PARAMETER;
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+    if (is_subvol_readonly(fcb->subvol, Irp)) {
         WARN("trying to change inode on readonly subvolume\n");
         return STATUS_ACCESS_DENIED;
     }
@@ -3062,7 +3062,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     if (!fcb || !ccb || fcb == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
     
     if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_DATA)) {
@@ -3536,7 +3536,7 @@ end:
 #define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
 #define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
 
-static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen) {
+static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     NTSTATUS Status;
     btrfs_mknod* bmn;
     fcb *parfcb, *fcb;
@@ -3570,7 +3570,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         return STATUS_INVALID_PARAMETER;
     }
     
-    if (parfcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (is_subvol_readonly(parfcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
     parccb = FileObject->FsContext2;
@@ -3941,7 +3941,7 @@ end:
     return Status;
 }
 
-static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, KPROCESSOR_MODE processor_mode) {
+static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     btrfs_set_xattr* bsxa;
     xattr* xa;
     fcb* fcb;
@@ -3972,10 +3972,10 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
 
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
-    if (!(ccb->access & FILE_WRITE_ATTRIBUTES) && processor_mode == UserMode) {
+    if (!(ccb->access & FILE_WRITE_ATTRIBUTES) && Irp->RequestorMode == UserMode) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
@@ -4025,6 +4025,35 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExReleaseResourceLite(fcb->Header.Resource);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS reserve_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
+    fcb* fcb;
+    ccb* ccb;
+
+    TRACE("(%p, %p)\n", Vcb, FileObject);
+
+    // "Reserving" a readonly subvol allows the calling process to write into it until the handle is closed.
+
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+
+    if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+
+    if (!(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+        return STATUS_INVALID_PARAMETER;
+
+    if (fcb->subvol->reserved)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb->subvol->reserved = PsGetCurrentProcess();
+    ccb->reserving = TRUE;
 
     return STATUS_SUCCESS;
 }
@@ -4531,7 +4560,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_SET_INODE_INFO:
-            Status = set_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = set_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
             break;
             
         case FSCTL_BTRFS_GET_DEVICES:
@@ -4599,7 +4628,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_BTRFS_MKNOD:
-            Status = mknod(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength);
+            Status = mknod(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
 
         case FSCTL_BTRFS_RECEIVED_SUBVOL:
@@ -4609,9 +4638,13 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
 
         case FSCTL_BTRFS_SET_XATTR:
             Status = fsctl_set_xattr(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
-                                     IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+                                     IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
 
+        case FSCTL_BTRFS_RESERVE_SUBVOL:
+            Status = reserve_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp);
+            break;
+            
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,

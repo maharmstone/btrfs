@@ -4828,7 +4828,7 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+    if (is_subvol_readonly(fcb->subvol, Irp)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }

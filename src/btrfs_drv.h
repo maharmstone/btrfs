@@ -288,6 +288,7 @@ typedef struct _ccb {
     BOOL specific_file;
     BOOL manage_volume_privilege;
     BOOL allow_extended_dasd_io;
+    BOOL reserving;
     ACCESS_MASK access;
     file_ref* fileref;
     UNICODE_STRING filename;
@@ -356,6 +357,7 @@ typedef struct _root {
     ROOT_ITEM root_item;
     BOOL dirty;
     BOOL received;
+    PEPROCESS reserved;
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
@@ -837,6 +839,16 @@ static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
         n = (n + a) & ~(a - 1);
 
     return n;
+}
+
+static BOOL __inline is_subvol_readonly(root* r, PIRP Irp) {
+    if (!(r->root_item.flags & BTRFS_SUBVOL_READONLY))
+        return FALSE;
+
+    if (!r->reserved)
+        return TRUE;
+    
+    return (!Irp || Irp->RequestorMode == UserMode) && PsGetCurrentProcess() != r->reserved ? TRUE : FALSE;
 }
 
 // in btrfs.c

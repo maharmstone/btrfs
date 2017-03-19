@@ -50,7 +50,7 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         goto end;
     }
     
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY &&
+    if (fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fcb->subvol, Irp) &&
         (fbi->FileAttributes == 0 || fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -1420,7 +1420,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
         
-        if (fileref->parent->fcb->subvol == fcb->subvol || !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+        if (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp)) {
             fcb->inode_item.transid = Vcb->superblock.generation;
             fcb->inode_item.sequence++;
             
@@ -1637,7 +1637,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    if (fileref->parent->fcb->subvol == fcb->subvol || !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+    if (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp)) {
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         
@@ -2277,7 +2277,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto end;
     }
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
+    if (is_subvol_readonly(fcb->subvol, Irp) && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
         (fcb->inode != SUBVOL_ROOT_INODE || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;

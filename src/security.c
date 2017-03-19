@@ -816,7 +816,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* sd, SECURITY_INFORMATION flags) {
+static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* sd, SECURITY_INFORMATION flags, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -841,7 +841,7 @@ static NTSTATUS STDCALL set_file_security(device_extension* Vcb, PFILE_OBJECT Fi
     
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
-    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+    if (is_subvol_readonly(fcb->subvol, Irp)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -957,7 +957,7 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     }
     
     Status = set_file_security(DeviceObject->DeviceExtension, FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
-                               IrpSp->Parameters.SetSecurity.SecurityInformation);
+                               IrpSp->Parameters.SetSecurity.SecurityInformation, Irp);
     
 end:
     Irp->IoStatus.Status = Status;

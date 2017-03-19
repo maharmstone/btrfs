@@ -1069,7 +1069,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         
-        if (!Vcb->readonly && !(subvol->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+        if (!Vcb->readonly && !is_subvol_readonly(subvol, Irp)) {
             fcb->atts_changed = TRUE;
             mark_fcb_dirty(fcb);
         }
@@ -2190,7 +2190,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
         goto end;
     }
     
-    if (parfileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+    if (is_subvol_readonly(parfileref->fcb->subvol, Irp)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -2305,6 +2305,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->specific_file = FALSE;
     ccb->access = access_state->OriginalDesiredAccess;
     ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
+    ccb->reserving = FALSE;
     
 #ifdef DEBUG_FCB_REFCOUNTS
     oc = InterlockedIncrement(&fileref->open_count);
@@ -2877,7 +2878,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 #ifdef DEBUG_STATS
             open_type = 1;
 #endif
-            if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY) {
+            if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || is_subvol_readonly(fileref->fcb->subvol, Irp)) {
                 Status = STATUS_ACCESS_DENIED;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -2929,7 +2930,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
         
         // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
-        if (fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY && granted_access &
+        if (is_subvol_readonly(fileref->fcb->subvol, Irp) && granted_access &
             (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC) &&
             fileref->fcb->inode != SUBVOL_ROOT_INODE) {
             Status = STATUS_ACCESS_DENIED;
@@ -2980,7 +2981,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
-            fileref->fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
+            is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
             Status = STATUS_CANNOT_DELETE;
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3273,6 +3274,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         ccb->specific_file = FALSE;
         ccb->access = granted_access;
         ccb->case_sensitive = Stack->Flags & SL_CASE_SENSITIVE;
+        ccb->reserving = FALSE;
         
         ccb->fileref = fileref;
         
@@ -3596,6 +3598,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ccb->access = IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess;
         ccb->manage_volume_privilege = has_manage_volume_privilege(IrpSp->Parameters.Create.SecurityContext->AccessState,
                                                                    IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode);
+        ccb->reserving = FALSE;
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);
