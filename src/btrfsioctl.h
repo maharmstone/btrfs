@@ -224,4 +224,10 @@ typedef struct {
     char data[1];
 } btrfs_set_xattr;
 
+typedef struct {
+    BOOL readonly;
+    ULONG namelen;
+    WCHAR name[1];
+} btrfs_create_subvol;
+
 #endif

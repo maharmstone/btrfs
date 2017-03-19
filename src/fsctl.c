@@ -686,7 +686,8 @@ end2:
     return Status;
 }
 
-static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WCHAR* name, ULONG length, PIRP Irp) {
+static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
+    btrfs_create_subvol* bcs;
     fcb *fcb, *rootfcb = NULL;
     ccb* ccb;
     file_ref* fileref;
@@ -744,16 +745,24 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
     
     if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
         return STATUS_ACCESS_DENIED;
+
+    if (!data || datalen < sizeof(btrfs_create_subvol))
+        return STATUS_INVALID_PARAMETER;
+
+    bcs = (btrfs_create_subvol*)data;
     
-    nameus.Length = nameus.MaximumLength = length;
-    nameus.Buffer = name;
+    if (offsetof(btrfs_create_subvol, name[0]) + bcs->namelen > datalen)
+        return STATUS_INVALID_PARAMETER;
+
+    nameus.Length = nameus.MaximumLength = bcs->namelen;
+    nameus.Buffer = bcs->name;
     
     if (!is_file_name_valid(&nameus))
         return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
     
-    Status = RtlUnicodeToUTF8N(NULL, 0, &len, name, length);
+    Status = RtlUnicodeToUTF8N(NULL, 0, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         return Status;
@@ -772,7 +781,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, WC
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, name, length);
+    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         goto end2;
@@ -4504,7 +4513,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_CREATE_SUBVOL:
-            Status = create_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
+            Status = create_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
             
         case FSCTL_BTRFS_CREATE_SNAPSHOT:
