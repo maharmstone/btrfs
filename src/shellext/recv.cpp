@@ -1190,7 +1190,9 @@ DWORD BtrfsRecv::recv_thread() {
                 b = cmd_utimes(hwnd, &cmd, data);
             break;
 
-            // FIXME - BTRFS_SEND_CMD_UPDATE_EXTENT
+            case BTRFS_SEND_CMD_UPDATE_EXTENT:
+                // does nothing
+            break;
 
             default:
                 ShowRecvError(IDS_RECV_UNKNOWN_COMMAND, cmd.cmd);
