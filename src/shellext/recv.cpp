@@ -948,6 +948,9 @@ static void delete_directory(std::wstring dir) {
         file = fff.cFileName;
         
         if (file != L"." && file != L"..") {
+            if (fff.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
+                SetFileAttributesW((dir + file).c_str(), fff.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+
             if (fff.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
                 delete_directory(dir + file + L"\\");
             else
