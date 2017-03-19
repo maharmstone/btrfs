@@ -637,6 +637,7 @@ BEGIN
     IDS_RECV_SETSECURITYOBJECT_FAILED 
                             "NtSetSecurityObject returned %08x (%s)."
     IDS_RECV_SETXATTR_FAILED "FSCTL_BTRFS_SET_XATTR returned %08x (%s)."
+    IDS_RECV_CREATETHREAD_FAILED "CreateThread failed (error %u, %s)."
 END
 
 #endif    // English (U.K.) resources

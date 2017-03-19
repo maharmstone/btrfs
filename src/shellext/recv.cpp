@@ -1345,9 +1345,8 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
             this->hwnd = hwndDlg;
             thread = CreateThread(NULL, 0, global_recv_thread, this, 0, NULL);
 
-            if (!thread) {
-                ShowError(hwndDlg, GetLastError()); // FIXME - set error message on dialog box
-            }
+            if (!thread)
+                ShowRecvError(IDS_RECV_CREATETHREAD_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         break;
 
         case WM_COMMAND:
