@@ -6313,7 +6313,77 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
     }
     
     if (r->received) {
-        // FIXME - add entry to uuid tree
+        KEY searchkey;
+        traverse_ptr tp;
+
+        if (!Vcb->uuid_root) {
+            root* uuid_root;
+            
+            TRACE("uuid root doesn't exist, creating it\n");
+            
+            Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, FALSE, 0, Irp);
+            
+            if (!NT_SUCCESS(Status)) {
+                ERR("create_root returned %08x\n", Status);
+                return Status;
+            }
+            
+            Vcb->uuid_root = uuid_root;
+        }
+        
+        RtlCopyMemory(&searchkey.obj_id, &r->root_item.received_uuid, sizeof(UINT64));
+        searchkey.obj_type = TYPE_SUBVOL_REC_UUID;
+        RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+
+        Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+
+        if (!keycmp(tp.item->key, searchkey)) {
+            if (tp.item->size + sizeof(UINT64) <= Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node)) {
+                UINT64* ids;
+                
+                ids = ExAllocatePoolWithTag(PagedPool, tp.item->size + sizeof(UINT64), ALLOC_TAG);
+                if (!ids) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                
+                RtlCopyMemory(ids, tp.item->data, tp.item->size);
+                RtlCopyMemory((UINT8*)ids + tp.item->size, &r->id, sizeof(UINT64));
+
+                Status = delete_tree_item(Vcb, &tp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    ExFreePool(ids);
+                    return Status;
+                }
+
+                Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, ids, tp.item->size + sizeof(UINT64), NULL, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
+                }
+            }
+        } else {
+            UINT64* root_num;
+
+            root_num = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64), ALLOC_TAG);
+            if (!root_num) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            *root_num = r->id;
+
+            Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(UINT64), NULL, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_tree_item returned %08x\n", Status);
+                return Status;
+            }
+        }
 
         r->received = FALSE;
     }
