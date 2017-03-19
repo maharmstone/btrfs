@@ -866,7 +866,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     r->root_item.inode.st_nlink = 1;
     r->root_item.inode.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
     r->root_item.inode.flags = 0xffffffff80000000; // FIXME - find out what these mean
-    
+
+    if (bcs->readonly)
+        r->root_item.flags |= BTRFS_SUBVOL_READONLY;
+
     r->root_item.objid = SUBVOL_ROOT_INODE;
     r->root_item.bytes_used = Vcb->superblock.node_size;
     r->root_item.ctransid = Vcb->superblock.generation;
@@ -897,6 +900,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     
     rootfcb->atts = get_file_attributes(Vcb, rootfcb->subvol, rootfcb->inode, rootfcb->type, FALSE, TRUE, Irp);
+    
+    if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+        rootfcb->atts |= FILE_ATTRIBUTE_READONLY;
     
     SeCaptureSubjectContext(&subjcont);
     
