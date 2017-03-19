@@ -639,6 +639,8 @@ BEGIN
     IDS_RECV_SETXATTR_FAILED "FSCTL_BTRFS_SET_XATTR returned %08x (%s)."
     IDS_RECV_CREATETHREAD_FAILED "CreateThread failed (error %u, %s)."
     IDS_RECV_FILE_TRUNCATED "File was truncated."
+    IDS_RECV_RESERVE_SUBVOL_FAILED 
+                            "FSCTL_BTRFS_RESERVE_SUBVOL returned %08x (%s)."
 END
 
 #endif    // English (U.K.) resources

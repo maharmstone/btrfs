@@ -258,7 +258,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
     bcs = (btrfs_create_subvol*)malloc(bcslen);
     
-    bcs->readonly = FALSE;
+    bcs->readonly = TRUE;
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
@@ -274,6 +274,19 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     subvolpath += nameu;
 
     CloseHandle(dir);
+    
+    master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (master == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+        return FALSE;
+    }
 
     dir = CreateFileW(subvolpath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -625,7 +638,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             
             if (valid) {
                 if (pathu == L"")
-                    attrib &= ~FILE_ATTRIBUTE_READONLY;
+                    attrib |= FILE_ATTRIBUTE_READONLY;
                 
                 if (!SetFileAttributesW((subvolpath + pathu).c_str(), attrib)) {
                     ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
@@ -1368,6 +1381,9 @@ DWORD BtrfsRecv::recv_thread() {
 
     CloseHandle(dir);
     CloseHandle(f);
+    
+    if (master != INVALID_HANDLE_VALUE)
+        CloseHandle(master);
     
     if (!b && subvolpath != L"")
         delete_directory(subvolpath);
