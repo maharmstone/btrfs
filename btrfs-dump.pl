@@ -609,7 +609,13 @@ sub dump_item {
 	} elsif ($type == 0xfb) { # UUID_SUBVOL
 		print "uuid_subvol";
 		
-		# FIXME
+		while (length($s)>0) {
+			printf(" %x",unpack("Q",$s));
+			$s=substr($s,8);
+		}
+	} elsif ($type == 0xfc) { # UUID_REC_SUBVOL
+		print "uuid_rec_subvol";
+		
 		while (length($s)>0) {
 			printf(" %x",unpack("Q",$s));
 			$s=substr($s,8);
