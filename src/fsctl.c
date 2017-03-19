@@ -1244,7 +1244,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         fcb->inode_item.st_mode |= bsii->st_mode & allowed;
     }
     
-    if (bsii->uid_changed) {
+    if (bsii->uid_changed && fcb->inode_item.st_uid != bsii->st_uid) {
         PSID sid; 
         SECURITY_INFORMATION secinfo;
         SECURITY_DESCRIPTOR sd;
