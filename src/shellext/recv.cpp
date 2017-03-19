@@ -39,6 +39,8 @@
 
 BOOL have_sse42 = FALSE;
 
+typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
+
 static const UINT32 crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
     0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
@@ -134,6 +136,28 @@ static std::wstring format_message(ULONG last_error) {
     return s;
 }
 
+static std::wstring format_ntstatus(NTSTATUS Status) {
+    _RtlNtStatusToDosError RtlNtStatusToDosError;
+    std::wstring s;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+
+    if (!ntdll)
+        return L"(error loading ntdll.dll)";
+
+    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+
+    if (!RtlNtStatusToDosError) {
+        FreeLibrary(ntdll);
+        return L"(error loading RtlNtStatusToDosError)";
+    }
+
+    s = format_message(RtlNtStatusToDosError(Status));
+
+    FreeLibrary(ntdll);
+
+    return s;
+}
+
 static BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {
     ULONG off = 0;
 
@@ -162,7 +186,7 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring
     
     Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, utf8, utf8len);
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status);
+        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
     }
     
@@ -175,7 +199,7 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring
 
     Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8, utf8len);
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status);
+        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
         free(buf);
         return FALSE;
     }
@@ -233,7 +257,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, NULL, 0,
                              (PVOID)nameu.c_str(), nameu.length() * sizeof(WCHAR));
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status);
+        ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
     }
 
@@ -340,7 +364,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_MKNOD_FAILED, Status);
+        ShowRecvError(IDS_RECV_MKNOD_FAILED, Status, format_ntstatus(Status).c_str());
         free(bmn);
         return FALSE;
     }
@@ -380,7 +404,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, NULL, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status);
+            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
             free(rdb);
             CloseHandle(h);
             return FALSE;
@@ -394,7 +418,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
                                  &bsii, sizeof(btrfs_set_inode_info));
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status);
+            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             free(rdb);
             CloseHandle(h);
             return FALSE;
@@ -526,7 +550,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         Status = NtSetSecurityObject(h, si, sd);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETSECURITYOBJECT_FAILED, Status);
+            ShowRecvError(IDS_RECV_SETSECURITYOBJECT_FAILED, Status, format_ntstatus(Status).c_str());
             free(sd);
             CloseHandle(h);
             return FALSE;
@@ -582,7 +606,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, xattrdata, xattrdatalen, NULL, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status);
+            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
             CloseHandle(h);
             return FALSE;
         }
@@ -602,7 +626,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         
         Status = NtSetEaFile(h, &iosb, xattrdata, xattrdatalen);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETEAFILE_FAILED, Status);
+            ShowRecvError(IDS_RECV_SETEAFILE_FAILED, Status, format_ntstatus(Status).c_str());
             CloseHandle(h);
             return FALSE;
         }
@@ -662,7 +686,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, NULL, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status);
+            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
             free(bsxa);
             CloseHandle(h);
             return FALSE;
@@ -884,7 +908,7 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
                              &bsii, sizeof(btrfs_set_inode_info));
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status);
+        ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(h);
         return FALSE;
     }
@@ -946,7 +970,7 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
                                  &bsii, sizeof(btrfs_set_inode_info));
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status);
+            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             return FALSE;
         }
     }
@@ -1280,7 +1304,7 @@ DWORD BtrfsRecv::recv_thread() {
         Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
                                  NULL, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status);
+            ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
             b = FALSE;
         } else {
             SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);

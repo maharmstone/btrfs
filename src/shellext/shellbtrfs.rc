@@ -595,12 +595,14 @@ BEGIN
     IDS_OUT_OF_MEMORY       "Out of memory."
     IDS_RECV_UNKNOWN_COMMAND "Unrecognized command %u encountered."
     IDS_RECV_CANT_OPEN_PATH "Couldn't open path %s (error %u, %s)."
-    IDS_RECV_RTLUTF8TOUNICODEN_FAILED "RtlUTF8ToUnicodeN returned %08x."
-    IDS_RECV_CREATE_SUBVOL_FAILED "FSCTL_BTRFS_CREATE_SUBVOL returned %08x."
+    IDS_RECV_RTLUTF8TOUNICODEN_FAILED "RtlUTF8ToUnicodeN returned %08x (%s)."
+    IDS_RECV_CREATE_SUBVOL_FAILED 
+                            "FSCTL_BTRFS_CREATE_SUBVOL returned %08x (%s)."
     IDS_RECV_MISSING_PARAM  "%S: could not find %s parameter."
     IDS_RECV_SHORT_PARAM    "%S: length of parameter %s was %u, expected %u."
-    IDS_RECV_MKNOD_FAILED   "FSCTL_BTRFS_MKNOD returned %08x."
-    IDS_RECV_SET_REPARSE_POINT_FAILED "FSCTL_SET_REPARSE_POINT returned %08x."
+    IDS_RECV_MKNOD_FAILED   "FSCTL_BTRFS_MKNOD returned %08x (%s)."
+    IDS_RECV_SET_REPARSE_POINT_FAILED 
+                            "FSCTL_SET_REPARSE_POINT returned %08x (%s)."
 END
 
 STRINGTABLE 
@@ -614,7 +616,8 @@ BEGIN
     IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u, %s)."
     IDS_RECV_SETFILEINFO_FAILED 
                             "SetFileInformationByHandle failed (error %u, %s)."
-    IDS_RECV_SETINODEINFO_FAILED "FSCTL_BTRFS_SET_INODE_INFO returned %08x."
+    IDS_RECV_SETINODEINFO_FAILED 
+                            "FSCTL_BTRFS_SET_INODE_INFO returned %08x (%s)."
     IDS_RECV_SUCCESS        "Subvolume received successfully."
     IDS_RECV_BUTTON_OK      "OK"
     IDS_RECV_SETFILEATTRIBUTES_FAILED 
@@ -624,15 +627,16 @@ BEGIN
     IDS_RECV_CSUM_ERROR     "Checksum error."
     IDS_RECV_NOT_A_SEND_STREAM "File was not a send stream."
     IDS_RECV_UNSUPPORTED_VERSION "Unsupported version %u."
-    IDS_RECV_SETEAFILE_FAILED "NtSetEaFile returned %08x."
+    IDS_RECV_SETEAFILE_FAILED "NtSetEaFile returned %08x (%s)."
 END
 
 STRINGTABLE 
 BEGIN
     IDS_RECV_RECEIVED_SUBVOL_FAILED 
-                            "FSCTL_BTRFS_RECEIVED_SUBVOL returned %08x."
-    IDS_RECV_SETSECURITYOBJECT_FAILED "NtSetSecurityObject returned %08x."
-    IDS_RECV_SETXATTR_FAILED "FSCTL_BTRFS_SET_XATTR returned %08x."
+                            "FSCTL_BTRFS_RECEIVED_SUBVOL returned %08x (%s)."
+    IDS_RECV_SETSECURITYOBJECT_FAILED 
+                            "NtSetSecurityObject returned %08x (%s)."
+    IDS_RECV_SETXATTR_FAILED "FSCTL_BTRFS_SET_XATTR returned %08x (%s)."
 END
 
 #endif    // English (U.K.) resources

@@ -92,7 +92,7 @@ void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
     
     RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
     
-    if (!ntdll) {
+    if (!RtlNtStatusToDosError) {
         MessageBoxW(hwnd, L"Error loading RtlNtStatusToDosError in ntdll.dll", L"Error", MB_ICONERROR);
         FreeLibrary(ntdll);
         return;
