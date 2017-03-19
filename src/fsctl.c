@@ -3926,6 +3926,94 @@ end:
     return Status;
 }
 
+static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, KPROCESSOR_MODE processor_mode) {
+    btrfs_set_xattr* bsxa;
+    xattr* xa;
+    fcb* fcb;
+    ccb* ccb;
+    LIST_ENTRY* le;
+
+    static const char stream_pref[] = "user.";
+
+    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+
+    if (!data || datalen < sizeof(btrfs_set_xattr))
+        return STATUS_INVALID_PARAMETER;
+
+    bsxa = (btrfs_set_xattr*)data;
+
+    if (datalen < offsetof(btrfs_set_xattr, data[0]) + bsxa->namelen + bsxa->valuelen)
+        return STATUS_INVALID_PARAMETER;
+
+    if (bsxa->namelen + bsxa->valuelen > Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - offsetof(DIR_ITEM, name[0]))
+        return STATUS_INVALID_PARAMETER;
+
+    if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+
+    fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+
+    if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+        return STATUS_ACCESS_DENIED;
+
+    if (!(ccb->access & FILE_WRITE_ATTRIBUTES) && processor_mode == UserMode) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    // don't allow xattrs beginning with user., as these appear as streams instead
+    if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref))
+        return STATUS_OBJECT_NAME_INVALID;
+
+    if ((bsxa->namelen == strlen(EA_NTACL) && RtlCompareMemory(bsxa->data, EA_NTACL, strlen(EA_NTACL)) == strlen(EA_NTACL)) ||
+        (bsxa->namelen == strlen(EA_DOSATTRIB) && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, strlen(EA_DOSATTRIB)) == strlen(EA_DOSATTRIB)) ||
+        (bsxa->namelen == strlen(EA_REPARSE) && RtlCompareMemory(bsxa->data, EA_REPARSE, strlen(EA_REPARSE)) == strlen(EA_REPARSE)))
+        return STATUS_OBJECT_NAME_INVALID;
+
+    xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + bsxa->namelen + bsxa->valuelen, ALLOC_TAG);
+    if (!xa) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+
+    le = fcb->xattrs.Flink;
+    while (le != &fcb->xattrs) {
+        xattr* xa2 = CONTAINING_RECORD(le, xattr, list_entry);
+
+        if (xa2->namelen == bsxa->namelen && RtlCompareMemory(xa2->data, bsxa->data, xa2->namelen) == xa2->namelen) {
+            RemoveEntryList(&xa2->list_entry);
+            ExFreePool(xa2);
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    xa->namelen = bsxa->namelen;
+    xa->valuelen = bsxa->valuelen;
+    xa->dirty = TRUE;
+    RtlCopyMemory(xa->data, bsxa->data, bsxa->namelen + bsxa->valuelen);
+
+    InsertTailList(&fcb->xattrs, &xa->list_entry);
+
+    fcb->xattrs_changed = TRUE;
+    mark_fcb_dirty(fcb);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -4502,6 +4590,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
         case FSCTL_BTRFS_RECEIVED_SUBVOL:
             Status = recvd_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
                                   IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+            break;
+
+        case FSCTL_BTRFS_SET_XATTR:
+            Status = fsctl_set_xattr(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                     IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
             break;
 
         default:

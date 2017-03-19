@@ -184,6 +184,7 @@ typedef struct {
     LIST_ENTRY list_entry;
     ULONG namelen;
     ULONG valuelen;
+    BOOL dirty;
     char data[1];
 } xattr;
 
@@ -228,6 +229,7 @@ typedef struct _fcb {
     BOOL reparse_xattr_changed;
     BOOL ea_changed;
     BOOL prop_compression_changed;
+    BOOL xattrs_changed;
     BOOL created;
     
     BOOL ads;

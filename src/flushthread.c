@@ -4235,15 +4235,15 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
     }
 }
 
-static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32,
-                                  UINT8* data, UINT16 datalen) {
+static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, ULONG namelen,
+                                  UINT32 crc32, UINT8* data, UINT16 datalen) {
     NTSTATUS Status;
     ULONG xasize;
     DIR_ITEM* xa;
     
-    TRACE("(%p, %llx, %llx, %s, %08x, %p, %u)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
+    TRACE("(%p, %llx, %llx, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
     
-    xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name) + datalen;
+    xasize = sizeof(DIR_ITEM) - 1 + namelen + datalen;
     
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4256,10 +4256,10 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     xa->key.offset = 0;
     xa->transid = Vcb->superblock.generation;
     xa->m = datalen;
-    xa->n = (UINT16)strlen(name);
+    xa->n = namelen;
     xa->type = BTRFS_TYPE_EA;
-    RtlCopyMemory(xa->name, name, strlen(name));
-    RtlCopyMemory(xa->name + strlen(name), data, datalen);
+    RtlCopyMemory(xa->name, name, namelen);
+    RtlCopyMemory(xa->name + namelen, data, datalen);
     
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_SetXattr);
     if (!NT_SUCCESS(Status)) { 
@@ -4270,14 +4270,15 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT32 crc32) {
+static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name,
+                                 ULONG namelen, UINT32 crc32) {
     NTSTATUS Status;
     ULONG xasize;
     DIR_ITEM* xa;
     
-    TRACE("(%p, %llx, %llx, %s, %08x)\n", Vcb, subvol->id, inode, name, crc32);
+    TRACE("(%p, %llx, %llx, %.*s, %08x)\n", Vcb, subvol->id, inode, namelen, name, crc32);
     
-    xasize = sizeof(DIR_ITEM) - 1 + (ULONG)strlen(name);
+    xasize = sizeof(DIR_ITEM) - 1 + namelen;
     
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4290,9 +4291,9 @@ static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, r
     xa->key.offset = 0;
     xa->transid = Vcb->superblock.generation;
     xa->m = 0;
-    xa->n = (UINT16)strlen(name);
+    xa->n = namelen;
     xa->type = BTRFS_TYPE_EA;
-    RtlCopyMemory(xa->name, name, strlen(name));
+    RtlCopyMemory(xa->name, name, namelen);
     
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_DeleteXattr);
     if (!NT_SUCCESS(Status)) { 
@@ -4721,9 +4722,10 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     
     if (fcb->ads) {
         if (fcb->deleted)
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adsxattr.Length, fcb->adshash);
         else {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adsxattr.Length,
+                               fcb->adshash, (UINT8*)fcb->adsdata.Buffer, fcb->adsdata.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -5048,7 +5050,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     }
     
     if (fcb->sd_dirty) {
-        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
+        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL),
+                           EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
         if (!NT_SUCCESS(Status)) {
             ERR("set_xattr returned %08x\n", Status);
             goto end;
@@ -5078,13 +5081,14 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             val2--;
             *val2 = '0';
             
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, strlen(EA_DOSATTRIB),
+                               EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, strlen(EA_DOSATTRIB), EA_DOSATTRIB_HASH);
         
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -5092,37 +5096,40 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     
     if (fcb->reparse_xattr_changed) {
         if (fcb->reparse_xattr.Buffer && fcb->reparse_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, strlen(EA_REPARSE),
+                               EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, EA_REPARSE_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, strlen(EA_REPARSE), EA_REPARSE_HASH);
         
         fcb->reparse_xattr_changed = FALSE;
     }
     
     if (fcb->ea_changed) {
         if (fcb->ea_xattr.Buffer && fcb->ea_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, strlen(EA_EA),
+                               EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, EA_EA_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, strlen(EA_EA), EA_EA_HASH);
         
         fcb->ea_changed = FALSE;
     }
     
     if (fcb->prop_compression_changed) {
         if (fcb->prop_compression == PropCompression_None)
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION), EA_PROP_COMPRESSION_HASH);
         else if (fcb->prop_compression == PropCompression_Zlib) {
             const char zlib[] = "zlib";
             
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, strlen(zlib));
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION),
+                               EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, strlen(zlib));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -5130,7 +5137,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         } else if (fcb->prop_compression == PropCompression_LZO) {
             const char lzo[] = "lzo";
             
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, strlen(lzo));
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION),
+                               EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, strlen(lzo));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -5138,6 +5146,44 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
 
         fcb->prop_compression_changed = FALSE;
+    }
+
+    if (fcb->xattrs_changed) {
+        LIST_ENTRY* le;
+
+        le = fcb->xattrs.Flink;
+        while (le != &fcb->xattrs) {
+            xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+            LIST_ENTRY* le2 = le->Flink;
+
+            if (xa->dirty) {
+                UINT32 hash = calc_crc32c(0xfffffffe, (UINT8*)xa->data, xa->namelen);
+
+                if (xa->valuelen == 0) {
+                    Status = delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, xa->data, xa->namelen, hash);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_xattr returned %08x\n", Status);
+                        goto end;
+                    }
+
+                    RemoveEntryList(&xa->list_entry);
+                    ExFreePool(xa);
+                } else {
+                    Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, xa->data, xa->namelen,
+                                       hash, (UINT8*)&xa->data[xa->namelen], xa->valuelen);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("set_xattr returned %08x\n", Status);
+                        goto end;
+                    }
+
+                    xa->dirty = FALSE;
+                }
+            }
+
+            le = le2;
+        }
+
+        fcb->xattrs_changed = FALSE;
     }
     
     Status = STATUS_SUCCESS;

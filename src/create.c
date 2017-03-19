@@ -973,6 +973,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
 
                     xa->namelen = di->n;
                     xa->valuelen = di->m;
+                    xa->dirty = FALSE;
                     RtlCopyMemory(xa->data, di->name, di->m + di->n);
 
                     InsertTailList(&fcb->xattrs, &xa->list_entry);
