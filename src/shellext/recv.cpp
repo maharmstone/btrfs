@@ -357,7 +357,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, nameu.c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError());
             free(rdb);
             return FALSE;
         }
@@ -495,7 +495,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
             return FALSE;
         }
 
@@ -560,7 +560,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
             return FALSE;
         }
         
@@ -580,7 +580,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_EA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
             return FALSE;
         }
         
@@ -684,7 +684,7 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
                             FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
             return FALSE;
         }
         
@@ -760,7 +760,7 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
         return FALSE;
     }
 
@@ -821,7 +821,7 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, NULL, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
         return FALSE;
     }
     
@@ -862,7 +862,7 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER, 0, NULL, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
         return FALSE;
     }
 
@@ -929,7 +929,7 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError());
         return FALSE;
     }
     
@@ -1029,7 +1029,7 @@ DWORD BtrfsRecv::recv_thread() {
 
     f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (f == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, streamfile.c_str(), GetLastError());
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError());
         goto end;
     }
     
