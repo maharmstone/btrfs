@@ -777,7 +777,63 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 }
 
 BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
-    // FIXME
+    HANDLE h;
+    char* path;
+    UINT32 *uid, *gid;
+    ULONG pathlen, uidlen, gidlen;
+    std::wstring pathu;
+    btrfs_set_inode_info bsii;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER, 0, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, pathu.c_str(), GetLastError());
+        return FALSE;
+    }
+
+    memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_UID, (void**)&uid, &uidlen)) {
+        if (uidlen < sizeof(UINT32)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(UINT32));
+            return FALSE;
+        }
+
+        bsii.uid_changed = TRUE;
+        bsii.st_uid = *uid;
+    }
+
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_GID, (void**)&gid, &gidlen)) {
+        if (gidlen < sizeof(UINT32)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(UINT32));
+            return FALSE;
+        }
+
+        bsii.gid_changed = TRUE;
+        bsii.st_gid = *gid;
+    }
+
+    if (bsii.uid_changed || bsii.gid_changed) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
+                                 &bsii, sizeof(btrfs_set_inode_info));
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status);
+            return FALSE;
+        }
+    }
+
+    CloseHandle(h);
 
     return TRUE;
 }
