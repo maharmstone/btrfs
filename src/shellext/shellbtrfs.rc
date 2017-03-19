@@ -590,11 +590,11 @@ BEGIN
     IDS_REFLINK_PASTE_HELP  "Do a lightweight copy of files using reference counting."
     IDS_RECV_SUBVOL         "Re&ceive subvolume..."
     IDS_RECV_SUBVOL_HELP    "Recreate a previously exported subvolume."
-    IDS_RECV_CANT_OPEN_FILE "%S: Couldn't open %s (error %u)."
-    IDS_RECV_READFILE_FAILED "ReadFile failed (error %u)."
+    IDS_RECV_CANT_OPEN_FILE "%S: Couldn't open %s (error %u, %s)."
+    IDS_RECV_READFILE_FAILED "ReadFile failed (error %u, %s)."
     IDS_OUT_OF_MEMORY       "Out of memory."
     IDS_RECV_UNKNOWN_COMMAND "Unrecognized command %u encountered."
-    IDS_RECV_CANT_OPEN_PATH "Couldn't open path %s (error %u)."
+    IDS_RECV_CANT_OPEN_PATH "Couldn't open path %s (error %u, %s)."
     IDS_RECV_RTLUTF8TOUNICODEN_FAILED "RtlUTF8ToUnicodeN returned %08x."
     IDS_RECV_CREATE_SUBVOL_FAILED "FSCTL_BTRFS_CREATE_SUBVOL returned %08x."
     IDS_RECV_MISSING_PARAM  "%S: could not find %s parameter."
@@ -605,20 +605,22 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDS_RECV_MOVEFILE_FAILED "MoveFile (%s -> %s) failed (error %u)."
-    IDS_RECV_SETFILEPOINTER_FAILED "SetFilePointer failed (error %u)."
-    IDS_RECV_WRITEFILE_FAILED "WriteFile failed (error %u)."
+    IDS_RECV_MOVEFILE_FAILED "MoveFile (%s -> %s) failed (error %u, %s)."
+    IDS_RECV_SETFILEPOINTER_FAILED "SetFilePointer failed (error %u, %s)."
+    IDS_RECV_WRITEFILE_FAILED "WriteFile failed (error %u, %s)."
     IDS_RECV_CREATEHARDLINK_FAILED 
-                            "CreateHardLink (%s -> %s) failed (error %u)."
-    IDS_RECV_SETENDOFFILE_FAILED "SetEndOfFile failed (error %u)."
-    IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u)."
+                            "CreateHardLink (%s -> %s) failed (error %u, %s)."
+    IDS_RECV_SETENDOFFILE_FAILED "SetEndOfFile failed (error %u, %s)."
+    IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u, %s)."
     IDS_RECV_SETFILEINFO_FAILED 
-                            "SetFileInformationByHandle failed (error %u)."
+                            "SetFileInformationByHandle failed (error %u, %s)."
     IDS_RECV_SETINODEINFO_FAILED "FSCTL_BTRFS_SET_INODE_INFO returned %08x."
     IDS_RECV_SUCCESS        "Subvolume received successfully."
     IDS_RECV_BUTTON_OK      "OK"
-    IDS_RECV_SETFILEATTRIBUTES_FAILED "SetFileAttributes failed (error %u)."
-    IDS_RECV_GETFILEATTRIBUTES_FAILED "GetFileAttributes failed (error %u)."
+    IDS_RECV_SETFILEATTRIBUTES_FAILED 
+                            "SetFileAttributes failed (error %u, %s)."
+    IDS_RECV_GETFILEATTRIBUTES_FAILED 
+                            "GetFileAttributes failed (error %u, %s)."
     IDS_RECV_CSUM_ERROR     "Checksum error."
     IDS_RECV_NOT_A_SEND_STREAM "File was not a send stream."
     IDS_RECV_UNSUPPORTED_VERSION "Unsupported version %u."
