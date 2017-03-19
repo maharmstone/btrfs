@@ -24,6 +24,7 @@ class BtrfsRecv {
 public:
     BtrfsRecv() {
         thread = NULL;
+        stransid = 0;
     }
 
     virtual ~BtrfsRecv() {
@@ -51,4 +52,6 @@ private:
     HWND hwnd;
     std::wstring streamfile, dirpath, subvolpath, lastwritepath;
     DWORD lastwriteatt;
+    UINT64 stransid;
+    BTRFS_UUID subvol_uuid;
 };

@@ -625,6 +625,12 @@ BEGIN
     IDS_RECV_SETEAFILE_FAILED "NtSetEaFile returned %08x."
 END
 
+STRINGTABLE 
+BEGIN
+    IDS_RECV_RECEIVED_SUBVOL_FAILED 
+                            "FSCTL_BTRFS_RECEIVED_SUBVOL returned %08x."
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

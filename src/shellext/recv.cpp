@@ -175,7 +175,9 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring
 
 BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char* name;
-    ULONG namelen;
+    BTRFS_UUID* uuid;
+    UINT64* gen;
+    ULONG namelen, uuidlen, genlen;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     std::wstring nameu;
@@ -184,8 +186,29 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
         return FALSE;
     }
-    // FIXME - uuid
-    // FIXME - transid
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
+        return FALSE;
+    }
+
+    if (uuidlen < sizeof(BTRFS_UUID)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"transid");
+        return FALSE;
+    }
+
+    if (genlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    this->subvol_uuid = *uuid;
+    this->stransid = *gen;
 
     if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
         return FALSE;
@@ -1146,19 +1169,32 @@ DWORD BtrfsRecv::recv_thread() {
     }
     
     if (b) {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        btrfs_received_subvol brs;
         WCHAR s[255];
-        
-        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
-        
-        if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
-            ShowError(hwnd, GetLastError());
-        else
-            SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
-        
-        if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
-            ShowError(hwnd, GetLastError());
-        else
-            SetDlgItemTextW(hwnd, IDCANCEL, s);
+
+        brs.generation = stransid;
+        brs.uuid = subvol_uuid;
+
+        Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
+                                 NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status);
+            b = FALSE;
+        } else {
+            SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
+            
+            if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
+                ShowError(hwnd, GetLastError());
+            else
+                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+            
+            if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+                ShowError(hwnd, GetLastError());
+            else
+                SetDlgItemTextW(hwnd, IDCANCEL, s);
+        }
     }
 
     CloseHandle(dir);
@@ -1247,9 +1283,33 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     OPENFILENAMEW ofn;
     WCHAR file[MAX_PATH];
     BtrfsRecv* recv;
+    HANDLE token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
     
     set_dpi_aware();
-    
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        CloseHandle(token);
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        CloseHandle(token);
+        return;
+    }
+
     file[0] = 0;
     
     memset(&ofn, 0, sizeof(OPENFILENAMEW));
@@ -1267,4 +1327,6 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         delete recv;
     }
+
+    CloseHandle(token);
 }
