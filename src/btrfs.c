@@ -920,7 +920,6 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->treeholder.generation = Vcb->superblock.generation;
     r->treeholder.tree = no_tree ? NULL : t;
     r->lastinode = 0;
-    r->path.Buffer = NULL;
     r->dirty = FALSE;
     r->received = FALSE;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
@@ -2359,7 +2358,6 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     }
     
     r->id = id;
-    r->path.Buffer = NULL;
     r->dirty = FALSE;
     r->received = FALSE;
     r->treeholder.address = addr;

@@ -344,7 +344,6 @@ typedef struct _root {
     tree_holder treeholder;
     root_nonpaged* nonpaged;
     ROOT_ITEM root_item;
-    UNICODE_STRING path;
     BOOL dirty;
     BOOL received;
     LIST_ENTRY fcbs;
