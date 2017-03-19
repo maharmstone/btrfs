@@ -1186,3 +1186,29 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
     if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RECV_PROGRESS), hwnd, stub_RecvProgressDlgProc, (LPARAM)this) <= 0)
         ShowError(hwnd, GetLastError());
 }
+
+void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    OPENFILENAMEW ofn;
+    WCHAR file[MAX_PATH];
+    BtrfsRecv* recv;
+    
+    set_dpi_aware();
+    
+    file[0] = 0;
+    
+    memset(&ofn, 0, sizeof(OPENFILENAMEW));
+    ofn.lStructSize = sizeof(OPENFILENAMEW);
+    ofn.hwndOwner = hwnd;
+    ofn.hInstance = module;
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+    
+    if (GetOpenFileNameW(&ofn)) {
+        recv = new BtrfsRecv;
+
+        recv->Open(hwnd, file, lpszCmdLine);
+
+        delete recv;
+    }
+}

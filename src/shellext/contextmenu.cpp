@@ -28,7 +28,6 @@
 #include <shlwapi.h>
 
 #include "contextmenu.h"
-#include "recv.h"
 #include "resource.h"
 #include "../btrfsioctl.h"
 
@@ -987,26 +986,34 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         
         return S_OK;
     } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
-        OPENFILENAMEW ofn;
-        WCHAR file[MAX_PATH];
-        
-        file[0] = 0;
-        
-        memset(&ofn, 0, sizeof(OPENFILENAMEW));
-        ofn.lStructSize = sizeof(OPENFILENAMEW);
-        ofn.hwndOwner = pici->hwnd;
-        ofn.hInstance = module;
-        ofn.lpstrFile = file;
-        ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
-        ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        WCHAR dll[MAX_PATH];
+        std::wstring t;
+        SHELLEXECUTEINFOW sei;
 
-        if (GetOpenFileNameW(&ofn)) {
-            BtrfsRecv* recv = new BtrfsRecv;
-            
-            recv->Open(pici->hwnd, file, path);
+        GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
 
-            delete recv;
+        t = L"\"";
+        t += dll;
+        t += L"\",RecvSubvol ";
+        t += path;
+
+        RtlZeroMemory(&sei, sizeof(sei));
+
+        sei.cbSize = sizeof(sei);
+        sei.hwnd = pici->hwnd;
+        sei.lpVerb = L"runas";
+        sei.lpFile = L"rundll32.exe";
+        sei.lpParameters = t.c_str();
+        sei.nShow = SW_SHOW;
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+        if (!ShellExecuteExW(&sei)) {
+            ShowError(pici->hwnd, GetLastError());
+            return E_FAIL;
         }
+
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        CloseHandle(sei.hProcess);
     } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
         HDROP hdrop;
 
