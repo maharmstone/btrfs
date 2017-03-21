@@ -259,10 +259,10 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     bcs = (btrfs_create_subvol*)malloc(bcslen);
     
     bcs->readonly = TRUE;
+    bcs->posix = TRUE;
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-    // FIXME - make sure case-sensitive and that Linux-only names allowed
     Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());

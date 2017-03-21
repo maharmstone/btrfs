@@ -978,6 +978,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         bcs = (btrfs_create_subvol*)malloc(bcslen);
         
         bcs->readonly = FALSE;
+        bcs->posix = FALSE;
         bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
         memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
         
