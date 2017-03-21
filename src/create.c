@@ -1933,7 +1933,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         UNICODE_STRING fpus2;
         
-        if (!is_file_name_valid(fpus))
+        if (!is_file_name_valid(fpus, FALSE))
             return STATUS_OBJECT_NAME_INVALID;
         
         fpus2.Length = fpus2.MaximumLength = fpus->Length;
@@ -2254,7 +2254,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
             goto end;
         }
     } else {
-        if (!is_file_name_valid(&fpus)) {
+        if (!is_file_name_valid(&fpus, FALSE)) {
             Status = STATUS_OBJECT_NAME_INVALID;
             goto end;
         }

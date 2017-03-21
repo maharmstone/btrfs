@@ -557,7 +557,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     nameus.Buffer = bcs->name;
     nameus.Length = nameus.MaximumLength = bcs->namelen;
     
-    if (!is_file_name_valid(&nameus))
+    if (!is_file_name_valid(&nameus, FALSE))
         return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
@@ -757,7 +757,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     nameus.Length = nameus.MaximumLength = bcs->namelen;
     nameus.Buffer = bcs->name;
     
-    if (!is_file_name_valid(&nameus))
+    if (!is_file_name_valid(&nameus, bcs->posix))
         return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
@@ -793,7 +793,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     win_time_to_unix(time, &now);
     
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive || bcs->posix, Irp);
     
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {

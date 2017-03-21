@@ -227,6 +227,7 @@ typedef struct {
 
 typedef struct {
     BOOL readonly;
+    BOOL posix;
     ULONG namelen;
     WCHAR name[1];
 } btrfs_create_subvol;
