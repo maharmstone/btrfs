@@ -641,6 +641,7 @@ BEGIN
     IDS_RECV_FILE_TRUNCATED "File was truncated."
     IDS_RECV_RESERVE_SUBVOL_FAILED 
                             "FSCTL_BTRFS_RESERVE_SUBVOL returned %08x (%s)."
+    IDS_RECV_CANCELLED      "Receiving cancelled."
 END
 
 #endif    // English (U.K.) resources

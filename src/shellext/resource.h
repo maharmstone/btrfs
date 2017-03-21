@@ -159,6 +159,7 @@
 #define IDS_RECV_CREATETHREAD_FAILED    243
 #define IDS_RECV_FILE_TRUNCATED         244
 #define IDS_RECV_RESERVE_SUBVOL_FAILED  245
+#define IDS_RECV_CANCELLED              246
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

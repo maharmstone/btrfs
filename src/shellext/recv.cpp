@@ -263,7 +263,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-    Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -273,7 +273,8 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     subvolpath += L"\\";
     subvolpath += nameu;
 
-    CloseHandle(dir);
+    if (dir != INVALID_HANDLE_VALUE)
+        CloseHandle(dir);
     
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
@@ -288,7 +289,8 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    dir = CreateFileW(subvolpath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
     if (dir == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
@@ -1156,6 +1158,8 @@ DWORD BtrfsRecv::recv_thread() {
     LARGE_INTEGER size;
     UINT64 pos = 0;
 
+    running = TRUE;
+
     f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (f == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
@@ -1184,9 +1188,9 @@ DWORD BtrfsRecv::recv_thread() {
         goto end;
     }
 
-    dir = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    parent = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
-    if (dir == INVALID_HANDLE_VALUE) {
+    if (parent == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         CloseHandle(f);
         goto end;
@@ -1202,6 +1206,11 @@ DWORD BtrfsRecv::recv_thread() {
         btrfs_send_command cmd;
         UINT8* data;
         ULONG progress;
+
+        if (cancelling) {
+            b = FALSE;
+            break;
+        }
 
         progress = (ULONG)((float)pos * 65536.0f / (float)size.QuadPart);
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
@@ -1381,15 +1390,26 @@ DWORD BtrfsRecv::recv_thread() {
 
     CloseHandle(dir);
     CloseHandle(f);
-    
+
+    CloseHandle(parent);
+
     if (master != INVALID_HANDLE_VALUE)
         CloseHandle(master);
-    
-    if (!b && subvolpath != L"")
-        delete_directory(subvolpath);
 
+    if (!b && subvolpath != L"") {
+        ULONG attrib;
+
+        attrib = GetFileAttributesW(subvolpath.c_str());
+        attrib &= ~FILE_ATTRIBUTE_READONLY;
+
+        if (!SetFileAttributesW(subvolpath.c_str(), attrib))
+            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        else
+            delete_directory(subvolpath);
+    }
 end:
     thread = NULL;
+    running = FALSE;
 
     return 0;
 }
@@ -1416,8 +1436,28 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
                     switch (LOWORD(wParam)) {
                         case IDOK:
                         case IDCANCEL:
-                            // FIXME - cancel if still running
-                            EndDialog(hwndDlg, 1);
+                            if (running) {
+                                WCHAR s[255];
+
+                                cancelling = TRUE;
+
+                                if (!LoadStringW(module, IDS_RECV_CANCELLED, s, sizeof(s) / sizeof(WCHAR))) {
+                                    ShowError(hwndDlg, GetLastError());
+                                    return FALSE;
+                                }
+
+                                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+                                SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 0, 0);
+
+                                if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR))) {
+                                    ShowError(hwndDlg, GetLastError());
+                                    return FALSE;
+                                }
+
+                                SetDlgItemTextW(hwnd, IDCANCEL, s);
+                            } else
+                                EndDialog(hwndDlg, 1);
+
                             return TRUE;
                     }
                 break;

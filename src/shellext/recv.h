@@ -25,6 +25,9 @@ public:
     BtrfsRecv() {
         thread = NULL;
         master = INVALID_HANDLE_VALUE;
+        dir = INVALID_HANDLE_VALUE;
+        running = FALSE;
+        cancelling = FALSE;
         stransid = 0;
     }
 
@@ -50,10 +53,11 @@ private:
     void ShowRecvError(int resid, ...);
     BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len);
 
-    HANDLE dir, master, thread, lastwritefile;
+    HANDLE dir, parent, master, thread, lastwritefile;
     HWND hwnd;
     std::wstring streamfile, dirpath, subvolpath, lastwritepath;
     DWORD lastwriteatt;
     UINT64 stransid;
     BTRFS_UUID subvol_uuid;
+    BOOL running, cancelling;
 };
