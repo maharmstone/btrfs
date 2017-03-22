@@ -45,6 +45,7 @@ private:
     BOOL cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    BOOL cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data);

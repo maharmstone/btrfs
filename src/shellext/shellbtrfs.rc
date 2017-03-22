@@ -649,6 +649,8 @@ BEGIN
     IDS_RECV_GETVOLUMEPATHNAME_FAILED 
                             "GetVolumePathName failed (error %u, %s)."
     IDS_RECV_DELETEFILE_FAILED "DeleteFile failed for %s (error %u, %s)."
+    IDS_RECV_REMOVEDIRECTORY_FAILED 
+                            "RemoveDirectory failed for %s (error %u, %s)."
 END
 
 #endif    // English (U.K.) resources

@@ -165,6 +165,7 @@
 #define IDS_RECV_CREATE_SNAPSHOT_FAILED 249
 #define IDS_RECV_GETVOLUMEPATHNAME_FAILED 250
 #define IDS_RECV_DELETEFILE_FAILED      251
+#define IDS_RECV_REMOVEDIRECTORY_FAILED 252
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
