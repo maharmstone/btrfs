@@ -1269,9 +1269,12 @@ static void delete_directory(std::wstring dir) {
             if (fff.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
                 SetFileAttributesW((dir + file).c_str(), fff.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
 
-            if (fff.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                delete_directory(dir + file + L"\\");
-            else
+            if (fff.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                if (!(fff.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+                    delete_directory(dir + file + L"\\");
+                else
+                    RemoveDirectoryW((dir + file).c_str());
+            } else
                 DeleteFileW((dir + file).c_str());
         }
     } while (FindNextFileW(h, &fff));
