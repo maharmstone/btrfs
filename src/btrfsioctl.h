@@ -41,6 +41,8 @@ typedef struct {
 
 typedef struct {
     HANDLE subvol;
+    BOOL readonly;
+    BOOL posix;
     UINT32 namelen;
     WCHAR name[1];
 } btrfs_create_snapshot;

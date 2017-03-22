@@ -246,7 +246,7 @@ static void flush_subvol_fcbs(root* subvol) {
     }
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name, PIRP Irp) {
+static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name, BOOL readonly, PIRP Irp) {
     LIST_ENTRY rollback;
     UINT64 id;
     NTSTATUS Status;
@@ -386,6 +386,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     r->root_item.otransid = Vcb->superblock.generation;
     r->root_item.ctime = subvol->root_item.ctime;
     r->root_item.otime = now;
+    
+    if (readonly)
+        r->root_item.flags |= BTRFS_SUBVOL_READONLY;
     
     r->treeholder.address = address;
     
@@ -557,7 +560,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     nameus.Buffer = bcs->name;
     nameus.Length = nameus.MaximumLength = bcs->namelen;
     
-    if (!is_file_name_valid(&nameus, FALSE))
+    if (!is_file_name_valid(&nameus, bcs->posix))
         return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
@@ -658,7 +661,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         }
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, Irp);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, bcs->readonly, Irp);
     
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
