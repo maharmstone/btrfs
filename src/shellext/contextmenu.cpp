@@ -465,7 +465,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             bcs->namelen = namelen;
             memcpy(bcs->name, &searchpath[pathend], namelen);
             
-            Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, NULL, 0, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen);
+            Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, NULL, 0);
         
             if (!NT_SUCCESS(Status))
                 ShowNtStatusError(hwnd, Status);
@@ -582,7 +582,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bcs->namelen = destname.length() * sizeof(WCHAR);
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
         
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, NULL, 0, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen);
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen, NULL, 0);
         
         free(bcs);
     
