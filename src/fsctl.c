@@ -3989,8 +3989,47 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
     
     if (bsxa->namelen == strlen(EA_NTACL) && RtlCompareMemory(bsxa->data, EA_NTACL, strlen(EA_NTACL)) == strlen(EA_NTACL)) {
-        // FIXME - security.NTACL
-        Status = STATUS_NOT_IMPLEMENTED;
+        if ((!(ccb->access & WRITE_DAC) || !(ccb->access & WRITE_OWNER)) && Irp->RequestorMode == UserMode) {
+            WARN("insufficient privileges\n");
+            Status = STATUS_ACCESS_DENIED;
+            goto end;
+        }
+
+        if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode)) {
+            Status = STATUS_PRIVILEGE_NOT_HELD;
+            goto end;
+        }
+
+        if (fcb->sd)
+            ExFreePool(fcb->sd);
+
+        if (bsxa->valuelen > 0) {
+            fcb->sd = ExAllocatePoolWithTag(PagedPool, bsxa->valuelen, ALLOC_TAG);
+            if (!fcb->sd) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+
+            RtlCopyMemory(fcb->sd, bsxa->data + bsxa->namelen, bsxa->valuelen);
+
+            if (!get_sd_from_xattr(fcb, bsxa->valuelen)) {
+                ExFreePool(fcb->sd);
+                fcb->sd = NULL;
+            }
+        } else if (fcb->sd)
+            fcb->sd = NULL;
+
+        fcb->sd_dirty = TRUE;
+        
+        if (!fcb->sd) {
+            fcb_get_sd(fcb, ccb->fileref->parent->fcb, FALSE, Irp);
+            fcb->sd_deleted = TRUE;
+        }
+
+        mark_fcb_dirty(fcb);
+
+        Status = STATUS_SUCCESS;
         goto end;
     } else if (bsxa->namelen == strlen(EA_DOSATTRIB) && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, strlen(EA_DOSATTRIB)) == strlen(EA_DOSATTRIB)) {
         ULONG atts;

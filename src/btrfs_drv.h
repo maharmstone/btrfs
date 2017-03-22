@@ -223,7 +223,7 @@ typedef struct _fcb {
     LIST_ENTRY** hash_ptrs_uc;
     
     BOOL dirty;
-    BOOL sd_dirty;
+    BOOL sd_dirty, sd_deleted;
     BOOL atts_changed, atts_deleted;
     BOOL extents_changed;
     BOOL reparse_xattr_changed;

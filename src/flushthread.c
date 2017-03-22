@@ -5050,13 +5050,17 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     }
     
     if (fcb->sd_dirty) {
-        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL),
-                           EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_xattr returned %08x\n", Status);
-            goto end;
-        }
-        
+        if (!fcb->sd_deleted) {
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL),
+                            EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
+        } else
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL), EA_NTACL_HASH);
+
+        fcb->sd_deleted = FALSE;
         fcb->sd_dirty = FALSE;
     }
     
