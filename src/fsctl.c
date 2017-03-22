@@ -3945,6 +3945,7 @@ end:
 }
 
 static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
+    NTSTATUS Status;
     btrfs_set_xattr* bsxa;
     xattr* xa;
     fcb* fcb;
@@ -3983,24 +3984,64 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_ACCESS_DENIED;
     }
 
-    // don't allow xattrs beginning with user., as these appear as streams instead
-    if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref))
-        return STATUS_OBJECT_NAME_INVALID;
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-    if ((bsxa->namelen == strlen(EA_NTACL) && RtlCompareMemory(bsxa->data, EA_NTACL, strlen(EA_NTACL)) == strlen(EA_NTACL)) ||
-        (bsxa->namelen == strlen(EA_DOSATTRIB) && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, strlen(EA_DOSATTRIB)) == strlen(EA_DOSATTRIB)) ||
-        (bsxa->namelen == strlen(EA_REPARSE) && RtlCompareMemory(bsxa->data, EA_REPARSE, strlen(EA_REPARSE)) == strlen(EA_REPARSE)))
-        return STATUS_OBJECT_NAME_INVALID;
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    
+    if (bsxa->namelen == strlen(EA_NTACL) && RtlCompareMemory(bsxa->data, EA_NTACL, strlen(EA_NTACL)) == strlen(EA_NTACL)) {
+        // FIXME - security.NTACL
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    } else if (bsxa->namelen == strlen(EA_DOSATTRIB) && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, strlen(EA_DOSATTRIB)) == strlen(EA_DOSATTRIB)) {
+        ULONG atts;
+        
+        if (bsxa->valuelen > 0 && get_file_attributes_from_xattr(bsxa->data + bsxa->namelen, bsxa->valuelen, &atts)) {
+            fcb->atts = atts;
+            
+            if (fcb->type == BTRFS_TYPE_DIRECTORY)
+                fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
+            else if (fcb->type == BTRFS_TYPE_SYMLINK)
+                fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
+            
+            if (fcb->inode == SUBVOL_ROOT_INODE) {
+                if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+                    fcb->atts |= FILE_ATTRIBUTE_READONLY;
+                else
+                    fcb->atts &= ~FILE_ATTRIBUTE_READONLY;
+            }
+            
+            fcb->atts_deleted = FALSE;
+        } else {
+            BOOL hidden = ccb->fileref && ccb->fileref->dc && ccb->fileref->dc->utf8.Buffer && ccb->fileref->dc->utf8.Buffer[0] == '.';
+
+            fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, hidden, TRUE, Irp);
+            fcb->atts_deleted = TRUE;
+        }
+        
+        fcb->atts_changed = TRUE;
+        mark_fcb_dirty(fcb);
+        
+        Status = STATUS_SUCCESS;
+        goto end;
+    } else if (bsxa->namelen == strlen(EA_REPARSE) && RtlCompareMemory(bsxa->data, EA_REPARSE, strlen(EA_REPARSE)) == strlen(EA_REPARSE)) {
+        // FIXME - system.reparse
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    } else if (bsxa->namelen == strlen(EA_EA) && RtlCompareMemory(bsxa->data, EA_EA, strlen(EA_EA)) == strlen(EA_EA)) {
+        // FIXME - user.EA
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    } else if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref)) {
+        // don't allow xattrs beginning with user., as these appear as streams instead
+        Status = STATUS_OBJECT_NAME_INVALID;
+        goto end;
+    }
 
     xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + bsxa->namelen + bsxa->valuelen, ALLOC_TAG);
     if (!xa) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
     le = fcb->xattrs.Flink;
     while (le != &fcb->xattrs) {
@@ -4024,12 +4065,15 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
     fcb->xattrs_changed = TRUE;
     mark_fcb_dirty(fcb);
+    
+    Status = STATUS_SUCCESS;
 
+end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS reserve_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
