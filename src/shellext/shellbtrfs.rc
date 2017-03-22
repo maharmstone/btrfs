@@ -642,6 +642,12 @@ BEGIN
     IDS_RECV_RESERVE_SUBVOL_FAILED 
                             "FSCTL_BTRFS_RESERVE_SUBVOL returned %08x (%s)."
     IDS_RECV_CANCELLED      "Receiving cancelled."
+    IDS_RECV_CANT_FIND_PARENT_SUBVOL "Could not find parent subvolume."
+    IDS_RECV_FIND_SUBVOL_FAILED "FSCTL_BTRFS_FIND_SUBVOL returned %08x (%s)."
+    IDS_RECV_CREATE_SNAPSHOT_FAILED 
+                            "FSCTL_BTRFS_CREATE_SNAPSHOT returned %08x (%s)."
+    IDS_RECV_GETVOLUMEPATHNAME_FAILED 
+                            "GetVolumePathName failed (error %u, %s)."
 END
 
 #endif    // English (U.K.) resources

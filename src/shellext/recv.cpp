@@ -302,6 +302,147 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    char* name;
+    BTRFS_UUID *uuid, *parent_uuid;
+    UINT64 *gen, *parent_transid;
+    ULONG namelen, uuidlen, genlen, paruuidlen, partransidlen, bcslen;
+    btrfs_create_snapshot* bcs;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    std::wstring nameu, parpath;
+    btrfs_find_subvol bfs;
+    WCHAR parpathw[MAX_PATH], volpathw[MAX_PATH];
+    HANDLE subvol;
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&name, &namelen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
+        return FALSE;
+    }
+    
+    if (uuidlen < sizeof(BTRFS_UUID)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"transid");
+        return FALSE;
+    }
+    
+    if (genlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(UINT64));
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&parent_uuid, &paruuidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
+        return FALSE;
+    }
+
+    if (paruuidlen < sizeof(BTRFS_UUID)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", paruuidlen, sizeof(BTRFS_UUID));
+        return FALSE;
+    }
+    
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&parent_transid, &partransidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
+        return FALSE;
+    }
+    
+    if (partransidlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(UINT64));
+        return FALSE;
+    }
+    
+    this->subvol_uuid = *uuid;
+    this->stransid = *gen;
+    
+    if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
+        return FALSE;
+
+    bfs.uuid = *parent_uuid;
+    bfs.ctransid = *parent_transid;
+
+    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
+                             parpathw, sizeof(parpathw));
+    if (Status == STATUS_NOT_FOUND) {
+        ShowRecvError(IDS_RECV_CANT_FIND_PARENT_SUBVOL);
+        return FALSE;
+    } else if (!NT_SUCCESS(Status)) {
+        ShowRecvError(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+        return FALSE;
+    }
+    
+    if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
+        ShowRecvError(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    parpath = volpathw;
+    if (parpath.substr(parpath.length() - 1) == L"\\")
+        parpath = parpath.substr(0, parpath.length() - 1);
+
+    parpath += parpathw;
+
+    subvol = CreateFileW(parpath.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (subvol == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, parpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    bcslen = offsetof(btrfs_create_snapshot, name[0]) + (nameu.length() * sizeof(WCHAR));
+    bcs = (btrfs_create_snapshot*)malloc(bcslen);
+
+    bcs->subvol = subvol;
+    bcs->namelen = nameu.length() * sizeof(WCHAR);
+    memcpy(bcs->name, nameu.c_str(), bcs->namelen);
+    
+    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowRecvError(IDS_RECV_CREATE_SNAPSHOT_FAILED, Status, format_ntstatus(Status).c_str());
+        return FALSE;
+    }
+    
+    subvolpath = dirpath;
+    subvolpath += L"\\";
+    subvolpath += nameu;
+    
+    if (dir != INVALID_HANDLE_VALUE)
+        CloseHandle(dir);
+    
+    master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    if (master == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+    
+//     Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
+//     if (!NT_SUCCESS(Status)) {
+//         ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+//         return FALSE;
+//     }
+    
+    dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    if (dir == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+    
+    subvolpath += L"\\";
+    
+    return TRUE;
+}
+
 BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char *name, *pathlink;
     UINT64 *inode, *rdev = NULL, *mode = NULL;
@@ -1282,7 +1423,9 @@ DWORD BtrfsRecv::recv_thread() {
                 b = cmd_subvol(hwnd, &cmd, data);
             break;
 
-            // FIXME - BTRFS_SEND_CMD_SNAPSHOT
+            case BTRFS_SEND_CMD_SNAPSHOT:
+                b = cmd_snapshot(hwnd, &cmd, data);
+            break;
 
             case BTRFS_SEND_CMD_MKFILE:
             case BTRFS_SEND_CMD_MKDIR:

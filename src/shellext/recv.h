@@ -40,6 +40,7 @@ public:
     
 private:
     BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    BOOL cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data);

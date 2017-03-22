@@ -160,6 +160,10 @@
 #define IDS_RECV_FILE_TRUNCATED         244
 #define IDS_RECV_RESERVE_SUBVOL_FAILED  245
 #define IDS_RECV_CANCELLED              246
+#define IDS_RECV_CANT_FIND_PARENT_SUBVOL 247
+#define IDS_RECV_FIND_SUBVOL_FAILED     248
+#define IDS_RECV_CREATE_SNAPSHOT_FAILED 249
+#define IDS_RECV_GETVOLUMEPATHNAME_FAILED 250
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
