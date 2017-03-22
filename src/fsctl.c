@@ -4121,6 +4121,9 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
     if (!out || outlen < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
 
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
+        return STATUS_PRIVILEGE_NOT_HELD;
+
     bfs = (btrfs_find_subvol*)in;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
