@@ -461,6 +461,8 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
                         
             bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - 1 + namelen);
+            bcs->readonly = FALSE;
+            bcs->posix = FALSE;
             bcs->subvol = h;
             bcs->namelen = namelen;
             memcpy(bcs->name, &searchpath[pathend], namelen);

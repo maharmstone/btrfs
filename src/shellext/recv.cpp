@@ -400,6 +400,8 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     bcslen = offsetof(btrfs_create_snapshot, name[0]) + (nameu.length() * sizeof(WCHAR));
     bcs = (btrfs_create_snapshot*)malloc(bcslen);
 
+    bcs->readonly = TRUE;
+    bcs->posix = TRUE;
     bcs->subvol = subvol;
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
@@ -423,13 +425,13 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
-    
-//     Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
-//     if (!NT_SUCCESS(Status)) {
-//         ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-//         return FALSE;
-//     }
-    
+
+    Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+        return FALSE;
+    }
+
     dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
