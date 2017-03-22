@@ -593,7 +593,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, FALSE, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive || bcs->posix, Irp);
     
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
