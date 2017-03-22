@@ -688,6 +688,41 @@ BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+BOOL BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    char* path;
+    ULONG pathlen;
+    std::wstring pathu;
+    ULONG att;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    att = GetFileAttributesW((subvolpath + pathu).c_str());
+    if (att == INVALID_FILE_ATTRIBUTES) {
+        ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    if (att & FILE_ATTRIBUTE_READONLY) {
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
+            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+    }
+
+    if (!DeleteFileW((subvolpath + pathu).c_str())) {
+        ShowRecvError(IDS_RECV_DELETEFILE_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char *path, *xattrname;
     UINT8* xattrdata;
@@ -1449,7 +1484,10 @@ DWORD BtrfsRecv::recv_thread() {
                 b = cmd_link(hwnd, &cmd, data);
             break;
 
-            // FIXME - BTRFS_SEND_CMD_UNLINK
+            case BTRFS_SEND_CMD_UNLINK:
+                b = cmd_unlink(hwnd, &cmd, data);
+            break;
+
             // FIXME - BTRFS_SEND_CMD_RMDIR
 
             case BTRFS_SEND_CMD_SET_XATTR:
