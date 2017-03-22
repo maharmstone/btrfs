@@ -865,6 +865,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                                 fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
                             else if (fcb->type == BTRFS_TYPE_SYMLINK)
                                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
+
+                            if (inode == SUBVOL_ROOT_INODE) {
+                                if (subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+                                    fcb->atts |= FILE_ATTRIBUTE_READONLY;
+                                else
+                                    fcb->atts &= ~FILE_ATTRIBUTE_READONLY;
+                            }
                         }
                     }
                 } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == strlen(EA_NTACL) && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
