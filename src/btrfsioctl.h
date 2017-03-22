@@ -31,6 +31,7 @@
 // FIXME - FSCTL_BTRFS_GET_XATTRS
 #define FSCTL_BTRFS_SET_XATTR CTL_CODE(FILE_DEVICE_UNKNOWN, 0x843, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define FSCTL_BTRFS_RESERVE_SUBVOL CTL_CODE(FILE_DEVICE_UNKNOWN, 0x844, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define FSCTL_BTRFS_FIND_SUBVOL CTL_CODE(FILE_DEVICE_UNKNOWN, 0x845, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 typedef struct {
     UINT64 subvol;
@@ -231,5 +232,10 @@ typedef struct {
     ULONG namelen;
     WCHAR name[1];
 } btrfs_create_subvol;
+
+typedef struct {
+    BTRFS_UUID uuid;
+    UINT64 ctransid;
+} btrfs_find_subvol;
 
 #endif

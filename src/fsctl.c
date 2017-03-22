@@ -4058,6 +4058,178 @@ static NTSTATUS reserve_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, P
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, ULONG outlen, PIRP Irp) {
+    LIST_ENTRY* le;
+    root* r = NULL;
+    NTSTATUS Status;
+    file_ref* fr;
+    UNICODE_STRING us;
+
+    le = Vcb->roots.Flink;
+    while (le != &Vcb->roots) {
+        root* r2 = CONTAINING_RECORD(le, root, list_entry);
+
+        if (r2->id == id) {
+            r = r2;
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    if (!r) {
+        ERR("couldn't find subvol %llx\n", id);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+
+    Status = open_fileref_by_inode(Vcb, r, r->root_item.objid, &fr, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ExReleaseResourceLite(&Vcb->fcb_lock);
+        ERR("open_fileref_by_inode returned %08x\n", Status);
+        return Status;
+    }
+
+    us.Buffer = out;
+    us.Length = 0;
+    us.MaximumLength = outlen - sizeof(WCHAR);
+
+    Status = fileref_get_filename(fr, &us, NULL, NULL);
+
+    if (NT_SUCCESS(Status) || STATUS_BUFFER_OVERFLOW)
+        out[us.Length / sizeof(WCHAR)] = 0;
+    else
+        ERR("fileref_get_filename returned %08x\n", Status);
+
+    free_fileref(Vcb, fr);
+
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+
+    return Status;
+}
+
+static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* out, ULONG outlen, PIRP Irp) {
+    btrfs_find_subvol* bfs;
+    NTSTATUS Status;
+    traverse_ptr tp;
+    KEY searchkey;
+
+    if (!in || inlen < sizeof(btrfs_find_subvol))
+        return STATUS_INVALID_PARAMETER;
+
+    if (!out || outlen < sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
+
+    bfs = (btrfs_find_subvol*)in;
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
+    if (!Vcb->uuid_root) {
+        ERR("couldn't find uuid root\n");
+        Status = STATUS_NOT_FOUND;
+        goto end;
+    }
+
+    RtlCopyMemory(&searchkey.obj_id, &bfs->uuid, sizeof(UINT64));
+    searchkey.obj_type = TYPE_SUBVOL_UUID;
+    RtlCopyMemory(&searchkey.offset, &bfs->uuid.uuid[sizeof(UINT64)], sizeof(UINT64));
+
+    Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+
+    if (!keycmp(searchkey, tp.item->key) && tp.item->size >= sizeof(UINT64)) {
+        UINT64* id = (UINT64*)tp.item->data;
+
+        if (bfs->ctransid != 0) {
+            KEY searchkey2;
+            traverse_ptr tp2;
+
+            searchkey2.obj_id = *id;
+            searchkey2.obj_type = TYPE_ROOT_ITEM;
+            searchkey2.offset = 0xffffffffffffffff;
+
+            Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey2, FALSE, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                goto end;
+            }
+
+            if (tp2.item->key.obj_id == searchkey2.obj_id && tp2.item->key.obj_type == searchkey2.obj_type &&
+                tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
+                ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
+
+                if (ri->ctransid == bfs->ctransid) {
+                    TRACE("found subvol %llx\n", *id);
+                    Status = get_subvol_path(Vcb, *id, out, outlen, Irp);
+                    goto end;
+                }
+            }
+        } else {
+            TRACE("found subvol %llx\n", *id);
+            Status = get_subvol_path(Vcb, *id, out, outlen, Irp);
+            goto end;
+        }
+    }
+
+    searchkey.obj_type = TYPE_SUBVOL_REC_UUID;
+
+    Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, FALSE, Irp);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+
+    if (!keycmp(searchkey, tp.item->key) && tp.item->size >= sizeof(UINT64)) {
+        UINT64* ids = (UINT64*)tp.item->data;
+        ULONG i;
+
+        for (i = 0; i < tp.item->size / sizeof(UINT64); i++) {
+            if (bfs->ctransid != 0) {
+                KEY searchkey2;
+                traverse_ptr tp2;
+
+                searchkey2.obj_id = ids[i];
+                searchkey2.obj_type = TYPE_ROOT_ITEM;
+                searchkey2.offset = 0xffffffffffffffff;
+
+                Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey2, FALSE, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    goto end;
+                }
+
+                if (tp2.item->key.obj_id == searchkey2.obj_id && tp2.item->key.obj_type == searchkey2.obj_type &&
+                    tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
+                    ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
+
+                    if (ri->ctransid == bfs->ctransid) {
+                        TRACE("found subvol %llx\n", ids[i]);
+                        Status = get_subvol_path(Vcb, ids[i], out, outlen, Irp);
+                        goto end;
+                    }
+                }
+            } else {
+                TRACE("found subvol %llx\n", ids[i]);
+                Status = get_subvol_path(Vcb, ids[i], out, outlen, Irp);
+                goto end;
+            }
+        }
+    }
+
+    Status = STATUS_NOT_FOUND;
+
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -4644,7 +4816,12 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
         case FSCTL_BTRFS_RESERVE_SUBVOL:
             Status = reserve_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp);
             break;
-            
+
+        case FSCTL_BTRFS_FIND_SUBVOL:
+            Status = find_subvol(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength,
+                                 Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
+            break;
+
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,
