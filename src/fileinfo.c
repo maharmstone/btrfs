@@ -2981,15 +2981,121 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("open_fileref_by_inode returned %08x\n", Status);
-        free_fcb(fcb);
+    if (parent == inode) { // subvolume root
+        KEY searchkey;
+        traverse_ptr tp;
+
+        searchkey.obj_id = subvol->id;
+        searchkey.obj_type = TYPE_ROOT_BACKREF;
+        searchkey.offset = 0xffffffffffffffff;
         
-        if (hl_alloc)
-            ExFreePool(name.Buffer);
-        
-        return Status;
+        Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            free_fcb(fcb);
+            if (hl_alloc) ExFreePool(name.Buffer);
+            return Status;
+        }
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            ROOT_REF* rr = (ROOT_REF*)tp.item->data;
+            LIST_ENTRY* le;
+            root* r = NULL;
+            ULONG stringlen;
+
+            if (tp.item->size < sizeof(ROOT_REF)) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                free_fcb(fcb);
+                if (hl_alloc) ExFreePool(name.Buffer);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
+                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                free_fcb(fcb);
+                if (hl_alloc) ExFreePool(name.Buffer);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            le = Vcb->roots.Flink;
+            while (le != &Vcb->roots) {
+                root* r2 = CONTAINING_RECORD(le, root, list_entry);
+
+                if (r2->id == tp.item->key.offset) {
+                    r = r2;
+                    break;
+                }
+
+                le = le->Flink;
+            }
+
+            if (!r) {
+                ERR("couldn't find subvol %llx\n", tp.item->key.offset);
+                free_fcb(fcb);
+                if (hl_alloc) ExFreePool(name.Buffer);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            Status = open_fileref_by_inode(Vcb, r, rr->dir, &parfr, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("open_fileref_by_inode returned %08x\n", Status);
+                free_fcb(fcb);
+                if (hl_alloc) ExFreePool(name.Buffer);
+                return Status;
+            }
+
+            if (hl_alloc) {
+                ExFreePool(name.Buffer);
+                hl_alloc = FALSE;
+            }
+
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, rr->name, rr->n);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                free_fcb(fcb);
+                return Status;
+            }
+
+            name.Length = name.MaximumLength = stringlen;
+
+            if (stringlen == 0)
+                name.Buffer = NULL;
+            else {
+                name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
+
+                if (!name.Buffer) {
+                    ERR("out of memory\n");
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, rr->name, rr->n);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                    ExFreePool(name.Buffer);
+                    free_fcb(fcb);
+                    return Status;
+                }
+
+                hl_alloc = TRUE;
+            }
+        } else {
+            ERR("couldn't find parent for subvol %llx\n", subvol->id);
+            free_fcb(fcb);
+            if (hl_alloc) ExFreePool(name.Buffer);
+            return STATUS_INTERNAL_ERROR;
+        }
+    } else {
+        Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref_by_inode returned %08x\n", Status);
+            free_fcb(fcb);
+
+            if (hl_alloc)
+                ExFreePool(name.Buffer);
+
+            return Status;
+        }
     }
 
     Status = open_fileref_child(Vcb, parfr, &name, TRUE, TRUE, FALSE, PagedPool, &fr, Irp);
