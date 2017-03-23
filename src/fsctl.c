@@ -4063,8 +4063,28 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         Status = STATUS_SUCCESS;
         goto end;
     } else if (bsxa->namelen == strlen(EA_REPARSE) && RtlCompareMemory(bsxa->data, EA_REPARSE, strlen(EA_REPARSE)) == strlen(EA_REPARSE)) {
-        // FIXME - system.reparse
-        Status = STATUS_NOT_IMPLEMENTED;
+        if (fcb->reparse_xattr.Buffer) {
+            ExFreePool(fcb->reparse_xattr.Buffer);
+            fcb->reparse_xattr.Buffer = NULL;
+            fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = 0;
+        }
+
+        if (bsxa->valuelen > 0) {
+            fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, bsxa->valuelen, ALLOC_TAG);
+            if (!fcb->reparse_xattr.Buffer) {
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
+            }
+
+            RtlCopyMemory(fcb->reparse_xattr.Buffer, bsxa->data + bsxa->namelen, bsxa->valuelen);
+            fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = bsxa->valuelen;
+        }
+
+        fcb->reparse_xattr_changed = TRUE;
+        mark_fcb_dirty(fcb);
+
+        Status = STATUS_SUCCESS;
         goto end;
     } else if (bsxa->namelen == strlen(EA_EA) && RtlCompareMemory(bsxa->data, EA_EA, strlen(EA_EA)) == strlen(EA_EA)) {
         if (!(ccb->access & FILE_WRITE_EA) && Irp->RequestorMode == UserMode) {
