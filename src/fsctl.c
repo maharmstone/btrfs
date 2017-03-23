@@ -4067,8 +4067,60 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     } else if (bsxa->namelen == strlen(EA_EA) && RtlCompareMemory(bsxa->data, EA_EA, strlen(EA_EA)) == strlen(EA_EA)) {
-        // FIXME - user.EA
-        Status = STATUS_NOT_IMPLEMENTED;
+        if (!(ccb->access & FILE_WRITE_EA) && Irp->RequestorMode == UserMode) {
+            WARN("insufficient privileges\n");
+            Status = STATUS_ACCESS_DENIED;
+            goto end;
+        }
+
+        if (fcb->ea_xattr.Buffer) {
+            ExFreePool(fcb->ea_xattr.Buffer);
+            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = 0;
+            fcb->ea_xattr.Buffer = NULL;
+        }
+
+        fcb->ealen = 0;
+
+        if (bsxa->valuelen > 0) {
+            ULONG offset;
+            
+            Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)(bsxa->data + bsxa->namelen), bsxa->valuelen, &offset);
+            
+            if (!NT_SUCCESS(Status))
+                WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+            else {
+                FILE_FULL_EA_INFORMATION* eainfo;
+                
+                fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, bsxa->valuelen, ALLOC_TAG);
+                if (!fcb->ea_xattr.Buffer) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto end;
+                }
+
+                RtlCopyMemory(fcb->ea_xattr.Buffer, bsxa->data + bsxa->namelen, bsxa->valuelen);
+
+                fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = bsxa->valuelen;
+
+                fcb->ealen = 4;
+
+                // calculate ealen
+                eainfo = (FILE_FULL_EA_INFORMATION*)(bsxa->data + bsxa->namelen);
+                do {
+                    fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+                    
+                    if (eainfo->NextEntryOffset == 0)
+                        break;
+                    
+                    eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                } while (TRUE);
+            }
+        }
+
+        fcb->ea_changed = TRUE;
+        mark_fcb_dirty(fcb);
+
+        Status = STATUS_SUCCESS;
         goto end;
     } else if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref)) {
         // don't allow xattrs beginning with user., as these appear as streams instead
