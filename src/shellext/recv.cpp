@@ -782,133 +782,16 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
         return FALSE;
 
-    if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen)) {
-        HANDLE h;
-        NTSTATUS Status;
-        SECURITY_INFORMATION si;
-        SECURITY_DESCRIPTOR *xasd = (SECURITY_DESCRIPTOR*)xattrdata, *sd;
-        ULONG perms = WRITE_OWNER;
-
-        si = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION;
-
-        if (xasd->Control & SE_DACL_PRESENT) {
-            si |= DACL_SECURITY_INFORMATION;
-            perms |= WRITE_DAC;
-        }
-
-        if (xasd->Control & SE_SACL_PRESENT) {
-            si |= SACL_SECURITY_INFORMATION;
-            perms |= ACCESS_SYSTEM_SECURITY;
-        }
-
-        h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return FALSE;
-        }
-
-        sd = (SECURITY_DESCRIPTOR*)malloc(xattrdatalen); // needs to be aligned
-        if (!sd) {
-            ShowRecvError(IDS_OUT_OF_MEMORY);
-            CloseHandle(h);
-            return FALSE;
-        }
-
-        memcpy(sd, xattrdata, xattrdatalen);
-
-        Status = NtSetSecurityObject(h, si, sd);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETSECURITYOBJECT_FAILED, Status, format_ntstatus(Status).c_str());
-            free(sd);
-            CloseHandle(h);
-            return FALSE;
-        }
-
-        free(sd);
-
-        CloseHandle(h);
-    } else if (xattrnamelen == strlen(EA_DOSATTRIB) && !memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) {
-        if (xattrdatalen > 2 && xattrdata[0] == '0' && xattrdata[1] == 'x') {
-            DWORD attrib = 0;
-            ULONG xp = 2;
-            BOOL valid = TRUE;
-            
-            while (xp < xattrdatalen) {
-                attrib <<= 4;
-                
-                if (xattrdata[xp] >= '0' && xattrdata[xp] <= '9')
-                    attrib += xattrdata[xp] - '0';
-                else if (xattrdata[xp] >= 'a' && xattrdata[xp] <= 'f')
-                    attrib += xattrdata[xp] - 'a' + 0xa;
-                else if (xattrdata[xp] >= 'A' && xattrdata[xp] <= 'F')
-                    attrib += xattrdata[xp] - 'A' + 0xa;
-                else {
-                    valid = FALSE;
-                    break;
-                }
-                
-                xp++;
-            }
-            
-            if (valid) {
-                if (pathu == L"")
-                    attrib |= FILE_ATTRIBUTE_READONLY;
-                
-                if (!SetFileAttributesW((subvolpath + pathu).c_str(), attrib)) {
-                    ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                    return FALSE;
-                }
-            }
-        }
-    } else if (xattrnamelen == strlen(EA_REPARSE) && !memcmp(xattrname, EA_REPARSE, xattrnamelen)) {
-        HANDLE h;
-        IO_STATUS_BLOCK iosb;
-        NTSTATUS Status;
-        
-        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return FALSE;
-        }
-        
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, xattrdata, xattrdatalen, NULL, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
-            CloseHandle(h);
-            return FALSE;
-        }
-
-        CloseHandle(h);
-    } else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen)) {
-        HANDLE h;
-        IO_STATUS_BLOCK iosb;
-        NTSTATUS Status;
-        
-        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_EA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return FALSE;
-        }
-        
-        Status = NtSetEaFile(h, &iosb, xattrdata, xattrdatalen);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETEAFILE_FAILED, Status, format_ntstatus(Status).c_str());
-            CloseHandle(h);
-            return FALSE;
-        }
-        
-        CloseHandle(h);
-    } else if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER))) {
+    if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER)) &&
+        (xattrnamelen != strlen(EA_DOSATTRIB) || memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) &&
+        (xattrnamelen != strlen(EA_EA) || memcmp(xattrname, EA_EA, xattrnamelen))) {
         HANDLE h;
         std::wstring streamname;
 
         if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
             return FALSE;
 
-        streamname = streamname.substr(5);
+        streamname = streamname.substr(strlen(XATTR_USER));
 
         h = CreateFileW((subvolpath + pathu + L":" + streamname).c_str(), GENERIC_WRITE, 0,
                         NULL, CREATE_ALWAYS, FILE_FLAG_POSIX_SEMANTICS, NULL);
@@ -930,11 +813,16 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        ULONG bsxalen;
+        ULONG bsxalen, perms = FILE_WRITE_ATTRIBUTES;
         btrfs_set_xattr* bsxa;
 
-        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+        if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen))
+            perms |= WRITE_DAC | WRITE_OWNER;
+        else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen))
+            perms |= FILE_WRITE_EA;
+
+        h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
@@ -986,7 +874,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
     if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
         return FALSE;
 
-    if (xattrnamelen > 5 && !memcmp(xattrname, "user.", 5) &&
+    if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER)) &&
         (xattrnamelen != strlen(EA_DOSATTRIB) || memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) &&
         (xattrnamelen != strlen(EA_EA) || memcmp(xattrname, EA_EA, xattrnamelen))) { // deleting stream
         ULONG att;
@@ -995,7 +883,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
         if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
             return FALSE;
 
-        streamname = streamname.substr(5);
+        streamname = streamname.substr(strlen(XATTR_USER));
 
         att = GetFileAttributesW((subvolpath + pathu).c_str());
         if (att == INVALID_FILE_ATTRIBUTES) {
@@ -1034,7 +922,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
             perms |= FILE_WRITE_EA;
 
         h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
