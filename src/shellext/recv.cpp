@@ -968,6 +968,105 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    char *path, *xattrname;
+    ULONG pathlen, xattrnamelen;
+    std::wstring pathu;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrname, &xattrnamelen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    if (xattrnamelen > 5 && !memcmp(xattrname, "user.", 5) &&
+        (xattrnamelen != strlen(EA_DOSATTRIB) || memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) &&
+        (xattrnamelen != strlen(EA_EA) || memcmp(xattrname, EA_EA, xattrnamelen))) { // deleting stream
+        ULONG att;
+        std::wstring streamname;
+
+        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
+            return FALSE;
+
+        streamname = streamname.substr(5);
+
+        att = GetFileAttributesW((subvolpath + pathu).c_str());
+        if (att == INVALID_FILE_ATTRIBUTES) {
+            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+
+        if (att & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                return FALSE;
+            }
+        }
+
+        if (!DeleteFileW((subvolpath + pathu + L":" + streamname).c_str())) {
+            ShowRecvError(IDS_RECV_DELETEFILE_FAILED, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+
+        if (att & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                return FALSE;
+            }
+        }
+    } else {
+        HANDLE h;
+        IO_STATUS_BLOCK iosb;
+        NTSTATUS Status;
+        ULONG bsxalen, perms = FILE_WRITE_ATTRIBUTES;
+        btrfs_set_xattr* bsxa;
+
+        if (xattrnamelen == strlen(EA_NTACL) && !memcmp(xattrname, EA_NTACL, xattrnamelen))
+            perms |= WRITE_DAC | WRITE_OWNER;
+        else if (xattrnamelen == strlen(EA_EA) && !memcmp(xattrname, EA_EA, xattrnamelen))
+            perms |= FILE_WRITE_EA;
+
+        h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+
+        bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrnamelen;
+        bsxa = (btrfs_set_xattr*)malloc(bsxalen);
+        if (!bsxa) {
+            ShowRecvError(IDS_OUT_OF_MEMORY);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        bsxa->namelen = xattrnamelen;
+        bsxa->valuelen = 0;
+        memcpy(bsxa->data, xattrname, xattrnamelen);
+
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
+            free(bsxa);
+            CloseHandle(h);
+            return FALSE;
+        }
+
+        free(bsxa);
+        CloseHandle(h);
+    }
+
+    return TRUE;
+}
+
 BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char* path;
     UINT64* offset;
@@ -1531,7 +1630,9 @@ DWORD BtrfsRecv::recv_thread() {
                 b = cmd_setxattr(hwnd, &cmd, data);
             break;
 
-            // FIXME - BTRFS_SEND_CMD_REMOVE_XATTR
+            case BTRFS_SEND_CMD_REMOVE_XATTR:
+                b = cmd_removexattr(hwnd, &cmd, data);
+                break;
 
             case BTRFS_SEND_CMD_WRITE:
                 b = cmd_write(hwnd, &cmd, data);
