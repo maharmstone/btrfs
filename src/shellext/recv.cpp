@@ -133,6 +133,10 @@ static std::wstring format_message(ULONG last_error) {
 
     LocalFree(buf);
 
+    // remove trailing newline
+    while (s.length() > 0 && (s.substr(s.length() - 1, 1) == L"\r" || s.substr(s.length() - 1, 1) == L"\n"))
+        s = s.substr(0, s.length() - 1);
+
     return s;
 }
 
