@@ -1542,8 +1542,11 @@ DWORD BtrfsRecv::recv_thread() {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         goto end;
     }
-    
-    size.LowPart = GetFileSize(f, (LPDWORD)&size.HighPart);
+
+    if (!GetFileSizeEx(f, &size)) {
+        ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        goto end;
+    }
     
     if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
         ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
