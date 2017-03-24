@@ -651,6 +651,10 @@ BEGIN
     IDS_RECV_DELETEFILE_FAILED "DeleteFile failed for %s (error %u, %s)."
     IDS_RECV_REMOVEDIRECTORY_FAILED 
                             "RemoveDirectory failed for %s (error %u, %s)."
+    IDS_RECV_CANT_FIND_CLONE_SUBVOL "Could not find clone subvolume."
+    IDS_RECV_GETFILESIZEEX_FAILED "GetFileSizeEx failed (error %u, %s)."
+    IDS_RECV_DUPLICATE_EXTENTS_FAILED 
+                            "FSCTL_DUPLICATE_EXTENTS_TO_FILE returned %08x (%s)."
 END
 
 #endif    // English (U.K.) resources

@@ -49,6 +49,7 @@ private:
     BOOL cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    BOOL cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);

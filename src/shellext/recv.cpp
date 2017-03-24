@@ -1048,6 +1048,180 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
+BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+    char *path, *clonepath;
+    UINT64 *offset, *cloneoffset, *clonetransid, *clonelen;
+    BTRFS_UUID* cloneuuid;
+    ULONG offsetlen, pathlen, clonepathlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
+    std::wstring pathu, clonepathu, clonepar;
+    btrfs_find_subvol bfs;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    WCHAR cloneparw[MAX_PATH];
+    HANDLE src, dest;
+    DUPLICATE_EXTENTS_DATA ded;
+    LARGE_INTEGER filesize;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"offset");
+        return FALSE;
+    }
+
+    if (offsetlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_LENGTH, (void**)&clonelen, &clonelenlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_len");
+        return FALSE;
+    }
+
+    if (clonelenlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_len", clonelenlen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+        return FALSE;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&cloneuuid, &cloneuuidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
+        return FALSE;
+    }
+
+    if (cloneuuidlen < sizeof(BTRFS_UUID)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", cloneuuidlen, sizeof(BTRFS_UUID));
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&clonetransid, &clonetransidlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
+        return FALSE;
+    }
+
+    if (clonetransidlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", clonetransidlen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_PATH, (void**)&clonepath, &clonepathlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_path");
+        return FALSE;
+    }
+
+    if (!utf8_to_utf16(hwnd, clonepath, clonepathlen, &clonepathu))
+        return FALSE;
+
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_OFFSET, (void**)&cloneoffset, &cloneoffsetlen)) {
+        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_offset");
+        return FALSE;
+    }
+
+    if (cloneoffsetlen < sizeof(UINT64)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(UINT64));
+        return FALSE;
+    }
+
+    // FIXME - use cache
+    if (!memcmp(cloneuuid, &subvol_uuid, sizeof(BTRFS_UUID)) && *clonetransid == stransid)
+        clonepar = subvolpath;
+    else {
+        WCHAR volpathw[MAX_PATH];
+
+        bfs.uuid = *cloneuuid;
+        bfs.ctransid = *clonetransid;
+
+        Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
+                                 cloneparw, sizeof(cloneparw));
+        if (Status == STATUS_NOT_FOUND) {
+            ShowRecvError(IDS_RECV_CANT_FIND_CLONE_SUBVOL);
+            return FALSE;
+        } else if (!NT_SUCCESS(Status)) {
+            ShowRecvError(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+            return FALSE;
+        }
+
+        if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
+            ShowRecvError(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+
+        clonepar = volpathw;
+        if (clonepar.substr(clonepar.length() - 1) == L"\\")
+            clonepar = clonepar.substr(0, clonepar.length() - 1);
+
+        clonepar += cloneparw;
+        clonepar += L"\\";
+    }
+
+    src = CreateFileW((clonepar + clonepathu).c_str(), FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    if (src == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, (clonepar + clonepathu).c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        return FALSE;
+    }
+
+    dest = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    if (dest == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        CloseHandle(src);
+        return FALSE;
+    }
+
+    if (!GetFileSizeEx(dest, &filesize)) {
+        ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        CloseHandle(dest);
+        CloseHandle(src);
+        return FALSE;
+    }
+
+    if ((UINT64)filesize.QuadPart < *offset + *clonelen) {
+        LARGE_INTEGER sizeli;
+
+        sizeli.QuadPart = *offset + *clonelen;
+
+        if (SetFilePointer(dest, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+            ShowRecvError(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            CloseHandle(dest);
+            CloseHandle(src);
+            return FALSE;
+        }
+
+        if (!SetEndOfFile(dest)) {
+            ShowRecvError(IDS_RECV_SETENDOFFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            CloseHandle(dest);
+            CloseHandle(src);
+            return FALSE;
+        }
+    }
+
+    ded.FileHandle = src;
+    ded.SourceFileOffset.QuadPart = *cloneoffset;
+    ded.TargetFileOffset.QuadPart = *offset;
+    ded.ByteCount.QuadPart = *clonelen;
+
+    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA),
+                             NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        ShowRecvError(IDS_RECV_DUPLICATE_EXTENTS_FAILED, Status, format_ntstatus(Status).c_str());
+        CloseHandle(dest);
+        CloseHandle(src);
+        return FALSE;
+    }
+
+    CloseHandle(dest);
+    CloseHandle(src);
+
+    return TRUE;
+}
+
 BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char* path;
     UINT64* size;
@@ -1526,7 +1700,9 @@ DWORD BtrfsRecv::recv_thread() {
                 b = cmd_write(hwnd, &cmd, data);
             break;
 
-            // FIXME - BTRFS_SEND_CMD_CLONE
+            case BTRFS_SEND_CMD_CLONE:
+                b = cmd_clone(hwnd, &cmd, data);
+            break;
 
             case BTRFS_SEND_CMD_TRUNCATE:
                 b = cmd_truncate(hwnd, &cmd, data);
