@@ -16,9 +16,17 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <shlobj.h>
+#include <string>
+#include <vector>
 #include "../btrfs.h"
 
 extern LONG objs_loaded;
+
+typedef struct {
+    BTRFS_UUID uuid;
+    UINT64 transid;
+    std::wstring path;
+} subvol_cache;
 
 class BtrfsRecv {
 public:
@@ -29,9 +37,11 @@ public:
         running = FALSE;
         cancelling = FALSE;
         stransid = 0;
+        cache.clear();
     }
 
     virtual ~BtrfsRecv() {
+        cache.clear();
     }
     
     void Open(HWND hwnd, WCHAR* file, WCHAR* path);
@@ -54,6 +64,7 @@ private:
     BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
+    void add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, std::wstring path);
     BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring* utf16);
     void ShowRecvError(int resid, ...);
     BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len);
@@ -65,4 +76,5 @@ private:
     UINT64 stransid;
     BTRFS_UUID subvol_uuid;
     BOOL running, cancelling;
+    std::vector<subvol_cache> cache;
 };

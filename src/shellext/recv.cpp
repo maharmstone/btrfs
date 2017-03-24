@@ -303,7 +303,19 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     subvolpath += L"\\";
 
+    add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
+
     return TRUE;
+}
+
+void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, std::wstring path) {
+    subvol_cache sc;
+
+    sc.uuid = *uuid;
+    sc.transid = transid;
+    sc.path = path;
+
+    cache.push_back(sc);
 }
 
 BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
@@ -446,6 +458,8 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     
     subvolpath += L"\\";
     
+    add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
+
     return TRUE;
 }
 
@@ -1056,7 +1070,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     char *path, *clonepath;
     UINT64 *offset, *cloneoffset, *clonetransid, *clonelen;
     BTRFS_UUID* cloneuuid;
-    ULONG offsetlen, pathlen, clonepathlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
+    ULONG i, offsetlen, pathlen, clonepathlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
     std::wstring pathu, clonepathu, clonepar;
     btrfs_find_subvol bfs;
     NTSTATUS Status;
@@ -1065,6 +1079,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     HANDLE src, dest;
     DUPLICATE_EXTENTS_DATA ded;
     LARGE_INTEGER filesize;
+    BOOL found = FALSE;
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen)) {
         ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"offset");
@@ -1132,10 +1147,15 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    // FIXME - use cache
-    if (!memcmp(cloneuuid, &subvol_uuid, sizeof(BTRFS_UUID)) && *clonetransid == stransid)
-        clonepar = subvolpath;
-    else {
+    for (i = 0; i < cache.size(); i++) {
+        if (!memcmp(cloneuuid, &cache[i].uuid, sizeof(BTRFS_UUID)) && *clonetransid == cache[i].transid) {
+            clonepar = cache[i].path;
+            found = TRUE;
+            break;
+        }
+    }
+
+    if (!found) {
         WCHAR volpathw[MAX_PATH];
 
         bfs.uuid = *cloneuuid;
@@ -1162,6 +1182,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         clonepar += cloneparw;
         clonepar += L"\\";
+
+        add_cache_entry(cloneuuid, *clonetransid, clonepar);
     }
 
     src = CreateFileW((clonepar + clonepathu).c_str(), FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
