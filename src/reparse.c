@@ -490,6 +490,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fileref->fcb->type = BTRFS_TYPE_FILE;
         fileref->fcb->inode_item.st_mode &= ~__S_IFLNK;
         fileref->fcb->inode_item.st_mode |= __S_IFREG;
+        fileref->fcb->inode_item.generation = fileref->fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
         fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
         fileref->fcb->inode_item.sequence++;
         
