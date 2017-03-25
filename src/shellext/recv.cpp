@@ -279,6 +279,9 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (dir != INVALID_HANDLE_VALUE)
         CloseHandle(dir);
+
+    if (master != INVALID_HANDLE_VALUE)
+        CloseHandle(master);
     
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
@@ -435,6 +438,9 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     if (dir != INVALID_HANDLE_VALUE)
         CloseHandle(dir);
     
+    if (master != INVALID_HANDLE_VALUE)
+        CloseHandle(master);
+
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
     if (master == INVALID_HANDLE_VALUE) {
