@@ -1111,14 +1111,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inode, dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
+static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
     fcb* fcb;
     UINT8* xattrdata;
     UINT16 xattrlen, overhead;
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    LIST_ENTRY* lastle = NULL;
     static char xapref[] = "user.";
     ANSI_STRING xattr;
     UINT32 crc32;
@@ -1134,37 +1133,7 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     RtlCopyMemory(xattr.Buffer, xapref, strlen(xapref));
     RtlCopyMemory(&xattr.Buffer[strlen(xapref)], dc->utf8.Buffer, dc->utf8.Length);
     xattr.Buffer[xattr.Length] = 0;
-    
-    if (!IsListEmpty(&subvol->fcbs)) {
-        LIST_ENTRY* le = subvol->fcbs.Flink;
-                                
-        while (le != &subvol->fcbs) {
-            fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
-            
-            if (fcb->inode == inode) {
-                if (fcb->ads && fcb->adsxattr.Length == xattr.Length &&
-                    RtlCompareMemory(fcb->adsxattr.Buffer, xattr.Buffer, fcb->adsxattr.Length) == fcb->adsxattr.Length) {
-#ifdef DEBUG_FCB_REFCOUNTS
-                    LONG rc = InterlockedIncrement(&fcb->refcount);
 
-                    WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
-#else
-                    InterlockedIncrement(&fcb->refcount);
-#endif
-                    ExFreePool(xattr.Buffer);
-
-                    *pfcb = fcb;
-                    return STATUS_SUCCESS;
-                }
-            } else if (fcb->inode > inode) {
-                lastle = le->Blink;
-                break;
-            }
-                            
-            le = le->Flink;
-        }
-    }
-    
     fcb = create_fcb(Vcb, PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
@@ -1229,10 +1198,7 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, root* subvol, UINT64 inod
     
     TRACE("stream found: size = %x, hash = %08x\n", xattrlen, fcb->adshash);
     
-    if (lastle)
-        InsertHeadList(lastle, &fcb->list_entry);
-    else
-        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+    InsertHeadList(&parent->list_entry, &fcb->list_entry);
     
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     
@@ -1298,7 +1264,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
             return STATUS_SUCCESS;
         }
 
-        Status = open_fcb_stream(Vcb, sf->fcb->subvol, sf->fcb->inode, dc, sf->fcb, &fcb, Irp);
+        Status = open_fcb_stream(Vcb, dc, sf->fcb, &fcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("open_fcb_stream returned %08x\n", Status);
             return Status;
