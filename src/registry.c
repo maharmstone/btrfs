@@ -553,7 +553,7 @@ static void read_mappings(PUNICODE_STRING regpath) {
         do {
             Status = ZwEnumerateValueKey(h, i, KeyValueFullInformation, kvfi, kvfilen, &retlen);
             
-            if (NT_SUCCESS(Status) && kvfi->DataLength > 0) {
+            if (NT_SUCCESS(Status) && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 UINT32 val = 0;
                 
                 RtlCopyMemory(&val, (UINT8*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(UINT32)));
