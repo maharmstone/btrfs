@@ -928,6 +928,14 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     else {
                         me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
                         
+                        if (IsListEmpty(&me->parent->fileref->fcb->dir_children_index))
+                            me->fileref->dc->index = 2;
+                        else {
+                            dir_child* dc2 = CONTAINING_RECORD(me->parent->fileref->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+
+                            me->fileref->dc->index = max(2, dc2->index + 1);
+                        }
+
                         InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                         insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
                     }
