@@ -187,8 +187,8 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
     }
     
     fileref->fcb->type = BTRFS_TYPE_SYMLINK;
-    
     fileref->fcb->inode_item.st_mode |= __S_IFLNK;
+    fileref->fcb->inode_item.generation = fileref->fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
     
     if (fileref->dc)
         fileref->dc->type = fileref->fcb->type;
