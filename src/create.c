@@ -565,7 +565,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
-    fcb* fcb;
+    fcb *fcb, *deleted_fcb = NULL;
     BOOL atts_set = FALSE, sd_set = FALSE, no_data;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
@@ -578,18 +578,28 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             
             if (fcb->inode == inode) {
                 if (!fcb->ads) {
+                    if (fcb->deleted)
+                        deleted_fcb = fcb;
+                    else {
 #ifdef DEBUG_FCB_REFCOUNTS
-                    LONG rc = InterlockedIncrement(&fcb->refcount);
+                        LONG rc = InterlockedIncrement(&fcb->refcount);
 
-                    WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
+                        WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
 #else
-                    InterlockedIncrement(&fcb->refcount);
+                        InterlockedIncrement(&fcb->refcount);
 #endif
 
-                    *pfcb = fcb;
-                    return STATUS_SUCCESS;
+                        *pfcb = fcb;
+                        return STATUS_SUCCESS;
+                    }
                 }
             } else if (fcb->inode > inode) {
+                if (deleted_fcb) {
+                    InterlockedIncrement(&deleted_fcb->refcount);
+                    *pfcb = deleted_fcb;
+                    return STATUS_SUCCESS;
+                }
+
                 lastle = le->Blink;
                 break;
             }
@@ -597,7 +607,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             le = le->Flink;
         }
     }
-    
+
+    if (deleted_fcb) {
+        InterlockedIncrement(&deleted_fcb->refcount);
+        *pfcb = deleted_fcb;
+        return STATUS_SUCCESS;
+    }
+
     fcb = create_fcb(Vcb, pooltype);
     if (!fcb) {
         ERR("out of memory\n");
