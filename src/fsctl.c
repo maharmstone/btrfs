@@ -3944,6 +3944,71 @@ end:
     return Status;
 }
 
+static NTSTATUS fsctl_get_xattrs(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, KPROCESSOR_MODE processor_mode) {
+    LIST_ENTRY* le;
+    btrfs_set_xattr* bsxa;
+    ULONG reqlen = offsetof(btrfs_set_xattr, data[0]);
+    fcb* fcb;
+    ccb* ccb;
+
+    if (!data || datalen < reqlen)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+
+    if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)) && processor_mode == UserMode) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
+    le = fcb->xattrs.Flink;
+    while (le != &fcb->xattrs) {
+        xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+
+        if (xa->valuelen > 0)
+            reqlen += offsetof(btrfs_set_xattr, data[0]) + xa->namelen + xa->valuelen;
+
+        le = le->Flink;
+    }
+
+    if (datalen < reqlen) {
+        ExReleaseResourceLite(fcb->Header.Resource);
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    bsxa = (btrfs_set_xattr*)data;
+
+    if (reqlen > 0) {
+        le = fcb->xattrs.Flink;
+        while (le != &fcb->xattrs) {
+            xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+
+            if (xa->valuelen > 0) {
+                bsxa->namelen = xa->namelen;
+                bsxa->valuelen = xa->valuelen;
+                memcpy(bsxa->data, xa->data, xa->namelen + xa->valuelen);
+
+                bsxa = (btrfs_set_xattr*)&bsxa->data[xa->namelen + xa->valuelen];
+            }
+
+            le = le->Flink;
+        }
+    }
+
+    bsxa->namelen = 0;
+    bsxa->valuelen = 0;
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     NTSTATUS Status;
     btrfs_set_xattr* bsxa;
@@ -4967,6 +5032,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
         case FSCTL_BTRFS_RECEIVED_SUBVOL:
             Status = recvd_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
                                   IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp->RequestorMode);
+            break;
+
+        case FSCTL_BTRFS_GET_XATTRS:
+            Status = fsctl_get_xattrs(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp->RequestorMode);
             break;
 
         case FSCTL_BTRFS_SET_XATTR:
