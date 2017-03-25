@@ -266,12 +266,8 @@ typedef struct _file_ref {
     BOOL dirty;
     
     LIST_ENTRY list_entry;
+    LIST_ENTRY list_entry_dirty;
 } file_ref;
-
-typedef struct {
-    file_ref* fileref;
-    LIST_ENTRY list_entry;
-} dirty_fileref;
 
 typedef struct _ccb {
     USHORT NodeType;

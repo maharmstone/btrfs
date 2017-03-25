@@ -6467,15 +6467,10 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     ExAcquireResourceExclusiveLite(&Vcb->dirty_filerefs_lock, TRUE);
     
     while (!IsListEmpty(&Vcb->dirty_filerefs)) {
-        dirty_fileref* dirt;
+        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&Vcb->dirty_filerefs), file_ref, list_entry_dirty);
         
-        le = RemoveHeadList(&Vcb->dirty_filerefs);
-        
-        dirt = CONTAINING_RECORD(le, dirty_fileref, list_entry);
-        
-        flush_fileref(dirt->fileref, &batchlist, Irp);
-        free_fileref(Vcb, dirt->fileref);
-        ExFreePool(dirt);
+        flush_fileref(fr, &batchlist, Irp);
+        free_fileref(Vcb, fr);
 
 #ifdef DEBUG_FLUSH_TIMES
         filerefs++;

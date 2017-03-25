@@ -1329,20 +1329,11 @@ void mark_fcb_dirty(fcb* fcb) {
 
 void mark_fileref_dirty(file_ref* fileref) {
     if (!fileref->dirty) {
-        dirty_fileref* dirt = ExAllocatePoolWithTag(NonPagedPool, sizeof(dirty_fileref), ALLOC_TAG);
-        
-        if (!dirt) {
-            ExFreePool("out of memory\n");
-            return;
-        }
-        
         fileref->dirty = TRUE;
         increase_fileref_refcount(fileref);
         
-        dirt->fileref = fileref;
-        
         ExAcquireResourceExclusiveLite(&fileref->fcb->Vcb->dirty_filerefs_lock, TRUE);
-        InsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &dirt->list_entry);
+        InsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &fileref->list_entry_dirty);
         ExReleaseResourceLite(&fileref->fcb->Vcb->dirty_filerefs_lock);
     }
     
