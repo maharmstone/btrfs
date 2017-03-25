@@ -6496,6 +6496,8 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
 
     // We process deleted streams first, so we don't run over our xattr
     // limit unless we absolutely have to.
+    // We also process deleted normal files, to avoid any problems
+    // caused by inode collisions.
     
     ExAcquireResourceExclusiveLite(&Vcb->dirty_fcbs_lock, TRUE);
     
@@ -6506,7 +6508,7 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         
         dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
         
-        if (dirt->fcb->deleted && dirt->fcb->ads) {
+        if (dirt->fcb->deleted) {
             RemoveEntryList(le);
             
             ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
@@ -6528,6 +6530,8 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         
         le = le2;
     }
+    
+    commit_batch_list(Vcb, &batchlist, Irp);
     
     le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
