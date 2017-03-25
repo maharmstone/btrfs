@@ -574,9 +574,44 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         return FALSE;
     }
 
-    if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+    if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
+        HANDLE dirh;
+        ULONG bmnsize;
+        btrfs_mknod* bmn;
+
+        dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (dirh == INVALID_HANDLE_VALUE) {
+            ShowError(hwnd, GetLastError());
+            CloseHandle(source);
+            return FALSE;
+        }
+
+        bmnsize = offsetof(btrfs_mknod, name[0]) + (wcslen(name) * sizeof(WCHAR));
+        bmn = (btrfs_mknod*)malloc(bmnsize);
+
+        bmn->inode = 0;
+        bmn->type = bii.type;
+        bmn->st_rdev = bii.st_rdev;
+        bmn->namelen = wcslen(name) * sizeof(WCHAR);
+        memcpy(bmn->name, name, bmn->namelen);
+
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowNtStatusError(hwnd, Status);
+            CloseHandle(dirh);
+            CloseHandle(source);
+            free(bmn);
+            return FALSE;
+        }
+
+        CloseHandle(dirh);
+        free(bmn);
+
+        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    } else if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         if (CreateDirectoryExW(fn, newpath.c_str(), NULL))
-            dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         else
             dest = INVALID_HANDLE_VALUE;
     } else
