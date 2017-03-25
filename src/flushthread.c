@@ -6503,20 +6503,17 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     
     le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
-        dirty_fcb* dirt;
+        fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_dirty);
         LIST_ENTRY* le2 = le->Flink;
         
-        dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
-        
-        if (dirt->fcb->deleted) {
+        if (fcb->deleted) {
             RemoveEntryList(le);
             
-            ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            Status = flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
-            ExReleaseResourceLite(dirt->fcb->Header.Resource);
+            ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+            Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
+            ExReleaseResourceLite(fcb->Header.Resource);
             
-            free_fcb(dirt->fcb);
-            ExFreePool(dirt);
+            free_fcb(fcb);
             
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
@@ -6535,20 +6532,17 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     
     le = Vcb->dirty_fcbs.Flink;
     while (le != &Vcb->dirty_fcbs) {
-        dirty_fcb* dirt;
+        fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_dirty);
         LIST_ENTRY* le2 = le->Flink;
         
-        dirt = CONTAINING_RECORD(le, dirty_fcb, list_entry);
-        
-        if (dirt->fcb->subvol != Vcb->root_root || dirt->fcb->deleted) {
+        if (fcb->subvol != Vcb->root_root) {
             RemoveEntryList(le);
             
-            ExAcquireResourceExclusiveLite(dirt->fcb->Header.Resource, TRUE);
-            Status = flush_fcb(dirt->fcb, FALSE, &batchlist, Irp);
-            ExReleaseResourceLite(dirt->fcb->Header.Resource);
-            free_fcb(dirt->fcb);
-            ExFreePool(dirt);
-            
+            ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+            Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
+            ExReleaseResourceLite(fcb->Header.Resource);
+            free_fcb(fcb);
+
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
                 return Status;

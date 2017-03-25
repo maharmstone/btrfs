@@ -1310,13 +1310,6 @@ void mark_fcb_dirty(fcb* fcb) {
 #ifdef DEBUG_FCB_REFCOUNTS
         LONG rc;
 #endif
-        dirty_fcb* dirt = ExAllocatePoolWithTag(NonPagedPool, sizeof(dirty_fcb), ALLOC_TAG);
-        
-        if (!dirt) {
-            ExFreePool("out of memory\n");
-            return;
-        }
-        
         fcb->dirty = TRUE;
         
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1326,10 +1319,8 @@ void mark_fcb_dirty(fcb* fcb) {
         InterlockedIncrement(&fcb->refcount);
 #endif
         
-        dirt->fcb = fcb;
-        
         ExAcquireResourceExclusiveLite(&fcb->Vcb->dirty_fcbs_lock, TRUE);
-        InsertTailList(&fcb->Vcb->dirty_fcbs, &dirt->list_entry);
+        InsertTailList(&fcb->Vcb->dirty_fcbs, &fcb->list_entry_dirty);
         ExReleaseResourceLite(&fcb->Vcb->dirty_fcbs_lock);
     }
     

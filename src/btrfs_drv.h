@@ -240,12 +240,8 @@ typedef struct _fcb {
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_all;
+    LIST_ENTRY list_entry_dirty;
 } fcb;
-
-typedef struct {
-    fcb* fcb;
-    LIST_ENTRY list_entry;
-} dirty_fcb;
 
 typedef struct {
     ERESOURCE fileref_lock;
