@@ -3665,7 +3665,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
             while (le != &parfcb->subvol->fcbs) {
                 struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
                 
-                if (fcb2->inode == bmn->inode) {
+                if (fcb2->inode == bmn->inode && !fcb2->deleted) {
                     WARN("inode collision\n");
                     Status = STATUS_INVALID_PARAMETER;
                     goto end;
