@@ -467,6 +467,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     ULONG bytesret;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
+    btrfs_set_xattr bsxa;
     
     // Thanks to 0xbadfca11, whose version of reflink for Windows provided a few pointers on what
     // to do here - https://github.com/0xbadfca11/reflink
@@ -875,8 +876,45 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
     SetFileTime(dest, NULL, &atime, &mtime);
-    
-    // FIXME - copy hidden xattrs
+
+    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, &bsxa, sizeof(btrfs_set_xattr));
+
+    if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
+        ULONG xalen = 0;
+        btrfs_set_xattr *xa = NULL, *xa2;
+
+        do {
+            xalen += 1024;
+
+            if (xa) free(xa);
+            xa = (btrfs_set_xattr*)malloc(xalen);
+
+            Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, xa, xalen);
+        } while (Status == STATUS_BUFFER_OVERFLOW);
+
+        if (!NT_SUCCESS(Status)) {
+            free(xa);
+            ShowNtStatusError(hwnd, Status);
+            goto end;
+        }
+
+        xa2 = xa;
+        while (xa2->valuelen > 0) {
+            Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
+                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, NULL, 0);
+            if (!NT_SUCCESS(Status)) {
+                free(xa);
+                ShowNtStatusError(hwnd, Status);
+                goto end;
+            }
+            xa2 = (btrfs_set_xattr*)&xa2->data[xa2->namelen + xa2->valuelen];
+        }
+
+        free(xa);
+    } else if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwnd, Status);
+        goto end;
+    }
 
     ret = TRUE;
     
