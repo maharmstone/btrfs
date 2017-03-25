@@ -161,6 +161,26 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     return S_OK;
 }
 
+static BOOL get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpathlen) {
+    WCHAR *f, *p;
+    BOOL b;
+
+    f = PathFindFileNameW(fn);
+
+    if (f == fn)
+        return GetVolumePathNameW(fn, volpath, volpathlen);
+
+    p = (WCHAR*)malloc((f - fn + 1) * sizeof(WCHAR));
+    memcpy(p, fn, (f - fn) * sizeof(WCHAR));
+    p[f - fn] = 0;
+
+    b = GetVolumePathNameW(p, volpath, volpathlen);
+
+    free(p);
+
+    return b;
+}
+
 static BOOL show_reflink_paste(WCHAR* path) {
     HDROP hdrop;
     HANDLE lh;
@@ -204,7 +224,7 @@ static BOOL show_reflink_paste(WCHAR* path) {
         return FALSE;
     }
     
-    if (!GetVolumePathNameW(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
+    if (!get_volume_path_parent(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
         GlobalUnlock(lh);
         CloseClipboard();
         return FALSE;
@@ -482,7 +502,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     newpath = dirw;
     newpath += name;
     
-    if (!GetVolumePathNameW(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
+    if (!get_volume_path_parent(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
         ShowError(hwnd, GetLastError());
         return FALSE;
     }
@@ -689,30 +709,32 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     }
 
     if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        HANDLE h;
-        WIN32_FIND_DATAW fff;
-        std::wstring qs;
-        
-        qs = fn;
-        qs += L"\\*";
-        
-        h = FindFirstFileW(qs.c_str(), &fff);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                std::wstring fn2;
-
-                if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
-                    continue;
-                
-                fn2 = fn;
-                fn2 += L"\\";
-                fn2 += fff.cFileName;
-
-                if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
-                    goto end;
-            } while (FindNextFileW(h, &fff));
+        if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            HANDLE h;
+            WIN32_FIND_DATAW fff;
+            std::wstring qs;
             
-            FindClose(h);
+            qs = fn;
+            qs += L"\\*";
+            
+            h = FindFirstFileW(qs.c_str(), &fff);
+            if (h != INVALID_HANDLE_VALUE) {
+                do {
+                    std::wstring fn2;
+
+                    if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
+                        continue;
+                    
+                    fn2 = fn;
+                    fn2 += L"\\";
+                    fn2 += fff.cFileName;
+
+                    if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
+                        goto end;
+                } while (FindNextFileW(h, &fff));
+                
+                FindClose(h);
+            }
         }
 
         // CreateDirectoryExW also copies streams, no need to do it here
