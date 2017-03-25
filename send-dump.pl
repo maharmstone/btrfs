@@ -6,78 +6,91 @@
 open($f,$ARGV[0]) or die "Error opening ".$ARGV[0].": ".$!;
 binmode($f);
 
-read($f,$a,0x11);
-($magic,$ver)=unpack("a13V",$a);
-
-if ($magic ne "btrfs-stream\0") {
-    printf STDERR "Not a send file.\n";
-    close($f);
-    exit;
-}
-
-if ($ver != 1) {
-    printf STDERR "Version $ver not supported.\n";
-    close($f);
-    exit;
-}
-
 while (!eof($f)) {
-    read($f,$a,0xa);
-    ($len,$type,$crc)=unpack("VvV",$a);
+    do_stream($f);
     
-    if ($type == 1) {
-        printf("subvol, %x, %08x\n", $len, $crc);
-    } elsif ($type == 2) {
-        printf("snapshot, %x, %08x\n", $len, $crc);
-    } elsif ($type == 3) {
-        printf("mkfile, %x, %08x\n", $len, $crc);
-    } elsif ($type == 4) {
-        printf("mkdir, %x, %08x\n", $len, $crc);
-    } elsif ($type == 5) {
-        printf("mknod, %x, %08x\n", $len, $crc);
-    } elsif ($type == 6) {
-        printf("mkfifo, %x, %08x\n", $len, $crc);
-    } elsif ($type == 7) {
-        printf("mksock, %x, %08x\n", $len, $crc);
-    } elsif ($type == 8) {
-        printf("symlink, %x, %08x\n", $len, $crc);
-    } elsif ($type == 9) {
-        printf("rename, %x, %08x\n", $len, $crc);
-    } elsif ($type == 10) {
-        printf("link, %x, %08x\n", $len, $crc);
-    } elsif ($type == 11) {
-        printf("unlink, %x, %08x\n", $len, $crc);
-    } elsif ($type == 12) {
-        printf("rmdir, %x, %08x\n", $len, $crc);
-    } elsif ($type == 13) {
-        printf("set_xattr, %x, %08x\n", $len, $crc);
-    } elsif ($type == 14) {
-        printf("remove_xattr, %x, %08x\n", $len, $crc);
-    } elsif ($type == 15) {
-        printf("write, %x, %08x\n", $len, $crc);
-    } elsif ($type == 16) {
-        printf("clone, %x, %08x\n", $len, $crc);
-    } elsif ($type == 17) {
-        printf("truncate, %x, %08x\n", $len, $crc);
-    } elsif ($type == 18) {
-        printf("chmod, %x, %08x\n", $len, $crc);
-    } elsif ($type == 19) {
-        printf("chown, %x, %08x\n", $len, $crc);
-    } elsif ($type == 20) {
-        printf("utimes, %x, %08x\n", $len, $crc);
-    } elsif ($type == 21) {
-        printf("end, %x, %08x\n", $len, $crc);
-    } elsif ($type == 22) {
-        printf("update-extent, %x, %08x\n", $len, $crc);
-    } else {
-        printf("unknown(%x), %x, %08x\n", $type, $len, $crc);
+    if (!eof($f)) {
+        print "---\n";
     }
-    
-    read($f,$b,$len);
-    print_tlvs($b);
 }
 
 close($f);
+
+sub do_stream {
+    my ($f)=@_;
+
+    read($f,$a,0x11);
+    ($magic,$ver)=unpack("a13V",$a);
+
+    if ($magic ne "btrfs-stream\0") {
+        printf STDERR "Not a send file.\n";
+        close($f);
+        exit;
+    }
+
+    if ($ver != 1) {
+        printf STDERR "Version $ver not supported.\n";
+        close($f);
+        exit;
+    }
+
+    $type = 0;
+    while (!eof($f) && $type != 21) {
+        read($f,$a,0xa);
+        ($len,$type,$crc)=unpack("VvV",$a);
+        
+        if ($type == 1) {
+            printf("subvol, %x, %08x\n", $len, $crc);
+        } elsif ($type == 2) {
+            printf("snapshot, %x, %08x\n", $len, $crc);
+        } elsif ($type == 3) {
+            printf("mkfile, %x, %08x\n", $len, $crc);
+        } elsif ($type == 4) {
+            printf("mkdir, %x, %08x\n", $len, $crc);
+        } elsif ($type == 5) {
+            printf("mknod, %x, %08x\n", $len, $crc);
+        } elsif ($type == 6) {
+            printf("mkfifo, %x, %08x\n", $len, $crc);
+        } elsif ($type == 7) {
+            printf("mksock, %x, %08x\n", $len, $crc);
+        } elsif ($type == 8) {
+            printf("symlink, %x, %08x\n", $len, $crc);
+        } elsif ($type == 9) {
+            printf("rename, %x, %08x\n", $len, $crc);
+        } elsif ($type == 10) {
+            printf("link, %x, %08x\n", $len, $crc);
+        } elsif ($type == 11) {
+            printf("unlink, %x, %08x\n", $len, $crc);
+        } elsif ($type == 12) {
+            printf("rmdir, %x, %08x\n", $len, $crc);
+        } elsif ($type == 13) {
+            printf("set_xattr, %x, %08x\n", $len, $crc);
+        } elsif ($type == 14) {
+            printf("remove_xattr, %x, %08x\n", $len, $crc);
+        } elsif ($type == 15) {
+            printf("write, %x, %08x\n", $len, $crc);
+        } elsif ($type == 16) {
+            printf("clone, %x, %08x\n", $len, $crc);
+        } elsif ($type == 17) {
+            printf("truncate, %x, %08x\n", $len, $crc);
+        } elsif ($type == 18) {
+            printf("chmod, %x, %08x\n", $len, $crc);
+        } elsif ($type == 19) {
+            printf("chown, %x, %08x\n", $len, $crc);
+        } elsif ($type == 20) {
+            printf("utimes, %x, %08x\n", $len, $crc);
+        } elsif ($type == 21) {
+            printf("end, %x, %08x\n", $len, $crc);
+        } elsif ($type == 22) {
+            printf("update-extent, %x, %08x\n", $len, $crc);
+        } else {
+            printf("unknown(%x), %x, %08x\n", $type, $len, $crc);
+        }
+        
+        read($f,$b,$len);
+        print_tlvs($b);
+    }
+}
 
 sub btrfstime {
     my ($t)=@_;
