@@ -169,6 +169,7 @@
 #define IDS_RECV_CANT_FIND_CLONE_SUBVOL 253
 #define IDS_RECV_GETFILESIZEEX_FAILED   254
 #define IDS_RECV_DUPLICATE_EXTENTS_FAILED 255
+#define IDS_RECV_SUCCESS_PLURAL         256
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

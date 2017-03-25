@@ -17,6 +17,7 @@
 
 #include "shellext.h"
 #include <windows.h>
+#include <strsafe.h>
 #include <stddef.h>
 #include <sys/stat.h>
 #include <string>
@@ -308,6 +309,8 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
 
+    num_received++;
+
     return TRUE;
 }
 
@@ -465,6 +468,8 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     subvolpath += L"\\";
     
     add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
+
+    num_received++;
 
     return TRUE;
 }
@@ -1560,52 +1565,25 @@ static BOOL check_csum(btrfs_send_command* cmd, UINT8* data) {
     return calc == crc32 ? TRUE : FALSE;
 }
 
-DWORD BtrfsRecv::recv_thread() {
-    HANDLE f;
+BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
     btrfs_send_header header;
     BOOL b = TRUE;
-    LARGE_INTEGER size;
-    UINT64 pos = 0;
 
-    running = TRUE;
-
-    f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (f == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        goto end;
-    }
-
-    if (!GetFileSizeEx(f, &size)) {
-        ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        goto end;
-    }
-    
     if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
         ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        CloseHandle(f);
-        goto end;
+        return FALSE;
     }
     
-    pos = sizeof(btrfs_send_header);
+    *pos += sizeof(btrfs_send_header);
 
     if (memcmp(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic))) {
         ShowRecvError(IDS_RECV_NOT_A_SEND_STREAM);
-        CloseHandle(f);
-        goto end;
+        return FALSE;
     }
     
     if (header.version > 1) {
         ShowRecvError(IDS_RECV_UNSUPPORTED_VERSION, header.version);
-        CloseHandle(f);
-        goto end;
-    }
-
-    parent = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
-    if (parent == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        CloseHandle(f);
-        goto end;
+        return FALSE;
     }
     
     SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)65536);
@@ -1624,7 +1602,7 @@ DWORD BtrfsRecv::recv_thread() {
             break;
         }
 
-        progress = (ULONG)((float)pos * 65536.0f / (float)size.QuadPart);
+        progress = (ULONG)((float)*pos * 65536.0f / (float)size);
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
 
         if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), NULL, NULL)) {
@@ -1636,10 +1614,10 @@ DWORD BtrfsRecv::recv_thread() {
             break;
         }
         
-        pos += sizeof(btrfs_send_command);
+        *pos += sizeof(btrfs_send_command);
 
         if (cmd.length > 0) {
-            if (pos + cmd.length > (UINT64)size.QuadPart) {
+            if (*pos + cmd.length > size) {
                 ShowRecvError(IDS_RECV_FILE_TRUNCATED);
                 b = FALSE;
                 break;
@@ -1658,7 +1636,7 @@ DWORD BtrfsRecv::recv_thread() {
                 break;
             }
             
-            pos += cmd.length;
+            *pos += cmd.length;
         } else
             data = NULL;
         
@@ -1729,7 +1707,7 @@ DWORD BtrfsRecv::recv_thread() {
 
             case BTRFS_SEND_CMD_REMOVE_XATTR:
                 b = cmd_removexattr(hwnd, &cmd, data);
-                break;
+            break;
 
             case BTRFS_SEND_CMD_WRITE:
                 b = cmd_write(hwnd, &cmd, data);
@@ -1786,7 +1764,6 @@ DWORD BtrfsRecv::recv_thread() {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
         btrfs_received_subvol brs;
-        WCHAR s[255];
 
         brs.generation = stransid;
         brs.uuid = subvol_uuid;
@@ -1796,25 +1773,10 @@ DWORD BtrfsRecv::recv_thread() {
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
             b = FALSE;
-        } else {
-            SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
-            
-            if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
-                ShowError(hwnd, GetLastError());
-            else
-                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
-            
-            if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
-                ShowError(hwnd, GetLastError());
-            else
-                SetDlgItemTextW(hwnd, IDCANCEL, s);
         }
     }
 
     CloseHandle(dir);
-    CloseHandle(f);
-
-    CloseHandle(parent);
 
     if (master != INVALID_HANDLE_VALUE)
         CloseHandle(master);
@@ -1830,6 +1792,73 @@ DWORD BtrfsRecv::recv_thread() {
         else
             delete_directory(subvolpath);
     }
+
+    return b;
+}
+
+DWORD BtrfsRecv::recv_thread() {
+    HANDLE f;
+    LARGE_INTEGER size;
+    UINT64 pos = 0;
+    BOOL b;
+
+    running = TRUE;
+
+    f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        goto end;
+    }
+
+    if (!GetFileSizeEx(f, &size)) {
+        ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        goto end;
+    }
+
+    parent = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    if (parent == INVALID_HANDLE_VALUE) {
+        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        CloseHandle(f);
+        goto end;
+    }
+
+    do {
+        b = do_recv(f, &pos, size.QuadPart);
+    } while (b && pos < (UINT64)size.QuadPart);
+
+    CloseHandle(parent);
+    CloseHandle(f);
+
+    if (b) {
+        WCHAR s[255];
+
+        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
+
+        if (num_received == 1) {
+            if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
+                ShowError(hwnd, GetLastError());
+            else
+                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+        } else {
+            if (!LoadStringW(module, IDS_RECV_SUCCESS_PLURAL, s, sizeof(s) / sizeof(WCHAR)))
+                ShowError(hwnd, GetLastError());
+            else {
+                WCHAR t[255];
+
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, num_received) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                    ShowError(hwnd, ERROR_INSUFFICIENT_BUFFER);
+                else
+                    SetDlgItemTextW(hwnd, IDC_RECV_MSG, t);
+            }
+        }
+
+        if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+            ShowError(hwnd, GetLastError());
+        else
+            SetDlgItemTextW(hwnd, IDCANCEL, s);
+    }
+
 end:
     thread = NULL;
     running = FALSE;

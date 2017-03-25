@@ -618,7 +618,7 @@ BEGIN
                             "SetFileInformationByHandle failed (error %u, %s)."
     IDS_RECV_SETINODEINFO_FAILED 
                             "FSCTL_BTRFS_SET_INODE_INFO returned %08x (%s)."
-    IDS_RECV_SUCCESS        "Subvolume received successfully."
+    IDS_RECV_SUCCESS        "Received 1 subvolume successfully."
     IDS_RECV_BUTTON_OK      "OK"
     IDS_RECV_SETFILEATTRIBUTES_FAILED 
                             "SetFileAttributes failed (error %u, %s)."
@@ -655,6 +655,11 @@ BEGIN
     IDS_RECV_GETFILESIZEEX_FAILED "GetFileSizeEx failed (error %u, %s)."
     IDS_RECV_DUPLICATE_EXTENTS_FAILED 
                             "FSCTL_DUPLICATE_EXTENTS_TO_FILE returned %08x (%s)."
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_RECV_SUCCESS_PLURAL "Received %u subvolumes successfully."
 END
 
 #endif    // English (U.K.) resources

@@ -37,6 +37,7 @@ public:
         running = FALSE;
         cancelling = FALSE;
         stransid = 0;
+        num_received = 0;
         cache.clear();
     }
 
@@ -68,11 +69,13 @@ private:
     BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring* utf16);
     void ShowRecvError(int resid, ...);
     BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len);
+    BOOL do_recv(HANDLE f, UINT64* pos, UINT64 size);
 
     HANDLE dir, parent, master, thread, lastwritefile;
     HWND hwnd;
     std::wstring streamfile, dirpath, subvolpath, lastwritepath;
     DWORD lastwriteatt;
+    ULONG num_received;
     UINT64 stransid;
     BTRFS_UUID subvol_uuid;
     BOOL running, cancelling;
