@@ -29,13 +29,11 @@ struct read_data_context;
 
 typedef struct {
     struct read_data_context* context;
-    UINT8* buf;
     UINT16 stripenum;
     BOOL rewrite;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
     enum read_data_status status;
-    BOOL not_alloc;
     PMDL mdl;
     UINT64 stripestart;
     UINT64 stripeend;
@@ -132,7 +130,8 @@ NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_context* context, CHUNK_ITEM* ci, device** devices, UINT64 generation) {
+static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, read_data_context* context, CHUNK_ITEM* ci,
+                              device** devices, UINT64 generation) {
     ULONG i;
     BOOL checksum_error = FALSE;
     UINT16 stripe = 0;
@@ -154,7 +153,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_cont
         return STATUS_INTERNAL_ERROR;
     
     if (context->tree) {
-        tree_header* th = (tree_header*)context->stripes[stripe].buf;
+        tree_header* th = (tree_header*)buf;
         UINT32 crc32;
         
         crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, context->buflen - sizeof(th->csum));
@@ -172,7 +171,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_cont
         
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
-        Status = check_csum(Vcb, context->stripes[stripe].buf, context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
+        Status = check_csum(Vcb, buf, context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
         
         if (Status == STATUS_CRC_ERROR) {
             checksum_error = TRUE;
@@ -215,7 +214,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_cont
                     UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&t2->fs_uuid, Vcb->superblock.node_size - sizeof(t2->csum));
                     
                     if (t2->address == addr && crc32 == *((UINT32*)t2->csum) && (generation == 0 || t2->generation == generation)) {
-                        RtlCopyMemory(context->stripes[stripe].buf, t2, Vcb->superblock.node_size);
+                        RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
                         ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
                         recovered = TRUE;
                         
@@ -255,7 +254,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_cont
         }
         
         for (i = 0; i < sectors; i++) {
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, context->stripes[stripe].buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
             
             if (context->csum[i] != crc32) {
                 UINT16 j;
@@ -272,7 +271,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT64 addr, read_data_cont
                             UINT32 crc32b = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
                             
                             if (crc32b == context->csum[i]) {
-                                RtlCopyMemory(context->stripes[stripe].buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
+                                RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
                                 ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
                                 recovered = TRUE;
                                 
@@ -1333,7 +1332,7 @@ end:
 }
 
 NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
-                           PIRP Irp, UINT64 generation, BOOL file_read, UINT32 irp_offset) {
+                           PIRP Irp, UINT64 generation, BOOL file_read) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     read_data_context context;
@@ -1713,24 +1712,24 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         context.stripes[i].stripestart = addr - offset;
         context.stripes[i].stripeend = context.stripes[i].stripestart + length;
 
-        context.stripes[i].buf = buf;
-        context.stripes[i].not_alloc = TRUE;
-        
         if (file_read) {
-            UINT8* va;
-    
-            va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + irp_offset;
-            
-            context.stripes[i].mdl = IoAllocateMdl(va, context.stripes[i].stripeend - context.stripes[i].stripestart, FALSE, FALSE, NULL);
+            context.va = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
+
+            if (!context.va) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            context.stripes[i].mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
             if (!context.stripes[i].mdl) {
                 ERR("IoAllocateMdl failed\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
             
-            IoBuildPartialMdl(Irp->MdlAddress, context.stripes[i].mdl, va, context.stripes[i].stripeend - context.stripes[i].stripestart);
+            MmBuildMdlForNonPagedPool(context.stripes[i].mdl);
         } else {
-            context.stripes[i].mdl = IoAllocateMdl(context.stripes[i].buf, context.stripes[i].stripeend - context.stripes[i].stripestart, FALSE, FALSE, NULL);
+            context.stripes[i].mdl = IoAllocateMdl(buf, length, FALSE, FALSE, NULL);
 
             if (!context.stripes[i].mdl) {
                 ERR("IoAllocateMdl failed\n");
@@ -2387,10 +2386,19 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_DUPLICATE) {
-        Status = read_data_dup(Vcb, addr, &context, ci, devices, generation);
+        Status = read_data_dup(Vcb, file_read ? context.va : buf, addr, &context, ci, devices, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08x\n", Status);
+
+            if (file_read)
+                ExFreePool(context.va);
+
             goto exit;
+        }
+
+        if (file_read) {
+            RtlCopyMemory(buf, context.va, length);
+            ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID5) {
         Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c);
@@ -2441,9 +2449,6 @@ exit:
         
         if (context.stripes[i].Irp)
             IoFreeIrp(context.stripes[i].Irp);
-        
-        if (context.stripes[i].buf && !context.stripes[i].not_alloc)
-            ExFreePool(context.stripes[i].buf);
     }
 
     ExFreePool(context.stripes);
@@ -2640,7 +2645,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     } else
                         csum = NULL;
                     
-                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp, 0, mdl, bytes_read);
+                    Status = read_data(fcb->Vcb, addr, to_read, csum, FALSE, buf, c, NULL, Irp, 0, mdl);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
                         
