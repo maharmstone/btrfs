@@ -1567,7 +1567,7 @@ static BOOL check_csum(btrfs_send_command* cmd, UINT8* data) {
 
 BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
     btrfs_send_header header;
-    BOOL b = TRUE;
+    BOOL b = TRUE, ended = FALSE;
 
     if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
         ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
@@ -1649,6 +1649,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
         
         if (cmd.cmd == BTRFS_SEND_CMD_END) {
             if (data) free(data);
+            ended = TRUE;
             break;
         }
         
@@ -1758,6 +1759,11 @@ BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
         }
 
         CloseHandle(lastwritefile);
+    }
+
+    if (b && !ended) {
+        ShowRecvError(IDS_RECV_FILE_TRUNCATED);
+        b = FALSE;
     }
     
     if (b) {
