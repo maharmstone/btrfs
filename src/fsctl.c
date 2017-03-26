@@ -4958,7 +4958,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_SET_INODE_INFO:
-            Status = set_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
+            Status = set_inode_info(IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
             break;
             
         case FSCTL_BTRFS_GET_DEVICES:
