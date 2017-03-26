@@ -824,8 +824,9 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     int i;
     HWND comptype;
 
-    static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX, 0 };
-    static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, 0 };
+    static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX,
+                                     IDC_SETUID, IDC_SETGID, IDC_STICKY, 0 };
+    static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, S_ISUID, S_ISGID, S_ISVTX, 0 };
     static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
     
     if (various_subvols) {
@@ -978,15 +979,11 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     }
     
     if (!can_change_perms) {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_USERR), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_USERW), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_USERX), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPR), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPW), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_GROUPX), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERR), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERW), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_OTHERX), 0);
+        i = 0;
+        while (perm_controls[i] != 0) {
+            EnableWindow(GetDlgItem(hwndDlg, perm_controls[i]), 0);
+            i++;
+        }
     }
     
     if (readonly) {
@@ -1070,7 +1067,19 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             case IDC_OTHERX:
                                 bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
                             break;
-                            
+
+                            case IDC_SETUID:
+                                bps->change_perm_flag(hwndDlg, S_ISUID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                            break;
+
+                            case IDC_SETGID:
+                                bps->change_perm_flag(hwndDlg, S_ISGID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                            break;
+
+                            case IDC_STICKY:
+                                bps->change_perm_flag(hwndDlg, S_ISVTX, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                            break;
+
                             case IDC_SUBVOL_RO:
                                 switch (IsDlgButtonChecked(hwndDlg, LOWORD(wParam))) {
                                     case BST_CHECKED:

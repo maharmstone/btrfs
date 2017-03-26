@@ -56,6 +56,18 @@
 #define S_IXOTH (S_IXGRP >> 3)
 #endif
 
+#ifndef S_ISUID
+#define S_ISUID 0004000
+#endif
+
+#ifndef S_ISGID
+#define S_ISGID 0002000
+#endif
+
+#ifndef S_ISVTX
+#define S_ISVTX 0001000
+#endif
+
 #define BTRFS_INODE_NODATASUM   0x001
 #define BTRFS_INODE_NODATACOW   0x002
 #define BTRFS_INODE_READONLY    0x004

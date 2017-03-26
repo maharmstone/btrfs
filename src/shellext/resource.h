@@ -189,10 +189,13 @@
 #define IDC_SIZE_ON_DISK                1017
 #define IDC_GROUP_INFORMATION           1018
 #define IDC_SIZE_INLINE                 1019
+#define IDC_SETUID                      1019
 #define IDC_SIZE_UNCOMPRESSED           1020
 #define IDC_USAGE_BOX                   1020
+#define IDC_SETGID                      1020
 #define IDC_SIZE_ZLIB                   1021
 #define IDC_USAGE_REFRESH               1021
+#define IDC_STICKY                      1021
 #define IDC_SIZE_ZLIB2                  1022
 #define IDC_SIZE_LZO                    1022
 #define IDC_VOL_SHOW_USAGE              1022
