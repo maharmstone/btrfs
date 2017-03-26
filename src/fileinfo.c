@@ -445,6 +445,32 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     
     fcb->prop_compression = oldfcb->prop_compression;
 
+    le = oldfcb->xattrs.Flink;
+    while (le != &oldfcb->xattrs) {
+        xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+
+        if (xa->valuelen > 0) {
+            xattr* xa2;
+
+            xa2 = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + xa->namelen + xa->valuelen, ALLOC_TAG);
+
+            if (!xa2) {
+                ERR("out of memory\n");
+                free_fcb(fcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            xa2->namelen = xa->namelen;
+            xa2->valuelen = xa->valuelen;
+            xa2->dirty = xa->dirty;
+            memcpy(xa2->data, xa->data, xa->namelen + xa->valuelen);
+
+            InsertTailList(&fcb->xattrs, &xa2->list_entry);
+        }
+
+        le = le->Flink;
+    }
+
 end:
     *pfcb = fcb;
     
@@ -646,8 +672,18 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     me->fileref->fcb->extents_changed = !IsListEmpty(&me->fileref->fcb->extents);
                     me->fileref->fcb->reparse_xattr_changed = !!me->fileref->fcb->reparse_xattr.Buffer;
                     me->fileref->fcb->ea_changed = !!me->fileref->fcb->ea_xattr.Buffer;
+                    me->fileref->fcb->xattrs_changed = !IsListEmpty(&me->fileref->fcb->xattrs);
                     me->fileref->fcb->inode_item_changed = TRUE;
                     
+                    le2 = me->fileref->fcb->xattrs.Flink;
+                    while (le2 != &me->fileref->fcb->xattrs) {
+                        xattr* xa = CONTAINING_RECORD(le2, xattr, list_entry);
+
+                        xa->dirty = TRUE;
+
+                        le2 = le2->Flink;
+                    }
+
                     if (le == move_list.Flink) { // first entry
                         me->fileref->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
                         me->fileref->fcb->inode_item.sequence++;
