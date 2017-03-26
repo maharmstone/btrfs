@@ -1198,7 +1198,7 @@ NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 // in send.c
-NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject);
+NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
