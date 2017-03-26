@@ -115,6 +115,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     
                         if (h2 == INVALID_HANDLE_VALUE) {
                             CloseHandle(h);
+                            GlobalUnlock(hdrop);
                             return E_FAIL;
                         }
                         
@@ -123,6 +124,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                         
                         CloseHandle(h2);
                         CloseHandle(h);
+                        GlobalUnlock(hdrop);
                         return S_OK;
                     }
                     
@@ -130,7 +132,9 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                 }
             }
         }
-        
+
+        GlobalUnlock(hdrop);
+
         return S_OK;
     }
 

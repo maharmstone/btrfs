@@ -74,8 +74,10 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
         
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
     
-    if (num_files > 1)
+    if (num_files > 1) {
+        GlobalUnlock(hdrop);
         return E_FAIL;
+    }
     
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0, fn, sizeof(fn) / sizeof(MAX_PATH))) {
         h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -103,6 +105,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                         i++;
                     } else {
                         CloseHandle(h);
+                        GlobalUnlock(hdrop);
                         return E_FAIL;
                     }
                 } else
@@ -111,6 +114,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             
             if (!NT_SUCCESS(Status)) {
                 CloseHandle(h);
+                GlobalUnlock(hdrop);
                 return E_FAIL;
             }
             
@@ -121,10 +125,16 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             balance = new BtrfsBalance(fn);
 
             CloseHandle(h);
-        } else
+        } else {
+            GlobalUnlock(hdrop);
             return E_FAIL;
-    } else
+        }
+    } else {
+        GlobalUnlock(hdrop);
         return E_FAIL;
+    }
+
+    GlobalUnlock(hdrop);
 
     return S_OK;
 }

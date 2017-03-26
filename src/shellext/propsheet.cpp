@@ -340,6 +340,8 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
             ShowError(NULL, GetLastError());
     }
 
+    GlobalUnlock(hdrop);
+
     return S_OK;
 }
 
