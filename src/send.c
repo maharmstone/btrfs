@@ -131,9 +131,27 @@ static NTSTATUS send_inode(device_extension* Vcb, send_context* context, travers
     return STATUS_SUCCESS;
 }
 
+static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
+    ULONG pos = context->datalen;
+    
+    send_command(context, BTRFS_SEND_CMD_SUBVOL);
+    
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, fr->dc->utf8.Buffer, fr->dc->utf8.Length);
+    
+    if (r->root_item.rtransid == 0)
+        send_add_tlv(context, BTRFS_SEND_TLV_UUID, &r->root_item.uuid, sizeof(BTRFS_UUID));
+    else
+        send_add_tlv(context, BTRFS_SEND_TLV_UUID, &r->root_item.received_uuid, sizeof(BTRFS_UUID));
+
+    send_add_tlv(context, BTRFS_SEND_TLV_TRANSID, &r->root_item.ctransid, sizeof(UINT64));
+
+    send_command_finish(context, pos);
+}
+
 NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
+    ccb* ccb;
     send_context context;
     UNICODE_STRING fn;
     IO_STATUS_BLOCK iosb;
@@ -145,14 +163,15 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     // FIXME - incremental sends
     // FIXME - cloning
 
-    if (!FileObject || !FileObject->FsContext || FileObject->FsContext == Vcb->volume_fcb)
+    if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
     
     // FIXME - check user has volume privilege
 
     fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
 
-    if (fcb->inode != SUBVOL_ROOT_INODE)
+    if (fcb->inode != SUBVOL_ROOT_INODE || fcb == Vcb->root_fileref->fcb)
         return STATUS_INVALID_PARAMETER;
 
     // FIXME - check subvol or FS is readonly
@@ -184,7 +203,9 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     context.datalen = sizeof(btrfs_send_header);
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    
+
+    send_subvol_header(&context, fcb->subvol, ccb->fileref); // FIXME - does fileref need a lock?
+
     searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
     
     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
