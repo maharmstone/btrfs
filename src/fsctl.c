@@ -5053,6 +5053,10 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
                                  Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
             break;
 
+        case FSCTL_BTRFS_SEND_SUBVOL:
+            Status = send_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject);
+            break;
+
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,

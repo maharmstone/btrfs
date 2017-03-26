@@ -521,6 +521,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\send.c"
+				>
+			</File>
+			<File
 				RelativePath=".\src\treefuncs.c"
 				>
 			</File>

@@ -1197,6 +1197,9 @@ NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
+// in send.c
+NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject);
+
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {
