@@ -2928,14 +2928,14 @@ void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
-BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
+NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
     
     ext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + edsize, ALLOC_TAG);
     if (!ext) {
         ERR("out of memory\n");
-        return FALSE;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     ext->offset = offset;
@@ -2966,7 +2966,7 @@ BOOL add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, B
 end:
     add_insert_extent_rollback(rollback, fcb, ext);
 
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
@@ -3085,8 +3085,9 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
         }
     }
     
-    if (!add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, csum, rollback)) {
-        ERR("add_extent_to_fcb failed\n");
+    Status = add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, csum, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_extent_to_fcb returned %08x\n", Status);
         ExFreePool(ed);
         return FALSE;
     }
@@ -3519,10 +3520,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     
                     remove_fcb_extent(fcb, ext, rollback);
                     
-                    if (!add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback)) {
-                        ERR("add_extent_to_fcb failed\n");
+                    Status = add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_extent_to_fcb returned %08x\n", Status);
                         ExFreePool(ed);
-                        return STATUS_INTERNAL_ERROR;
+                        return Status;
                     }
                     
                     fcb->extents_changed = TRUE;
@@ -3611,10 +3613,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 
                 RtlZeroMemory(ed->data, end);
                 
-                if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, rollback)) {
-                    ERR("add_extent_to_fcb failed\n");
+                Status = add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_extent_to_fcb returned %08x\n", Status);
                     ExFreePool(ed);
-                    return STATUS_INTERNAL_ERROR;
+                    return Status;
                 }
                 
                 fcb->extents_changed = TRUE;
@@ -4524,10 +4527,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
             
-            if (!add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, NULL, rollback)) {
-                ERR("add_extent_to_fcb failed\n");
+            Status = add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, NULL, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(data);
-                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
             

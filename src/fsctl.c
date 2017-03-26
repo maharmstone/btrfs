@@ -3244,10 +3244,10 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             
             RtlCopyMemory(ed->data, data, datalen);
             
-            if (!add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, &rollback)) {
-                ERR("add_extent_to_fcb failed\n");
+            Status = add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, &rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(data);
-                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
             
