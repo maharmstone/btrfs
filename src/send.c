@@ -148,6 +148,13 @@ static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
     send_command_finish(context, pos);
 }
 
+static void send_end_command(send_context* context) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_END);
+    send_command_finish(context, pos);
+}
+
 NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
@@ -231,6 +238,8 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
             break;
     } while (TRUE);
     
+    send_end_command(&context);
+
     send_write_data(&context, context.data, context.datalen);
     
     Status = STATUS_SUCCESS;
