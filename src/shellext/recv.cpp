@@ -610,8 +610,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         bsii.mode_changed = TRUE;
         bsii.st_mode = 0777;
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
-                                 &bsii, sizeof(btrfs_set_inode_info));
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             CloseHandle(h);
@@ -644,8 +643,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             bsii.mode_changed = TRUE;
             bsii.st_mode = *mode;
             
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
-                                     &bsii, sizeof(btrfs_set_inode_info));
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
             if (!NT_SUCCESS(Status)) {
                 ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
                 CloseHandle(h);
@@ -1372,8 +1370,7 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     bsii.mode_changed = TRUE;
     bsii.st_mode = *mode;
     
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
-                             &bsii, sizeof(btrfs_set_inode_info));
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(h);
@@ -1434,8 +1431,7 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0,
-                                 &bsii, sizeof(btrfs_set_inode_info));
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             return FALSE;

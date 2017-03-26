@@ -702,7 +702,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bsii.compression_type = bii.compression_type;
     }
 
-    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
         goto end;

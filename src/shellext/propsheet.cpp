@@ -608,7 +608,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
             bsii.compression_type = compress_type;
         }
         
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, NULL, 0, &bsii, sizeof(btrfs_set_inode_info));
+        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
         
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hDlg, Status);
