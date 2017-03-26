@@ -1256,7 +1256,8 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     }
     
     if (bsii->mode_changed) {
-        UINT32 allowed = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH;
+        UINT32 allowed = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH |
+                         S_ISUID | S_ISGID | S_ISVTX;
         
         fcb->inode_item.st_mode &= ~allowed;
         fcb->inode_item.st_mode |= bsii->st_mode & allowed;

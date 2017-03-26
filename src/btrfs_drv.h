@@ -1329,6 +1329,18 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #define S_IXOTH (S_IXGRP >> 3)
 #endif
 
+#ifndef S_ISUID
+#define S_ISUID 0004000
+#endif
+
+#ifndef S_ISGID
+#define S_ISGID 0002000
+#endif
+
+#ifndef S_ISVTX
+#define S_ISVTX 0001000
+#endif
+
 // LXSS programs can be distinguished by the fact they have a NULL PEB.
 #ifdef _AMD64_
     static __inline BOOL called_from_lxss() {
