@@ -2803,24 +2803,21 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         
         if (!NT_SUCCESS(Status)) {
             ERR("get_reparse_block returned %08x\n", Status);
+
+            Status = STATUS_SUCCESS;
+        } else {
+            Status = STATUS_REPARSE;
+            RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
+
+            data->Reserved = FileObject->FileName.Length - parsed;
+
+            Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
             
             free_fileref(Vcb, fileref);
             ExReleaseResourceLite(&Vcb->fcb_lock);
             
             goto exit;
         }
-        
-        Status = STATUS_REPARSE;
-        RtlCopyMemory(&Irp->IoStatus.Information, data, sizeof(ULONG));
-        
-        data->Reserved = FileObject->FileName.Length - parsed;
-        
-        Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
-        
-        free_fileref(Vcb, fileref);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-        
-        goto exit;
     }
     
     if (NT_SUCCESS(Status) && fileref->deleted) {
@@ -2993,6 +2990,15 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             Status = get_reparse_block(fileref->fcb, (UINT8**)&data);
             if (!NT_SUCCESS(Status)) {
                 ERR("get_reparse_block returned %08x\n", Status);
+                Status = STATUS_SUCCESS;
+            } else {
+                Status = STATUS_REPARSE;
+                Irp->IoStatus.Information = data->ReparseTag;
+
+                if (fn.Buffer[(fn.Length / sizeof(WCHAR)) - 1] == '\\')
+                    data->Reserved = sizeof(WCHAR);
+
+                Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
                 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, fileref);
@@ -3000,20 +3006,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 
                 goto exit;
             }
-            
-            Status = STATUS_REPARSE;
-            Irp->IoStatus.Information = data->ReparseTag;
-            
-            if (fn.Buffer[(fn.Length / sizeof(WCHAR)) - 1] == '\\')
-                data->Reserved = sizeof(WCHAR);
-            
-            Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
-            
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(Vcb, fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-            
-            goto exit;
         }
         
         if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && !fileref->fcb->ads) {
