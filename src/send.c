@@ -152,7 +152,56 @@ static void add_orphan(send_context* context, orphan* o) {
     InsertTailList(&context->orphans, &o->list_entry);
 }
 
+static NTSTATUS send_read_symlink(send_context* context, UINT64 inode, char** link, ULONG* linklen) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    EXTENT_DATA* ed;
+
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.offset = 0;
+
+    Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    if (keycmp(tp.item->key, searchkey)) {
+        ERR("could not find (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (tp.item->size < sizeof(EXTENT_DATA)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+            tp.item->size, sizeof(EXTENT_DATA));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ed = (EXTENT_DATA*)tp.item->data;
+
+    if (ed->type != EXTENT_TYPE_INLINE) {
+        WARN("symlink data was not inline, returning blank string\n");
+        *link = NULL;
+        *linklen = 0;
+        return STATUS_SUCCESS;
+    }
+
+    if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+            tp.item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    *link = (char*)ed->data;
+    *linklen = ed->decoded_size;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
+    NTSTATUS Status;
     INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
 
     if (tp->item->size < sizeof(INODE_ITEM)) {
@@ -199,7 +248,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         if ((ii->st_mode & __S_IFSOCK) == __S_IFSOCK)
             cmd = BTRFS_SEND_CMD_MKSOCK;
         else if ((ii->st_mode & __S_IFLNK) == __S_IFLNK)
-            cmd = BTRFS_SEND_CMD_SYMLINK; // FIXME - write link
+            cmd = BTRFS_SEND_CMD_SYMLINK;
         else if ((ii->st_mode & __S_IFCHR) == __S_IFCHR || (ii->st_mode & __S_IFBLK) == __S_IFBLK)
             cmd = BTRFS_SEND_CMD_MKNOD;
         else if ((ii->st_mode & __S_IFDIR) == __S_IFDIR)
@@ -223,6 +272,17 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
 
             send_add_tlv(context, BTRFS_SEND_TLV_RDEV, &rdev, sizeof(UINT64));
             send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(UINT64));
+        } else if (cmd == BTRFS_SEND_CMD_SYMLINK && ii->st_size > 0) {
+            char* link;
+            ULONG linklen;
+
+            Status = send_read_symlink(context, tp->item->key.obj_id, &link, &linklen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_read_symlink returned %08x\n", Status);
+                return Status;
+            }
+
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, link, linklen);
         }
 
         send_command_finish(context, pos);
