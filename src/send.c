@@ -32,7 +32,7 @@ typedef struct {
 
 typedef struct {
     device_extension* Vcb;
-    PIRP Irp;
+    root* root;
     HANDLE h;
     UINT8* data;
     ULONG datalen;
@@ -55,6 +55,7 @@ typedef struct {
 } send_context;
 
 #define MAX_SEND_WRITE 0xc000 // 48 KB
+#define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
 static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
 
@@ -623,7 +624,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
             ULONG length = min(ed->decoded_size - off, MAX_SEND_WRITE);
 
             Status = read_data(context->Vcb, ed2->address + ed2->offset + off, length, NULL, FALSE,
-                               buf, NULL, NULL, context->Irp, 0, FALSE);
+                               buf, NULL, NULL, NULL, 0, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
                 ExFreePool(buf);
@@ -653,24 +654,126 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
+static void send_thread(void* ctx) {
+    send_context* context = (send_context*)ctx;
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+
+    ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
+    searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
+
+    Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        goto end;
+    }
+
+    do {
+        traverse_ptr next_tp;
+
+        if (context->datalen > SEND_BUFFER_LENGTH) {
+            KEY key = tp.item->key;
+
+            ExReleaseResourceLite(&context->Vcb->tree_lock);
+
+            // FIXME - pause and wait for buffer to be cleared
+
+            ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
+            Status = find_item(context->Vcb, context->root, &tp, &key, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                goto end;
+            }
+
+            if (keycmp(tp.item->key, key)) {
+                ERR("readonly subvolume changed\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+        }
+
+        if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode)
+            finish_inode(context);
+
+        if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+            Status = send_inode(context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_inode returned %08x\n", Status);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                goto end;
+            }
+        } else if (tp.item->key.obj_type == TYPE_INODE_REF) { // FIXME - also do extirefs
+            Status = send_inode_ref(context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_inode_ref returned %08x\n", Status);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                goto end;
+            }
+        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            Status = send_extent_data(context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_extent_data returned %08x\n", Status);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                goto end;
+            }
+        }
+
+        if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+            tp = next_tp;
+        else
+            break;
+    } while (TRUE);
+
+    ExReleaseResourceLite(&context->Vcb->tree_lock);
+
+    if (context->lastinode.inode != 0)
+        finish_inode(context);
+
+    send_end_command(context);
+
+    send_write_data(context, context->data, context->datalen);
+
+    // FIXME - wait for buffer to be cleared for the last time
+
+end:
+    ZwClose(context->h);
+
+    while (!IsListEmpty(&context->orphans)) {
+        orphan* o = CONTAINING_RECORD(RemoveHeadList(&context->orphans), orphan, list_entry);
+        ExFreePool(o);
+    }
+
+    while (!IsListEmpty(&context->dirs)) {
+        send_dir* sd = CONTAINING_RECORD(RemoveHeadList(&context->dirs), send_dir, list_entry);
+        ExFreePool(sd);
+    }
+
+    ZwClose(context->Vcb->send.thread);
+    context->Vcb->send.thread = NULL;
+
+    ExFreePool(context->data);
+    ExFreePool(context);
+}
+
+NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject) {
     NTSTATUS Status;
     fcb* fcb;
     ccb* ccb;
-    send_context context;
+    send_context* context;
     UNICODE_STRING fn;
     IO_STATUS_BLOCK iosb;
     OBJECT_ATTRIBUTES atts;
     btrfs_send_header* header;
-    KEY searchkey;
-    traverse_ptr tp;
     
     // FIXME - incremental sends
     // FIXME - cloning
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
-    
+
     // FIXME - check user has volume privilege
 
     fcb = FileObject->FsContext;
@@ -682,104 +785,60 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     // FIXME - check subvol or FS is readonly
     // FIXME - if subvol only just made readonly, check it has been flushed
     // FIXME - make it so any relevant subvols can't be made read-write while this is running
-    
+
+    if (Vcb->send.thread) {
+        WARN("send operation already running\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    context = ExAllocatePoolWithTag(NonPagedPool, sizeof(send_context), ALLOC_TAG);
+    if (!context) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     fn.Buffer = L"\\??\\C:\\send";
     fn.Length = fn.MaximumLength = wcslen(fn.Buffer) * sizeof(WCHAR);
-    
+
     InitializeObjectAttributes(&atts, &fn, OBJ_KERNEL_HANDLE, NULL, NULL);
-    
-    Status = ZwCreateFile(&context.h, FILE_WRITE_DATA | SYNCHRONIZE, &atts, &iosb, NULL, FILE_ATTRIBUTE_NORMAL, 0,
+
+    Status = ZwCreateFile(&context->h, FILE_WRITE_DATA | SYNCHRONIZE, &atts, &iosb, NULL, FILE_ATTRIBUTE_NORMAL, 0,
                           FILE_OPEN_IF, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_ALERT, NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ERR("ZwCreateFile returned %08x\n", Status);
+        ExFreePool(context);
         return Status;
     }
 
-    context.Vcb = Vcb;
-    context.Irp = Irp;
-    InitializeListHead(&context.orphans);
-    InitializeListHead(&context.dirs);
-    context.lastinode.inode = 0;
+    context->Vcb = Vcb;
+    context->root = fcb->subvol;
+    InitializeListHead(&context->orphans);
+    InitializeListHead(&context->dirs);
+    context->lastinode.inode = 0;
 
-    context.data = ExAllocatePoolWithTag(PagedPool, 1048576 * 5, ALLOC_TAG); // FIXME
-    if (!context.data) {
-        ZwClose(context.h);
+    context->data = ExAllocatePoolWithTag(PagedPool, SEND_BUFFER_LENGTH + (2 * MAX_SEND_WRITE), ALLOC_TAG); // give ourselves some wiggle room
+    if (!context->data) {
+        ZwClose(context->h);
+        ExFreePool(context);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
-    header = (btrfs_send_header*)context.data;
-    
+
+    header = (btrfs_send_header*)context->data;
+
     RtlCopyMemory(header->magic, BTRFS_SEND_MAGIC, sizeof(BTRFS_SEND_MAGIC));
     header->version = 1;
-    context.datalen = sizeof(btrfs_send_header);
+    context->datalen = sizeof(btrfs_send_header);
 
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    send_subvol_header(context, fcb->subvol, ccb->fileref); // FIXME - fileref needs some sort of lock here
 
-    send_subvol_header(&context, fcb->subvol, ccb->fileref); // FIXME - does fileref need a lock?
-
-    searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
-    
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+    Status = PsCreateSystemThread(&Vcb->send.thread, 0, NULL, NULL, NULL, send_thread, context);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    do {
-        traverse_ptr next_tp;
-
-        if (context.lastinode.inode != 0 && tp.item->key.obj_id > context.lastinode.inode)
-            finish_inode(&context);
-
-        if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
-            Status = send_inode(&context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_inode returned %08x\n", Status);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_INODE_REF) { // FIXME - also do extirefs
-            Status = send_inode_ref(&context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_inode_ref returned %08x\n", Status);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-            Status = send_extent_data(&context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_extent_data returned %08x\n", Status);
-                goto end;
-            }
-        }
-
-        if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp))
-            tp = next_tp;
-        else
-            break;
-    } while (TRUE);
-
-    if (context.lastinode.inode != 0)
-        finish_inode(&context);
-
-    send_end_command(&context);
-
-    send_write_data(&context, context.data, context.datalen);
-    
-    Status = STATUS_SUCCESS;
-    
-end:
-    ExReleaseResourceLite(&Vcb->tree_lock);
-
-    ZwClose(context.h);
-    
-    while (!IsListEmpty(&context.orphans)) {
-        orphan* o = CONTAINING_RECORD(RemoveHeadList(&context.orphans), orphan, list_entry);
-        ExFreePool(o);
+        ERR("PsCreateSystemThread returned %08x\n", Status);
+        ZwClose(context->h);
+        ExFreePool(context->data);
+        ExFreePool(context);
+        return Status;
     }
 
-    while (!IsListEmpty(&context.dirs)) {
-        send_dir* sd = CONTAINING_RECORD(RemoveHeadList(&context.dirs), send_dir, list_entry);
-        ExFreePool(sd);
-    }
-    
-    return Status;
+    return STATUS_SUCCESS;
 }

@@ -615,6 +615,10 @@ typedef struct {
     LIST_ENTRY errors;
 } scrub_info;
 
+typedef struct {
+    HANDLE thread;
+} send_info;
+
 struct _volume_device_extension;
 
 typedef struct _device_extension {
@@ -679,6 +683,7 @@ typedef struct _device_extension {
     drv_calc_threads calcthreads;
     balance_info balance;
     scrub_info scrub;
+    send_info send;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
@@ -1198,7 +1203,7 @@ NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 // in send.c
-NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp);
+NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 

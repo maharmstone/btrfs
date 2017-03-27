@@ -5054,7 +5054,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_BTRFS_SEND_SUBVOL:
-            Status = send_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp);
+            Status = send_subvol(DeviceObject->DeviceExtension, IrpSp->FileObject);
             break;
 
         default:
