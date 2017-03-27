@@ -619,7 +619,10 @@ static void finish_inode(send_context* context) {
         send_truncate_command(context, context->lastinode.path, context->lastinode.size);
 
     send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
-    send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
+
+    if ((context->lastinode.mode & __S_IFLNK) != __S_IFLNK || ((context->lastinode.mode & 07777) != 0777))
+        send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
+
     send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
 
     context->lastinode.inode = 0;
