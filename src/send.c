@@ -636,6 +636,9 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
 
+    if ((context->lastinode.mode & __S_IFLNK) == __S_IFLNK)
+        return STATUS_SUCCESS;
+
     if (tp->item->size < sizeof(EXTENT_DATA)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(EXTENT_DATA));
