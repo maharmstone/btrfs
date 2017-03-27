@@ -36,8 +36,18 @@ typedef struct {
     ULONG datalen;
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
-    UINT64 lastinode;
-    UINT64 lastinode_gen;
+
+    struct {
+        UINT64 inode;
+        UINT64 gen;
+        UINT64 uid;
+        UINT64 gid;
+        UINT64 mode;
+        BTRFS_TIME atime;
+        BTRFS_TIME mtime;
+        BTRFS_TIME ctime;
+        char* path;
+    } lastinode;
 } send_context;
 
 static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
@@ -144,8 +154,14 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         return STATUS_INTERNAL_ERROR;
     }
 
-    context->lastinode = tp->item->key.obj_id;
-    context->lastinode_gen = ii->generation;
+    context->lastinode.inode = tp->item->key.obj_id;
+    context->lastinode.gen = ii->generation;
+    context->lastinode.uid = ii->st_uid;
+    context->lastinode.gid = ii->st_gid;
+    context->lastinode.mode = ii->st_mode;
+    context->lastinode.atime = ii->st_atime;
+    context->lastinode.mtime = ii->st_mtime;
+    context->lastinode.ctime = ii->st_ctime;
 
     if (tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
         ULONG pos = context->datalen;
@@ -197,7 +213,16 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
         strcpy(o->tmpname, name);
         add_orphan(context, o);
-    }
+
+        context->lastinode.path = ExAllocatePoolWithTag(PagedPool, strlen(o->tmpname) + 1, ALLOC_TAG);
+        if (!context->lastinode.path) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        strcpy(context->lastinode.path, o->tmpname);
+    } else
+        context->lastinode.path = NULL;
     
     return STATUS_SUCCESS;
 }
@@ -249,6 +274,20 @@ static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, 
             ERR("send_add_dir returned %08x\n", Status);
             return Status;
         }
+    }
+
+    if (o->inode == context->lastinode.inode) {
+        if (context->lastinode.path)
+            ExFreePool(context->lastinode.path);
+
+        context->lastinode.path = ExAllocatePoolWithTag(PagedPool, pathlen + 1, ALLOC_TAG);
+        if (!context->lastinode.path) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(context->lastinode.path, path, pathlen);
+        context->lastinode.path[pathlen] = 0;
     }
 
     RemoveEntryList(&o->list_entry);
@@ -360,7 +399,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
             send_command(context, BTRFS_SEND_CMD_MKDIR);
 
-            get_orphan_name(tp->item->key.offset, context->lastinode == tp->item->key.obj_id ? context->lastinode_gen : 0, name);
+            get_orphan_name(tp->item->key.offset, context->lastinode.inode == tp->item->key.obj_id ? context->lastinode.gen : 0, name);
 
             send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
             send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.offset, sizeof(UINT64));
@@ -427,6 +466,59 @@ static void send_end_command(send_context* context) {
     send_command_finish(context, pos);
 }
 
+static void send_chown_command(send_context* context, char* path, UINT64 uid, UINT64 gid) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_CHOWN);
+
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_UID, &uid, sizeof(UINT64));
+    send_add_tlv(context, BTRFS_SEND_TLV_GID, &gid, sizeof(UINT64));
+
+    send_command_finish(context, pos);
+}
+
+static void send_chmod_command(send_context* context, char* path, UINT64 mode) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_CHMOD);
+
+    mode &= 07777;
+
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(UINT64));
+
+    send_command_finish(context, pos);
+}
+
+static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_UTIMES);
+
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
+
+    send_command_finish(context, pos);
+}
+
+static void finish_inode(send_context* context) {
+    // FIXME - send truncate if file (and not zero?)
+
+    send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
+    send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
+    send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
+
+    context->lastinode.inode = 0;
+
+    if (context->lastinode.path) {
+        ExFreePool(context->lastinode.path);
+        context->lastinode.path = NULL;
+    }
+}
+
 NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
@@ -471,7 +563,7 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
 
     InitializeListHead(&context.orphans);
     InitializeListHead(&context.dirs);
-    context.lastinode = 0;
+    context.lastinode.inode = 0;
 
     context.data = ExAllocatePoolWithTag(PagedPool, 1048576, ALLOC_TAG); // FIXME
     if (!context.data) {
@@ -499,7 +591,10 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     
     do {
         traverse_ptr next_tp;
-        
+
+        if (context.lastinode.inode != 0 && tp.item->key.obj_id > context.lastinode.inode)
+            finish_inode(&context);
+
         if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
             Status = send_inode(&context, &tp);
             if (!NT_SUCCESS(Status)) {
@@ -519,7 +614,10 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
         else
             break;
     } while (TRUE);
-    
+
+    if (context.lastinode.inode != 0)
+        finish_inode(&context);
+
     send_end_command(&context);
 
     send_write_data(&context, context.data, context.datalen);
