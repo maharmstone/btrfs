@@ -38,6 +38,8 @@ typedef struct {
     ULONG datalen;
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
+    UINT64 lastinode;
+    UINT64 lastinode_gen;
 } send_context;
 
 static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
@@ -117,20 +119,62 @@ static void get_orphan_name(UINT64 inode, UINT64 generation, char* name) {
     return;
 }
 
+static void add_orphan(send_context* context, orphan* o) {
+    LIST_ENTRY* le;
+
+    le = context->orphans.Flink;
+    while (le != &context->orphans) {
+        orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+        if (o2->inode > o->inode) {
+            InsertHeadList(o2->list_entry.Blink, &o->list_entry);
+            return;
+        }
+
+        le = le->Flink;
+    }
+
+    InsertTailList(&context->orphans, &o->list_entry);
+}
+
 static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
+    INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
+
     if (tp->item->size < sizeof(INODE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
+    context->lastinode = tp->item->key.obj_id;
+    context->lastinode_gen = ii->generation;
+
     if (tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
         ULONG pos = context->datalen;
         UINT16 cmd;
-        INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
+
         char name[64];
         orphan* o;
-        
+
+        // FIXME - record times, mode, and permissions for later
+
+        // skip creating orphan directory if we've already done so
+        if (ii->st_mode & __S_IFDIR) {
+            LIST_ENTRY* le;
+
+            le = context->orphans.Flink;
+            while (le != &context->orphans) {
+                orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+                if (o2->inode == tp->item->key.obj_id)
+                    return STATUS_SUCCESS;
+                else if (o2->inode > tp->item->key.obj_id)
+                    break;
+
+                le = le->Flink;
+            }
+        }
+
         if (ii->st_mode & __S_IFDIR)
             cmd = BTRFS_SEND_CMD_MKDIR;
         else
@@ -156,7 +200,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
         strcpy(o->tmpname, name);
         o->name = NULL;
-        InsertTailList(&context->orphans, &o->list_entry);
+        add_orphan(context, o);
     }
     
     return STATUS_SUCCESS;
@@ -291,29 +335,18 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     
     if (tp->item->key.offset == SUBVOL_ROOT_INODE)
         return found_orphan_path(context, o, ir->name, ir->n);
-
-    o->parent = tp->item->key.offset;
     
-    o->name = ExAllocatePoolWithTag(PagedPool, ir->n + 1, ALLOC_TAG);
-    if (!o->name) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    RtlCopyMemory(o->name, ir->name, ir->n);
-    o->name[ir->n] = 0;
-
     le = context->dirs.Flink;
     while (le != &context->dirs) {
         send_dir* sd = CONTAINING_RECORD(le, send_dir, list_entry);
 
         if (sd->inode > o->parent)
             break;
-        else if (sd->inode == o->parent) {
+        else if (sd->inode == tp->item->key.offset) {
             NTSTATUS Status;
             char* inodepath;
 
-            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(sd->path) + 1 + strlen(o->name), ALLOC_TAG);
+            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(sd->path) + 1 + ir->n, ALLOC_TAG);
             if (!inodepath) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -321,9 +354,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
             RtlCopyMemory(inodepath, sd->path, strlen(sd->path));
             inodepath[strlen(sd->path)] = '/';
-            RtlCopyMemory(&inodepath[strlen(sd->path) + 1], o->name, strlen(o->name));
+            RtlCopyMemory(&inodepath[strlen(sd->path) + 1], ir->name, ir->n);
 
-            Status = found_orphan_path(context, o, inodepath, strlen(sd->path) + 1 + strlen(o->name));
+            Status = found_orphan_path(context, o, inodepath, strlen(sd->path) + 1 + ir->n);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("found_orphan_path returned %08x\n", Status);
@@ -332,9 +365,84 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
             }
 
             ExFreePool(inodepath);
+
+            return STATUS_SUCCESS;
         }
 
         le = le->Flink;
+    }
+
+    // directory has higher inode number than file, so might need to be created
+    if (tp->item->key.offset > tp->item->key.obj_id) {
+        orphan* o2;
+        BOOL found = FALSE;
+        ULONG pos, pathlen;
+        char* path;
+
+        le = context->orphans.Flink;
+        while (le != &context->orphans) {
+            o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+            if (o2->inode == tp->item->key.offset) {
+                found = TRUE;
+                break;
+            } else if (o2->inode > tp->item->key.offset)
+                break;
+
+            le = le->Flink;
+        }
+
+        if (!found) {
+            char name[64];
+
+            pos = context->datalen;
+            send_command(context, BTRFS_SEND_CMD_MKDIR);
+
+            get_orphan_name(tp->item->key.offset, context->lastinode == tp->item->key.obj_id ? context->lastinode_gen : 0, name);
+
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
+            send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.offset, sizeof(UINT64));
+
+            send_command_finish(context, pos);
+
+            o2 = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
+            if (!o2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            o2->inode = tp->item->key.offset;
+            o2->parent = 0;
+            o2->dir = TRUE;
+            strcpy(o2->tmpname, name);
+            o2->name = NULL;
+            add_orphan(context, o2);
+        }
+
+        pathlen = strlen(o2->tmpname) + 1 + ir->n;
+        path = ExAllocatePoolWithTag(PagedPool, pathlen, ALLOC_TAG);
+        if (!path) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(path, o2->tmpname, strlen(o2->tmpname));
+        path[strlen(o2->tmpname)] = '/';
+        RtlCopyMemory(&path[strlen(o2->tmpname) + 1], ir->name, ir->n);
+
+        pos = context->datalen;
+        send_command(context, BTRFS_SEND_CMD_RENAME);
+
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH, o->tmpname, strlen(o->tmpname));
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, path, pathlen);
+
+        ExFreePool(path);
+
+        send_command_finish(context, pos);
+
+        RemoveEntryList(&o->list_entry);
+        if (o->name) ExFreePool(o->name);
+        ExFreePool(o);
     }
 
     return STATUS_SUCCESS;
@@ -408,6 +516,7 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
 
     InitializeListHead(&context.orphans);
     InitializeListHead(&context.dirs);
+    context.lastinode = 0;
 
     context.data = ExAllocatePoolWithTag(PagedPool, 1048576, ALLOC_TAG); // FIXME
     if (!context.data) {
