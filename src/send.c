@@ -20,10 +20,8 @@
 typedef struct {
     LIST_ENTRY list_entry;
     UINT64 inode;
-    UINT64 parent;
     BOOL dir;
     char tmpname[64];
-    char* name;
 } orphan;
 
 typedef struct {
@@ -196,10 +194,8 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         }
 
         o->inode = tp->item->key.obj_id;
-        o->parent = 0;
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
         strcpy(o->tmpname, name);
-        o->name = NULL;
         add_orphan(context, o);
     }
     
@@ -225,47 +221,13 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
 
         if (sd2->inode > sd->inode) {
             InsertHeadList(sd2->list_entry.Blink, &sd->list_entry);
-            goto end;
+            return STATUS_SUCCESS;
         }
 
         le = le->Flink;
     }
 
     InsertTailList(&context->dirs, &sd->list_entry);
-
-end:
-    le = context->orphans.Flink;
-    while (le != &context->orphans) {
-        LIST_ENTRY* le2 = le->Flink;
-        orphan* o = CONTAINING_RECORD(le, orphan, list_entry);
-
-        if (o->parent == inode) {
-            NTSTATUS Status;
-            char* inodepath;
-
-            inodepath = ExAllocatePoolWithTag(PagedPool, pathlen + 1 + strlen(o->name), ALLOC_TAG);
-            if (!inodepath) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(inodepath, path, pathlen);
-            inodepath[pathlen] = '/';
-            RtlCopyMemory(&inodepath[pathlen + 1], o->name, strlen(o->name));
-
-            Status = found_orphan_path(context, o, inodepath, pathlen + 1 + strlen(o->name));
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("found_orphan_path returned %08x\n", Status);
-                ExFreePool(inodepath);
-                return Status;
-            }
-
-            ExFreePool(inodepath);
-        }
-
-        le = le2;
-    }
 
     return STATUS_SUCCESS;
 }
@@ -290,7 +252,6 @@ static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, 
     }
 
     RemoveEntryList(&o->list_entry);
-    if (o->name) ExFreePool(o->name);
     ExFreePool(o);
 
     return STATUS_SUCCESS;
@@ -340,7 +301,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     while (le != &context->dirs) {
         send_dir* sd = CONTAINING_RECORD(le, send_dir, list_entry);
 
-        if (sd->inode > o->parent)
+        if (sd->inode > tp->item->key.offset)
             break;
         else if (sd->inode == tp->item->key.offset) {
             NTSTATUS Status;
@@ -374,9 +335,10 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
     // directory has higher inode number than file, so might need to be created
     if (tp->item->key.offset > tp->item->key.obj_id) {
+        NTSTATUS Status;
         orphan* o2;
         BOOL found = FALSE;
-        ULONG pos, pathlen;
+        ULONG pathlen;
         char* path;
 
         le = context->orphans.Flink;
@@ -393,9 +355,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
         }
 
         if (!found) {
+            ULONG pos = context->datalen;
             char name[64];
 
-            pos = context->datalen;
             send_command(context, BTRFS_SEND_CMD_MKDIR);
 
             get_orphan_name(tp->item->key.offset, context->lastinode == tp->item->key.obj_id ? context->lastinode_gen : 0, name);
@@ -412,10 +374,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
             }
 
             o2->inode = tp->item->key.offset;
-            o2->parent = 0;
             o2->dir = TRUE;
             strcpy(o2->tmpname, name);
-            o2->name = NULL;
             add_orphan(context, o2);
         }
 
@@ -430,19 +390,14 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
         path[strlen(o2->tmpname)] = '/';
         RtlCopyMemory(&path[strlen(o2->tmpname) + 1], ir->name, ir->n);
 
-        pos = context->datalen;
-        send_command(context, BTRFS_SEND_CMD_RENAME);
-
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, o->tmpname, strlen(o->tmpname));
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, path, pathlen);
+        Status = found_orphan_path(context, o, path, pathlen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("found_orphan_path returned %08x\n", Status);
+            ExFreePool(path);
+            return Status;
+        }
 
         ExFreePool(path);
-
-        send_command_finish(context, pos);
-
-        RemoveEntryList(&o->list_entry);
-        if (o->name) ExFreePool(o->name);
-        ExFreePool(o);
     }
 
     return STATUS_SUCCESS;
@@ -578,10 +533,6 @@ end:
     
     while (!IsListEmpty(&context.orphans)) {
         orphan* o = CONTAINING_RECORD(RemoveHeadList(&context.orphans), orphan, list_entry);
-
-        if (o->name)
-            ExFreePool(o->name);
-
         ExFreePool(o);
     }
 
