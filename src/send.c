@@ -27,6 +27,9 @@ typedef struct {
 typedef struct {
     LIST_ENTRY list_entry;
     UINT64 inode;
+    BTRFS_TIME atime;
+    BTRFS_TIME mtime;
+    BTRFS_TIME ctime;
     char path[1];
 } send_dir;
 
@@ -38,6 +41,12 @@ typedef struct {
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
     KEVENT buffer_event, cleared_event;
+
+    struct {
+        BTRFS_TIME atime;
+        BTRFS_TIME mtime;
+        BTRFS_TIME ctime;
+    } root_dir;
 
     struct {
         UINT64 inode;
@@ -57,7 +66,7 @@ typedef struct {
 #define MAX_SEND_WRITE 0xc000 // 48 KB
 #define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
-static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
+static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime);
 
 static void send_command(send_context* context, UINT16 cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
@@ -223,9 +232,13 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         }
 
         strcpy(context->lastinode.path, o->tmpname);
-    } else
+    } else {
         context->lastinode.path = NULL;
-    
+        context->root_dir.atime = ii->st_atime;
+        context->root_dir.mtime = ii->st_mtime;
+        context->root_dir.ctime = ii->st_ctime;
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -239,6 +252,9 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
     }
 
     sd->inode = inode;
+    sd->atime = context->lastinode.atime;
+    sd->mtime = context->lastinode.mtime;
+    sd->ctime = context->lastinode.ctime;
     memcpy(sd->path, path, pathlen);
     sd->path[pathlen] = 0;
 
@@ -259,7 +275,7 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen) {
+static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen, BOOL root, send_dir* sd) {
     NTSTATUS Status;
     ULONG pos = context->datalen;
 
@@ -269,6 +285,11 @@ static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, 
     send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, path, pathlen);
 
     send_command_finish(context, pos);
+
+    if (sd)
+        send_utimes_command(context, sd->path, &sd->atime, &sd->mtime, &sd->ctime);
+    else if (root)
+        send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
 
     if (o->dir) {
         Status = send_add_dir(context, o->inode, path, pathlen);
@@ -303,6 +324,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     INODE_REF* ir;
     orphan* o = NULL;
 
+    if (tp->item->key.obj_id == tp->item->key.offset) // root
+        return STATUS_SUCCESS;
+
     le = context->orphans.Flink;
     while (le != &context->orphans) {
         orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
@@ -336,7 +360,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     }
     
     if (tp->item->key.offset == SUBVOL_ROOT_INODE)
-        return found_orphan_path(context, o, ir->name, ir->n);
+        return found_orphan_path(context, o, ir->name, ir->n, TRUE, NULL);
     
     le = context->dirs.Flink;
     while (le != &context->dirs) {
@@ -358,7 +382,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
             inodepath[strlen(sd->path)] = '/';
             RtlCopyMemory(&inodepath[strlen(sd->path) + 1], ir->name, ir->n);
 
-            Status = found_orphan_path(context, o, inodepath, strlen(sd->path) + 1 + ir->n);
+            Status = found_orphan_path(context, o, inodepath, strlen(sd->path) + 1 + ir->n, FALSE, sd);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("found_orphan_path returned %08x\n", Status);
@@ -431,7 +455,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
         path[strlen(o2->tmpname)] = '/';
         RtlCopyMemory(&path[strlen(o2->tmpname) + 1], ir->name, ir->n);
 
-        Status = found_orphan_path(context, o, path, pathlen);
+        Status = found_orphan_path(context, o, path, pathlen, FALSE, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("found_orphan_path returned %08x\n", Status);
             ExFreePool(path);
