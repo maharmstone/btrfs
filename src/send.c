@@ -684,6 +684,41 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp) {
+    DIR_ITEM* di;
+    ULONG len;
+
+    if (tp->item->size < sizeof(DIR_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, sizeof(DIR_ITEM));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    len = tp->item->size;
+    di = (DIR_ITEM*)tp->item->data;
+
+    do {
+        ULONG pos;
+
+        if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        pos = context->datalen;
+        send_command(context, BTRFS_SEND_CMD_SET_XATTR);
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+        send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
+        send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
+        send_command_finish(context, pos);
+
+        len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+        di = (DIR_ITEM*)&di->name[di->m + di->n];
+    } while (len > 0);
+
+    return STATUS_SUCCESS;
+}
+
 static void send_thread(void* ctx) {
     send_context* context = (send_context*)ctx;
     device_extension* Vcb = context->Vcb;
@@ -752,7 +787,14 @@ static void send_thread(void* ctx) {
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
                 goto end;
             }
-        } // FIXME - xattrs
+        } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+            Status = send_xattr(context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_xattr returned %08x\n", Status);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                goto end;
+            }
+        }
 
         if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
             tp = next_tp;
