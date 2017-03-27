@@ -18,9 +18,19 @@
 #include "btrfs_drv.h"
 
 typedef struct {
+    LIST_ENTRY list_entry;
+    UINT64 inode;
+    UINT64 parent;
+    BOOL dir;
+    char tmpname[64];
+    char* name;
+} orphan;
+
+typedef struct {
     HANDLE h;
     UINT8* data;
     ULONG datalen;
+    LIST_ENTRY orphans;
 } send_context;
 
 static void send_write_data(send_context* context, void* data, ULONG datalen) {
@@ -98,7 +108,7 @@ static void get_orphan_name(UINT64 inode, UINT64 generation, char* name) {
     return;
 }
 
-static NTSTATUS send_inode(device_extension* Vcb, send_context* context, traverse_ptr* tp) {
+static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
     if (tp->item->size < sizeof(INODE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_ITEM));
@@ -112,6 +122,7 @@ static NTSTATUS send_inode(device_extension* Vcb, send_context* context, travers
         UINT16 cmd;
         INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
         char name[64];
+        orphan* o;
         
         if (ii->st_mode & __S_IFDIR)
             cmd = BTRFS_SEND_CMD_MKDIR;
@@ -126,7 +137,94 @@ static NTSTATUS send_inode(device_extension* Vcb, send_context* context, travers
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(UINT64));
         
         send_command_finish(context, pos);
+
+        o = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
+        if (!o) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        o->inode = tp->item->key.obj_id;
+        o->parent = 0;
+        o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
+        strcpy(o->tmpname, name);
+        o->name = NULL;
+        InsertTailList(&context->orphans, &o->list_entry);
     }
+    
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
+    LIST_ENTRY* le;
+    INODE_REF* ir;
+    orphan* o = NULL;
+
+    le = context->orphans.Flink;
+    while (le != &context->orphans) {
+        orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
+        
+        if (o2->inode == tp->item->key.obj_id) {
+            o = o2;
+            break;
+        } else if (o2->inode > tp->item->key.obj_id)
+            return STATUS_SUCCESS;
+        
+        le = le->Flink;
+    }
+    
+    if (!o)
+        return STATUS_SUCCESS;
+
+    if (tp->item->size < sizeof(INODE_REF)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, sizeof(INODE_REF));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ir = (INODE_REF*)tp->item->data;
+    
+    // FIXME - handle multiple entries
+
+    if (tp->item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, offsetof(INODE_REF, name[0]) + ir->n);
+        return STATUS_INTERNAL_ERROR;
+    }
+    
+    if (tp->item->key.offset == SUBVOL_ROOT_INODE) {
+        ULONG pos = context->datalen;
+
+        send_command(context, BTRFS_SEND_CMD_RENAME);
+
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH, o->tmpname, strlen(o->tmpname));
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, ir->name, ir->n);
+        
+        send_command_finish(context, pos);
+
+        RemoveEntryList(&o->list_entry);
+        if (o->name) ExFreePool(o);
+        ExFreePool(o);
+        
+        // FIXME - add to dir list if non-empty dir
+        // FIXME - if directory, try to resolve children
+        
+        return STATUS_SUCCESS;
+    }
+
+    o->parent = tp->item->key.offset;
+    
+    o->name = ExAllocatePoolWithTag(PagedPool, ir->n + 1, ALLOC_TAG);
+    if (!o->name) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlCopyMemory(o->name, ir->name, ir->n);
+    o->name[ir->n] = 0;
+
+    // FIXME - see if we can resolve name now
+    // FIXME - if directory, try to resolve children
     
     return STATUS_SUCCESS;
 }
@@ -197,6 +295,8 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
         return Status;
     }
 
+    InitializeListHead(&context.orphans);
+
     context.data = ExAllocatePoolWithTag(PagedPool, 1048576, ALLOC_TAG); // FIXME
     if (!context.data) {
         ZwClose(context.h);
@@ -225,9 +325,15 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
         traverse_ptr next_tp;
         
         if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
-            Status = send_inode(Vcb, &context, &tp);
+            Status = send_inode(&context, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_inode returned %08x\n", Status);
+                goto end;
+            }
+        } else if (tp.item->key.obj_type == TYPE_INODE_REF) { // FIXME - also do extirefs
+            Status = send_inode_ref(&context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_inode_ref returned %08x\n", Status);
                 goto end;
             }
         }
@@ -248,6 +354,15 @@ end:
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     ZwClose(context.h);
+    
+    while (!IsListEmpty(&context.orphans)) {
+        orphan* o = CONTAINING_RECORD(RemoveHeadList(&context.orphans), orphan, list_entry);
+
+        if (o->name)
+            ExFreePool(o->name);
+
+        ExFreePool(o);
+    }
     
     return Status;
 }
