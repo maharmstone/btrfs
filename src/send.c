@@ -49,6 +49,7 @@ typedef struct {
         BTRFS_TIME atime;
         BTRFS_TIME mtime;
         BTRFS_TIME ctime;
+        BOOL file;
         char* path;
     } lastinode;
 } send_context;
@@ -168,6 +169,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
     context->lastinode.atime = ii->st_atime;
     context->lastinode.mtime = ii->st_mtime;
     context->lastinode.ctime = ii->st_ctime;
+    context->lastinode.file = FALSE;
 
     if (tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
         ULONG pos = context->datalen;
@@ -197,8 +199,10 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
 
         if (ii->st_mode & __S_IFDIR)
             cmd = BTRFS_SEND_CMD_MKDIR;
-        else
+        else {
             cmd = BTRFS_SEND_CMD_MKFILE; // FIXME - mknod, fifo, socket, symlink
+            context->lastinode.file = TRUE;
+        }
         
         send_command(context, cmd);
 
@@ -510,8 +514,20 @@ static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* a
     send_command_finish(context, pos);
 }
 
+static void send_truncate_command(send_context* context, char* path, UINT64 size) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_TRUNCATE);
+
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_SIZE, &size, sizeof(UINT64));
+
+    send_command_finish(context, pos);
+}
+
 static void finish_inode(send_context* context) {
-    // FIXME - send truncate if file (and not zero?)
+    if (context->lastinode.file)
+        send_truncate_command(context, context->lastinode.path, context->lastinode.size);
 
     send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
     send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
