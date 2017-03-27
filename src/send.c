@@ -179,8 +179,6 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         char name[64];
         orphan* o;
 
-        // FIXME - record times, mode, and permissions for later
-
         // skip creating orphan directory if we've already done so
         if (ii->st_mode & __S_IFDIR) {
             LIST_ENTRY* le;
@@ -198,10 +196,18 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
             }
         }
 
-        if (ii->st_mode & __S_IFDIR)
+        if ((ii->st_mode & __S_IFSOCK) == __S_IFSOCK)
+            cmd = BTRFS_SEND_CMD_MKSOCK;
+        else if ((ii->st_mode & __S_IFLNK) == __S_IFLNK)
+            cmd = BTRFS_SEND_CMD_SYMLINK; // FIXME - write link
+        else if ((ii->st_mode & __S_IFCHR) == __S_IFCHR || (ii->st_mode & __S_IFBLK) == __S_IFBLK)
+            cmd = BTRFS_SEND_CMD_MKNOD;
+        else if ((ii->st_mode & __S_IFDIR) == __S_IFDIR)
             cmd = BTRFS_SEND_CMD_MKDIR;
+        else if ((ii->st_mode & __S_IFIFO) == __S_IFIFO)
+            cmd = BTRFS_SEND_CMD_MKFIFO;
         else {
-            cmd = BTRFS_SEND_CMD_MKFILE; // FIXME - mknod, fifo, socket, symlink
+            cmd = BTRFS_SEND_CMD_MKFILE;
             context->lastinode.file = TRUE;
         }
         
@@ -212,6 +218,13 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(UINT64));
         
+        if (cmd == BTRFS_SEND_CMD_MKNOD || cmd == BTRFS_SEND_CMD_MKFIFO || cmd == BTRFS_SEND_CMD_MKSOCK) {
+            UINT64 rdev = makedev((ii->st_rdev & 0xFFFFFFFFFFF) >> 20, ii->st_rdev & 0xFFFFF), mode = ii->st_mode;
+
+            send_add_tlv(context, BTRFS_SEND_TLV_RDEV, &rdev, sizeof(UINT64));
+            send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(UINT64));
+        }
+
         send_command_finish(context, pos);
 
         o = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
@@ -941,7 +954,7 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULONG* retlen) {
+NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULONG_PTR* retlen) {
     send_context* context = (send_context*)Vcb->send.context;
 
     // FIXME - check for volume privileges

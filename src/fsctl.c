@@ -1092,9 +1092,6 @@ end2:
     return Status;
 }
 
-// based on function in sys/sysmacros.h
-#define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((UINT64)((minor) & ~0xFF)) << 12) | (((UINT64)((major) & ~0xFFF)) << 32))
-
 static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_inode_info* bii = data;
     fcb* fcb;
