@@ -27,11 +27,20 @@ typedef struct {
 } orphan;
 
 typedef struct {
+    LIST_ENTRY list_entry;
+    UINT64 inode;
+    char path[1];
+} send_dir;
+
+typedef struct {
     HANDLE h;
     UINT8* data;
     ULONG datalen;
     LIST_ENTRY orphans;
+    LIST_ENTRY dirs;
 } send_context;
+
+static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
 
 static void send_write_data(send_context* context, void* data, ULONG datalen) {
     NTSTATUS Status;
@@ -115,9 +124,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (tp->item->key.obj_id == SUBVOL_ROOT_INODE) {
-        // FIXME - send "subvol" item
-    } else {
+    if (tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
         ULONG pos = context->datalen;
         UINT16 cmd;
         INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
@@ -152,6 +159,96 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         InsertTailList(&context->orphans, &o->list_entry);
     }
     
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, ULONG pathlen) {
+    LIST_ENTRY* le;
+    send_dir* sd = ExAllocatePoolWithTag(PagedPool, offsetof(send_dir, path[0]) + pathlen + 1, ALLOC_TAG);
+
+    if (!sd) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    sd->inode = inode;
+    memcpy(sd->path, path, pathlen);
+    sd->path[pathlen] = 0;
+
+    le = context->dirs.Flink;
+    while (le != &context->dirs) {
+        send_dir* sd2 = CONTAINING_RECORD(le, send_dir, list_entry);
+
+        if (sd2->inode > sd->inode) {
+            InsertHeadList(sd2->list_entry.Blink, &sd->list_entry);
+            goto end;
+        }
+
+        le = le->Flink;
+    }
+
+    InsertTailList(&context->dirs, &sd->list_entry);
+
+end:
+    le = context->orphans.Flink;
+    while (le != &context->orphans) {
+        LIST_ENTRY* le2 = le->Flink;
+        orphan* o = CONTAINING_RECORD(le, orphan, list_entry);
+
+        if (o->parent == inode) {
+            NTSTATUS Status;
+            char* inodepath;
+
+            inodepath = ExAllocatePoolWithTag(PagedPool, pathlen + 1 + strlen(o->name), ALLOC_TAG);
+            if (!inodepath) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(inodepath, path, pathlen);
+            inodepath[pathlen] = '/';
+            RtlCopyMemory(&inodepath[pathlen + 1], o->name, strlen(o->name));
+
+            Status = found_orphan_path(context, o, inodepath, pathlen + 1 + strlen(o->name));
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_orphan_path returned %08x\n", Status);
+                ExFreePool(inodepath);
+                return Status;
+            }
+
+            ExFreePool(inodepath);
+        }
+
+        le = le2;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen) {
+    NTSTATUS Status;
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_RENAME);
+
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, o->tmpname, strlen(o->tmpname));
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, path, pathlen);
+
+    send_command_finish(context, pos);
+
+    if (o->dir) {
+        Status = send_add_dir(context, o->inode, path, pathlen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_dir returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    RemoveEntryList(&o->list_entry);
+    if (o->name) ExFreePool(o->name);
+    ExFreePool(o);
+
     return STATUS_SUCCESS;
 }
 
@@ -192,25 +289,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
         return STATUS_INTERNAL_ERROR;
     }
     
-    if (tp->item->key.offset == SUBVOL_ROOT_INODE) {
-        ULONG pos = context->datalen;
-
-        send_command(context, BTRFS_SEND_CMD_RENAME);
-
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, o->tmpname, strlen(o->tmpname));
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, ir->name, ir->n);
-        
-        send_command_finish(context, pos);
-
-        RemoveEntryList(&o->list_entry);
-        if (o->name) ExFreePool(o);
-        ExFreePool(o);
-        
-        // FIXME - add to dir list if non-empty dir
-        // FIXME - if directory, try to resolve children
-        
-        return STATUS_SUCCESS;
-    }
+    if (tp->item->key.offset == SUBVOL_ROOT_INODE)
+        return found_orphan_path(context, o, ir->name, ir->n);
 
     o->parent = tp->item->key.offset;
     
@@ -223,9 +303,40 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     RtlCopyMemory(o->name, ir->name, ir->n);
     o->name[ir->n] = 0;
 
-    // FIXME - see if we can resolve name now
-    // FIXME - if directory, try to resolve children
-    
+    le = context->dirs.Flink;
+    while (le != &context->dirs) {
+        send_dir* sd = CONTAINING_RECORD(le, send_dir, list_entry);
+
+        if (sd->inode > o->parent)
+            break;
+        else if (sd->inode == o->parent) {
+            NTSTATUS Status;
+            char* inodepath;
+
+            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(sd->path) + 1 + strlen(o->name), ALLOC_TAG);
+            if (!inodepath) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(inodepath, sd->path, strlen(sd->path));
+            inodepath[strlen(sd->path)] = '/';
+            RtlCopyMemory(&inodepath[strlen(sd->path) + 1], o->name, strlen(o->name));
+
+            Status = found_orphan_path(context, o, inodepath, strlen(sd->path) + 1 + strlen(o->name));
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_orphan_path returned %08x\n", Status);
+                ExFreePool(inodepath);
+                return Status;
+            }
+
+            ExFreePool(inodepath);
+        }
+
+        le = le->Flink;
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -296,6 +407,7 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     }
 
     InitializeListHead(&context.orphans);
+    InitializeListHead(&context.dirs);
 
     context.data = ExAllocatePoolWithTag(PagedPool, 1048576, ALLOC_TAG); // FIXME
     if (!context.data) {
@@ -362,6 +474,11 @@ end:
             ExFreePool(o->name);
 
         ExFreePool(o);
+    }
+
+    while (!IsListEmpty(&context.dirs)) {
+        send_dir* sd = CONTAINING_RECORD(RemoveHeadList(&context.dirs), send_dir, list_entry);
+        ExFreePool(sd);
     }
     
     return Status;
