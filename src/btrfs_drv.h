@@ -617,6 +617,8 @@ typedef struct {
 
 typedef struct {
     HANDLE thread;
+    ERESOURCE load_lock;
+    void* context;
 } send_info;
 
 struct _volume_device_extension;
@@ -1204,6 +1206,7 @@ NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 // in send.c
 NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject);
+NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULONG* retlen);
 
 #define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
