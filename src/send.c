@@ -31,6 +31,8 @@ typedef struct {
 } send_dir;
 
 typedef struct {
+    device_extension* Vcb;
+    PIRP Irp;
     HANDLE h;
     UINT8* data;
     ULONG datalen;
@@ -43,12 +45,15 @@ typedef struct {
         UINT64 uid;
         UINT64 gid;
         UINT64 mode;
+        UINT64 size;
         BTRFS_TIME atime;
         BTRFS_TIME mtime;
         BTRFS_TIME ctime;
         char* path;
     } lastinode;
 } send_context;
+
+#define MAX_SEND_WRITE 0xc000 // 48 KB
 
 static NTSTATUS found_orphan_path(send_context* context, orphan* o, char* path, ULONG pathlen);
 
@@ -159,6 +164,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
     context->lastinode.uid = ii->st_uid;
     context->lastinode.gid = ii->st_gid;
     context->lastinode.mode = ii->st_mode;
+    context->lastinode.size = ii->st_size;
     context->lastinode.atime = ii->st_atime;
     context->lastinode.mtime = ii->st_mtime;
     context->lastinode.ctime = ii->st_ctime;
@@ -519,6 +525,118 @@ static void finish_inode(send_context* context) {
     }
 }
 
+static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
+    NTSTATUS Status;
+    ULONG pos;
+    EXTENT_DATA* ed;
+    EXTENT_DATA2* ed2;
+
+    if (tp->item->size < sizeof(EXTENT_DATA)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, sizeof(EXTENT_DATA));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ed = (EXTENT_DATA*)tp->item->data;
+
+    if (ed->type == EXTENT_TYPE_PREALLOC)
+        return STATUS_SUCCESS;
+
+    if (ed->type != EXTENT_TYPE_INLINE && ed->type != EXTENT_TYPE_REGULAR) {
+        ERR("unknown EXTENT_DATA type %u\n", ed->type);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+        ERR("unknown encryption type %u\n", ed->encryption);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ed->encoding != BTRFS_ENCODING_NONE) {
+        ERR("unknown encoding type %u\n", ed->encoding);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ed->compression != BTRFS_COMPRESSION_NONE && ed->compression != BTRFS_COMPRESSION_ZLIB && ed->compression != BTRFS_COMPRESSION_LZO) {
+        ERR("unknown compression type %u\n", ed->compression);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ed->type == EXTENT_TYPE_INLINE) {
+        if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                tp->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        pos = context->datalen;
+
+        send_command(context, BTRFS_SEND_CMD_WRITE);
+
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+        send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &tp->item->key.offset, sizeof(UINT64));
+        send_add_tlv(context, BTRFS_SEND_TLV_DATA, ed->data, ed->decoded_size);
+
+        send_command_finish(context, pos);
+
+        return STATUS_SUCCESS;
+    }
+
+    if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ed2 = (EXTENT_DATA2*)ed->data;
+
+    if (ed2->size == 0) // sparse
+        return STATUS_SUCCESS;
+
+    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+        UINT64 off = 0, offset;
+        UINT8* buf;
+
+        buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE, ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        for (off = 0; off < ed->decoded_size; off += MAX_SEND_WRITE) {
+            ULONG length = min(ed->decoded_size - off, MAX_SEND_WRITE);
+
+            Status = read_data(context->Vcb, ed2->address + ed2->offset + off, length, NULL, FALSE,
+                               buf, NULL, NULL, context->Irp, 0, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("read_data returned %08x\n", Status);
+                ExFreePool(buf);
+                return Status;
+            }
+
+            pos = context->datalen;
+
+            send_command(context, BTRFS_SEND_CMD_WRITE);
+
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+
+            offset = tp->item->key.offset + off;
+            send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
+
+            length = min(context->lastinode.size - tp->item->key.offset - off, length);
+            send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf, length);
+
+            send_command_finish(context, pos);
+        }
+
+        ExFreePool(buf);
+    } else {
+        // FIXME - compression
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
@@ -561,11 +679,13 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
         return Status;
     }
 
+    context.Vcb = Vcb;
+    context.Irp = Irp;
     InitializeListHead(&context.orphans);
     InitializeListHead(&context.dirs);
     context.lastinode.inode = 0;
 
-    context.data = ExAllocatePoolWithTag(PagedPool, 1048576, ALLOC_TAG); // FIXME
+    context.data = ExAllocatePoolWithTag(PagedPool, 1048576 * 5, ALLOC_TAG); // FIXME
     if (!context.data) {
         ZwClose(context.h);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -605,6 +725,12 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
             Status = send_inode_ref(&context, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_inode_ref returned %08x\n", Status);
+                goto end;
+            }
+        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            Status = send_extent_data(&context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_extent_data returned %08x\n", Status);
                 goto end;
             }
         }
