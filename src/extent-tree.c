@@ -2312,11 +2312,11 @@ UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, U
     }
     
     if (!keycmp(searchkey, tp.item->key)) {    
-        if (tp.item->size < sizeof(SHARED_DATA_REF))
-            ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(SHARED_DATA_REF));
+        if (tp.item->size < sizeof(UINT32))
+            ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(UINT32));
         else {
-            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)tp.item->data;
-            return sdr->count;
+            UINT32* count = (UINT32*)tp.item->data;
+            return *count;
         }
     }
     
