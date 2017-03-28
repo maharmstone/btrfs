@@ -1202,6 +1202,9 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         return STATUS_INTERNAL_ERROR;
     }
     
+    if (type == TYPE_SHARED_DATA_REF)
+        datalen = sizeof(UINT32);
+
     searchkey.obj_id = address;
     searchkey.obj_type = type;
     searchkey.offset = (type == TYPE_SHARED_DATA_REF || type == TYPE_EXTENT_REF_V0) ? parent : get_extent_hash(type, data);
@@ -1218,7 +1221,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     }
     
     if (tp2.item->size < datalen) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, datalen);
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
         return STATUS_INTERNAL_ERROR;
     }
     
@@ -1305,11 +1308,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             return STATUS_INTERNAL_ERROR;
         }
     } else if (type == TYPE_SHARED_DATA_REF) {
-        SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)tp2.item->data;
+        UINT32* sectsdrcount = (UINT32*)tp2.item->data;
         SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
         EXTENT_ITEM* newei;
         
-        if (sectsdr->offset == sdr->offset) {
+        if (tp2.item->key.offset == sdr->offset) {
             if (ei->refcount == sdr->count) {
                 Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
@@ -1329,8 +1332,8 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return STATUS_SUCCESS;
             }
             
-            if (sectsdr->count < sdr->count) {
-                ERR("error - extent section has refcount %x, trying to reduce by %x\n", sectsdr->count, sdr->count);
+            if (*sectsdrcount < sdr->count) {
+                ERR("error - extent section has refcount %x, trying to reduce by %x\n", *sectsdrcount, sdr->count);
                 return STATUS_INTERNAL_ERROR;
             }
             
@@ -1340,18 +1343,16 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 return Status;
             }
             
-            if (sectsdr->count > sdr->count) {
-                SHARED_DATA_REF* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+            if (*sectsdrcount > sdr->count) {
+                UINT32* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
                 
                 if (!newsdr) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-                
-                RtlCopyMemory(newsdr, sectsdr, tp2.item->size);
-                
-                newsdr->count -= sdr->count;
-                
+
+                *newsdr = *sectsdrcount - sdr->count;
+
                 Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, newsdr, tp2.item->size, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
