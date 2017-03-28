@@ -535,6 +535,137 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
+    UINT64 inode = tp->item->key.obj_id;
+    INODE_EXTREF* ier;
+    ULONG len;
+
+    if (tp->item->size < sizeof(INODE_EXTREF)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            tp->item->size, sizeof(INODE_EXTREF));
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    len = tp->item->size;
+    ier = (INODE_EXTREF*)tp->item->data;
+
+    while (len > 0) {
+        NTSTATUS Status;
+        BOOL root;
+        send_dir* sd = NULL;
+        orphan* o2 = NULL;
+
+        if (len < sizeof(INODE_EXTREF) || len < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+            ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (ier->dir == SUBVOL_ROOT_INODE)
+            root = TRUE;
+        else {
+            LIST_ENTRY* le;
+
+            root = FALSE;
+
+            le = context->dirs.Flink;
+            while (le != &context->dirs) {
+                send_dir* sd2 = CONTAINING_RECORD(le, send_dir, list_entry);
+
+                if (sd2->inode > ier->dir)
+                    break;
+                else if (sd2->inode == ier->dir) {
+                    sd = sd2;
+                    break;
+                }
+
+                le = le->Flink;
+            }
+
+            // directory has higher inode number than file, so might need to be created
+            if (!sd) {
+                BOOL found = FALSE;
+
+                le = context->orphans.Flink;
+                while (le != &context->orphans) {
+                    o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+                    if (o2->inode == ier->dir) {
+                        found = TRUE;
+                        break;
+                    } else if (o2->inode > ier->dir)
+                        break;
+
+                    le = le->Flink;
+                }
+
+                if (!found) {
+                    ULONG pos = context->datalen;
+                    char name[64];
+
+                    send_command(context, BTRFS_SEND_CMD_MKDIR);
+
+                    get_orphan_name(ier->dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
+
+                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
+                    send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->dir, sizeof(UINT64));
+
+                    send_command_finish(context, pos);
+
+                    o2 = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
+                    if (!o2) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    o2->inode = ier->dir;
+                    o2->dir = TRUE;
+                    strcpy(o2->tmpname, name);
+                    add_orphan(context, o2);
+                }
+            }
+        }
+
+        if (root) {
+            Status = found_path(context, ier->name, ier->n);
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_path returned %08x\n", Status);
+                return Status;
+            }
+        } else {
+            char *inodepath, *dirname = sd ? sd->path : o2->tmpname;
+
+            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(dirname) + 1 + ier->n, ALLOC_TAG);
+            if (!inodepath) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(inodepath, dirname, strlen(dirname));
+            inodepath[strlen(dirname)] = '/';
+            RtlCopyMemory(&inodepath[strlen(dirname) + 1], ier->name, ier->n);
+
+            Status = found_path(context, inodepath, strlen(dirname) + 1 + ier->n);
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_path returned %08x\n", Status);
+                ExFreePool(inodepath);
+                return Status;
+            }
+
+            ExFreePool(inodepath);
+        }
+
+        if (root)
+            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+        else if (sd)
+            send_utimes_command(context, sd->path, &sd->atime, &sd->mtime, &sd->ctime);
+
+        len -= offsetof(INODE_EXTREF, name[0]) + ier->n;
+        ier = (INODE_EXTREF*)&ier->name[ier->n];
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
     ULONG pos = context->datalen;
     
@@ -875,6 +1006,13 @@ static void send_thread(void* ctx) {
             Status = send_inode_ref(context, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_inode_ref returned %08x\n", Status);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                goto end;
+            }
+        } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+            Status = send_inode_extref(context, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_inode_extref returned %08x\n", Status);
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
                 goto end;
             }
