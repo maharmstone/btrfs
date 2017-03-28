@@ -703,7 +703,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             if (secttype == type) {
                 UINT64 sectoff = get_extent_hash(secttype, ptr + 1);
                 
-                if (sectoff > offset)
+                if (sectoff < offset)
                     break;
             }
             
