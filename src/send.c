@@ -840,8 +840,8 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (off = 0; off < ed->decoded_size; off += MAX_SEND_WRITE) {
-            ULONG length = min(ed->decoded_size - off, MAX_SEND_WRITE);
+        for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
+            ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
 
             if (context->datalen > SEND_BUFFER_LENGTH) {
                 KEY key = tp->item->key;
@@ -882,7 +882,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
                 ed2 = (EXTENT_DATA2*)ed->data;
             }
 
-            Status = read_data(context->Vcb, ed2->address + ed2->offset + off, length, NULL, FALSE,
+            Status = read_data(context->Vcb, ed2->address + off, length, NULL, FALSE,
                                buf, NULL, NULL, NULL, 0, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
