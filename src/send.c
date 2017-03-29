@@ -831,7 +831,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
         return STATUS_SUCCESS;
 
     if (ed->compression == BTRFS_COMPRESSION_NONE) {
-        UINT64 off = 0, offset;
+        UINT64 off, offset;
         UINT8* buf;
 
         buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE, ALLOC_TAG);
@@ -907,7 +907,115 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
 
         ExFreePool(buf);
     } else {
-        // FIXME - compression
+        UINT8 *buf, *compbuf;
+        UINT64 off;
+
+        if (ed->decoded_size == 0) {
+            ERR("EXTENT_DATA decoded_size was 0\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        buf = ExAllocatePoolWithTag(PagedPool, ed->decoded_size, ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        compbuf = ExAllocatePoolWithTag(PagedPool, ed2->size, ALLOC_TAG);
+        if (!compbuf) {
+            ERR("out of memory\n");
+            ExFreePool(buf);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Status = read_data(context->Vcb, ed2->address, ed2->size, NULL, FALSE,
+                           compbuf, NULL, NULL, NULL, 0, FALSE);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data returned %08x\n", Status);
+            ExFreePool(compbuf);
+            ExFreePool(buf);
+            return Status;
+        }
+
+        if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
+            Status = zlib_decompress(compbuf, ed2->size, buf, ed->decoded_size);
+            if (!NT_SUCCESS(Status)) {
+                ERR("zlib_decompress returned %08x\n", Status);
+                ExFreePool(compbuf);
+                ExFreePool(buf);
+                return Status;
+            }
+        } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
+            Status = lzo_decompress(&compbuf[sizeof(UINT32)], ed2->size, buf, ed->decoded_size, sizeof(UINT32));
+            if (!NT_SUCCESS(Status)) {
+                ERR("lzo_decompress returned %08x\n", Status);
+                ExFreePool(compbuf);
+                ExFreePool(buf);
+                return Status;
+            }
+        }
+
+        ExFreePool(compbuf);
+
+        for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
+            ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+            UINT64 offset;
+
+            if (context->datalen > SEND_BUFFER_LENGTH) {
+                KEY key = tp->item->key;
+
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+
+                KeClearEvent(&context->cleared_event);
+                KeSetEvent(&context->buffer_event, 0, TRUE);
+                KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+                ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
+                Status = find_item(context->Vcb, context->root, tp, &key, FALSE, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    return Status;
+                }
+
+                if (keycmp(tp->item->key, key)) {
+                    ERR("readonly subvolume changed\n");
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                if (tp->item->size < sizeof(EXTENT_DATA)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                        tp->item->size, sizeof(EXTENT_DATA));
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                ed = (EXTENT_DATA*)tp->item->data;
+
+                if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
+                    ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                        tp->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                ed2 = (EXTENT_DATA2*)ed->data;
+            }
+
+            pos = context->datalen;
+
+            send_command(context, BTRFS_SEND_CMD_WRITE);
+
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+
+            offset = tp->item->key.offset + off;
+            send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
+
+            length = min(context->lastinode.size - tp->item->key.offset - off, length);
+            send_add_tlv(context, BTRFS_SEND_TLV_DATA, &buf[off], length);
+
+            send_command_finish(context, pos);
+        }
+
+        ExFreePool(buf);
     }
 
     return STATUS_SUCCESS;
