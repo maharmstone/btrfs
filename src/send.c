@@ -40,6 +40,7 @@ typedef struct {
 typedef struct {
     device_extension* Vcb;
     root* root;
+    root* parent;
     UINT8* data;
     ULONG datalen;
     LIST_ENTRY orphans;
@@ -1351,14 +1352,14 @@ end:
     ExReleaseResourceLite(&Vcb->send.load_lock);
 }
 
-NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject) {
+NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
     ccb* ccb;
+    root* parsubvol = NULL;
     send_context* context;
     btrfs_send_header* header;
     
-    // FIXME - incremental sends
     // FIXME - cloning
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
@@ -1371,6 +1372,42 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject) {
 
     if (fcb->inode != SUBVOL_ROOT_INODE || fcb == Vcb->root_fileref->fcb)
         return STATUS_INVALID_PARAMETER;
+
+    if (data) {
+        btrfs_send_subvol* bss = (btrfs_send_subvol*)data;
+
+        if (datalen < sizeof(btrfs_send_subvol))
+            return STATUS_INVALID_PARAMETER;
+
+        if (bss->parent) {
+            HANDLE h;
+            PFILE_OBJECT fileobj;
+            struct _fcb* parfcb;
+
+#if defined(_WIN64)
+            if (IoIs32bitProcess(Irp))
+                h = (HANDLE)LongToHandle(*(PUINT32)&bss->parent);
+            else
+#endif
+                h = bss->parent;
+
+            Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+                return Status;
+            }
+
+            parfcb = fileobj->FsContext;
+
+            if (!parfcb || parfcb == Vcb->root_fileref->fcb || parfcb == Vcb->volume_fcb || parfcb->inode != SUBVOL_ROOT_INODE) {
+                ObDereferenceObject(fileobj);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            parsubvol = parfcb->subvol;
+            ObDereferenceObject(fileobj);
+        }
+    }
 
     // FIXME - check subvol or FS is readonly
     // FIXME - if subvol only just made readonly, check it has been flushed
@@ -1393,6 +1430,7 @@ NTSTATUS send_subvol(device_extension* Vcb, PFILE_OBJECT FileObject) {
 
     context->Vcb = Vcb;
     context->root = fcb->subvol;
+    context->parent = parsubvol;
     InitializeListHead(&context->orphans);
     InitializeListHead(&context->dirs);
     context->lastinode.inode = 0;

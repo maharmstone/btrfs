@@ -242,4 +242,8 @@ typedef struct {
     UINT64 ctransid;
 } btrfs_find_subvol;
 
+typedef struct {
+    HANDLE parent;
+} btrfs_send_subvol;
+
 #endif
