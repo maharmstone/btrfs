@@ -17,14 +17,16 @@
 
 #include "btrfs_drv.h"
 
-typedef struct {
+typedef struct send_dir {
     LIST_ENTRY list_entry;
     UINT64 inode;
     BOOL dummy;
     BTRFS_TIME atime;
     BTRFS_TIME mtime;
     BTRFS_TIME ctime;
-    char* path;
+    struct send_dir* parent;
+    ULONG namelen;
+    char* name;
 } send_dir;
 
 typedef struct {
@@ -70,7 +72,7 @@ typedef struct {
 #define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
 static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime);
-static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, ULONG pathlen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd);
+static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, ULONG namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd);
 
 static void send_command(send_context* context, UINT16 cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
@@ -298,7 +300,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
         send_command_finish(context, pos);
 
         if (ii->st_mode & __S_IFDIR) {
-            Status = send_add_dir(context, tp->item->key.obj_id, name, strlen(name), FALSE, NULL, &sd);
+            Status = send_add_dir(context, tp->item->key.obj_id, NULL, name, strlen(name), FALSE, NULL, &sd);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_add_dir returned %08x\n", Status);
                 return Status;
@@ -337,7 +339,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, ULONG pathlen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd) {
+static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, ULONG namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd) {
     LIST_ENTRY* le;
     send_dir* sd = ExAllocatePoolWithTag(PagedPool, sizeof(send_dir), ALLOC_TAG);
 
@@ -348,6 +350,7 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
 
     sd->inode = inode;
     sd->dummy = dummy;
+    sd->parent = parent;
 
     if (!dummy) {
         sd->atime = context->lastinode.atime;
@@ -355,15 +358,15 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
         sd->ctime = context->lastinode.ctime;
     }
 
-    sd->path = ExAllocatePoolWithTag(PagedPool, pathlen + 1, ALLOC_TAG);
-    if (!sd->path) {
+    sd->name = ExAllocatePoolWithTag(PagedPool, namelen, ALLOC_TAG);
+    if (!sd->name) {
         ERR("out of memory\n");
         ExFreePool(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    memcpy(sd->path, path, pathlen);
-    sd->path[pathlen] = 0;
+    memcpy(sd->name, name, namelen);
+    sd->namelen = namelen;
 
     if (lastentry)
         InsertHeadList(lastentry, &sd->list_entry);
@@ -393,50 +396,109 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, char* path, UL
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS found_path(send_context* context, char* path, ULONG pathlen) {
+static __inline ULONG find_path_len(send_dir* parent, ULONG namelen) {
+    ULONG len = namelen;
+
+    while (parent) {
+        len += parent->namelen + 1;
+        parent = parent->parent;
+    }
+
+    return len;
+}
+
+static void find_path(char* path, send_dir* parent, char* name, ULONG namelen) {
+    ULONG len = namelen;
+
+    RtlCopyMemory(path, name, namelen);
+
+    while (parent) {
+        RtlMoveMemory(path + parent->namelen + 1, path, len);
+        RtlCopyMemory(path, parent->name, parent->namelen);
+        path[parent->namelen] = '/';
+        len += parent->namelen + 1;
+
+        parent = parent->parent;
+    }
+}
+
+static NTSTATUS send_add_tlv_path(send_context* context, UINT16 type, send_dir* parent, char* name, ULONG namelen) {
+    ULONG len = find_path_len(parent, namelen);
+    char* path;
+
+    path = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+    if (!path) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    find_path(path, parent, name, namelen);
+    send_add_tlv(context, type, path, len);
+
+    ExFreePool(path);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, ULONG namelen) {
+    NTSTATUS Status;
     ULONG pos = context->datalen;
 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
         send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, path, pathlen);
+
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
 
         send_command_finish(context, pos);
     } else {
         send_command(context, BTRFS_SEND_CMD_LINK);
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, pathlen);
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, parent, name, namelen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
+
         send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
 
         send_command_finish(context, pos);
     }
 
     if (context->lastinode.o) {
-        if (context->lastinode.o->sd) {
-            if (context->lastinode.o->sd->path)
-                ExFreePool(context->lastinode.o->sd->path);
+        ULONG pathlen;
 
-            context->lastinode.o->sd->path = ExAllocatePoolWithTag(PagedPool, pathlen + 1, ALLOC_TAG);
-            if (!context->lastinode.o->sd->path) {
+        if (context->lastinode.o->sd) {
+            if (context->lastinode.o->sd->name)
+                ExFreePool(context->lastinode.o->sd->name);
+
+            context->lastinode.o->sd->name = ExAllocatePoolWithTag(PagedPool, namelen, ALLOC_TAG);
+            if (!context->lastinode.o->sd->name) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            RtlCopyMemory(context->lastinode.o->sd->path, path, pathlen);
-            context->lastinode.o->sd->path[pathlen] = 0;
+            RtlCopyMemory(context->lastinode.o->sd->name, name, namelen);
+            context->lastinode.o->sd->namelen = namelen;
+            context->lastinode.o->sd->parent = parent;
         }
 
         if (context->lastinode.path)
             ExFreePool(context->lastinode.path);
 
+        pathlen = find_path_len(parent, namelen);
         context->lastinode.path = ExAllocatePoolWithTag(PagedPool, pathlen + 1, ALLOC_TAG);
         if (!context->lastinode.path) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlCopyMemory(context->lastinode.path, path, pathlen);
+        find_path(context->lastinode.path, parent, name, namelen);
         context->lastinode.path[pathlen] = 0;
 
         RemoveEntryList(&context->lastinode.o->list_entry);
@@ -444,6 +506,27 @@ static NTSTATUS found_path(send_context* context, char* path, ULONG pathlen) {
 
         context->lastinode.o = NULL;
     }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS send_utimes_command_dir(send_context* context, send_dir* sd, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
+    NTSTATUS Status;
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_UTIMES);
+
+    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, sd->parent, sd->name, sd->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("send_add_tlv_path returned %08x\n", Status);
+        return Status;
+    }
+
+    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
+
+    send_command_finish(context, pos);
 
     return STATUS_SUCCESS;
 }
@@ -483,7 +566,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
                 get_orphan_name(dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
 
-                Status = send_add_dir(context, dir, name, strlen(name), TRUE, &sd2->list_entry, &sd);
+                Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, &sd2->list_entry, &sd);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_add_dir returned %08x\n", Status);
                     return Status;
@@ -504,7 +587,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
             get_orphan_name(dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
 
-            Status = send_add_dir(context, dir, name, strlen(name), TRUE, context->dirs.Blink, &sd);
+            Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, context->dirs.Blink, &sd);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_add_dir returned %08x\n", Status);
                 return Status;
@@ -533,7 +616,12 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
                 send_command(context, BTRFS_SEND_CMD_MKDIR);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, sd->path, strlen(sd->path));
+                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_add_tlv_path returned %08x\n", Status);
+                    return Status;
+                }
+
                 send_add_tlv(context, BTRFS_SEND_TLV_INODE, &dir, sizeof(UINT64));
 
                 send_command_finish(context, pos);
@@ -546,7 +634,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
 
                 o2->inode = dir;
                 o2->dir = TRUE;
-                strcpy(o2->tmpname, sd->path);
+                memcpy(o2->tmpname, sd->name, sd->namelen);
+                o2->tmpname[sd->namelen] = 0;
                 o2->sd = sd;
                 add_orphan(context, o2);
             }
@@ -563,32 +652,17 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
         }
 
         if (root) {
-            Status = found_path(context, ir->name, ir->n);
+            Status = found_path(context, NULL, ir->name, ir->n);
             if (!NT_SUCCESS(Status)) {
                 ERR("found_path returned %08x\n", Status);
                 return Status;
             }
         } else {
-            char* inodepath;
-
-            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(sd->path) + 1 + ir->n, ALLOC_TAG);
-            if (!inodepath) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(inodepath, sd->path, strlen(sd->path));
-            inodepath[strlen(sd->path)] = '/';
-            RtlCopyMemory(&inodepath[strlen(sd->path) + 1], ir->name, ir->n);
-
-            Status = found_path(context, inodepath, strlen(sd->path) + 1 + ir->n);
+            Status = found_path(context, sd, ir->name, ir->n);
             if (!NT_SUCCESS(Status)) {
                 ERR("found_path returned %08x\n", Status);
-                ExFreePool(inodepath);
                 return Status;
             }
-
-            ExFreePool(inodepath);
         }
 
         len -= offsetof(INODE_REF, name[0]) + ir->n;
@@ -598,8 +672,13 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     // The Linux driver here sends a utimes command for each entry in the DIR_ITEM, which doesn't make much sense.
     if (root)
         send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-    else if (sd && !sd->dummy)
-        send_utimes_command(context, sd->path, &sd->atime, &sd->mtime, &sd->ctime);
+    else if (sd && !sd->dummy) {
+        Status = send_utimes_command_dir(context, sd, &sd->atime, &sd->mtime, &sd->ctime);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_utimes_command_dir returned %08x\n", Status);
+            return Status;
+        }
+    }
 
     return STATUS_SUCCESS;
 }
@@ -646,7 +725,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
 
                     get_orphan_name(ier->dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
 
-                    Status = send_add_dir(context, ier->dir, name, strlen(name), TRUE, &sd2->list_entry, &sd);
+                    Status = send_add_dir(context, ier->dir, NULL, name, strlen(name), TRUE, &sd2->list_entry, &sd);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_add_dir returned %08x\n", Status);
                         return Status;
@@ -667,7 +746,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
 
                 get_orphan_name(ier->dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
 
-                Status = send_add_dir(context, ier->dir, name, strlen(name), TRUE, context->dirs.Blink, &sd);
+                Status = send_add_dir(context, ier->dir, NULL, name, strlen(name), TRUE, context->dirs.Blink, &sd);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_add_dir returned %08x\n", Status);
                     return Status;
@@ -696,7 +775,12 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
 
                     send_command(context, BTRFS_SEND_CMD_MKDIR);
 
-                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, sd->path, strlen(sd->path));
+                    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_add_tlv_path returned %08x\n", Status);
+                        return Status;
+                    }
+
                     send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->dir, sizeof(UINT64));
 
                     send_command_finish(context, pos);
@@ -709,7 +793,8 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
 
                     o2->inode = ier->dir;
                     o2->dir = TRUE;
-                    strcpy(o2->tmpname, sd->path);
+                    memcpy(o2->tmpname, sd->name, sd->namelen);
+                    o2->tmpname[sd->namelen] = 0;
                     o2->sd = sd;
                     add_orphan(context, o2);
                 }
@@ -717,38 +802,28 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
         }
 
         if (root) {
-            Status = found_path(context, ier->name, ier->n);
+            Status = found_path(context, NULL, ier->name, ier->n);
             if (!NT_SUCCESS(Status)) {
                 ERR("found_path returned %08x\n", Status);
                 return Status;
             }
         } else {
-            char* inodepath;
-
-            inodepath = ExAllocatePoolWithTag(PagedPool, strlen(sd->path) + 1 + ier->n, ALLOC_TAG);
-            if (!inodepath) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(inodepath, sd->path, strlen(sd->path));
-            inodepath[strlen(sd->path)] = '/';
-            RtlCopyMemory(&inodepath[strlen(sd->path) + 1], ier->name, ier->n);
-
-            Status = found_path(context, inodepath, strlen(sd->path) + 1 + ier->n);
+            Status = found_path(context, sd, ier->name, ier->n);
             if (!NT_SUCCESS(Status)) {
                 ERR("found_path returned %08x\n", Status);
-                ExFreePool(inodepath);
                 return Status;
             }
-
-            ExFreePool(inodepath);
         }
 
         if (root)
             send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-        else if (sd && !sd->dummy)
-            send_utimes_command(context, sd->path, &sd->atime, &sd->mtime, &sd->ctime);
+        else if (sd && !sd->dummy) {
+            Status = send_utimes_command_dir(context, sd, &sd->atime, &sd->mtime, &sd->ctime);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_utimes_command_dir returned %08x\n", Status);
+                return Status;
+            }
+        }
 
         len -= offsetof(INODE_EXTREF, name[0]) + ier->n;
         ier = (INODE_EXTREF*)&ier->name[ier->n];
@@ -1261,8 +1336,8 @@ end:
     while (!IsListEmpty(&context->dirs)) {
         send_dir* sd = CONTAINING_RECORD(RemoveHeadList(&context->dirs), send_dir, list_entry);
 
-        if (sd->path)
-            ExFreePool(sd->path);
+        if (sd->name)
+            ExFreePool(sd->name);
 
         ExFreePool(sd);
     }
