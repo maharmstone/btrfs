@@ -207,9 +207,14 @@ static NTSTATUS send_read_symlink(send_context* context, UINT64 inode, char** li
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode(send_context* context, traverse_ptr* tp) {
+static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
     NTSTATUS Status;
-    INODE_ITEM* ii = (INODE_ITEM*)tp->item->data;
+    INODE_ITEM* ii;
+
+    if (tp2 && !tp)
+        return STATUS_SUCCESS; // FIXME
+
+    ii = (INODE_ITEM*)tp->item->data;
 
     if (tp->item->size < sizeof(INODE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -532,15 +537,18 @@ static NTSTATUS send_utimes_command_dir(send_context* context, send_dir* sd, BTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
+static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
     NTSTATUS Status;
-    UINT64 inode = tp->item->key.obj_id, dir = tp->item->key.offset;
+    UINT64 inode = tp ? tp->item->key.obj_id : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
     INODE_REF* ir;
     ULONG len;
     BOOL root;
     send_dir* sd = NULL;
     orphan* o2 = NULL;
+
+    if (tp2 && !tp)
+        return STATUS_SUCCESS; // FIXME
 
     if (inode == dir) // root
         return STATUS_SUCCESS;
@@ -684,10 +692,13 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp) {
-    UINT64 inode = tp->item->key.obj_id;
+static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+    UINT64 inode = tp ? tp->item->key.obj_id : 0;
     INODE_EXTREF* ier;
     ULONG len;
+
+    if (tp2 && !tp)
+        return STATUS_SUCCESS; // FIXME
 
     if (tp->item->size < sizeof(INODE_EXTREF)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -926,11 +937,14 @@ static void finish_inode(send_context* context) {
     }
 }
 
-static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
+static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
     NTSTATUS Status;
     ULONG pos;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
+
+    if (tp2 && !tp)
+        return STATUS_SUCCESS; // FIXME
 
     if ((context->lastinode.mode & __S_IFLNK) == __S_IFLNK)
         return STATUS_SUCCESS;
@@ -1188,9 +1202,12 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp) {
+static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
     DIR_ITEM* di;
     ULONG len;
+
+    if (tp2 && !tp)
+        return STATUS_SUCCESS; // FIXME
 
     if (tp->item->size < sizeof(DIR_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -1228,7 +1245,7 @@ static void send_thread(void* ctx) {
     device_extension* Vcb = context->Vcb;
     NTSTATUS Status;
     KEY searchkey;
-    traverse_ptr tp;
+    traverse_ptr tp, tp2;
 
     ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
@@ -1240,78 +1257,271 @@ static void send_thread(void* ctx) {
         goto end;
     }
 
-    do {
-        traverse_ptr next_tp;
-
-        if (context->datalen > SEND_BUFFER_LENGTH) {
-            KEY key = tp.item->key;
-
-            ExReleaseResourceLite(&context->Vcb->tree_lock);
-
-            KeClearEvent(&context->cleared_event);
-            KeSetEvent(&context->buffer_event, 0, TRUE);
-            KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
-
-            ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
-
-            Status = find_item(context->Vcb, context->root, &tp, &key, FALSE, NULL);
-            if (!NT_SUCCESS(Status)) {
-                ERR("find_item returned %08x\n", Status);
-                goto end;
-            }
-
-            if (keycmp(tp.item->key, key)) {
-                ERR("readonly subvolume changed\n");
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
+    if (context->parent) {
+        BOOL ended1 = FALSE, ended2 = FALSE;
+        Status = find_item(context->Vcb, context->parent, &tp2, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            goto end;
         }
 
-        if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode)
-            finish_inode(context);
+        // FIXME - skip blocks entirely if they are reflinked to the same place on disk
+        do {
+            traverse_ptr next_tp;
 
-        if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
-            Status = send_inode(context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_inode returned %08x\n", Status);
-                ExReleaseResourceLite(&context->Vcb->tree_lock);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_INODE_REF) { // FIXME - also do extirefs
-            Status = send_inode_ref(context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_inode_ref returned %08x\n", Status);
-                ExReleaseResourceLite(&context->Vcb->tree_lock);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-            Status = send_inode_extref(context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_inode_extref returned %08x\n", Status);
-                ExReleaseResourceLite(&context->Vcb->tree_lock);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
-            Status = send_extent_data(context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_extent_data returned %08x\n", Status);
-                ExReleaseResourceLite(&context->Vcb->tree_lock);
-                goto end;
-            }
-        } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
-            Status = send_xattr(context, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_xattr returned %08x\n", Status);
-                ExReleaseResourceLite(&context->Vcb->tree_lock);
-                goto end;
-            }
-        }
+            if (context->datalen > SEND_BUFFER_LENGTH) {
+                KEY key1 = tp.item->key, key2 = tp2.item->key;
 
-        if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
-            tp = next_tp;
-        else
-            break;
-    } while (TRUE);
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+
+                KeClearEvent(&context->cleared_event);
+                KeSetEvent(&context->buffer_event, 0, TRUE);
+                KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+                ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
+                if (!ended1) {
+                    Status = find_item(context->Vcb, context->root, &tp, &key1, FALSE, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("find_item returned %08x\n", Status);
+                        goto end;
+                    }
+
+                    if (keycmp(tp.item->key, key1)) {
+                        ERR("readonly subvolume changed\n");
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto end;
+                    }
+                }
+
+                if (!ended2) {
+                    Status = find_item(context->Vcb, context->parent, &tp2, &key2, FALSE, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("find_item returned %08x\n", Status);
+                        goto end;
+                    }
+
+                    if (keycmp(tp.item->key, key2)) {
+                        ERR("readonly subvolume changed\n");
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto end;
+                    }
+                }
+            }
+
+            if (!ended1 && !ended2 && !keycmp(tp.item->key, tp2.item->key)) {
+                TRACE("~ %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+                    Status = send_inode(context, &tp, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                    Status = send_inode_ref(context, &tp, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_ref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                    Status = send_inode_extref(context, &tp, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_extref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                    Status = send_extent_data(context, &tp, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_extent_data returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                    Status = send_xattr(context, &tp, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
+                if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+                    tp = next_tp;
+                else
+                    ended1 = TRUE;
+
+                if (find_next_item(context->Vcb, &tp2, &next_tp, FALSE, NULL))
+                    tp2 = next_tp;
+                else
+                    ended2 = TRUE;
+            } else if (ended2 || keycmp(tp.item->key, tp2.item->key) == -1) {
+                TRACE("A %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+
+                if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+                    Status = send_inode(context, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                    Status = send_inode_ref(context, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_ref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                    Status = send_inode_extref(context, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_extref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                    Status = send_extent_data(context, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_extent_data returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                    Status = send_xattr(context, &tp, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
+                if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+                    tp = next_tp;
+                else
+                    ended1 = TRUE;
+            } else if (ended1 || keycmp(tp.item->key, tp2.item->key) == 1) {
+                TRACE("B %llx,%x,%llx\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
+
+                if (tp2.item->key.obj_type == TYPE_INODE_ITEM) {
+                    Status = send_inode(context, NULL, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp2.item->key.obj_type == TYPE_INODE_REF) {
+                    Status = send_inode_ref(context, NULL, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_ref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp2.item->key.obj_type == TYPE_INODE_EXTREF) {
+                    Status = send_inode_extref(context, NULL, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_extref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA) {
+                    Status = send_extent_data(context, NULL, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_extent_data returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM) {
+                    Status = send_xattr(context, NULL, &tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
+                if (find_next_item(context->Vcb, &tp2, &next_tp, FALSE, NULL))
+                    tp2 = next_tp;
+                else
+                    ended2 = TRUE;
+            }
+        } while (!ended1 || !ended2);
+    } else {
+        do {
+            traverse_ptr next_tp;
+
+            if (context->datalen > SEND_BUFFER_LENGTH) {
+                KEY key = tp.item->key;
+
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+
+                KeClearEvent(&context->cleared_event);
+                KeSetEvent(&context->buffer_event, 0, TRUE);
+                KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+                ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
+                Status = find_item(context->Vcb, context->root, &tp, &key, FALSE, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    goto end;
+                }
+
+                if (keycmp(tp.item->key, key)) {
+                    ERR("readonly subvolume changed\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
+            }
+
+            if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode)
+                finish_inode(context);
+
+            if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+                Status = send_inode(context, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_inode returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                Status = send_inode_ref(context, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_inode_ref returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                Status = send_inode_extref(context, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_inode_extref returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                Status = send_extent_data(context, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_extent_data returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                Status = send_xattr(context, &tp, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_xattr returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            }
+
+            if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+                tp = next_tp;
+            else
+                break;
+        } while (TRUE);
+    }
 
     ExReleaseResourceLite(&context->Vcb->tree_lock);
 
