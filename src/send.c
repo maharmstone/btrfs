@@ -63,10 +63,14 @@ typedef struct {
     struct {
         UINT64 inode;
         BOOL deleting;
+        BOOL new;
         UINT64 gen;
         UINT64 uid;
+        UINT64 olduid;
         UINT64 gid;
+        UINT64 oldgid;
         UINT64 mode;
+        UINT64 oldmode;
         UINT64 size;
         BTRFS_TIME atime;
         BTRFS_TIME mtime;
@@ -254,6 +258,23 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         ExFreePool(context->lastinode.path);
         context->lastinode.path = NULL;
     }
+
+    if (tp2) {
+        INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
+
+        if (tp2->item->size < sizeof(INODE_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                tp2->item->size, sizeof(INODE_ITEM));
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        context->lastinode.oldmode = ii2->st_mode;
+        context->lastinode.olduid = ii2->st_uid;
+        context->lastinode.oldgid = ii2->st_gid;
+
+        context->lastinode.new = FALSE;
+    } else
+        context->lastinode.new = TRUE;
 
     if (tp->item->key.obj_id == SUBVOL_ROOT_INODE) {
         context->root_dir.atime = ii->st_atime;
@@ -1071,9 +1092,11 @@ static NTSTATUS finish_inode(send_context* context) {
         if (context->lastinode.file)
             send_truncate_command(context, context->lastinode.path, context->lastinode.size);
 
-        send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
+        if (context->lastinode.new || context->lastinode.uid != context->lastinode.olduid || context->lastinode.gid != context->lastinode.oldgid)
+            send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
 
-        if ((context->lastinode.mode & __S_IFLNK) != __S_IFLNK || ((context->lastinode.mode & 07777) != 0777))
+        if (((context->lastinode.mode & __S_IFLNK) != __S_IFLNK || ((context->lastinode.mode & 07777) != 0777)) &&
+            (context->lastinode.new || context->lastinode.mode != context->lastinode.oldmode))
             send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
 
         send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
