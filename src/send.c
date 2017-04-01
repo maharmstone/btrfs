@@ -78,6 +78,7 @@ typedef struct {
         BOOL file;
         char* path;
         orphan* o;
+        send_dir* sd;
         LIST_ENTRY refs;
         LIST_ENTRY oldrefs;
     } lastinode;
@@ -228,8 +229,18 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     // FIXME - if generation of new and old inodes differ, treat as different files
 
     if (tp2 && !tp) {
+        INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
+
+        if (tp2->item->size < sizeof(INODE_ITEM)) {
+            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                tp2->item->size, sizeof(INODE_ITEM));
+            return STATUS_INTERNAL_ERROR;
+        }
+
         context->lastinode.inode = tp2->item->key.obj_id;
         context->lastinode.deleting = TRUE;
+        context->lastinode.mode = ii2->st_mode;
+
         return STATUS_SUCCESS;
     }
 
@@ -253,6 +264,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     context->lastinode.ctime = ii->st_ctime;
     context->lastinode.file = FALSE;
     context->lastinode.o = NULL;
+    context->lastinode.sd = NULL;
 
     if (context->lastinode.path) {
         ExFreePool(context->lastinode.path);
@@ -360,6 +372,8 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             }
         } else
             sd = NULL;
+
+        context->lastinode.sd = sd;
 
         o = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
         if (!o) {
@@ -968,98 +982,25 @@ static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULO
     return STATUS_SUCCESS;
 }
 
+static void send_rmdir_command(send_context* context, ULONG pathlen, char* path) {
+    ULONG pos = context->datalen;
+
+    send_command(context, BTRFS_SEND_CMD_RMDIR);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, pathlen);
+    send_command_finish(context, pos);
+}
+
 static NTSTATUS flush_refs(send_context* context) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     ref *nameref = NULL, *nameref2 = NULL;
 
-    if (!IsListEmpty(&context->lastinode.oldrefs)) {
-        ref* or = CONTAINING_RECORD(context->lastinode.oldrefs.Flink, ref, list_entry);
-        ULONG len = find_path_len(or->sd, or->namelen);
+    if (context->lastinode.mode & __S_IFDIR) { // directory
+        ref* r = IsListEmpty(&context->lastinode.refs) ? NULL : CONTAINING_RECORD(context->lastinode.refs.Flink, ref, list_entry);
+        ref* or = IsListEmpty(&context->lastinode.oldrefs) ? NULL : CONTAINING_RECORD(context->lastinode.oldrefs.Flink, ref, list_entry);
 
-        context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
-        if (!context->lastinode.path) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        find_path(context->lastinode.path, or->sd, or->name, or->namelen);
-        context->lastinode.path[len] = 0;
-        nameref = or;
-    }
-
-    // remove unchanged refs
-    le = context->lastinode.oldrefs.Flink;
-    while (le != &context->lastinode.oldrefs) {
-        ref* or = CONTAINING_RECORD(le, ref, list_entry);
-        LIST_ENTRY* le2;
-        BOOL matched = FALSE;
-
-        le2 = context->lastinode.refs.Flink;
-        while (le2 != &context->lastinode.refs) {
-            ref* r = CONTAINING_RECORD(le2, ref, list_entry);
-
-            if (r->sd == or->sd && r->namelen == or->namelen && RtlCompareMemory(r->name, or->name, r->namelen) == r->namelen) {
-                RemoveEntryList(&r->list_entry);
-                ExFreePool(r);
-                matched = TRUE;
-                break;
-            }
-
-            le2 = le2->Flink;
-        }
-
-        if (matched) {
-            le = le->Flink;
-            RemoveEntryList(&or->list_entry);
-            ExFreePool(or);
-            continue;
-        }
-
-        le = le->Flink;
-    }
-
-    while (!IsListEmpty(&context->lastinode.refs)) {
-        ref* r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
-
-        Status = found_path(context, r->sd, r->name, r->namelen);
-        if (!NT_SUCCESS(Status)) {
-            ERR("found_path returned %08x\n", Status);
-            return Status;
-        }
-
-        if (!r->sd)
-            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-        else if (!r->sd->dummy) {
-            Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_utimes_command_dir returned %08x\n", Status);
-                return Status;
-            }
-        }
-
-        if (nameref && !nameref2)
-            nameref2 = r;
-        else
-            ExFreePool(r);
-    }
-
-    while (!IsListEmpty(&context->lastinode.oldrefs)) {
-        ref* or = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry);
-
-        // FIXME - directories
-
-        Status = send_unlink_command(context, or->sd, or->namelen, or->name);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_unlink_command returned %08x\n", Status);
-            return Status;
-        }
-
-        if (or == nameref && nameref2) {
-            ULONG len = find_path_len(nameref2->sd, nameref2->namelen);
-
-            if (context->lastinode.path)
-                ExFreePool(context->lastinode.path);
+        if (or) {
+            ULONG len = find_path_len(or->sd, or->namelen);
 
             context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
             if (!context->lastinode.path) {
@@ -1067,13 +1008,170 @@ static NTSTATUS flush_refs(send_context* context) {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            find_path(context->lastinode.path, nameref2->sd, nameref2->name, nameref2->namelen);
+            find_path(context->lastinode.path, or->sd, or->name, or->namelen);
             context->lastinode.path[len] = 0;
-
-            ExFreePool(nameref2);
+            nameref = or;
         }
 
-        ExFreePool(or);
+        // FIXME - add send_dir entries if needed
+
+        if (r && or) {
+            if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
+                ULONG pos = context->datalen;
+
+                send_command(context, BTRFS_SEND_CMD_RENAME);
+
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
+
+                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, r->name, r->namelen);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_add_tlv_path returned %08x\n", Status);
+                    return Status;
+                }
+
+                send_command_finish(context, pos);
+
+                if (!r->sd)
+                    send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+                else if (!r->sd->dummy) {
+                    Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_utimes_command_dir returned %08x\n", Status);
+                        return Status;
+                    }
+                }
+            }
+        } else if (r && !or) { // new
+            Status = found_path(context, r->sd, r->name, r->namelen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_path returned %08x\n", Status);
+                return Status;
+            }
+
+            if (!r->sd)
+                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+            else if (!r->sd->dummy) {
+                Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_utimes_command_dir returned %08x\n", Status);
+                    return Status;
+                }
+            }
+        } else // deleted
+            send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path); // FIXME
+
+        while (!IsListEmpty(&context->lastinode.refs)) {
+            r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
+            ExFreePool(r);
+        }
+
+        while (!IsListEmpty(&context->lastinode.oldrefs)) {
+            or = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry);
+            ExFreePool(or);
+        }
+
+        return STATUS_SUCCESS;
+    } else {
+        if (!IsListEmpty(&context->lastinode.oldrefs)) {
+            ref* or = CONTAINING_RECORD(context->lastinode.oldrefs.Flink, ref, list_entry);
+            ULONG len = find_path_len(or->sd, or->namelen);
+
+            context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
+            if (!context->lastinode.path) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            find_path(context->lastinode.path, or->sd, or->name, or->namelen);
+            context->lastinode.path[len] = 0;
+            nameref = or;
+        }
+
+        // remove unchanged refs
+        le = context->lastinode.oldrefs.Flink;
+        while (le != &context->lastinode.oldrefs) {
+            ref* or = CONTAINING_RECORD(le, ref, list_entry);
+            LIST_ENTRY* le2;
+            BOOL matched = FALSE;
+
+            le2 = context->lastinode.refs.Flink;
+            while (le2 != &context->lastinode.refs) {
+                ref* r = CONTAINING_RECORD(le2, ref, list_entry);
+
+                if (r->sd == or->sd && r->namelen == or->namelen && RtlCompareMemory(r->name, or->name, r->namelen) == r->namelen) {
+                    RemoveEntryList(&r->list_entry);
+                    ExFreePool(r);
+                    matched = TRUE;
+                    break;
+                }
+
+                le2 = le2->Flink;
+            }
+
+            if (matched) {
+                le = le->Flink;
+                RemoveEntryList(&or->list_entry);
+                ExFreePool(or);
+                continue;
+            }
+
+            le = le->Flink;
+        }
+
+        while (!IsListEmpty(&context->lastinode.refs)) {
+            ref* r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
+
+            Status = found_path(context, r->sd, r->name, r->namelen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("found_path returned %08x\n", Status);
+                return Status;
+            }
+
+            if (!r->sd)
+                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+            else if (!r->sd->dummy) {
+                Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_utimes_command_dir returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            if (nameref && !nameref2)
+                nameref2 = r;
+            else
+                ExFreePool(r);
+        }
+
+        while (!IsListEmpty(&context->lastinode.oldrefs)) {
+            ref* or = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry);
+
+            Status = send_unlink_command(context, or->sd, or->namelen, or->name);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_unlink_command returned %08x\n", Status);
+                return Status;
+            }
+
+            if (or == nameref && nameref2) {
+                ULONG len = find_path_len(nameref2->sd, nameref2->namelen);
+
+                if (context->lastinode.path)
+                    ExFreePool(context->lastinode.path);
+
+                context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
+                if (!context->lastinode.path) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                find_path(context->lastinode.path, nameref2->sd, nameref2->name, nameref2->namelen);
+                context->lastinode.path[len] = 0;
+
+                ExFreePool(nameref2);
+            }
+
+            ExFreePool(or);
+        }
     }
 
     return STATUS_SUCCESS;
@@ -1889,6 +1987,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     InitializeListHead(&context->dirs);
     context->lastinode.inode = 0;
     context->lastinode.path = NULL;
+    context->lastinode.sd = NULL;
     InitializeListHead(&context->lastinode.refs);
     InitializeListHead(&context->lastinode.oldrefs);
 
