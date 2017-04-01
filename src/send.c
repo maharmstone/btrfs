@@ -627,7 +627,7 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, send_dir** psd,
         }
     }
 
-    get_orphan_name(dir, context->lastinode.gen, name);
+    get_orphan_name(dir, context->root->root_item.ctransid, name);
 
     Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, le, psd);
     if (!NT_SUCCESS(Status)) {
