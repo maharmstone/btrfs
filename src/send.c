@@ -38,6 +38,13 @@ typedef struct {
 } orphan;
 
 typedef struct {
+    LIST_ENTRY list_entry;
+    send_dir* sd;
+    ULONG namelen;
+    char name[1];
+} ref;
+
+typedef struct {
     device_extension* Vcb;
     root* root;
     root* parent;
@@ -66,6 +73,7 @@ typedef struct {
         BOOL file;
         char* path;
         orphan* o;
+        LIST_ENTRY refs;
     } lastinode;
 } send_context;
 
@@ -543,7 +551,6 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
     LIST_ENTRY* le;
     INODE_REF* ir;
     ULONG len;
-    BOOL root;
     send_dir* sd = NULL;
     orphan* o2 = NULL;
 
@@ -559,12 +566,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (dir == SUBVOL_ROOT_INODE)
-        root = TRUE;
-    else {
+    if (dir != SUBVOL_ROOT_INODE) {
         BOOL added = FALSE;
-
-        root = FALSE;
 
         le = context->dirs.Flink;
         while (le != &context->dirs) {
@@ -655,38 +658,27 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
     ir = (INODE_REF*)tp->item->data;
 
     while (len > 0) {
+        ref* r;
+
         if (len < sizeof(INODE_REF) || len < offsetof(INODE_REF, name[0]) + ir->n) {
             ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (root) {
-            Status = found_path(context, NULL, ir->name, ir->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("found_path returned %08x\n", Status);
-                return Status;
-            }
-        } else {
-            Status = found_path(context, sd, ir->name, ir->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("found_path returned %08x\n", Status);
-                return Status;
-            }
+        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ir->n, ALLOC_TAG);
+        if (!r) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
+
+        r->sd = sd;
+        r->namelen = ir->n;
+        RtlCopyMemory(r->name, ir->name, ir->n);
+
+        InsertTailList(&context->lastinode.refs, &r->list_entry);
 
         len -= offsetof(INODE_REF, name[0]) + ir->n;
         ir = (INODE_REF*)&ir->name[ir->n];
-    }
-
-    // The Linux driver here sends a utimes command for each entry in the DIR_ITEM, which doesn't make much sense.
-    if (root)
-        send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-    else if (sd && !sd->dummy) {
-        Status = send_utimes_command_dir(context, sd, &sd->atime, &sd->mtime, &sd->ctime);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_utimes_command_dir returned %08x\n", Status);
-            return Status;
-        }
     }
 
     return STATUS_SUCCESS;
@@ -711,22 +703,18 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, trave
 
     while (len > 0) {
         NTSTATUS Status;
-        BOOL root;
         send_dir* sd = NULL;
         orphan* o2 = NULL;
+        ref* r;
 
         if (len < sizeof(INODE_EXTREF) || len < offsetof(INODE_EXTREF, name[0]) + ier->n) {
             ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ier->dir == SUBVOL_ROOT_INODE)
-            root = TRUE;
-        else {
+        if (ier->dir != SUBVOL_ROOT_INODE) {
             LIST_ENTRY* le;
             BOOL added = FALSE;
-
-            root = FALSE;
 
             le = context->dirs.Flink;
             while (le != &context->dirs) {
@@ -813,29 +801,17 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, trave
             }
         }
 
-        if (root) {
-            Status = found_path(context, NULL, ier->name, ier->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("found_path returned %08x\n", Status);
-                return Status;
-            }
-        } else {
-            Status = found_path(context, sd, ier->name, ier->n);
-            if (!NT_SUCCESS(Status)) {
-                ERR("found_path returned %08x\n", Status);
-                return Status;
-            }
+        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ier->n, ALLOC_TAG);
+        if (!r) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        if (root)
-            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-        else if (sd && !sd->dummy) {
-            Status = send_utimes_command_dir(context, sd, &sd->atime, &sd->mtime, &sd->ctime);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_utimes_command_dir returned %08x\n", Status);
-                return Status;
-            }
-        }
+        r->sd = sd;
+        r->namelen = ier->n;
+        RtlCopyMemory(r->name, ier->name, ier->n);
+
+        InsertTailList(&context->lastinode.refs, &r->list_entry);
 
         len -= offsetof(INODE_EXTREF, name[0]) + ier->n;
         ier = (INODE_EXTREF*)&ier->name[ier->n];
@@ -917,7 +893,43 @@ static void send_truncate_command(send_context* context, char* path, UINT64 size
     send_command_finish(context, pos);
 }
 
-static void finish_inode(send_context* context) {
+static NTSTATUS flush_refs(send_context* context) {
+    NTSTATUS Status;
+
+    while (!IsListEmpty(&context->lastinode.refs)) {
+        ref* r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
+
+        Status = found_path(context, r->sd, r->name, r->namelen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("found_path returned %08x\n", Status);
+            return Status;
+        }
+
+        if (!r->sd)
+            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+        else if (!r->sd->dummy) {
+            Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_utimes_command_dir returned %08x\n", Status);
+                return Status;
+            }
+        }
+
+        ExFreePool(r);
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS finish_inode(send_context* context) {
+    if (!IsListEmpty(&context->lastinode.refs)) {
+        NTSTATUS Status = flush_refs(context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_refs returned %08x\n", Status);
+            return Status;
+        }
+    }
+
     if (context->lastinode.file)
         send_truncate_command(context, context->lastinode.path, context->lastinode.size);
 
@@ -935,6 +947,8 @@ static void finish_inode(send_context* context) {
         ExFreePool(context->lastinode.path);
         context->lastinode.path = NULL;
     }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
@@ -945,6 +959,14 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
     if (tp2 && !tp)
         return STATUS_SUCCESS; // FIXME
+
+    if (!IsListEmpty(&context->lastinode.refs)) {
+        Status = flush_refs(context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_refs returned %08x\n", Status);
+            return Status;
+        }
+    }
 
     if ((context->lastinode.mode & __S_IFLNK) == __S_IFLNK)
         return STATUS_SUCCESS;
@@ -1208,6 +1230,14 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
     if (tp2 && !tp)
         return STATUS_SUCCESS; // FIXME
+
+    if (!IsListEmpty(&context->lastinode.refs)) {
+        NTSTATUS Status = flush_refs(context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_refs returned %08x\n", Status);
+            return Status;
+        }
+    }
 
     if (tp->item->size < sizeof(DIR_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -1476,8 +1506,14 @@ static void send_thread(void* ctx) {
                 }
             }
 
-            if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode)
-                finish_inode(context);
+            if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+                Status = finish_inode(context);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("finish_inode returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+            }
 
             if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
                 Status = send_inode(context, &tp, NULL);
@@ -1525,8 +1561,13 @@ static void send_thread(void* ctx) {
 
     ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-    if (context->lastinode.inode != 0)
-        finish_inode(context);
+    if (context->lastinode.inode != 0) {
+        Status = finish_inode(context);
+        if (!NT_SUCCESS(Status)) {
+            ERR("finish_inode returned %08x\n", Status);
+            goto end;
+        }
+    }
 
     send_end_command(context);
 
@@ -1644,6 +1685,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     InitializeListHead(&context->orphans);
     InitializeListHead(&context->dirs);
     context->lastinode.inode = 0;
+    InitializeListHead(&context->lastinode.refs);
 
     context->data = ExAllocatePoolWithTag(PagedPool, SEND_BUFFER_LENGTH + (2 * MAX_SEND_WRITE), ALLOC_TAG); // give ourselves some wiggle room
     if (!context->data) {
