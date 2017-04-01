@@ -922,7 +922,7 @@ static void send_truncate_command(send_context* context, char* path, UINT64 size
     send_command_finish(context, pos);
 }
 
-static void send_unlink_command(send_context* context, send_dir* parent, ULONG namelen, char* name) {
+static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULONG namelen, char* name) {
     ULONG pos = context->datalen, pathlen;
 
     send_command(context, BTRFS_SEND_CMD_UNLINK);
@@ -933,6 +933,18 @@ static void send_unlink_command(send_context* context, send_dir* parent, ULONG n
     find_path((char*)&context->data[context->datalen - pathlen], parent, name, namelen);
 
     send_command_finish(context, pos);
+
+    if (!parent)
+        send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+    else if (!parent->dummy) {
+        NTSTATUS Status = send_utimes_command_dir(context, parent, &parent->atime, &parent->mtime, &parent->ctime);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_utimes_command_dir returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS flush_refs(send_context* context) {
@@ -1016,7 +1028,11 @@ static NTSTATUS flush_refs(send_context* context) {
 
         // FIXME - directories
 
-        send_unlink_command(context, or->sd, or->namelen, or->name);
+        Status = send_unlink_command(context, or->sd, or->namelen, or->name);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_unlink_command returned %08x\n", Status);
+            return Status;
+        }
 
         if (or == nameref && nameref2) {
             ULONG len = find_path_len(nameref2->sd, nameref2->namelen);
