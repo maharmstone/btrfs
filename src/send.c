@@ -89,6 +89,7 @@ typedef struct {
 
 static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime);
 static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, ULONG namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd);
+static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generation, send_dir** psd, BOOL* added_dummy);
 
 static void send_command(send_context* context, UINT16 cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
@@ -239,7 +240,10 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
         context->lastinode.inode = tp2->item->key.obj_id;
         context->lastinode.deleting = TRUE;
+        context->lastinode.gen = ii2->generation;
         context->lastinode.mode = ii2->st_mode;
+        context->lastinode.o = NULL;
+        context->lastinode.sd = NULL;
 
         return STATUS_SUCCESS;
     }
@@ -365,11 +369,13 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         send_command_finish(context, pos);
 
         if (ii->st_mode & __S_IFDIR) {
-            Status = send_add_dir(context, tp->item->key.obj_id, NULL, name, strlen(name), FALSE, NULL, &sd);
+            Status = find_send_dir(context, tp->item->key.obj_id, ii->generation, &sd, NULL);
             if (!NT_SUCCESS(Status)) {
-                ERR("send_add_dir returned %08x\n", Status);
+                ERR("find_send_dir returned %08x\n", Status);
                 return Status;
             }
+
+            sd->dummy = FALSE;
         } else
             sd = NULL;
 
@@ -593,7 +599,7 @@ static NTSTATUS send_utimes_command_dir(send_context* context, send_dir* sd, BTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS find_send_dir(send_context* context, UINT64 dir, send_dir** psd, BOOL* added_dummy) {
+static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generation, send_dir** psd, BOOL* added_dummy) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     char name[64];
@@ -642,14 +648,14 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, send_dir** psd,
             if (tp.item->key.offset == SUBVOL_ROOT_INODE)
                 parent = NULL;
             else {
-                Status = find_send_dir(context, tp.item->key.offset, &parent, NULL);
+                Status = find_send_dir(context, tp.item->key.offset, generation, &parent, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("find_send_dir returned %08x\n", Status);
                     return Status;
                 }
             }
 
-            Status = send_add_dir(context, dir, parent, ir->name, ir->n, FALSE, NULL, psd);
+            Status = send_add_dir(context, dir, parent, ir->name, ir->n, TRUE, NULL, psd);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_add_dir returned %08x\n", Status);
                 return Status;
@@ -662,7 +668,7 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, send_dir** psd,
         }
     }
 
-    get_orphan_name(dir, context->root->root_item.ctransid, name);
+    get_orphan_name(dir, generation, name);
 
     Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, le, psd);
     if (!NT_SUCCESS(Status)) {
@@ -697,7 +703,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
     if (dir != SUBVOL_ROOT_INODE) {
         BOOL added_dummy;
 
-        Status = find_send_dir(context, dir, &sd, &added_dummy);
+        Status = find_send_dir(context, dir, context->root->root_item.ctransid, &sd, &added_dummy);
         if (!NT_SUCCESS(Status)) {
             ERR("find_send_dir returned %08x\n", Status);
             return Status;
@@ -809,7 +815,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
             LIST_ENTRY* le;
             BOOL added_dummy;
 
-            Status = find_send_dir(context, ier->dir, &sd, &added_dummy);
+            Status = find_send_dir(context, ier->dir, context->root->root_item.ctransid, &sd, &added_dummy);
             if (!NT_SUCCESS(Status)) {
                 ERR("find_send_dir returned %08x\n", Status);
                 return Status;
@@ -969,19 +975,10 @@ static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULO
 
     send_command_finish(context, pos);
 
-    if (!parent)
-        send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-    else if (!parent->dummy) {
-        NTSTATUS Status = send_utimes_command_dir(context, parent, &parent->atime, &parent->mtime, &parent->ctime);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_utimes_command_dir returned %08x\n", Status);
-            return Status;
-        }
-    }
-
     return STATUS_SUCCESS;
 }
 
+#if 0
 static void send_rmdir_command(send_context* context, ULONG pathlen, char* path) {
     ULONG pos = context->datalen;
 
@@ -989,6 +986,7 @@ static void send_rmdir_command(send_context* context, ULONG pathlen, char* path)
     send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, pathlen);
     send_command_finish(context, pos);
 }
+#endif
 
 static NTSTATUS flush_refs(send_context* context) {
     NTSTATUS Status;
@@ -1011,9 +1009,15 @@ static NTSTATUS flush_refs(send_context* context) {
             find_path(context->lastinode.path, or->sd, or->name, or->namelen);
             context->lastinode.path[len] = 0;
             nameref = or;
-        }
 
-        // FIXME - add send_dir entries if needed
+            if (!context->lastinode.sd) {
+                Status = find_send_dir(context, context->lastinode.inode, context->lastinode.gen, &context->lastinode.sd, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_send_dir returned %08x\n", Status);
+                    return Status;
+                }
+            }
+        }
 
         if (r && or) {
             if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
@@ -1040,6 +1044,18 @@ static NTSTATUS flush_refs(send_context* context) {
                         return Status;
                     }
                 }
+
+                if (context->lastinode.sd->name)
+                    ExFreePool(context->lastinode.sd->name);
+
+                context->lastinode.sd->name = ExAllocatePoolWithTag(PagedPool, r->namelen, ALLOC_TAG);
+                if (!context->lastinode.sd->name) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                RtlCopyMemory(context->lastinode.sd->name, r->name, r->namelen);
+                context->lastinode.sd->parent = r->sd;
             }
         } else if (r && !or) { // new
             Status = found_path(context, r->sd, r->name, r->namelen);
@@ -1057,8 +1073,36 @@ static NTSTATUS flush_refs(send_context* context) {
                     return Status;
                 }
             }
-        } else // deleted
-            send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path); // FIXME
+        } else { // deleted
+            char name[64];
+            ULONG pos = context->datalen;
+
+            get_orphan_name(context->lastinode.inode, context->lastinode.gen, name);
+
+            send_command(context, BTRFS_SEND_CMD_RENAME);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, strlen(name));
+            send_command_finish(context, pos);
+
+            if (context->lastinode.sd->name)
+                ExFreePool(context->lastinode.sd->name);
+
+            context->lastinode.sd->name = ExAllocatePoolWithTag(PagedPool, strlen(name), ALLOC_TAG);
+            if (!context->lastinode.sd->name) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(context->lastinode.sd->name, name, strlen(name));
+            context->lastinode.sd->namelen = strlen(name);
+            context->lastinode.sd->dummy = TRUE;
+            context->lastinode.sd->parent = NULL;
+
+            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+
+            // FIXME - add to orphan list?
+//             send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
+        }
 
         while (!IsListEmpty(&context->lastinode.refs)) {
             r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
@@ -1150,6 +1194,16 @@ static NTSTATUS flush_refs(send_context* context) {
             if (!NT_SUCCESS(Status)) {
                 ERR("send_unlink_command returned %08x\n", Status);
                 return Status;
+            }
+
+            if (!or->sd)
+                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+            else if (!or->sd->dummy) {
+                NTSTATUS Status = send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_utimes_command_dir returned %08x\n", Status);
+                    return Status;
+                }
             }
 
             if (or == nameref && nameref2) {
