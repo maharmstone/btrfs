@@ -288,6 +288,9 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         context->lastinode.olduid = ii2->st_uid;
         context->lastinode.oldgid = ii2->st_gid;
 
+        if ((ii2->st_mode & __S_IFREG) == __S_IFREG && (ii2->st_mode & __S_IFLNK) != __S_IFLNK && (ii2->st_mode & __S_IFSOCK) != __S_IFSOCK)
+            context->lastinode.file = TRUE;
+
         context->lastinode.new = FALSE;
     } else
         context->lastinode.new = TRUE;
