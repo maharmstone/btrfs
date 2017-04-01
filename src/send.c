@@ -255,7 +255,11 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         context->lastinode.path = NULL;
     }
 
-    if (!tp2 && tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
+    if (tp->item->key.obj_id == SUBVOL_ROOT_INODE) {
+        context->root_dir.atime = ii->st_atime;
+        context->root_dir.mtime = ii->st_mtime;
+        context->root_dir.ctime = ii->st_ctime;
+    } else if (!tp2) {
         ULONG pos = context->datalen;
         UINT16 cmd;
         send_dir* sd;
@@ -357,11 +361,6 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         strcpy(context->lastinode.path, o->tmpname);
 
         context->lastinode.o = o;
-    } else {
-        context->lastinode.path = NULL;
-        context->root_dir.atime = ii->st_atime;
-        context->root_dir.mtime = ii->st_mtime;
-        context->root_dir.ctime = ii->st_ctime;
     }
 
     return STATUS_SUCCESS;
