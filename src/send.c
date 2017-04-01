@@ -45,6 +45,12 @@ typedef struct {
 } ref;
 
 typedef struct {
+    send_dir* sd;
+    UINT64 last_child_inode;
+    LIST_ENTRY list_entry;
+} pending_rmdir;
+
+typedef struct {
     device_extension* Vcb;
     root* root;
     root* parent;
@@ -52,6 +58,7 @@ typedef struct {
     ULONG datalen;
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
+    LIST_ENTRY pending_rmdirs;
     KEVENT buffer_event, cleared_event;
 
     struct {
@@ -981,7 +988,6 @@ static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULO
     return STATUS_SUCCESS;
 }
 
-#if 0
 static void send_rmdir_command(send_context* context, ULONG pathlen, char* path) {
     ULONG pos = context->datalen;
 
@@ -989,7 +995,77 @@ static void send_rmdir_command(send_context* context, ULONG pathlen, char* path)
     send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, pathlen);
     send_command_finish(context, pos);
 }
-#endif
+
+static NTSTATUS add_pending_rmdir(send_context* context) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    UINT64 last_inode = 0;
+    pending_rmdir* pr;
+    LIST_ENTRY* le;
+
+    searchkey.obj_id = context->lastinode.inode;
+    searchkey.obj_type = TYPE_DIR_INDEX;
+    searchkey.offset = 2;
+
+    Status = find_item(context->Vcb, context->parent, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    do {
+        traverse_ptr next_tp;
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+
+            if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (di->key.obj_type == TYPE_INODE_ITEM)
+                last_inode = max(last_inode, di->key.obj_id);
+        } else
+            break;
+
+        if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+            tp = next_tp;
+        else
+            break;
+    } while (TRUE);
+
+    if (last_inode <= context->lastinode.inode) {
+        send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
+        return STATUS_SUCCESS;
+    }
+
+    pr = ExAllocatePoolWithTag(PagedPool, sizeof(pending_rmdir), ALLOC_TAG);
+    if (!pr) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    pr->sd = context->lastinode.sd;
+    pr->last_child_inode = last_inode;
+
+    le = context->pending_rmdirs.Flink;
+    while (le != &context->pending_rmdirs) {
+        pending_rmdir* pr2 = CONTAINING_RECORD(le, pending_rmdir, list_entry);
+
+        if (pr2->last_child_inode > pr->last_child_inode) {
+            InsertHeadList(pr2->list_entry.Blink, &pr->list_entry);
+            return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+
+    InsertTailList(&context->pending_rmdirs, &pr->list_entry);
+
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS flush_refs(send_context* context) {
     NTSTATUS Status;
@@ -1103,8 +1179,11 @@ static NTSTATUS flush_refs(send_context* context) {
 
             send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
 
-            // FIXME - add to orphan list?
-//             send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
+            Status = add_pending_rmdir(context);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_pending_rmdir returned %08x\n", Status);
+                return Status;
+            }
         }
 
         while (!IsListEmpty(&context->lastinode.refs)) {
@@ -1235,6 +1314,8 @@ static NTSTATUS flush_refs(send_context* context) {
 }
 
 static NTSTATUS finish_inode(send_context* context) {
+    LIST_ENTRY* le;
+
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
         NTSTATUS Status = flush_refs(context);
         if (!NT_SUCCESS(Status)) {
@@ -1255,6 +1336,31 @@ static NTSTATUS finish_inode(send_context* context) {
             send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
 
         send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
+    }
+
+    if (context->parent) {
+        le = context->pending_rmdirs.Flink;
+
+        while (le != &context->pending_rmdirs) {
+            pending_rmdir* pr = CONTAINING_RECORD(le, pending_rmdir, list_entry);
+
+            if (pr->last_child_inode <= context->lastinode.inode) {
+                le = le->Flink;
+
+                send_rmdir_command(context, pr->sd->namelen, pr->sd->name);
+
+                RemoveEntryList(&pr->sd->list_entry);
+
+                if (pr->sd->name)
+                    ExFreePool(pr->sd->name);
+
+                ExFreePool(pr->sd);
+
+                RemoveEntryList(&pr->list_entry);
+                ExFreePool(pr);
+            } else
+                break;
+        }
     }
 
     context->lastinode.inode = 0;
@@ -2042,6 +2148,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context->parent = parsubvol;
     InitializeListHead(&context->orphans);
     InitializeListHead(&context->dirs);
+    InitializeListHead(&context->pending_rmdirs);
     context->lastinode.inode = 0;
     context->lastinode.path = NULL;
     context->lastinode.sd = NULL;
