@@ -62,6 +62,7 @@ typedef struct {
 
     struct {
         UINT64 inode;
+        BOOL deleting;
         UINT64 gen;
         UINT64 uid;
         UINT64 gid;
@@ -74,6 +75,7 @@ typedef struct {
         char* path;
         orphan* o;
         LIST_ENTRY refs;
+        LIST_ENTRY oldrefs;
     } lastinode;
 } send_context;
 
@@ -105,7 +107,7 @@ static void send_add_tlv(send_context* context, UINT16 type, void* data, UINT16 
     tlv->type = type;
     tlv->length = length;
 
-    if (length > 0)
+    if (length > 0 && data)
         RtlCopyMemory(&tlv[1], data, length);
 
     context->datalen += sizeof(btrfs_send_tlv) + length;
@@ -219,8 +221,13 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     NTSTATUS Status;
     INODE_ITEM* ii;
 
-    if (tp2 && !tp)
-        return STATUS_SUCCESS; // FIXME
+    // FIXME - if generation of new and old inodes differ, treat as different files
+
+    if (tp2 && !tp) {
+        context->lastinode.inode = tp2->item->key.obj_id;
+        context->lastinode.deleting = TRUE;
+        return STATUS_SUCCESS;
+    }
 
     ii = (INODE_ITEM*)tp->item->data;
 
@@ -231,6 +238,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     }
 
     context->lastinode.inode = tp->item->key.obj_id;
+    context->lastinode.deleting = FALSE;
     context->lastinode.gen = ii->generation;
     context->lastinode.uid = ii->st_uid;
     context->lastinode.gid = ii->st_gid;
@@ -240,8 +248,14 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     context->lastinode.mtime = ii->st_mtime;
     context->lastinode.ctime = ii->st_ctime;
     context->lastinode.file = FALSE;
+    context->lastinode.o = NULL;
 
-    if (tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
+    if (context->lastinode.path) {
+        ExFreePool(context->lastinode.path);
+        context->lastinode.path = NULL;
+    }
+
+    if (!tp2 && tp->item->key.obj_id != SUBVOL_ROOT_INODE) {
         ULONG pos = context->datalen;
         UINT16 cmd;
         send_dir* sd;
@@ -545,7 +559,90 @@ static NTSTATUS send_utimes_command_dir(send_context* context, send_dir* sd, BTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+static NTSTATUS find_send_dir(send_context* context, UINT64 dir, send_dir** psd, BOOL* added_dummy) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    char name[64];
+
+    le = context->dirs.Flink;
+    while (le != &context->dirs) {
+        send_dir* sd2 = CONTAINING_RECORD(le, send_dir, list_entry);
+
+        if (sd2->inode > dir)
+            break;
+        else if (sd2->inode == dir) {
+            *psd = sd2;
+
+            if (added_dummy)
+                *added_dummy = FALSE;
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+
+    if (context->parent) {
+        KEY searchkey;
+        traverse_ptr tp;
+
+        searchkey.obj_id = dir;
+        searchkey.obj_type = TYPE_INODE_REF; // directories should never have an extiref
+        searchkey.offset = 0xffffffffffffffff;
+
+        Status = find_item(context->Vcb, context->parent, &tp, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            INODE_REF* ir = (INODE_REF*)tp.item->data;
+            send_dir* parent;
+
+            if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            if (tp.item->key.offset == SUBVOL_ROOT_INODE)
+                parent = NULL;
+            else {
+                Status = find_send_dir(context, tp.item->key.offset, &parent, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_send_dir returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            Status = send_add_dir(context, dir, parent, ir->name, ir->n, FALSE, NULL, psd);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_add_dir returned %08x\n", Status);
+                return Status;
+            }
+
+            if (added_dummy)
+                *added_dummy = FALSE;
+
+            return STATUS_SUCCESS;
+        }
+    }
+
+    get_orphan_name(dir, context->lastinode.gen, name);
+
+    Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, le, psd);
+    if (!NT_SUCCESS(Status)) {
+        ERR("send_add_dir returned %08x\n", Status);
+        return Status;
+    }
+
+    if (added_dummy)
+        *added_dummy = TRUE;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tree2) {
     NTSTATUS Status;
     UINT64 inode = tp ? tp->item->key.obj_id : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
@@ -553,9 +650,6 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
     ULONG len;
     send_dir* sd = NULL;
     orphan* o2 = NULL;
-
-    if (tp2 && !tp)
-        return STATUS_SUCCESS; // FIXME
 
     if (inode == dir) // root
         return STATUS_SUCCESS;
@@ -567,47 +661,16 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
     }
 
     if (dir != SUBVOL_ROOT_INODE) {
-        BOOL added = FALSE;
+        BOOL added_dummy;
 
-        le = context->dirs.Flink;
-        while (le != &context->dirs) {
-            send_dir* sd2 = CONTAINING_RECORD(le, send_dir, list_entry);
-
-            if (sd2->inode > dir) {
-                char name[64];
-
-                get_orphan_name(dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
-
-                Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, &sd2->list_entry, &sd);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_add_dir returned %08x\n", Status);
-                    return Status;
-                }
-
-                added = TRUE;
-                break;
-            } else if (sd2->inode == dir) {
-                sd = sd2;
-                break;
-            }
-
-            le = le->Flink;
-        }
-
-        if (!added && !sd) {
-            char name[64];
-
-            get_orphan_name(dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
-
-            Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, context->dirs.Blink, &sd);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_add_dir returned %08x\n", Status);
-                return Status;
-            }
+        Status = find_send_dir(context, dir, &sd, &added_dummy);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_send_dir returned %08x\n", Status);
+            return Status;
         }
 
         // directory has higher inode number than file, so might need to be created
-        if (added) {
+        if (added_dummy) {
             BOOL found = FALSE;
 
             le = context->orphans.Flink;
@@ -675,7 +738,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
         r->namelen = ir->n;
         RtlCopyMemory(r->name, ir->name, ir->n);
 
-        InsertTailList(&context->lastinode.refs, &r->list_entry);
+        InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
         len -= offsetof(INODE_REF, name[0]) + ir->n;
         ir = (INODE_REF*)&ir->name[ir->n];
@@ -684,13 +747,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, traverse
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
-    UINT64 inode = tp ? tp->item->key.obj_id : 0;
+static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL tree2) {
     INODE_EXTREF* ier;
     ULONG len;
-
-    if (tp2 && !tp)
-        return STATUS_SUCCESS; // FIXME
 
     if (tp->item->size < sizeof(INODE_EXTREF)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -714,47 +773,16 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, trave
 
         if (ier->dir != SUBVOL_ROOT_INODE) {
             LIST_ENTRY* le;
-            BOOL added = FALSE;
+            BOOL added_dummy;
 
-            le = context->dirs.Flink;
-            while (le != &context->dirs) {
-                send_dir* sd2 = CONTAINING_RECORD(le, send_dir, list_entry);
-
-                if (sd2->inode > ier->dir) {
-                    char name[64];
-
-                    get_orphan_name(ier->dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
-
-                    Status = send_add_dir(context, ier->dir, NULL, name, strlen(name), TRUE, &sd2->list_entry, &sd);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("send_add_dir returned %08x\n", Status);
-                        return Status;
-                    }
-
-                    added = TRUE;
-                    break;
-                } else if (sd2->inode == ier->dir) {
-                    sd = sd2;
-                    break;
-                }
-
-                le = le->Flink;
-            }
-
-            if (!added && !sd) {
-                char name[64];
-
-                get_orphan_name(ier->dir, context->lastinode.inode == inode ? context->lastinode.gen : 0, name);
-
-                Status = send_add_dir(context, ier->dir, NULL, name, strlen(name), TRUE, context->dirs.Blink, &sd);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_add_dir returned %08x\n", Status);
-                    return Status;
-                }
+            Status = find_send_dir(context, ier->dir, &sd, &added_dummy);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_send_dir returned %08x\n", Status);
+                return Status;
             }
 
             // directory has higher inode number than file, so might need to be created
-            if (added) {
+            if (added_dummy) {
                 BOOL found = FALSE;
 
                 le = context->orphans.Flink;
@@ -811,7 +839,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, trave
         r->namelen = ier->n;
         RtlCopyMemory(r->name, ier->name, ier->n);
 
-        InsertTailList(&context->lastinode.refs, &r->list_entry);
+        InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
         len -= offsetof(INODE_EXTREF, name[0]) + ier->n;
         ier = (INODE_EXTREF*)&ier->name[ier->n];
@@ -893,8 +921,67 @@ static void send_truncate_command(send_context* context, char* path, UINT64 size
     send_command_finish(context, pos);
 }
 
+static void send_unlink_command(send_context* context, send_dir* parent, ULONG namelen, char* name) {
+    ULONG pos = context->datalen, pathlen;
+
+    send_command(context, BTRFS_SEND_CMD_UNLINK);
+
+    pathlen = find_path_len(parent, namelen);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, NULL, pathlen);
+
+    find_path((char*)&context->data[context->datalen - pathlen], parent, name, namelen);
+
+    send_command_finish(context, pos);
+}
+
 static NTSTATUS flush_refs(send_context* context) {
     NTSTATUS Status;
+    LIST_ENTRY* le;
+
+    if (!IsListEmpty(&context->lastinode.oldrefs)) {
+        ref* or = CONTAINING_RECORD(context->lastinode.oldrefs.Flink, ref, list_entry);
+        ULONG len = find_path_len(or->sd, or->namelen);
+
+        context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
+        if (!context->lastinode.path) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        find_path(context->lastinode.path, or->sd, or->name, or->namelen);
+        context->lastinode.path[len] = 0;
+    }
+
+    // remove unchanged refs
+    le = context->lastinode.oldrefs.Flink;
+    while (le != &context->lastinode.oldrefs) {
+        ref* or = CONTAINING_RECORD(le, ref, list_entry);
+        LIST_ENTRY* le2;
+        BOOL matched = FALSE;
+
+        le2 = context->lastinode.refs.Flink;
+        while (le2 != &context->lastinode.refs) {
+            ref* r = CONTAINING_RECORD(le2, ref, list_entry);
+
+            if (r->sd == or->sd && r->namelen == or->namelen && RtlCompareMemory(r->name, or->name, r->namelen) == r->namelen) {
+                RemoveEntryList(&r->list_entry);
+                ExFreePool(r);
+                matched = TRUE;
+                break;
+            }
+
+            le2 = le2->Flink;
+        }
+
+        if (matched) {
+            le = le->Flink;
+            RemoveEntryList(&or->list_entry);
+            ExFreePool(or);
+            continue;
+        }
+
+        le = le->Flink;
+    }
 
     while (!IsListEmpty(&context->lastinode.refs)) {
         ref* r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
@@ -918,11 +1005,20 @@ static NTSTATUS flush_refs(send_context* context) {
         ExFreePool(r);
     }
 
+    while (!IsListEmpty(&context->lastinode.oldrefs)) {
+        ref* or = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry);
+
+        // FIXME - directories
+        send_unlink_command(context, or->sd, or->namelen, or->name);
+
+        ExFreePool(or);
+    }
+
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS finish_inode(send_context* context) {
-    if (!IsListEmpty(&context->lastinode.refs)) {
+    if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
         NTSTATUS Status = flush_refs(context);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
@@ -930,15 +1026,17 @@ static NTSTATUS finish_inode(send_context* context) {
         }
     }
 
-    if (context->lastinode.file)
-        send_truncate_command(context, context->lastinode.path, context->lastinode.size);
+    if (!context->lastinode.deleting) {
+        if (context->lastinode.file)
+            send_truncate_command(context, context->lastinode.path, context->lastinode.size);
 
-    send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
+        send_chown_command(context, context->lastinode.path, context->lastinode.uid, context->lastinode.gid);
 
-    if ((context->lastinode.mode & __S_IFLNK) != __S_IFLNK || ((context->lastinode.mode & 07777) != 0777))
-        send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
+        if ((context->lastinode.mode & __S_IFLNK) != __S_IFLNK || ((context->lastinode.mode & 07777) != 0777))
+            send_chmod_command(context, context->lastinode.path, context->lastinode.mode);
 
-    send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
+        send_utimes_command(context, context->lastinode.path, &context->lastinode.atime, &context->lastinode.mtime, &context->lastinode.ctime);
+    }
 
     context->lastinode.inode = 0;
     context->lastinode.o = NULL;
@@ -960,7 +1058,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
     if (tp2 && !tp)
         return STATUS_SUCCESS; // FIXME
 
-    if (!IsListEmpty(&context->lastinode.refs)) {
+    if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
         Status = flush_refs(context);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
@@ -1231,7 +1329,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
     if (tp2 && !tp)
         return STATUS_SUCCESS; // FIXME
 
-    if (!IsListEmpty(&context->lastinode.refs)) {
+    if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
         NTSTATUS Status = flush_refs(context);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
@@ -1342,6 +1440,15 @@ static void send_thread(void* ctx) {
             if (!ended1 && !ended2 && !keycmp(tp.item->key, tp2.item->key)) {
                 TRACE("~ %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
+                if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+                    Status = finish_inode(context);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("finish_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
                 if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
                     Status = send_inode(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
@@ -1350,14 +1457,28 @@ static void send_thread(void* ctx) {
                         goto end;
                     }
                 } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
-                    Status = send_inode_ref(context, &tp, &tp2);
+                    Status = send_inode_ref(context, &tp, FALSE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_ref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    Status = send_inode_ref(context, &tp2, TRUE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
                 } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                    Status = send_inode_extref(context, &tp, &tp2);
+                    Status = send_inode_extref(context, &tp, FALSE);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_inode_extref returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    Status = send_inode_extref(context, &tp2, TRUE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
@@ -1391,6 +1512,15 @@ static void send_thread(void* ctx) {
             } else if (ended2 || keycmp(tp.item->key, tp2.item->key) == -1) {
                 TRACE("A %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
+                if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+                    Status = finish_inode(context);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("finish_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
                 if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
                     Status = send_inode(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
@@ -1399,14 +1529,14 @@ static void send_thread(void* ctx) {
                         goto end;
                     }
                 } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
-                    Status = send_inode_ref(context, &tp, NULL);
+                    Status = send_inode_ref(context, &tp, FALSE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
                 } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                    Status = send_inode_extref(context, &tp, NULL);
+                    Status = send_inode_extref(context, &tp, FALSE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
@@ -1435,6 +1565,15 @@ static void send_thread(void* ctx) {
             } else if (ended1 || keycmp(tp.item->key, tp2.item->key) == 1) {
                 TRACE("B %llx,%x,%llx\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
 
+                if (context->lastinode.inode != 0 && tp2.item->key.obj_id > context->lastinode.inode) {
+                    Status = finish_inode(context);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("finish_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+                }
+
                 if (tp2.item->key.obj_type == TYPE_INODE_ITEM) {
                     Status = send_inode(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
@@ -1443,14 +1582,14 @@ static void send_thread(void* ctx) {
                         goto end;
                     }
                 } else if (tp2.item->key.obj_type == TYPE_INODE_REF) {
-                    Status = send_inode_ref(context, NULL, &tp2);
+                    Status = send_inode_ref(context, &tp2, TRUE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
                 } else if (tp2.item->key.obj_type == TYPE_INODE_EXTREF) {
-                    Status = send_inode_extref(context, NULL, &tp2);
+                    Status = send_inode_extref(context, &tp2, TRUE);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
@@ -1523,14 +1662,14 @@ static void send_thread(void* ctx) {
                     goto end;
                 }
             } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
-                Status = send_inode_ref(context, &tp, NULL);
+                Status = send_inode_ref(context, &tp, FALSE);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_ref returned %08x\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
             } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                Status = send_inode_extref(context, &tp, NULL);
+                Status = send_inode_extref(context, &tp, FALSE);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_extref returned %08x\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
@@ -1685,7 +1824,9 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     InitializeListHead(&context->orphans);
     InitializeListHead(&context->dirs);
     context->lastinode.inode = 0;
+    context->lastinode.path = NULL;
     InitializeListHead(&context->lastinode.refs);
+    InitializeListHead(&context->lastinode.oldrefs);
 
     context->data = ExAllocatePoolWithTag(PagedPool, SEND_BUFFER_LENGTH + (2 * MAX_SEND_WRITE), ALLOC_TAG); // give ourselves some wiggle room
     if (!context->data) {
