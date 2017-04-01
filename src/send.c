@@ -851,16 +851,18 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
 static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
     ULONG pos = context->datalen;
     
-    send_command(context, BTRFS_SEND_CMD_SUBVOL);
+    send_command(context, context->parent ? BTRFS_SEND_CMD_SNAPSHOT : BTRFS_SEND_CMD_SUBVOL);
     
     send_add_tlv(context, BTRFS_SEND_TLV_PATH, fr->dc->utf8.Buffer, fr->dc->utf8.Length);
-    
-    if (r->root_item.rtransid == 0)
-        send_add_tlv(context, BTRFS_SEND_TLV_UUID, &r->root_item.uuid, sizeof(BTRFS_UUID));
-    else
-        send_add_tlv(context, BTRFS_SEND_TLV_UUID, &r->root_item.received_uuid, sizeof(BTRFS_UUID));
 
+    send_add_tlv(context, BTRFS_SEND_TLV_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, sizeof(BTRFS_UUID));
     send_add_tlv(context, BTRFS_SEND_TLV_TRANSID, &r->root_item.ctransid, sizeof(UINT64));
+
+    if (context->parent) {
+        send_add_tlv(context, BTRFS_SEND_TLV_CLONE_UUID,
+                     context->parent->root_item.rtransid == 0 ? &context->parent->root_item.uuid : &context->parent->root_item.received_uuid, sizeof(BTRFS_UUID));
+        send_add_tlv(context, BTRFS_SEND_TLV_CLONE_CTRANSID, &context->parent->root_item.ctransid, sizeof(UINT64));
+    }
 
     send_command_finish(context, pos);
 }
