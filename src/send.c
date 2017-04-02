@@ -146,22 +146,57 @@ static char* uint64_to_char(UINT64 num, char* buf) {
     return &buf[tmp2 + sizeof(tmp2) - tmp];
 }
 
-static void get_orphan_name(UINT64 inode, UINT64 generation, char* name) {
-    char* ptr;
+static NTSTATUS get_orphan_name(send_context* context, UINT64 inode, UINT64 generation, char* name) {
+    char *ptr, *ptr2;
     UINT64 index = 0;
-    
-    // FIXME - increment index if name already exists
-    
+    KEY searchkey;
+
     name[0] = 'o';
-    
+
     ptr = uint64_to_char(inode, &name[1]);
     *ptr = '-'; ptr++;
     ptr = uint64_to_char(generation, ptr);
     *ptr = '-'; ptr++;
-    ptr = uint64_to_char(index, ptr);
-    *ptr = 0;
+    ptr2 = ptr;
 
-    return;
+    searchkey.obj_id = SUBVOL_ROOT_INODE;
+    searchkey.obj_type = TYPE_DIR_ITEM;
+
+    do {
+        NTSTATUS Status;
+        traverse_ptr tp;
+
+        ptr = uint64_to_char(index, ptr);
+        *ptr = 0;
+
+        searchkey.offset = calc_crc32c(0xfffffffe, (UINT8*)name, ptr - name);
+
+        Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+
+        if (!keycmp(searchkey, tp.item->key))
+            goto cont;
+
+        if (context->parent) {
+            Status = find_item(context->Vcb, context->parent, &tp, &searchkey, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                return Status;
+            }
+
+            if (!keycmp(searchkey, tp.item->key))
+                goto cont;
+        }
+
+        return STATUS_SUCCESS;
+
+cont:
+        index++;
+        ptr = ptr2;
+    } while (TRUE);
 }
 
 static void add_orphan(send_context* context, orphan* o) {
@@ -376,7 +411,11 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         
         send_command(context, cmd);
 
-        get_orphan_name(tp->item->key.obj_id, ii->generation, name);
+        Status = get_orphan_name(context, tp->item->key.obj_id, ii->generation, name);
+        if (!NT_SUCCESS(Status)) {
+            ERR("get_orphan_name returned %08x\n", Status);
+            return Status;
+        }
 
         send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(UINT64));
@@ -726,7 +765,11 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generati
         }
     }
 
-    get_orphan_name(dir, generation, name);
+    Status = get_orphan_name(context, dir, generation, name);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_orphan_name returned %08x\n", Status);
+        return Status;
+    }
 
     Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, le, psd);
     if (!NT_SUCCESS(Status)) {
@@ -1203,7 +1246,11 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
         le = le->Flink;
     }
 
-    get_orphan_name(inode, generation, name);
+    Status = get_orphan_name(context, inode, generation, name);
+    if (!NT_SUCCESS(Status)) {
+        ERR("get_orphan_name returned %08x\n", Status);
+        return Status;
+    }
 
     if (dir) {
         Status = find_send_dir(context, inode, generation, &sd, NULL);
@@ -1403,7 +1450,11 @@ static NTSTATUS flush_refs(send_context* context) {
             char name[64];
             ULONG pos = context->datalen;
 
-            get_orphan_name(context->lastinode.inode, context->lastinode.gen, name);
+            Status = get_orphan_name(context, context->lastinode.inode, context->lastinode.gen, name);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_orphan_name returned %08x\n", Status);
+                return Status;
+            }
 
             send_command(context, BTRFS_SEND_CMD_RENAME);
             send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
