@@ -1248,6 +1248,16 @@ static NTSTATUS flush_refs(send_context* context) {
                     ERR("found_path returned %08x\n", Status);
                     return Status;
                 }
+
+                if (!r->sd)
+                    send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+                else if (!r->sd->dummy) {
+                    Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_utimes_command_dir returned %08x\n", Status);
+                        return Status;
+                    }
+                }
             } else if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
                 ULONG pos = context->datalen, len;
 
