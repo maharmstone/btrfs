@@ -284,6 +284,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
     if (tp2) {
         INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
+        LIST_ENTRY* le;
 
         if (tp2->item->size < sizeof(INODE_ITEM)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
@@ -299,6 +300,19 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             context->lastinode.file = TRUE;
 
         context->lastinode.new = FALSE;
+
+        le = context->orphans.Flink;
+        while (le != &context->orphans) {
+            orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+            if (o2->inode == tp->item->key.obj_id) {
+                context->lastinode.o = o2;
+                break;
+            } else if (o2->inode > tp->item->key.obj_id)
+                break;
+
+            le = le->Flink;
+        }
     } else
         context->lastinode.new = TRUE;
 
@@ -1067,6 +1081,120 @@ static NTSTATUS add_pending_rmdir(send_context* context) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* name, ULONG namelen, UINT64* inode) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    DIR_ITEM* di;
+    ULONG len;
+
+    searchkey.obj_id = sd ? sd->inode : SUBVOL_ROOT_INODE;
+    searchkey.obj_type = TYPE_DIR_ITEM;
+    searchkey.offset = calc_crc32c(0xfffffffe, (UINT8*)name, namelen);
+
+    Status = find_item(context->Vcb, context->parent, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    if (keycmp(tp.item->key, searchkey))
+        return STATUS_SUCCESS;
+
+    di = (DIR_ITEM*)tp.item->data;
+    len = tp.item->size;
+
+    do {
+        if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (di->n == namelen && RtlCompareMemory(di->name, name, namelen) == namelen) {
+            *inode = di->key.obj_type == TYPE_INODE_ITEM ? di->key.obj_id : 0;
+            return STATUS_OBJECT_NAME_COLLISION;
+        }
+
+        di = (DIR_ITEM*)&di->name[di->m + di->n];
+        len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+    } while (len > 0);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS make_dir_orphan(send_context* context, UINT64 inode, UINT64 generation, ref* r) {
+    NTSTATUS Status;
+    ULONG pos = context->datalen;
+    send_dir* sd;
+    orphan* o;
+    LIST_ENTRY* le;
+    char name[64];
+
+    le = context->orphans.Flink;
+    while (le != &context->orphans) {
+        orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
+
+        if (o2->inode == inode)
+            return STATUS_SUCCESS;
+        else if (o2->inode > inode)
+            break;
+
+        le = le->Flink;
+    }
+
+    Status = find_send_dir(context, inode, generation, &sd, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_send_dir returned %08x\n", Status);
+        return Status;
+    }
+
+    sd->dummy = TRUE;
+
+    get_orphan_name(inode, generation, name);
+
+    send_command(context, BTRFS_SEND_CMD_RENAME);
+
+    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("send_add_tlv_path returned %08x\n", Status);
+        return Status;
+    }
+
+    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
+    if (!NT_SUCCESS(Status)) {
+        ERR("send_add_tlv_path returned %08x\n", Status);
+        return Status;
+    }
+
+    send_command_finish(context, pos);
+
+    if (sd->name)
+        ExFreePool(sd->name);
+
+    sd->namelen = strlen(name);
+    sd->name = ExAllocatePoolWithTag(PagedPool, sd->namelen, ALLOC_TAG);
+    if (!sd->name) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(sd->name, name, sd->namelen);
+
+    o = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
+    if (!o) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    o->inode = inode;
+    o->dir = TRUE;
+    strcpy(o->tmpname, name);
+    o->sd = sd;
+    add_orphan(context, o);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS flush_refs(send_context* context) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -1076,7 +1204,7 @@ static NTSTATUS flush_refs(send_context* context) {
         ref* r = IsListEmpty(&context->lastinode.refs) ? NULL : CONTAINING_RECORD(context->lastinode.refs.Flink, ref, list_entry);
         ref* or = IsListEmpty(&context->lastinode.oldrefs) ? NULL : CONTAINING_RECORD(context->lastinode.oldrefs.Flink, ref, list_entry);
 
-        if (or) {
+        if (or && !context->lastinode.o) {
             ULONG len = find_path_len(or->sd, or->namelen);
 
             context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
@@ -1099,7 +1227,29 @@ static NTSTATUS flush_refs(send_context* context) {
         }
 
         if (r && or) {
-            if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
+            UINT64 inode;
+
+            Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode);
+            if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_COLLISION) {
+                ERR("look_for_collision returned %08x\n", Status);
+                return Status;
+            }
+
+            if (Status == STATUS_OBJECT_NAME_COLLISION && inode > context->lastinode.inode) {
+                Status = make_dir_orphan(context, inode, context->parent->root_item.ctransid, r);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("make_dir_orphan returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            if (context->lastinode.o) {
+                Status = found_path(context, r->sd, r->name, r->namelen);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("found_path returned %08x\n", Status);
+                    return Status;
+                }
+            } else if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
                 ULONG pos = context->datalen;
 
                 send_command(context, BTRFS_SEND_CMD_RENAME);
