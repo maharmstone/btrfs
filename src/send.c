@@ -61,12 +61,7 @@ typedef struct {
     LIST_ENTRY dirs;
     LIST_ENTRY pending_rmdirs;
     KEVENT buffer_event, cleared_event;
-
-    struct {
-        BTRFS_TIME atime;
-        BTRFS_TIME mtime;
-        BTRFS_TIME ctime;
-    } root_dir;
+    send_dir* root_dir;
 
     struct {
         UINT64 inode;
@@ -318,9 +313,18 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         context->lastinode.new = TRUE;
 
     if (tp->item->key.obj_id == SUBVOL_ROOT_INODE) {
-        context->root_dir.atime = ii->st_atime;
-        context->root_dir.mtime = ii->st_mtime;
-        context->root_dir.ctime = ii->st_ctime;
+        send_dir* sd;
+
+        Status = find_send_dir(context, tp->item->key.obj_id, ii->generation, &sd, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_send_dir returned %08x\n", Status);
+            return Status;
+        }
+
+        sd->atime = ii->st_atime;
+        sd->mtime = ii->st_mtime;
+        sd->ctime = ii->st_ctime;
+        context->root_dir = sd;
     } else if (!tp2) {
         ULONG pos = context->datalen;
         UINT16 cmd;
@@ -452,14 +456,18 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* pare
         sd->ctime = context->lastinode.ctime;
     }
 
-    sd->name = ExAllocatePoolWithTag(PagedPool, namelen, ALLOC_TAG);
-    if (!sd->name) {
-        ERR("out of memory\n");
-        ExFreePool(sd);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    if (namelen > 0) {
+        sd->name = ExAllocatePoolWithTag(PagedPool, namelen, ALLOC_TAG);
+        if (!sd->name) {
+            ERR("out of memory\n");
+            ExFreePool(sd);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
-    memcpy(sd->name, name, namelen);
+        memcpy(sd->name, name, namelen);
+    } else
+        sd->name = NULL;
+
     sd->namelen = namelen;
 
     if (lastentry)
@@ -493,7 +501,7 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* pare
 static __inline ULONG find_path_len(send_dir* parent, ULONG namelen) {
     ULONG len = namelen;
 
-    while (parent) {
+    while (parent && parent->namelen > 0) {
         len += parent->namelen + 1;
         parent = parent->parent;
     }
@@ -506,7 +514,7 @@ static void find_path(char* path, send_dir* parent, char* name, ULONG namelen) {
 
     RtlCopyMemory(path, name, namelen);
 
-    while (parent) {
+    while (parent && parent->namelen > 0) {
         RtlMoveMemory(path + parent->namelen + 1, path, len);
         RtlCopyMemory(path, parent->name, parent->namelen);
         path[parent->namelen] = '/';
@@ -520,16 +528,18 @@ static NTSTATUS send_add_tlv_path(send_context* context, UINT16 type, send_dir* 
     ULONG len = find_path_len(parent, namelen);
     char* path;
 
-    path = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-    if (!path) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    if (len > 0) {
+        path = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+        if (!path) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
-    find_path(path, parent, name, namelen);
-    send_add_tlv(context, type, path, len);
-
-    ExFreePool(path);
+        find_path(path, parent, name, namelen);
+        send_add_tlv(context, type, path, len);
+        ExFreePool(path);
+    } else
+        send_add_tlv(context, type, NULL, 0);
 
     return STATUS_SUCCESS;
 }
@@ -652,6 +662,19 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generati
         le = le->Flink;
     }
 
+    if (dir == SUBVOL_ROOT_INODE) {
+        Status = send_add_dir(context, dir, NULL, NULL, 0, FALSE, le, psd);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_dir returned %08x\n", Status);
+            return Status;
+        }
+
+        if (added_dummy)
+            *added_dummy = FALSE;
+
+        return STATUS_SUCCESS;
+    }
+
     if (context->parent) {
         KEY searchkey;
         traverse_ptr tp;
@@ -676,7 +699,7 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generati
             }
 
             if (tp.item->key.offset == SUBVOL_ROOT_INODE)
-                parent = NULL;
+                parent = context->root_dir;
             else {
                 Status = find_send_dir(context, tp.item->key.offset, generation, &parent, NULL);
                 if (!NT_SUCCESS(Status)) {
@@ -785,7 +808,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
                 add_orphan(context, o2);
             }
         }
-    }
+    } else
+        sd = context->root_dir;
 
     len = tp->item->size;
     ir = (INODE_REF*)tp->item->data;
@@ -897,7 +921,8 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
                     add_orphan(context, o2);
                 }
             }
-        }
+        } else
+            sd = context->root_dir;
 
         r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ier->n, ALLOC_TAG);
         if (!r) {
@@ -1094,7 +1119,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     DIR_ITEM* di;
     ULONG len;
 
-    searchkey.obj_id = sd ? sd->inode : SUBVOL_ROOT_INODE;
+    searchkey.obj_id = sd->inode;
     searchkey.obj_type = TYPE_DIR_ITEM;
     searchkey.offset = calc_crc32c(0xfffffffe, (UINT8*)name, namelen);
 
@@ -1288,9 +1313,7 @@ static NTSTATUS flush_refs(send_context* context) {
                     return Status;
                 }
 
-                if (!r->sd)
-                    send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-                else if (!r->sd->dummy) {
+                if (!r->sd->dummy) {
                     Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_utimes_command_dir returned %08x\n", Status);
@@ -1312,9 +1335,7 @@ static NTSTATUS flush_refs(send_context* context) {
 
                 send_command_finish(context, pos);
 
-                if (!r->sd)
-                    send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-                else if (!r->sd->dummy) {
+                if (!r->sd->dummy) {
                     Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_utimes_command_dir returned %08x\n", Status);
@@ -1354,9 +1375,7 @@ static NTSTATUS flush_refs(send_context* context) {
                 return Status;
             }
 
-            if (!r->sd)
-                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-            else if (!r->sd->dummy) {
+            if (!r->sd->dummy) {
                 Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_utimes_command_dir returned %08x\n", Status);
@@ -1388,7 +1407,7 @@ static NTSTATUS flush_refs(send_context* context) {
             context->lastinode.sd->dummy = TRUE;
             context->lastinode.sd->parent = NULL;
 
-            send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
+            send_utimes_command(context, NULL, &context->root_dir->atime, &context->root_dir->mtime, &context->root_dir->ctime);
 
             Status = add_pending_rmdir(context);
             if (!NT_SUCCESS(Status)) {
@@ -1480,9 +1499,7 @@ static NTSTATUS flush_refs(send_context* context) {
                 return Status;
             }
 
-            if (!r->sd)
-                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-            else if (!r->sd->dummy) {
+            if (!r->sd->dummy) {
                 Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_utimes_command_dir returned %08x\n", Status);
@@ -1505,9 +1522,7 @@ static NTSTATUS flush_refs(send_context* context) {
                 return Status;
             }
 
-            if (!or->sd)
-                send_utimes_command(context, NULL, &context->root_dir.atime, &context->root_dir.mtime, &context->root_dir.ctime);
-            else if (!or->sd->dummy) {
+            if (!or->sd->dummy) {
                 NTSTATUS Status = send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_utimes_command_dir returned %08x\n", Status);
@@ -2379,6 +2394,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context->lastinode.inode = 0;
     context->lastinode.path = NULL;
     context->lastinode.sd = NULL;
+    context->root_dir = NULL;
     InitializeListHead(&context->lastinode.refs);
     InitializeListHead(&context->lastinode.oldrefs);
 
