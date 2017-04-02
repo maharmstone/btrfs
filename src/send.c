@@ -34,6 +34,7 @@ typedef struct {
     UINT64 inode;
     BOOL dir;
     send_dir* sd;
+    send_dir* parent;
     char tmpname[64];
 } orphan;
 
@@ -414,6 +415,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         o->inode = tp->item->key.obj_id;
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
         strcpy(o->tmpname, name);
+        o->parent = NULL;
         o->sd = sd;
         add_orphan(context, o);
 
@@ -539,7 +541,11 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->lastinode.o->parent, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
 
         Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
         if (!NT_SUCCESS(Status)) {
@@ -1081,7 +1087,7 @@ static NTSTATUS add_pending_rmdir(send_context* context) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* name, ULONG namelen, UINT64* inode) {
+static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* name, ULONG namelen, UINT64* inode, BOOL* dir) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1112,6 +1118,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
 
         if (di->n == namelen && RtlCompareMemory(di->name, name, namelen) == namelen) {
             *inode = di->key.obj_type == TYPE_INODE_ITEM ? di->key.obj_id : 0;
+            *dir = di->type == BTRFS_TYPE_DIRECTORY ? TRUE: FALSE;
             return STATUS_OBJECT_NAME_COLLISION;
         }
 
@@ -1122,10 +1129,10 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS make_dir_orphan(send_context* context, UINT64 inode, UINT64 generation, ref* r) {
+static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, UINT64 generation, ref* r) {
     NTSTATUS Status;
     ULONG pos = context->datalen;
-    send_dir* sd;
+    send_dir* sd = NULL;
     orphan* o;
     LIST_ENTRY* le;
     char name[64];
@@ -1134,51 +1141,81 @@ static NTSTATUS make_dir_orphan(send_context* context, UINT64 inode, UINT64 gene
     while (le != &context->orphans) {
         orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
 
-        if (o2->inode == inode)
+        if (o2->inode == inode) {
+            if (!dir) {
+                send_command(context, BTRFS_SEND_CMD_UNLINK);
+
+                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("send_add_tlv_path returned %08x\n", Status);
+                    return Status;
+                }
+
+                send_command_finish(context, pos);
+            }
+
             return STATUS_SUCCESS;
-        else if (o2->inode > inode)
+        } else if (o2->inode > inode)
             break;
 
         le = le->Flink;
     }
 
-    Status = find_send_dir(context, inode, generation, &sd, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_send_dir returned %08x\n", Status);
-        return Status;
-    }
-
-    sd->dummy = TRUE;
-
     get_orphan_name(inode, generation, name);
 
-    send_command(context, BTRFS_SEND_CMD_RENAME);
+    if (dir) {
+        Status = find_send_dir(context, inode, generation, &sd, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_send_dir returned %08x\n", Status);
+            return Status;
+        }
 
-    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-    if (!NT_SUCCESS(Status)) {
-        ERR("send_add_tlv_path returned %08x\n", Status);
-        return Status;
+        sd->dummy = TRUE;
+
+        send_command(context, BTRFS_SEND_CMD_RENAME);
+
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
+
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
+
+        send_command_finish(context, pos);
+
+        if (sd->name)
+            ExFreePool(sd->name);
+
+        sd->namelen = strlen(name);
+        sd->name = ExAllocatePoolWithTag(PagedPool, sd->namelen, ALLOC_TAG);
+        if (!sd->name) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(sd->name, name, sd->namelen);
+    } else {
+        send_command(context, BTRFS_SEND_CMD_RENAME);
+
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
+
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
+        if (!NT_SUCCESS(Status)) {
+            ERR("send_add_tlv_path returned %08x\n", Status);
+            return Status;
+        }
+
+        send_command_finish(context, pos);
     }
-
-    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
-    if (!NT_SUCCESS(Status)) {
-        ERR("send_add_tlv_path returned %08x\n", Status);
-        return Status;
-    }
-
-    send_command_finish(context, pos);
-
-    if (sd->name)
-        ExFreePool(sd->name);
-
-    sd->namelen = strlen(name);
-    sd->name = ExAllocatePoolWithTag(PagedPool, sd->namelen, ALLOC_TAG);
-    if (!sd->name) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlCopyMemory(sd->name, name, sd->namelen);
 
     o = ExAllocatePoolWithTag(PagedPool, sizeof(orphan), ALLOC_TAG);
     if (!o) {
@@ -1190,6 +1227,7 @@ static NTSTATUS make_dir_orphan(send_context* context, UINT64 inode, UINT64 gene
     o->dir = TRUE;
     strcpy(o->tmpname, name);
     o->sd = sd;
+    o->parent = r->sd;
     add_orphan(context, o);
 
     return STATUS_SUCCESS;
@@ -1227,17 +1265,18 @@ static NTSTATUS flush_refs(send_context* context) {
 
         if (r && or) {
             UINT64 inode;
+            BOOL dir;
 
-            Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode);
+            Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode, &dir);
             if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_COLLISION) {
                 ERR("look_for_collision returned %08x\n", Status);
                 return Status;
             }
 
             if (Status == STATUS_OBJECT_NAME_COLLISION && inode > context->lastinode.inode) {
-                Status = make_dir_orphan(context, inode, context->parent->root_item.ctransid, r);
+                Status = make_file_orphan(context, inode, dir, context->parent->root_item.ctransid, r);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("make_dir_orphan returned %08x\n", Status);
+                    ERR("make_file_orphan returned %08x\n", Status);
                     return Status;
                 }
             }
@@ -1418,6 +1457,22 @@ static NTSTATUS flush_refs(send_context* context) {
 
         while (!IsListEmpty(&context->lastinode.refs)) {
             ref* r = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry);
+            UINT64 inode;
+            BOOL dir;
+
+            Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode, &dir);
+            if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_COLLISION) {
+                ERR("look_for_collision returned %08x\n", Status);
+                return Status;
+            }
+
+            if (Status == STATUS_OBJECT_NAME_COLLISION && inode > context->lastinode.inode) {
+                Status = make_file_orphan(context, inode, dir, context->lastinode.gen, r);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("make_file_orphan returned %08x\n", Status);
+                    return Status;
+                }
+            }
 
             Status = found_path(context, r->sd, r->name, r->namelen);
             if (!NT_SUCCESS(Status)) {
