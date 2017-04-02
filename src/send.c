@@ -27,6 +27,7 @@ typedef struct send_dir {
     struct send_dir* parent;
     ULONG namelen;
     char* name;
+    LIST_ENTRY deleted_children;
 } send_dir;
 
 typedef struct {
@@ -37,6 +38,12 @@ typedef struct {
     send_dir* parent;
     char tmpname[64];
 } orphan;
+
+typedef struct {
+    LIST_ENTRY list_entry;
+    ULONG namelen;
+    char name[1];
+} deleted_child;
 
 typedef struct {
     LIST_ENTRY list_entry;
@@ -90,8 +97,6 @@ typedef struct {
 #define MAX_SEND_WRITE 0xc000 // 48 KB
 #define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
-static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime);
-static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, ULONG namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd);
 static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generation, send_dir** psd, BOOL* added_dummy);
 
 static void send_command(send_context* context, UINT16 cmd) {
@@ -469,6 +474,8 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* pare
         sd->name = NULL;
 
     sd->namelen = namelen;
+
+    InitializeListHead(&sd->deleted_children);
 
     if (lastentry)
         InsertHeadList(lastentry, &sd->list_entry);
@@ -1162,22 +1169,34 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
     LIST_ENTRY* le;
     char name[64];
 
+    if (!dir) {
+        deleted_child* dc;
+
+        dc = ExAllocatePoolWithTag(PagedPool, offsetof(deleted_child, name[0]) + r->namelen, ALLOC_TAG);
+        if (!dc) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        dc->namelen = r->namelen;
+        RtlCopyMemory(dc->name, r->name, r->namelen);
+        InsertTailList(&r->sd->deleted_children, &dc->list_entry);
+    }
+
     le = context->orphans.Flink;
     while (le != &context->orphans) {
         orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
 
         if (o2->inode == inode) {
-            if (!dir) {
-                send_command(context, BTRFS_SEND_CMD_UNLINK);
+            send_command(context, BTRFS_SEND_CMD_UNLINK);
 
-                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_add_tlv_path returned %08x\n", Status);
-                    return Status;
-                }
-
-                send_command_finish(context, pos);
+            Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("send_add_tlv_path returned %08x\n", Status);
+                return Status;
             }
+
+            send_command_finish(context, pos);
 
             return STATUS_SUCCESS;
         } else if (o2->inode > inode)
@@ -1515,18 +1534,35 @@ static NTSTATUS flush_refs(send_context* context) {
 
         while (!IsListEmpty(&context->lastinode.oldrefs)) {
             ref* or = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry);
+            BOOL deleted = FALSE;
 
-            Status = send_unlink_command(context, or->sd, or->namelen, or->name);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_unlink_command returned %08x\n", Status);
-                return Status;
+            le = or->sd->deleted_children.Flink;
+            while (le != &or->sd->deleted_children) {
+                deleted_child* dc = CONTAINING_RECORD(le, deleted_child, list_entry);
+
+                if (dc->namelen == or->namelen && RtlCompareMemory(dc->name, or->name, or->namelen) == or->namelen) {
+                    RemoveEntryList(&dc->list_entry);
+                    ExFreePool(dc);
+                    deleted = TRUE;
+                    break;
+                }
+
+                le = le->Flink;
             }
 
-            if (!or->sd->dummy) {
-                NTSTATUS Status = send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
+            if (!deleted) {
+                Status = send_unlink_command(context, or->sd, or->namelen, or->name);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("send_utimes_command_dir returned %08x\n", Status);
+                    ERR("send_unlink_command returned %08x\n", Status);
                     return Status;
+                }
+
+                if (!or->sd->dummy) {
+                    NTSTATUS Status = send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("send_utimes_command_dir returned %08x\n", Status);
+                        return Status;
+                    }
                 }
             }
 
@@ -1595,6 +1631,11 @@ static NTSTATUS finish_inode(send_context* context) {
 
                 if (pr->sd->name)
                     ExFreePool(pr->sd->name);
+
+                while (!IsListEmpty(&pr->sd->deleted_children)) {
+                    deleted_child* dc = CONTAINING_RECORD(RemoveHeadList(&pr->sd->deleted_children), deleted_child, list_entry);
+                    ExFreePool(dc);
+                }
 
                 ExFreePool(pr->sd);
 
@@ -2296,6 +2337,11 @@ end:
 
         if (sd->name)
             ExFreePool(sd->name);
+
+        while (!IsListEmpty(&sd->deleted_children)) {
+            deleted_child* dc = CONTAINING_RECORD(RemoveHeadList(&sd->deleted_children), deleted_child, list_entry);
+            ExFreePool(dc);
+        }
 
         ExFreePool(sd);
     }
