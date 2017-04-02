@@ -35,7 +35,6 @@ typedef struct {
     UINT64 inode;
     BOOL dir;
     send_dir* sd;
-    send_dir* parent;
     char tmpname[64];
 } orphan;
 
@@ -424,7 +423,6 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         o->inode = tp->item->key.obj_id;
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? TRUE : FALSE;
         strcpy(o->tmpname, name);
-        o->parent = NULL;
         o->sd = sd;
         add_orphan(context, o);
 
@@ -558,7 +556,7 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->lastinode.o->parent, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
         if (!NT_SUCCESS(Status)) {
             ERR("send_add_tlv_path returned %08x\n", Status);
             return Status;
@@ -1272,7 +1270,6 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
     o->dir = TRUE;
     strcpy(o->tmpname, name);
     o->sd = sd;
-    o->parent = context->root_dir;
     add_orphan(context, o);
 
     return STATUS_SUCCESS;
