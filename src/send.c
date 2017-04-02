@@ -1224,7 +1224,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
             return Status;
         }
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
         if (!NT_SUCCESS(Status)) {
             ERR("send_add_tlv_path returned %08x\n", Status);
             return Status;
@@ -1243,6 +1243,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
         }
 
         RtlCopyMemory(sd->name, name, sd->namelen);
+        sd->parent = context->root_dir;
     } else {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
@@ -1252,7 +1253,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
             return Status;
         }
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, name, strlen(name));
+        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
         if (!NT_SUCCESS(Status)) {
             ERR("send_add_tlv_path returned %08x\n", Status);
             return Status;
@@ -1271,7 +1272,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
     o->dir = TRUE;
     strcpy(o->tmpname, name);
     o->sd = sd;
-    o->parent = r->sd;
+    o->parent = context->root_dir;
     add_orphan(context, o);
 
     return STATUS_SUCCESS;
