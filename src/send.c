@@ -1215,7 +1215,6 @@ static NTSTATUS flush_refs(send_context* context) {
 
             find_path(context->lastinode.path, or->sd, or->name, or->namelen);
             context->lastinode.path[len] = 0;
-            nameref = or;
 
             if (!context->lastinode.sd) {
                 Status = find_send_dir(context, context->lastinode.inode, context->lastinode.gen, &context->lastinode.sd, FALSE);
@@ -1250,7 +1249,7 @@ static NTSTATUS flush_refs(send_context* context) {
                     return Status;
                 }
             } else if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
-                ULONG pos = context->datalen;
+                ULONG pos = context->datalen, len;
 
                 send_command(context, BTRFS_SEND_CMD_RENAME);
 
@@ -1285,6 +1284,19 @@ static NTSTATUS flush_refs(send_context* context) {
 
                 RtlCopyMemory(context->lastinode.sd->name, r->name, r->namelen);
                 context->lastinode.sd->parent = r->sd;
+
+                if (context->lastinode.path)
+                    ExFreePool(context->lastinode.path);
+
+                len = find_path_len(r->sd, r->namelen);
+                context->lastinode.path = ExAllocatePoolWithTag(PagedPool, len + 1, ALLOC_TAG);
+                if (!context->lastinode.path) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                find_path(context->lastinode.path, r->sd, r->name, r->namelen);
+                context->lastinode.path[len] = 0;
             }
         } else if (r && !or) { // new
             Status = found_path(context, r->sd, r->name, r->namelen);
