@@ -269,8 +269,6 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     NTSTATUS Status;
     INODE_ITEM* ii;
 
-    // FIXME - if generation of new and old inodes differ, treat as different files
-
     if (tp2 && !tp) {
         INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
 
@@ -2095,7 +2093,7 @@ static void send_thread(void* ctx) {
             }
 
             if (!ended1 && !ended2 && !keycmp(tp.item->key, tp2.item->key)) {
-                BOOL no_next = FALSE;
+                BOOL no_next = FALSE, no_next2 = FALSE;
 
                 TRACE("~ %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
@@ -2137,6 +2135,73 @@ static void send_thread(void* ctx) {
                         }
 
                         no_next = TRUE;
+                    } else if (tp.item->size > sizeof(UINT64) && tp2.item->size > sizeof(UINT64) && *(UINT64*)tp.item->data != *(UINT64*)tp2.item->data) {
+                        UINT64 inode = tp.item->key.obj_id;
+
+                        Status = send_inode(context, NULL, &tp2);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("send_inode returned %08x\n", Status);
+                            ExReleaseResourceLite(&context->Vcb->tree_lock);
+                            goto end;
+                        }
+
+                        while (TRUE) {
+                            if (!find_next_item(context->Vcb, &tp2, &next_tp, FALSE, NULL)) {
+                                ended2 = TRUE;
+                                break;
+                            }
+
+                            tp2 = next_tp;
+
+                            if (tp2.item->key.obj_id != inode)
+                                break;
+
+                            if (tp2.item->key.obj_type == TYPE_INODE_REF) {
+                                Status = send_inode_ref(context, &tp2, TRUE);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("send_inode_ref returned %08x\n", Status);
+                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                                    goto end;
+                                }
+                            } else if (tp2.item->key.obj_type == TYPE_INODE_EXTREF) {
+                                Status = send_inode_extref(context, &tp2, TRUE);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("send_inode_extref returned %08x\n", Status);
+                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                                    goto end;
+                                }
+                            } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA) {
+                                Status = send_extent_data(context, NULL, &tp2);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("send_extent_data returned %08x\n", Status);
+                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                                    goto end;
+                                }
+                            } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM) {
+                                Status = send_xattr(context, NULL, &tp2);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("send_xattr returned %08x\n", Status);
+                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                                    goto end;
+                                }
+                            }
+                        }
+
+                        Status = finish_inode(context);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("finish_inode returned %08x\n", Status);
+                            ExReleaseResourceLite(&context->Vcb->tree_lock);
+                            goto end;
+                        }
+
+                        no_next2 = TRUE;
+
+                        Status = send_inode(context, &tp, NULL);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("send_inode returned %08x\n", Status);
+                            ExReleaseResourceLite(&context->Vcb->tree_lock);
+                            goto end;
+                        }
                     } else {
                         Status = send_inode(context, &tp, &tp2);
                         if (!NT_SUCCESS(Status)) {
@@ -2195,10 +2260,12 @@ static void send_thread(void* ctx) {
                     else
                         ended1 = TRUE;
 
-                    if (find_next_item(context->Vcb, &tp2, &next_tp, FALSE, NULL))
-                        tp2 = next_tp;
-                    else
-                        ended2 = TRUE;
+                    if (!no_next2) {
+                        if (find_next_item(context->Vcb, &tp2, &next_tp, FALSE, NULL))
+                            tp2 = next_tp;
+                        else
+                            ended2 = TRUE;
+                    }
                 }
             } else if (ended2 || keycmp(tp.item->key, tp2.item->key) == -1) {
                 TRACE("A %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
