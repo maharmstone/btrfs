@@ -1766,7 +1766,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         if (newtd) {
             newtd->data = bi->data;
             newtd->size = bi->datalen;
-            InsertHeadList(&td->list_entry, &newtd->list_entry);
+            InsertHeadList(td->list_entry.Blink, &newtd->list_entry);
         }
     } else {
         ERR("(%llx,%x,%llx) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
@@ -1785,11 +1785,11 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
     le = br->items.Flink;
     while (le != &br->items) {
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
-        LIST_ENTRY *le2, *listhead;
+        LIST_ENTRY *le2;
         traverse_ptr tp;
         KEY tree_end;
         BOOL no_end;
-        tree_data* td;
+        tree_data *td, *listhead;
         int cmp;
         tree* t;
         BOOL ignore = FALSE;
@@ -1994,16 +1994,17 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 tp.tree->size += bi->datalen + sizeof(leaf_node);
                 tp.tree->write = TRUE;
                 
-                listhead = &td->list_entry;
-            } else {
-                listhead = &tp.item->list_entry;
+                listhead = td;
+            } else
+                listhead = tp.item;
                 
-                if (!td && tp.item->ignore && tp.item->list_entry.Blink != &tp.tree->itemlist) {
-                    tree_data* prevtd = CONTAINING_RECORD(tp.item->list_entry.Blink, tree_data, list_entry);
-                    
-                    if (!prevtd->ignore && !keycmp(prevtd->key, tp.item->key))
-                        listhead = &prevtd->list_entry;
-                }
+            while (listhead->list_entry.Blink != &tp.tree->itemlist) {
+                tree_data* prevtd = CONTAINING_RECORD(listhead->list_entry.Blink, tree_data, list_entry);
+
+                if (!keycmp(prevtd->key, listhead->key))
+                    listhead = prevtd;
+                else
+                    break;
             }
             
             le2 = le->Flink;
@@ -2036,7 +2037,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                         td->inserted = TRUE;
                     }
                     
-                    le3 = listhead;
+                    le3 = &listhead->list_entry;
                     while (le3 != &tp.tree->itemlist) {
                         tree_data* td2 = CONTAINING_RECORD(le3, tree_data, list_entry);
                         
@@ -2076,12 +2077,21 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                             tp.tree->header.num_items++;
                             tp.tree->size += bi2->datalen + sizeof(leaf_node);
                             
-                            listhead = &td->list_entry;
+                            listhead = td;
                         }
                     } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
                         add_delete_inode_extref(Vcb, bi2, &br->items);
                     }
                     
+                    while (listhead->list_entry.Blink != &tp.tree->itemlist) {
+                        tree_data* prevtd = CONTAINING_RECORD(listhead->list_entry.Blink, tree_data, list_entry);
+
+                        if (!keycmp(prevtd->key, listhead->key))
+                            listhead = prevtd;
+                        else
+                            break;
+                    }
+
                     le = le2;
                 } else
                     break;
