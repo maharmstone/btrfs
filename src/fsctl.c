@@ -39,6 +39,8 @@ extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern PDRIVER_OBJECT drvobj;
 
+static void mark_subvol_dirty(device_extension* Vcb, root* r);
+
 static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) {
     btrfs_get_file_ids* bgfi;
     fcb* fcb;
@@ -405,20 +407,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     // update ROOT_ITEM of original subvol
     
     subvol->root_item.last_snapshot_generation = Vcb->superblock.generation;
-    
-    // We also rewrite the top of the old subvolume tree, for some reason
-    searchkey.obj_id = 0;
-    searchkey.obj_type = 0;
-    searchkey.offset = 0;
-    
-    Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
-        goto end;
-    }
-    
-    subvol->treeholder.tree->write = TRUE;
-    
+
+    mark_subvol_dirty(Vcb, subvol);
+
     // create fileref for entry in other subvolume
     
     fr = create_fileref(Vcb);
