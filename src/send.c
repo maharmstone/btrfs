@@ -1694,11 +1694,120 @@ static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, travers
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS add_ext_holes(LIST_ENTRY* exts, UINT64 size) {
+    UINT64 lastoff = 0;
+    LIST_ENTRY* le;
+
+    le = exts->Flink;
+    while (le != exts) {
+        send_ext* ext = CONTAINING_RECORD(le, send_ext, list_entry);
+
+        if (ext->offset > lastoff) {
+            send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+            EXTENT_DATA2* ed2;
+
+            if (!ext2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            ed2 = (EXTENT_DATA2*)ext2->data.data;
+
+            ext2->offset = lastoff;
+            ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
+            ext2->data.decoded_size = ed2->num_bytes = ext->offset - lastoff;
+            ext2->data.type = EXTENT_TYPE_REGULAR;
+            ed2->address = ed2->size = ed2->offset = 0;
+
+            InsertHeadList(le->Blink, &ext2->list_entry);
+        }
+
+        if (ext->data.type == EXTENT_TYPE_INLINE)
+            lastoff = ext->offset + ext->data.decoded_size;
+        else {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data.data;
+            lastoff = ext->offset + ed2->num_bytes;
+        }
+
+        le = le->Flink;
+    }
+
+    if (size > lastoff) {
+        send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+        EXTENT_DATA2* ed2;
+
+        if (!ext2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ed2 = (EXTENT_DATA2*)ext2->data.data;
+
+        ext2->offset = lastoff;
+        ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
+        ext2->data.decoded_size = ed2->num_bytes = size - lastoff;
+        ext2->data.type = EXTENT_TYPE_REGULAR;
+        ed2->address = ed2->size = ed2->offset = 0;
+
+        InsertTailList(exts, &ext2->list_entry);
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static void dump_extents(LIST_ENTRY* exts) { // TESTING
+    LIST_ENTRY* le;
+
+    le = exts->Flink;
+    while (le != exts) {
+        send_ext* ext = CONTAINING_RECORD(le, send_ext, list_entry);
+
+        if (ext->data.type == EXTENT_TYPE_INLINE)
+            ERR("offset %llx: extent_data gen=%llx size=%llx comp=%x enc=%x otherenc=%x type=%x\n",
+                ext->offset, ext->data.generation, ext->data.decoded_size, ext->data.compression, ext->data.encryption,
+                ext->data.encoding, ext->data.type);
+        else {
+            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data.data;
+
+            ERR("offset %llx: extent_data gen=%llx size=%llx comp=%x enc=%x otherenc=%x type=%x ea=%llx es=%llx o=%llx s=%llx\n",
+                ext->offset, ext->data.generation, ext->data.decoded_size, ext->data.compression, ext->data.encryption,
+                ext->data.encoding, ext->data.type, ed2->address, ed2->size, ed2->offset, ed2->num_bytes);
+        }
+
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
     NTSTATUS Status;
 
-    // FIXME - incremental sending
+    if ((IsListEmpty(&context->lastinode.exts) && IsListEmpty(&context->lastinode.oldexts)) || context->lastinode.size == 0)
+        return STATUS_SUCCESS;
 
+    Status = add_ext_holes(&context->lastinode.exts, context->lastinode.size);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_ext_holes returned %08x\n", Status);
+        return Status;
+    }
+
+    Status = add_ext_holes(&context->lastinode.oldexts, context->lastinode.size);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_ext_holes returned %08x\n", Status);
+        return Status;
+    }
+
+    // FIXME - make cutoff points the same
+    // FIXME - truncate final extent of old inode if necessary
+    // FIXME - remove identical entries
+    // FIXME - write zeroes if sparse
+
+    ERR("new:\n");
+    dump_extents(&context->lastinode.exts);
+
+    ERR("old:\n");
+    dump_extents(&context->lastinode.oldexts);
+
+#if 0
     while (!IsListEmpty(&context->lastinode.exts)) {
         send_ext* se = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.exts), send_ext, list_entry);
         ULONG pos;
@@ -1844,6 +1953,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
         ExFreePool(se);
     }
+#endif
 
     return STATUS_SUCCESS;
 }
@@ -2058,7 +2168,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             se->offset = tp2->item->key.offset;
             se->datalen = tp2->item->size;
             RtlCopyMemory(&se->data, tp2->item->data, tp2->item->size);
-            InsertTailList(&context->lastinode.exts, &se->list_entry);
+            InsertTailList(&context->lastinode.oldexts, &se->list_entry);
         }
     }
 
