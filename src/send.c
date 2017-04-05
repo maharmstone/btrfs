@@ -1977,12 +1977,19 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
-    DIR_ITEM* di;
-    ULONG len;
+typedef struct {
+    ULONG namelen;
+    char* name;
+    ULONG value1len;
+    char* value1;
+    ULONG value2len;
+    char* value2;
+    LIST_ENTRY list_entry;
+} xattr_cmp;
 
-    if (tp2 && !tp)
-        return STATUS_SUCCESS; // FIXME
+static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+    if (tp && tp2 && tp->item->size == tp2->item->size && RtlCompareMemory(tp->item->data, tp2->item->data, tp->item->size) == tp->item->size)
+        return STATUS_SUCCESS;
 
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
         NTSTATUS Status = flush_refs(context);
@@ -1992,33 +1999,187 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
         }
     }
 
-    if (tp->item->size < sizeof(DIR_ITEM)) {
+    if (tp && tp->item->size < sizeof(DIR_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(DIR_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
-    len = tp->item->size;
-    di = (DIR_ITEM*)tp->item->data;
+    if (tp2 && tp2->item->size < sizeof(DIR_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            tp2->item->size, sizeof(DIR_ITEM));
+        return STATUS_INTERNAL_ERROR;
+    }
 
-    do {
-        ULONG pos;
+    if (tp && !tp2) {
+        ULONG len;
+        DIR_ITEM* di;
 
-        if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-            ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
-            return STATUS_INTERNAL_ERROR;
+        len = tp->item->size;
+        di = (DIR_ITEM*)tp->item->data;
+
+        do {
+            ULONG pos;
+
+            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            pos = context->datalen;
+            send_command(context, BTRFS_SEND_CMD_SET_XATTR);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
+            send_command_finish(context, pos);
+
+            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            di = (DIR_ITEM*)&di->name[di->m + di->n];
+        } while (len > 0);
+    } else if (!tp && tp2) {
+        ULONG len;
+        DIR_ITEM* di;
+
+        len = tp2->item->size;
+        di = (DIR_ITEM*)tp2->item->data;
+
+        do {
+            ULONG pos;
+
+            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            pos = context->datalen;
+            send_command(context, BTRFS_SEND_CMD_REMOVE_XATTR);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
+            send_command_finish(context, pos);
+
+            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            di = (DIR_ITEM*)&di->name[di->m + di->n];
+        } while (len > 0);
+    } else {
+        ULONG len;
+        DIR_ITEM* di;
+        LIST_ENTRY xattrs;
+
+        InitializeListHead(&xattrs);
+
+        len = tp->item->size;
+        di = (DIR_ITEM*)tp->item->data;
+
+        do {
+            xattr_cmp* xa;
+
+            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            xa = ExAllocatePoolWithTag(PagedPool, sizeof(xattr_cmp), ALLOC_TAG);
+            if (!xa) {
+                ERR("out of memory\n");
+
+                while (!IsListEmpty(&xattrs)) {
+                    ExFreePool(CONTAINING_RECORD(RemoveHeadList(&xattrs), xattr_cmp, list_entry));
+                }
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            xa->namelen = di->n;
+            xa->name = di->name;
+            xa->value1len = di->m;
+            xa->value1 = di->name + di->n;
+            xa->value2len = 0;
+            xa->value2 = NULL;
+
+            InsertTailList(&xattrs, &xa->list_entry);
+
+            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            di = (DIR_ITEM*)&di->name[di->m + di->n];
+        } while (len > 0);
+
+        len = tp2->item->size;
+        di = (DIR_ITEM*)tp2->item->data;
+
+        do {
+            xattr_cmp* xa;
+            LIST_ENTRY* le;
+            BOOL found = FALSE;
+
+            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            le = xattrs.Flink;
+            while (le != &xattrs) {
+                xa = CONTAINING_RECORD(le, xattr_cmp, list_entry);
+
+                if (xa->namelen == di->n && RtlCompareMemory(xa->name, di->name, di->n) == di->n) {
+                    xa->value2len = di->m;
+                    xa->value2 = di->name + di->n;
+                    found = TRUE;
+                    break;
+                }
+
+                le = le->Flink;
+            }
+
+            if (!found) {
+                xa = ExAllocatePoolWithTag(PagedPool, sizeof(xattr_cmp), ALLOC_TAG);
+                if (!xa) {
+                    ERR("out of memory\n");
+
+                    while (!IsListEmpty(&xattrs)) {
+                        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&xattrs), xattr_cmp, list_entry));
+                    }
+
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                xa->namelen = di->n;
+                xa->name = di->name;
+                xa->value1len = 0;
+                xa->value1 = NULL;
+                xa->value2len = di->m;
+                xa->value2 = di->name + di->n;
+
+                InsertTailList(&xattrs, &xa->list_entry);
+            }
+
+            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            di = (DIR_ITEM*)&di->name[di->m + di->n];
+        } while (len > 0);
+
+        while (!IsListEmpty(&xattrs)) {
+            xattr_cmp* xa = CONTAINING_RECORD(RemoveHeadList(&xattrs), xattr_cmp, list_entry);
+
+            if (xa->value1len != xa->value2len || !xa->value1 || !xa->value2 || RtlCompareMemory(xa->value1, xa->value2, xa->value1len) != xa->value1len) {
+                ULONG pos;
+
+                if (!xa->value1) {
+                    pos = context->datalen;
+                    send_command(context, BTRFS_SEND_CMD_REMOVE_XATTR);
+                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
+                    send_command_finish(context, pos);
+                } else {
+                    pos = context->datalen;
+                    send_command(context, BTRFS_SEND_CMD_SET_XATTR);
+                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
+                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, xa->value1, xa->value1len);
+                    send_command_finish(context, pos);
+                }
+            }
+
+            ExFreePool(xa);
         }
-
-        pos = context->datalen;
-        send_command(context, BTRFS_SEND_CMD_SET_XATTR);
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
-        send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
-        send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
-        send_command_finish(context, pos);
-
-        len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
-        di = (DIR_ITEM*)&di->name[di->m + di->n];
-    } while (len > 0);
+    }
 
     return STATUS_SUCCESS;
 }
