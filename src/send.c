@@ -1778,6 +1778,111 @@ static void dump_extents(LIST_ENTRY* exts) { // TESTING
     }
 }
 
+static NTSTATUS divide_ext(send_ext* ext, UINT64 len) {
+    send_ext* ext2;
+    EXTENT_DATA2 *ed2a, *ed2b;
+
+    if (ext->data.type == EXTENT_TYPE_INLINE) {
+        ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + ext->data.decoded_size - len, ALLOC_TAG);
+
+        if (!ext2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ext2->offset = ext->offset + len;
+        ext2->datalen = ext->data.decoded_size - len;
+        ext2->data.decoded_size = ext->data.decoded_size - len;
+        ext2->data.compression = ext->data.compression;
+        ext2->data.encryption = ext->data.encryption;
+        ext2->data.encoding = ext->data.encoding;
+        ext2->data.type = ext->data.type;
+        RtlCopyMemory(ext2->data.data, ext->data.data + len, ext->data.decoded_size - len);
+
+        ext->data.decoded_size = len;
+
+        InsertHeadList(&ext->list_entry, &ext2->list_entry);
+
+        return STATUS_SUCCESS;
+    }
+
+    ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+
+    if (!ext2) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ed2a = (EXTENT_DATA2*)ext->data.data;
+    ed2b = (EXTENT_DATA2*)ext2->data.data;
+
+    ext2->offset = ext->offset + len;
+    ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
+
+    ext2->data.compression = ext->data.compression;
+    ext2->data.encryption = ext->data.encryption;
+    ext2->data.encoding = ext->data.encoding;
+    ext2->data.type = ext->data.type;
+    ed2b->num_bytes = ed2a->num_bytes - len;
+    ed2a->num_bytes = len;
+
+    if (ed2a->size == 0) {
+        ext2->data.decoded_size = ed2b->num_bytes;
+        ext->data.decoded_size = ed2a->num_bytes;
+
+        ed2b->address = ed2b->size = ed2b->offset = 0;
+    } else {
+        ext2->data.decoded_size = ext->data.decoded_size;
+
+        ed2b->address = ed2a->address;
+        ed2b->size = ed2a->size;
+        ed2b->offset = ed2a->offset + len;
+    }
+
+    InsertHeadList(&ext->list_entry, &ext2->list_entry);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS sync_ext_cutoff_points(send_context* context) {
+    NTSTATUS Status;
+    send_ext *ext1, *ext2;
+
+    ext1 = CONTAINING_RECORD(context->lastinode.exts.Flink, send_ext, list_entry);
+    ext2 = CONTAINING_RECORD(context->lastinode.oldexts.Flink, send_ext, list_entry);
+
+    do {
+        UINT64 len1, len2;
+        EXTENT_DATA2 *ed2a, *ed2b;
+
+        ed2a = ext1->data.type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ext1->data.data;
+        ed2b = ext2->data.type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ext2->data.data;
+
+        len1 = ed2a ? ed2a->num_bytes : ext1->data.decoded_size;
+        len2 = ed2b ? ed2b->num_bytes : ext2->data.decoded_size;
+
+        if (len1 < len2) {
+            Status = divide_ext(ext2, len1);
+            if (!NT_SUCCESS(Status)) {
+                ERR("divide_ext returned %08x\n", Status);
+                return Status;
+            }
+        } else if (len2 > len1) {
+            Status = divide_ext(ext1, len2);
+            if (!NT_SUCCESS(Status)) {
+                ERR("divide_ext returned %08x\n", Status);
+                return Status;
+            }
+        }
+
+        if (ext1->list_entry.Flink == &context->lastinode.exts || ext2->list_entry.Flink == &context->lastinode.oldexts)
+            return STATUS_SUCCESS;
+
+        ext1 = CONTAINING_RECORD(ext1->list_entry.Flink, send_ext, list_entry);
+        ext2 = CONTAINING_RECORD(ext2->list_entry.Flink, send_ext, list_entry);
+    } while (TRUE);
+}
+
 static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
     NTSTATUS Status;
 
@@ -1796,7 +1901,12 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         return Status;
     }
 
-    // FIXME - make cutoff points the same
+    Status = sync_ext_cutoff_points(context);
+    if (!NT_SUCCESS(Status)) {
+        ERR("sync_ext_cutoff_points returned %08x\n", Status);
+        return Status;
+    }
+
     // FIXME - truncate final extent of old inode if necessary
     // FIXME - remove identical entries
     // FIXME - write zeroes if sparse
