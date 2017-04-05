@@ -1989,9 +1989,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             UINT64 off, offset;
             UINT8* buf;
 
-            // FIXME - align to sector
-
-            buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE, ALLOC_TAG);
+            buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE + (2 * context->Vcb->superblock.sector_size), ALLOC_TAG);
             if (!buf) {
                 ERR("out of memory\n");
                 ExFreePool(se);
@@ -2000,7 +1998,8 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             }
 
             for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+                ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), skip_start;
+                UINT64 addr = ed2->address + off;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -2013,7 +2012,11 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                Status = read_data(context->Vcb, ed2->address + off, length, NULL, FALSE, buf, NULL, NULL, NULL, 0, FALSE);
+                skip_start = addr % context->Vcb->superblock.sector_size;
+                addr -= skip_start;
+
+                Status = read_data(context->Vcb, addr, sector_align(length + skip_start, context->Vcb->superblock.sector_size),
+                                   NULL, FALSE, buf, NULL, NULL, NULL, 0, FALSE);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08x\n", Status);
                     ExFreePool(buf);
@@ -2032,7 +2035,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
 
                 length = min(context->lastinode.size - se->offset - off, length);
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf, length);
+                send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf + skip_start, length);
 
                 send_command_finish(context, pos);
             }
