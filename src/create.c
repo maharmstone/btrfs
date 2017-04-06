@@ -1211,7 +1211,10 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
                             POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
-        
+
+    if (sf->fcb->inode == SUBVOL_ROOT_INODE && sf->parent && sf->fcb->subvol->parent != sf->parent->fcb->subvol->id)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+
     if (streampart) {
         BOOL locked = FALSE;
         LIST_ENTRY* le;
