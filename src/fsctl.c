@@ -632,7 +632,13 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
-    
+
+    if (ccb->fileref && ccb->fileref->fcb->inode == SUBVOL_ROOT_INODE && ccb->fileref->parent &&
+        ccb->fileref->fcb->subvol->parent != ccb->fileref->parent->fcb->subvol->id) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
     // clear unique flag on extents of open files in subvol
     if (!IsListEmpty(&subvol_fcb->subvol->fcbs)) {
         LIST_ENTRY* le = subvol_fcb->subvol->fcbs.Flink;
