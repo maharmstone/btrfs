@@ -195,7 +195,8 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     }
     
     // FIXME - can we skip this bit for subvols?
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
+        (!fileref || fileref->fcb->inode != SUBVOL_ROOT_INODE || !fileref->parent || fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id)) {
         Status = STATUS_DIRECTORY_NOT_EMPTY;
         goto end;
     }

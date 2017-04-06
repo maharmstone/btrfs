@@ -1841,7 +1841,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                     le = le->Flink;
                 }
             }
-        } else { // subvolume
+        } else if (fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id) { // valid subvolume
             if (fileref->fcb->subvol->root_item.num_references > 1) {
                 fileref->fcb->subvol->root_item.num_references--;
                 
@@ -1980,7 +1980,8 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = TRUE;
         
-        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0)
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
+            (!fileref || fileref->fcb->inode != SUBVOL_ROOT_INODE || !fileref->parent || fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id))
             fileref->delete_on_close = FALSE;
         
         if (Vcb->locked && Vcb->locked_fileobj == FileObject) {
