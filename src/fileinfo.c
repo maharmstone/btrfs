@@ -567,6 +567,103 @@ void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
     RemoveEntryList(&dc->list_entry_hash_uc);
 }
 
+static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb, fcb** pfcb) {
+    NTSTATUS Status;
+    fcb* fcb;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    PSID owner;
+    BOOLEAN defaulted;
+    LARGE_INTEGER time;
+    BTRFS_TIME now;
+
+    fcb = create_fcb(Vcb, PagedPool);
+    if (!fcb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
+
+    fcb->Vcb = Vcb;
+
+    fcb->subvol = r;
+    fcb->inode = InterlockedIncrement64(&r->lastinode);
+    fcb->type = BTRFS_TYPE_DIRECTORY;
+
+    fcb->inode_item.generation = Vcb->superblock.generation;
+    fcb->inode_item.transid = Vcb->superblock.generation;
+    fcb->inode_item.st_nlink = 1;
+    fcb->inode_item.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
+    fcb->inode_item.st_atime = fcb->inode_item.st_ctime = fcb->inode_item.st_mtime = fcb->inode_item.otime = now;
+    fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+
+    fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, FALSE, TRUE, NULL);
+
+    SeCaptureSubjectContext(&subjcont);
+
+    Status = SeAssignSecurity(parfcb->sd, NULL, (void**)&fcb->sd, TRUE, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("SeAssignSecurity returned %08x\n", Status);
+        return Status;
+    }
+
+    if (!fcb->sd) {
+        ERR("SeAssignSecurity returned NULL security descriptor\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    Status = RtlGetOwnerSecurityDescriptor(fcb->sd, &owner, &defaulted);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
+        fcb->inode_item.st_uid = UID_NOBODY;
+        fcb->sd_dirty = TRUE;
+    } else {
+        fcb->inode_item.st_uid = sid_to_uid(owner);
+        fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
+    }
+
+    fcb->inode_item_changed = TRUE;
+
+    InsertTailList(&r->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    fcb->Header.AllocationSize.QuadPart = 0;
+    fcb->Header.FileSize.QuadPart = 0;
+    fcb->Header.ValidDataLength.QuadPart = 0;
+
+    fcb->created = TRUE;
+    mark_fcb_dirty(fcb);
+
+    if (parfcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+        fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+
+    fcb->prop_compression = parfcb->prop_compression;
+    fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+
+    fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fcb->hash_ptrs) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+
+    fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!fcb->hash_ptrs_uc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+
+    *pfcb = fcb;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
@@ -810,9 +907,22 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             goto end;
         }
         
-        if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE)
+        if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
             me->dummyfileref->fcb = me->fileref->fcb;
-        else
+
+            if (me->fileref->fcb->subvol->parent != me->fileref->parent->fcb->subvol->id) {
+                root* r = me->parent ? me->parent->fileref->fcb->subvol : destdir->fcb->subvol;
+
+                Status = create_directory_fcb(me->fileref->fcb->Vcb, r, me->fileref->parent->fcb, &me->fileref->fcb);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("create_directory_fcb returnd %08x\n", Status);
+                    goto end;
+                }
+
+                me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+                me->fileref->dc->key.obj_type = TYPE_INODE_ITEM;
+            }
+        } else
             me->dummyfileref->fcb = me->dummyfcb;
         
         InterlockedIncrement(&me->dummyfileref->fcb->refcount);
@@ -1328,7 +1438,8 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     }
     
-    if (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol) {
+    if (fileref->parent->fcb->subvol != related->fcb->subvol &&
+        (fileref->fcb->subvol == fileref->parent->fcb->subvol || fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)) {
         Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
