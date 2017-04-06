@@ -282,8 +282,8 @@ and 3 for absolutely everything, including traces.
 * `LogDevice` (string, optional): the serial device you want to output to, such as
 `\Device\Serial0`. This is probably only useful on virtual machines.
 * `LogFile` (string, optional): the file you wish to output to, if `LogDevice` isn't set.
-Bear in mind this is a kernel filename, so you'll have to prefix it with "\??\" (e.g.,
-"\??\C:\btrfs.log"). It probably goes without saying, but don't store this on a volume the
+Bear in mind this is a kernel filename, so you'll have to prefix it with "\\??\\" (e.g.,
+"\\??\\C:\\btrfs.log"). It probably goes without saying, but don't store this on a volume the
 driver itself is using, or you'll cause an infinite loop.
 
 Mount options
