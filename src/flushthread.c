@@ -5904,7 +5904,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 ERR("insert_tree_item_batch returned %08x\n", Status);
                 return Status;
             }
-        } else {
+        } else if (fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id) {
             ULONG rrlen;
             ROOT_REF* rr;
 

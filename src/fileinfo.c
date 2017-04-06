@@ -1793,7 +1793,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    if (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp)) {
+    if (fileref->parent->fcb->subvol == fcb->subvol || (!is_subvol_readonly(fcb->subvol, Irp) && fcb->subvol->parent == fileref->parent->fcb->subvol->id)) {
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         
