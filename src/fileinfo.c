@@ -1409,7 +1409,12 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
             goto end;
         }
     }
-    
+
+    if (related->parent && related->fcb->subvol != related->parent->fcb->subvol && related->fcb->subvol->parent != related->parent->fcb->subvol->id) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
     if (has_open_children(fileref)) {
         WARN("trying to rename file with open children\n");
         Status = STATUS_ACCESS_DENIED;
