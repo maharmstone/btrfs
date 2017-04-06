@@ -574,7 +574,10 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
-    
+
+    if (fileref && fileref->fcb->inode == SUBVOL_ROOT_INODE && fileref->parent && fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)
+        return STATUS_NO_MORE_FILES;
+
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
     
