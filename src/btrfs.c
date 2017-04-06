@@ -923,6 +923,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->dirty = FALSE;
     r->received = FALSE;
     r->reserved = NULL;
+    r->parent = 0;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
     InitializeListHead(&r->fcbs);
@@ -2360,6 +2361,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->treeholder.address = addr;
     r->treeholder.tree = NULL;
     r->treeholder.generation = generation;
+    r->parent = 0;
     InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
@@ -2454,6 +2456,11 @@ static NTSTATUS STDCALL look_for_roots(device_extension* Vcb, PIRP Irp) {
                     return Status;
                 }
             }
+        } else if (tp.item->key.obj_type == TYPE_ROOT_BACKREF && !IsListEmpty(&Vcb->roots)) {
+            root* lastroot = CONTAINING_RECORD(Vcb->roots.Blink, root, list_entry);
+
+            if (lastroot->id == tp.item->key.obj_id)
+                lastroot->parent = tp.item->key.offset;
         }
     
         b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);

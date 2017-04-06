@@ -350,6 +350,7 @@ typedef struct _root {
     BOOL dirty;
     BOOL received;
     PEPROCESS reserved;
+    UINT64 parent;
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
