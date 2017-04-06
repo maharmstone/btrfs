@@ -1632,7 +1632,10 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
-    
+
+    if (parfileref->fcb->inode == SUBVOL_ROOT_INODE && parfileref->parent && parfileref->fcb->subvol->parent != parfileref->parent->fcb->subvol->id)
+        return STATUS_ACCESS_DENIED;
+
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status))
         return Status;
