@@ -24,6 +24,7 @@
 #define _WIN32_WINNT 0x0601
 #define NTDDI_VERSION 0x06010000 // Win 7
 #define _CRT_SECURE_NO_WARNINGS
+#define _NO_CRT_STDIO_INLINE
 
 #include <ntifs.h>
 #include <ntddk.h>
