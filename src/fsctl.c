@@ -275,7 +275,10 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     }
     
     fileref = ccb->fileref;
-    
+
+    if (fileref->fcb->inode == SUBVOL_ROOT_INODE && fileref->parent && fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)
+        return STATUS_ACCESS_DENIED;
+
     // flush open files on this subvol
     
     flush_subvol_fcbs(subvol);
