@@ -740,6 +740,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
+    if (fileref->fcb->inode == SUBVOL_ROOT_INODE && fileref->parent && fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)
+        return STATUS_ACCESS_DENIED;
+
     if (!data || datalen < sizeof(btrfs_create_subvol))
         return STATUS_INVALID_PARAMETER;
 
