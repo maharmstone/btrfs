@@ -1922,7 +1922,10 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     TRACE("stream = %.*S\n", stream->Length / sizeof(WCHAR), stream->Buffer);
     
     parfileref = *pparfileref;
-    
+
+    if (parfileref->fcb->inode == SUBVOL_ROOT_INODE && parfileref->parent && parfileref->fcb->subvol->parent != parfileref->parent->fcb->subvol->id)
+        return STATUS_ACCESS_DENIED;
+
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, case_sensitive, Irp);
     
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
