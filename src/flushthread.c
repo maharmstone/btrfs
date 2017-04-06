@@ -6126,12 +6126,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 ERR("insert_tree_item_batch returned %08x\n", Status);
                 return Status;
             }
-        } else { // subvolume
+        } else if (fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id) {
             ULONG rrlen;
             ROOT_REF* rr;
-            
-            // FIXME - make sure this works with duff subvols within snapshots
-            
+
             Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, oldutf8, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_root_ref returned %08x\n", Status);
