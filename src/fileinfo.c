@@ -905,22 +905,22 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
-        
-        if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
+
+        if (me->fileref->fcb == me->fileref->fcb->Vcb->dummy_fcb) {
+            root* r = me->parent ? me->parent->fileref->fcb->subvol : destdir->fcb->subvol;
+
+            Status = create_directory_fcb(me->fileref->fcb->Vcb, r, me->fileref->parent->fcb, &me->fileref->fcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("create_directory_fcb returnd %08x\n", Status);
+                goto end;
+            }
+
+            me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+            me->fileref->dc->key.obj_type = TYPE_INODE_ITEM;
+        } else if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
             me->dummyfileref->fcb = me->fileref->fcb;
 
-            if (me->fileref->fcb == me->fileref->fcb->Vcb->dummy_fcb) {
-                root* r = me->parent ? me->parent->fileref->fcb->subvol : destdir->fcb->subvol;
-
-                Status = create_directory_fcb(me->fileref->fcb->Vcb, r, me->fileref->parent->fcb, &me->fileref->fcb);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("create_directory_fcb returnd %08x\n", Status);
-                    goto end;
-                }
-
-                me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
-                me->fileref->dc->key.obj_type = TYPE_INODE_ITEM;
-            }
+            me->fileref->fcb->subvol->parent = le == move_list.Flink ? destdir->fcb->subvol->id : me->parent->fileref->fcb->subvol->id;
         } else
             me->dummyfileref->fcb = me->dummyfcb;
         
