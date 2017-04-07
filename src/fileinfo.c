@@ -2566,10 +2566,17 @@ static NTSTATUS STDCALL fill_in_file_basic_information(FILE_BASIC_INFORMATION* f
     
     *length -= sizeof(FILE_BASIC_INFORMATION);
     
-    fbi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-    fbi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-    fbi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-    fbi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
+
+        KeQuerySystemTime(&time);
+        fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
+    } else {
+        fbi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+        fbi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+        fbi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+        fbi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    }
     
     if (fcb->ads) {
         if (!fileref || !fileref->parent) {
@@ -2605,10 +2612,17 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
     } else
         ii = &fcb->inode_item;
     
-    fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-    fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-    fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-    fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
+
+        KeQuerySystemTime(&time);
+        fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
+    } else {
+        fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    }
     
     if (fcb->ads) {
         fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;

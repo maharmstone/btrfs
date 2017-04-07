@@ -3999,6 +3999,26 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->dummy_fcb->inode = 2;
     Vcb->dummy_fcb->subvol = Vcb->root_root;
     Vcb->dummy_fcb->atts = FILE_ATTRIBUTE_DIRECTORY;
+    Vcb->dummy_fcb->inode_item.st_nlink = 1;
+    Vcb->dummy_fcb->inode_item.st_mode = __S_IFDIR;
+
+    Vcb->dummy_fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!Vcb->dummy_fcb->hash_ptrs) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+
+    RtlZeroMemory(Vcb->dummy_fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+
+    Vcb->dummy_fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+    if (!Vcb->dummy_fcb->hash_ptrs_uc) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+
+    RtlZeroMemory(Vcb->dummy_fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
     root_fcb = create_fcb(Vcb, NonPagedPool);
     if (!root_fcb) {

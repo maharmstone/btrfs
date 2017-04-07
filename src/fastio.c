@@ -56,10 +56,18 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
         return FALSE;
     }
 
-    fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
-    fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_atime);
-    fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_mtime);
-    fbi->ChangeTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_ctime);
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
+
+        KeQuerySystemTime(&time);
+        fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
+    } else {
+        fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
+        fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_atime);
+        fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_mtime);
+        fbi->ChangeTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_ctime);
+    }
+
     fbi->FileAttributes = fcb->atts;
 
     IoStatus->Status = STATUS_SUCCESS;
@@ -166,7 +174,6 @@ static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE
 
 static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, BOOLEAN Wait, FILE_NETWORK_OPEN_INFORMATION* fnoi,
                                                        PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
-    INODE_ITEM* ii;
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
@@ -187,21 +194,30 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
     
     fileref = ccb->fileref;
     
-    if (fcb->ads) {
-        if (!fileref || !fileref->parent) {
-            ERR("no fileref for stream\n");
-            return FALSE;
-        }
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
         
-        ii = &fileref->parent->fcb->inode_item;
-    } else
-        ii = &fcb->inode_item;
-    
-    fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-    fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-    fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-    fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
-    
+        KeQuerySystemTime(&time);
+        fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
+    } else {
+        INODE_ITEM* ii;
+
+        if (fcb->ads) {
+            if (!fileref || !fileref->parent) {
+                ERR("no fileref for stream\n");
+                return FALSE;
+            }
+
+            ii = &fileref->parent->fcb->inode_item;
+        } else
+            ii = &fcb->inode_item;
+
+        fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    }
+
     if (fcb->ads) {
         fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fnoi->FileAttributes = fileref->parent->fcb->atts;
