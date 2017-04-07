@@ -449,7 +449,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr->fcb->fileref = fr;
-    
+
+    fr->fcb->subvol->parent = fileref->fcb->subvol->id;
+
     free_fileref(Vcb, fr);
 
     // change fcb's INODE_ITEM
