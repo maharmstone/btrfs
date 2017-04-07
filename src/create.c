@@ -1322,7 +1322,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
                 return STATUS_SUCCESS;
             }
             
-            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && subvol->parent != sf->fcb->subvol->id)) {
+            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && inode == SUBVOL_ROOT_INODE && subvol->parent != sf->fcb->subvol->id)) {
                 fcb = Vcb->dummy_fcb;
                 InterlockedIncrement(&fcb->refcount);
             } else {
