@@ -1649,7 +1649,10 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     
     if (fr2->fcb->type == BTRFS_TYPE_DIRECTORY)
         fr2->fcb->fileref = fr2;
-    
+
+    if (fileref->fcb->inode == SUBVOL_ROOT_INODE)
+        fileref->fcb->subvol->parent = related->fcb->subvol->id;
+
     fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = 0;
     fileref->oldutf8.Buffer = NULL;
     fileref->deleted = FALSE;
