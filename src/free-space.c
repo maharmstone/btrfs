@@ -1173,7 +1173,11 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
         le = le->Flink;
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp);
+    Status = commit_batch_list(Vcb, &batchlist, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("commit_batch_list returned %08x\n", Status);
+        return Status;
+    }
     
     return STATUS_SUCCESS;
 }
@@ -1568,7 +1572,11 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
         le = le->Flink;
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp);
+    Status = commit_batch_list(Vcb, &batchlist, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("commit_batch_list returned %08x\n", Status);
+        return Status;
+    }
     
     return STATUS_SUCCESS;
 }

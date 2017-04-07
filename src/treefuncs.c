@@ -1198,7 +1198,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     InsertTailList(listhead, &bi2->list_entry);
 }
 
-static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead) {
+static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, BOOL* ignore) {
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
@@ -1235,7 +1235,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                             newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
                             if (!newdata) {
                                 ERR("out of memory\n");
-                                return TRUE;
+                                return STATUS_INSUFFICIENT_RESOURCES;
                             }
                             
                             pos = (UINT8*)xa - td->data;
@@ -1268,7 +1268,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                             newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                             if (!newdata) {
                                 ERR("out of memory\n");
-                                return TRUE;
+                                return STATUS_INSUFFICIENT_RESOURCES;
                             }
                             
                             RtlCopyMemory(newdata, td->data, td->size);
@@ -1296,13 +1296,13 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 
                 if (td->size + bi->datalen > maxlen) {
                     ERR("DIR_ITEM would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                    return TRUE;
+                    return STATUS_INTERNAL_ERROR;
                 }
                 
                 newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                 if (!newdata) {
                     ERR("out of memory\n");
-                    return TRUE;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 RtlCopyMemory(newdata, td->data, td->size);
@@ -1336,7 +1336,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
                         if (!ier) {
                             ERR("out of memory\n");
-                            return TRUE;
+                            return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
                         ier->dir = bi->key.offset;
@@ -1348,7 +1348,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         if (!bi2) {
                             ERR("out of memory\n");
                             ExFreePool(ier);
-                            return TRUE;
+                            return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
                         bi2->key.obj_id = bi->key.obj_id;
@@ -1373,17 +1373,18 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         if (!inserted)
                             InsertTailList(listhead, &bi2->list_entry);
                         
-                        return TRUE;
+                        *ignore = TRUE;
+                        return STATUS_SUCCESS;
                     } else {
                         ERR("INODE_REF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                        return TRUE;
+                        return STATUS_INTERNAL_ERROR;
                     }
                 }
                 
                 newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                 if (!newdata) {
                     ERR("out of memory\n");
-                    return TRUE;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 RtlCopyMemory(newdata, td->data, td->size);
@@ -1403,13 +1404,13 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                 
                 if (td->size + bi->datalen > maxlen) {
                     ERR("INODE_EXTREF would be over maximum size (%u + %u > %u)\n", td->size, bi->datalen, maxlen);
-                    return TRUE;
+                    return STATUS_INTERNAL_ERROR;
                 }
                 
                 newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen, ALLOC_TAG);
                 if (!newdata) {
                     ERR("out of memory\n");
-                    return TRUE;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 RtlCopyMemory(newdata, td->data, td->size);
@@ -1426,8 +1427,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         
             case Batch_DeleteDirItem: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    WARN("DIR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
-                    return TRUE;
+                    ERR("DIR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
+                    return STATUS_INTERNAL_ERROR;
                 } else {
                     DIR_ITEM *di, *deldi;
                     LONG len;
@@ -1448,7 +1449,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 
                                 if (!newdi) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 TRACE("modifying DIR_ITEM\n");
@@ -1466,7 +1467,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 td2->key = bi->key;
@@ -1490,7 +1491,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         
                         if (len == 0) {
                             TRACE("could not find DIR_ITEM to delete\n");
-                            return TRUE;
+                            *ignore = TRUE;
+                            return STATUS_SUCCESS;
                         }
                     } while (len > 0);
                 }
@@ -1499,8 +1501,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         
             case Batch_DeleteInodeRef: {
                 if (td->size < sizeof(INODE_REF)) {
-                    WARN("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
-                    return TRUE;
+                    ERR("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
+                    return STATUS_INTERNAL_ERROR;
                 } else {
                     INODE_REF *ir, *delir;
                     ULONG len;
@@ -1533,7 +1535,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 
                                 if (!newir) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 TRACE("modifying INODE_REF\n");
@@ -1551,7 +1553,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 td2->key = bi->key;
@@ -1583,7 +1585,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                             
                             add_delete_inode_extref(Vcb, bi, listhead);
                             
-                            return TRUE;
+                            *ignore = TRUE;
+                            return STATUS_SUCCESS;
                         } else
                             WARN("entry not found in INODE_REF\n");
                     }
@@ -1594,8 +1597,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         
             case Batch_DeleteInodeExtRef: {
                 if (td->size < sizeof(INODE_EXTREF)) {
-                    WARN("INODE_EXTREF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_EXTREF));
-                    return TRUE;
+                    ERR("INODE_EXTREF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_EXTREF));
+                    return STATUS_INTERNAL_ERROR;
                 } else {
                     INODE_EXTREF *ier, *delier;
                     ULONG len;
@@ -1625,7 +1628,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 
                                 if (!newier) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 TRACE("modifying INODE_EXTREF\n");
@@ -1643,7 +1646,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 td2->key = bi->key;
@@ -1674,8 +1677,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
             
             case Batch_DeleteXattr: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    WARN("XATTR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
-                    return TRUE;
+                    ERR("XATTR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
+                    return STATUS_INTERNAL_ERROR;
                 } else {
                     DIR_ITEM *di, *deldi;
                     LONG len;
@@ -1696,7 +1699,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 
                                 if (!newdi) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 TRACE("modifying XATTR_ITEM\n");
@@ -1713,7 +1716,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
-                                    return TRUE;
+                                    return STATUS_INSUFFICIENT_RESOURCES;
                                 }
                                 
                                 td2->key = bi->key;
@@ -1737,7 +1740,8 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
                         
                         if (len == 0) {
                             TRACE("could not find DIR_ITEM to delete\n");
-                            return TRUE;
+                            *ignore = TRUE;
+                            return STATUS_SUCCESS;
                         }
                     } while (len > 0);
                 }
@@ -1749,8 +1753,7 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
             
             default:
                 ERR("unexpected batch operation type\n");
-                int3;
-                break;
+                return STATUS_INTERNAL_ERROR;
         }
         
         // delete old item
@@ -1769,13 +1772,14 @@ static BOOL handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* 
         }
     } else {
         ERR("(%llx,%x,%llx) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
-        int3;
+        return STATUS_INTERNAL_ERROR;
     }
-    
-    return FALSE;
+
+    *ignore = FALSE;
+    return STATUS_SUCCESS;
 }
 
-static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp) {
+static NTSTATUS commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     
@@ -1798,7 +1802,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         Status = find_item(Vcb, br->r, &tp, &bi->key, TRUE, Irp);
         if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND
             ERR("find_item returned %08x\n", Status);
-            return;
+            return Status;
         }
         
         find_tree_end(tp.tree, &tree_end, &no_end);
@@ -1946,7 +1950,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                 if (!td) {
                     ERR("out of memory\n");
-                    return;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
                 td->key = bi->key;
@@ -1978,8 +1982,13 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                 if (tp.item->ignore) {
                     if (td)
                         InsertHeadList(tp.item->list_entry.Blink, &td->list_entry);
-                } else
-                    ignore = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items);
+                } else {
+                    Status = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items, &ignore);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("handle_batch_collision returned %08x\n", Status);
+                        return Status;
+                    }
+                }
             } else if (td) {
                 InsertHeadList(&tp.item->list_entry, &td->list_entry);
             }
@@ -2026,7 +2035,7 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                         td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                         if (!td) {
                             ERR("out of memory\n");
-                            return;
+                            return STATUS_INSUFFICIENT_RESOURCES;
                         }
                         
                         td->key = bi2->key;
@@ -2050,8 +2059,13 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
                                 } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
                                     add_delete_inode_extref(Vcb, bi2, &br->items);
                                 }
-                            } else
-                                ignore = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items);
+                            } else {
+                                Status = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &br->items, &ignore);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("handle_batch_collision returned %08x\n", Status);
+                                    return Status;
+                                }
+                            }
 
                             inserted = TRUE;
                             break;
@@ -2125,15 +2139,25 @@ static void commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP I
         
         ExFreeToPagedLookasideList(&Vcb->batch_item_lookaside, bi);
     }
+
+    return STATUS_SUCCESS;
 }
 
-void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
+NTSTATUS commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
+    NTSTATUS Status;
+
     while (!IsListEmpty(batchlist)) {
         LIST_ENTRY* le = RemoveHeadList(batchlist);
         batch_root* br2 = CONTAINING_RECORD(le, batch_root, list_entry);
         
-        commit_batch_list_root(Vcb, br2, Irp);
+        Status = commit_batch_list_root(Vcb, br2, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("commit_batch_list_root returned %08x\n", Status);
+            return Status;
+        }
         
         ExFreePool(br2);
     }
+
+    return STATUS_SUCCESS;
 }

@@ -988,7 +988,7 @@ void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
-void commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
+NTSTATUS commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 
 // in search.c

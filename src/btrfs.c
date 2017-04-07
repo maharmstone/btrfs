@@ -3975,7 +3975,11 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
     
-    commit_batch_list(Vcb, &batchlist, Irp);
+    Status = commit_batch_list(Vcb, &batchlist, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("commit_batch_list returned %08x\n", Status);
+        goto exit;
+    }
     
     Vcb->volume_fcb = create_fcb(Vcb, NonPagedPool);
     if (!Vcb->volume_fcb) {
