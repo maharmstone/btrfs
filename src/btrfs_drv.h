@@ -643,6 +643,7 @@ typedef struct _device_extension {
     BOOL trim;
     PFILE_OBJECT locked_fileobj;
     fcb* volume_fcb;
+    fcb* dummy_fcb;
     file_ref* root_fileref;
     LONG open_files;
     ERESOURCE fcb_lock;

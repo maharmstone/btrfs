@@ -276,7 +276,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     
     fileref = ccb->fileref;
 
-    if (fileref->fcb->inode == SUBVOL_ROOT_INODE && fileref->parent && fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)
+    if (fileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
     // flush open files on this subvol
@@ -633,8 +633,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
 
-    if (ccb->fileref && ccb->fileref->fcb->inode == SUBVOL_ROOT_INODE && ccb->fileref->parent &&
-        ccb->fileref->fcb->subvol->parent != ccb->fileref->parent->fcb->subvol->id) {
+    if (fcb == Vcb->dummy_fcb) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -749,7 +748,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
-    if (fileref->fcb->inode == SUBVOL_ROOT_INODE && fileref->parent && fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)
+    if (fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
     if (!data || datalen < sizeof(btrfs_create_subvol))

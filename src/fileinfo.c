@@ -195,8 +195,7 @@ static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP 
     }
     
     // FIXME - can we skip this bit for subvols?
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
-        (!fileref || fileref->fcb->inode != SUBVOL_ROOT_INODE || !fileref->parent || fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id)) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
         Status = STATUS_DIRECTORY_NOT_EMPTY;
         goto end;
     }
@@ -910,7 +909,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
             me->dummyfileref->fcb = me->fileref->fcb;
 
-            if (me->fileref->fcb->subvol->parent != me->fileref->parent->fcb->subvol->id) {
+            if (me->fileref->fcb == me->fileref->fcb->Vcb->dummy_fcb) {
                 root* r = me->parent ? me->parent->fileref->fcb->subvol : destdir->fcb->subvol;
 
                 Status = create_directory_fcb(me->fileref->fcb->Vcb, r, me->fileref->parent->fcb, &me->fileref->fcb);
@@ -1410,7 +1409,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     }
 
-    if (related->parent && related->fcb->subvol != related->parent->fcb->subvol && related->fcb->subvol->parent != related->parent->fcb->subvol->id) {
+    if (related->fcb == Vcb->dummy_fcb) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -1443,8 +1442,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     }
     
-    if (fileref->parent->fcb->subvol != related->fcb->subvol &&
-        (fileref->fcb->subvol == fileref->parent->fcb->subvol || fileref->fcb->subvol->parent != fileref->parent->fcb->subvol->id)) {
+    if (fileref->fcb == Vcb->dummy_fcb || (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol)) {
         Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
@@ -1581,7 +1579,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
 
-        if (fileref->parent->fcb->subvol == fcb->subvol || (!is_subvol_readonly(fcb->subvol, Irp) && fcb->subvol->parent == fileref->parent->fcb->subvol->id)) {
+        if (fcb != Vcb->dummy_fcb && (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp))) {
             fcb->inode_item.transid = Vcb->superblock.generation;
             fcb->inode_item.sequence++;
             
@@ -1798,7 +1796,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
-    if (fileref->parent->fcb->subvol == fcb->subvol || (!is_subvol_readonly(fcb->subvol, Irp) && fcb->subvol->parent == fileref->parent->fcb->subvol->id)) {
+    if (fcb != Vcb->dummy_fcb && (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp))) {
         fcb->inode_item.transid = Vcb->superblock.generation;
         fcb->inode_item.sequence++;
         
@@ -2438,7 +2436,7 @@ NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
         goto end;
     }
     
-    if (is_subvol_readonly(fcb->subvol, Irp) && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
+    if (fcb != Vcb->dummy_fcb && is_subvol_readonly(fcb->subvol, Irp) && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
         (fcb->inode != SUBVOL_ROOT_INODE || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;

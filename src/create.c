@@ -1212,7 +1212,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
     NTSTATUS Status;
     file_ref* sf2;
 
-    if (sf->fcb->inode == SUBVOL_ROOT_INODE && sf->parent && sf->fcb->subvol->parent != sf->parent->fcb->subvol->id)
+    if (sf->fcb == Vcb->dummy_fcb)
         return STATUS_OBJECT_NAME_NOT_FOUND;
 
     if (streampart) {
@@ -1322,19 +1322,24 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
                 return STATUS_SUCCESS;
             }
             
+            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && subvol->parent != sf->fcb->subvol->id)) {
+                fcb = Vcb->dummy_fcb;
+                InterlockedIncrement(&fcb->refcount);
+            } else {
 #ifdef DEBUG_STATS
-            time1 = KeQueryPerformanceCounter(NULL);
+                time1 = KeQueryPerformanceCounter(NULL);
 #endif
-            Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
+                Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
 #ifdef DEBUG_STATS
-            time2 = KeQueryPerformanceCounter(NULL);
-            Vcb->stats.open_fcb_calls++;
-            Vcb->stats.open_fcb_time += time2.QuadPart - time1.QuadPart;
-#endif            
+                time2 = KeQueryPerformanceCounter(NULL);
+                Vcb->stats.open_fcb_calls++;
+                Vcb->stats.open_fcb_time += time2.QuadPart - time1.QuadPart;
+#endif
             
-            if (!NT_SUCCESS(Status)) {
-                ERR("open_fcb returned %08x\n", Status);
-                return Status;
+                if (!NT_SUCCESS(Status)) {
+                    ERR("open_fcb returned %08x\n", Status);
+                    return Status;
+                }
             }
             
             if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -1633,7 +1638,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     LONG rc;
 #endif
 
-    if (parfileref->fcb->inode == SUBVOL_ROOT_INODE && parfileref->parent && parfileref->fcb->subvol->parent != parfileref->parent->fcb->subvol->id)
+    if (parfileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
@@ -1923,7 +1928,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     
     parfileref = *pparfileref;
 
-    if (parfileref->fcb->inode == SUBVOL_ROOT_INODE && parfileref->parent && parfileref->fcb->subvol->parent != parfileref->parent->fcb->subvol->id)
+    if (parfileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, case_sensitive, Irp);
@@ -2905,36 +2910,43 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             }
         }
         
-        SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-        
-        if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
-                           &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                           FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
-                           IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
-                           &granted_access, &Status)) {
+        if (fileref->fcb != Vcb->dummy_fcb) {
+            SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+
+            if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
+                            &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                            FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                            IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                            &granted_access, &Status)) {
+                SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+                TRACE("SeAccessCheck failed, returning %08x\n", Status);
+
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(Vcb, fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                goto exit;
+            }
+
             SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-            TRACE("SeAccessCheck failed, returning %08x\n", Status);
-        
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(Vcb, fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-        
-            goto exit;
-        }
-        
-        SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-        
-        // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
-        if (is_subvol_readonly(fileref->fcb->subvol, Irp) && granted_access &
-            (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC) &&
-            fileref->fcb->inode != SUBVOL_ROOT_INODE) {
-            Status = STATUS_ACCESS_DENIED;
-        
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(Vcb, fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-        
-            goto exit;
+
+            // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
+            if (is_subvol_readonly(fileref->fcb->subvol, Irp) && granted_access &
+                (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC) &&
+                fileref->fcb->inode != SUBVOL_ROOT_INODE) {
+                Status = STATUS_ACCESS_DENIED;
+
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(Vcb, fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                goto exit;
+            }
+        } else {
+            granted_access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
+
+            granted_access &= ~(FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC |
+                                FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE);
         }
         
         TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");

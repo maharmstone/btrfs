@@ -1649,6 +1649,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
     
     free_fcb(Vcb->volume_fcb);
+    free_fcb(Vcb->dummy_fcb);
     
     if (Vcb->root_file)
         ObDereferenceObject(Vcb->root_file);
@@ -1980,8 +1981,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = TRUE;
         
-        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 &&
-            (!fileref || fileref->fcb->inode != SUBVOL_ROOT_INODE || !fileref->parent || fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id))
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && fcb != Vcb->dummy_fcb)
             fileref->delete_on_close = FALSE;
         
         if (Vcb->locked && Vcb->locked_fileobj == FileObject) {
@@ -3986,7 +3986,20 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
-    
+
+    Vcb->dummy_fcb = create_fcb(Vcb, NonPagedPool);
+    if (!Vcb->dummy_fcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto exit;
+    }
+
+    Vcb->dummy_fcb->Vcb = Vcb;
+    Vcb->dummy_fcb->type = BTRFS_TYPE_DIRECTORY;
+    Vcb->dummy_fcb->inode = 2;
+    Vcb->dummy_fcb->subvol = Vcb->root_root;
+    Vcb->dummy_fcb->atts = FILE_ATTRIBUTE_DIRECTORY;
+
     root_fcb = create_fcb(Vcb, NonPagedPool);
     if (!root_fcb) {
         ERR("out of memory\n");
