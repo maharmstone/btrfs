@@ -828,9 +828,8 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
         TRACE("tp.item->key = %p\n", &tp.item->key);
         cmp = keycmp(searchkey, tp.item->key);
         
-        if (cmp == 0 && !tp.item->ignore) { // FIXME - look for all items of the same key to make sure none are non-ignored
+        if (cmp == 0 && !tp.item->ignore) {
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
-            int3;
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
