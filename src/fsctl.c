@@ -1058,7 +1058,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     
     fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
-    
+
+    fr->fcb->subvol->parent = fcb->subvol->id;
+
     Status = STATUS_SUCCESS;    
     
 end:
