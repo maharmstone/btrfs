@@ -145,10 +145,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             le = le->Flink;
         }
         
-        if (!r) {
-            ERR("could not find root %llx\n", de->key.obj_id);
-            return STATUS_OBJECT_NAME_NOT_FOUND;
-        }
+        if (r && r->parent != fcb->subvol->id)
+            r = NULL;
         
         inode = SUBVOL_ROOT_INODE;
     } else {
@@ -159,55 +157,67 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
         switch (de->dir_entry_type) {
             case DirEntryType_File:
             {
-                BOOL found = FALSE;
-                
-                if (de->dc && de->dc->fileref && de->dc->fileref->fcb) {
-                    ii = de->dc->fileref->fcb->inode_item;
-                    atts = de->dc->fileref->fcb->atts;
-                    ealen = de->dc->fileref->fcb->ealen;
-                    found = TRUE;
-                }
-                
-                if (!found) {
-                    KEY searchkey;
-                    traverse_ptr tp;
-                    
-                    searchkey.obj_id = inode;
-                    searchkey.obj_type = TYPE_INODE_ITEM;
-                    searchkey.offset = 0xffffffffffffffff;
-                    
-                    Status = find_item(fcb->Vcb, r, &tp, &searchkey, FALSE, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("error - find_item returned %08x\n", Status);
-                        return Status;
-                    }
-                    
-                    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                        ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
-                        return STATUS_INTERNAL_ERROR;
-                    }
-                    
-                    RtlZeroMemory(&ii, sizeof(INODE_ITEM));
-                    
-                    if (tp.item->size > 0)
-                        RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-                    
-                    if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation || 
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
-                        
-                        BOOL dotfile = de->name.Length > sizeof(WCHAR) && de->name.Buffer[0] == '.';
+                if (!r) {
+                    LARGE_INTEGER time;
 
-                        atts = get_file_attributes(fcb->Vcb, r, inode, de->type, dotfile, FALSE, Irp);
+                    ii = fcb->Vcb->dummy_fcb->inode_item;
+                    atts = fcb->Vcb->dummy_fcb->atts;
+                    ealen = fcb->Vcb->dummy_fcb->ealen;
+                    
+                    KeQuerySystemTime(&time);
+                    win_time_to_unix(time, &ii.otime);
+                    ii.st_atime = ii.st_mtime = ii.st_ctime = ii.otime;
+                } else {
+                    BOOL found = FALSE;
+
+                    if (de->dc && de->dc->fileref && de->dc->fileref->fcb) {
+                        ii = de->dc->fileref->fcb->inode_item;
+                        atts = de->dc->fileref->fcb->atts;
+                        ealen = de->dc->fileref->fcb->ealen;
+                        found = TRUE;
                     }
                     
-                    if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation || 
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation || 
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation || 
-                        IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
-                        ealen = get_ea_len(fcb->Vcb, r, inode, Irp);
+                    if (!found) {
+                        KEY searchkey;
+                        traverse_ptr tp;
+
+                        searchkey.obj_id = inode;
+                        searchkey.obj_type = TYPE_INODE_ITEM;
+                        searchkey.offset = 0xffffffffffffffff;
+
+                        Status = find_item(fcb->Vcb, r, &tp, &searchkey, FALSE, Irp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("error - find_item returned %08x\n", Status);
+                            return Status;
+                        }
+
+                        if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+                            ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
+                            return STATUS_INTERNAL_ERROR;
+                        }
+
+                        RtlZeroMemory(&ii, sizeof(INODE_ITEM));
+
+                        if (tp.item->size > 0)
+                            RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+
+                        if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
+
+                            BOOL dotfile = de->name.Length > sizeof(WCHAR) && de->name.Buffer[0] == '.';
+
+                            atts = get_file_attributes(fcb->Vcb, r, inode, de->type, dotfile, FALSE, Irp);
+                        }
+
+                        if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileFullDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdBothDirectoryInformation ||
+                            IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdFullDirectoryInformation) {
+                            ealen = get_ea_len(fcb->Vcb, r, inode, Irp);
+                        }
                     }
                 }
                 
@@ -261,7 +271,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = de->name.Length;
-            fbdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fbdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             fbdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             
@@ -326,7 +336,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = de->name.Length;
-            ffdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            ffdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             
             RtlCopyMemory(ffdi->FileName, de->name.Buffer, de->name.Length);
             
@@ -361,10 +371,10 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = de->name.Length;
-            fibdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fibdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
-            fibdi->FileId.QuadPart = make_file_id(r, inode);
+            fibdi->FileId.QuadPart = r ? make_file_id(r, inode) : make_file_id(fcb->Vcb->dummy_fcb->subvol, fcb->Vcb->dummy_fcb->inode);
             
             RtlCopyMemory(fibdi->FileName, de->name.Buffer, de->name.Length);
             
@@ -399,8 +409,8 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fifdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = de->name.Length;
-            fifdi->EaSize = atts & FILE_ATTRIBUTE_REPARSE_POINT ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
-            fifdi->FileId.QuadPart = make_file_id(r, inode);
+            fifdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fifdi->FileId.QuadPart = r ? make_file_id(r, inode) : make_file_id(fcb->Vcb->dummy_fcb->subvol, fcb->Vcb->dummy_fcb->inode);
             
             RtlCopyMemory(fifdi->FileName, de->name.Buffer, de->name.Length);
             
