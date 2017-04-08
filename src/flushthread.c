@@ -6066,7 +6066,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
+        if (fileref->dc)
+            di->key = fileref->dc->key;
+        else if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
             di->key.obj_id = fileref->fcb->inode;
             di->key.obj_type = TYPE_INODE_ITEM;
             di->key.offset = 0;
