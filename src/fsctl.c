@@ -2201,7 +2201,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
     }
 #endif
 
-    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, KernelMode, (void**)&fileobj, NULL);
+    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
 
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
