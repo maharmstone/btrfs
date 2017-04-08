@@ -722,7 +722,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     while (le != &move_list) {
         me = CONTAINING_RECORD(le, move_entry, list_entry);
         
-        if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE) {
+        if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE && me->fileref->fcb != fileref->fcb->Vcb->dummy_fcb) {
             if (!me->dummyfcb) {
                 ULONG defda;
                 BOOL inserted = FALSE;
@@ -917,6 +917,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
             me->fileref->dc->key.obj_type = TYPE_INODE_ITEM;
+
+            me->dummyfileref->fcb = me->fileref->fcb->Vcb->dummy_fcb;
         } else if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
             me->dummyfileref->fcb = me->fileref->fcb;
 
