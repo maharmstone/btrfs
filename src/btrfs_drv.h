@@ -270,6 +270,12 @@ typedef struct _file_ref {
     LIST_ENTRY list_entry_dirty;
 } file_ref;
 
+typedef struct {
+    HANDLE thread;
+    struct _ccb* ccb;
+    void* context;
+} send_info;
+
 typedef struct _ccb {
     USHORT NodeType;
     CSHORT NodeSize;
@@ -291,6 +297,7 @@ typedef struct _ccb {
     BOOL user_set_access_time;
     BOOL user_set_write_time;
     BOOL user_set_change_time;
+    send_info* send;
 } ccb;
 
 struct _device_extension;
@@ -617,12 +624,6 @@ typedef struct {
     LIST_ENTRY errors;
 } scrub_info;
 
-typedef struct {
-    HANDLE thread;
-    ERESOURCE load_lock;
-    void* context;
-} send_info;
-
 struct _volume_device_extension;
 
 typedef struct _device_extension {
@@ -688,7 +689,7 @@ typedef struct _device_extension {
     drv_calc_threads calcthreads;
     balance_info balance;
     scrub_info scrub;
-    send_info send;
+    ERESOURCE send_load_lock;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;
@@ -1209,7 +1210,7 @@ NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 // in send.c
 NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp);
-NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULONG_PTR* retlen);
+NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((UINT64)((minor) & ~0xFF)) << 12) | (((UINT64)((major) & ~0xFFF)) << 32))

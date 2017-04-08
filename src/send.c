@@ -75,6 +75,7 @@ typedef struct {
     LIST_ENTRY pending_rmdirs;
     KEVENT buffer_event, cleared_event;
     send_dir* root_dir;
+    send_info* send;
 
     struct {
         UINT64 inode;
@@ -2562,7 +2563,6 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
 static void send_thread(void* ctx) {
     send_context* context = (send_context*)ctx;
-    device_extension* Vcb = context->Vcb;
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, tp2;
@@ -3012,7 +3012,7 @@ static void send_thread(void* ctx) {
     KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
 
 end:
-    ExAcquireResourceExclusiveLite(&Vcb->send.load_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&context->Vcb->send_load_lock, TRUE);
 
     while (!IsListEmpty(&context->orphans)) {
         orphan* o = CONTAINING_RECORD(RemoveHeadList(&context->orphans), orphan, list_entry);
@@ -3033,13 +3033,18 @@ end:
         ExFreePool(sd);
     }
 
-    ZwClose(context->Vcb->send.thread);
-    context->Vcb->send.thread = NULL;
+    ZwClose(context->send->thread);
+    context->send->thread = NULL;
 
+    if (context->send->ccb)
+        context->send->ccb->send = NULL;
+
+    ExFreePool(context->send);
     ExFreePool(context->data);
-    ExFreePool(context);
 
-    ExReleaseResourceLite(&Vcb->send.load_lock);
+    ExReleaseResourceLite(&context->Vcb->send_load_lock);
+
+    ExFreePool(context);
 }
 
 NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp) {
@@ -3049,6 +3054,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     root* parsubvol = NULL;
     send_context* context;
     btrfs_send_header* header;
+    send_info* send;
     
     // FIXME - cloning
 
@@ -3103,18 +3109,18 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     // FIXME - if subvol only just made readonly, check it has been flushed
     // FIXME - make it so any relevant subvols can't be made read-write while this is running
 
-    ExAcquireResourceExclusiveLite(&Vcb->send.load_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
 
-    if (Vcb->send.thread) {
+    if (ccb->send) {
         WARN("send operation already running\n");
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_DEVICE_NOT_READY;
     }
 
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(send_context), ALLOC_TAG);
     if (!context) {
         ERR("out of memory\n");
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -3136,7 +3142,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context->data = ExAllocatePoolWithTag(PagedPool, SEND_BUFFER_LENGTH + (2 * MAX_SEND_WRITE), ALLOC_TAG); // give ourselves some wiggle room
     if (!context->data) {
         ExFreePool(context);
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -3148,41 +3154,63 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
     send_subvol_header(context, fcb->subvol, ccb->fileref); // FIXME - fileref needs some sort of lock here
 
-    Vcb->send.context = context;
-
     KeInitializeEvent(&context->buffer_event, NotificationEvent, FALSE);
     KeInitializeEvent(&context->cleared_event, NotificationEvent, FALSE);
 
-    Status = PsCreateSystemThread(&Vcb->send.thread, 0, NULL, NULL, NULL, send_thread, context);
-    if (!NT_SUCCESS(Status)) {
-        ERR("PsCreateSystemThread returned %08x\n", Status);
+    send = ExAllocatePoolWithTag(NonPagedPool, sizeof(send_info), ALLOC_TAG);
+    if (!send) {
+        ERR("out of memory\n");
         ExFreePool(context->data);
         ExFreePool(context);
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    send->context = context;
+    context->send = send;
+
+    ccb->send = send;
+    send->ccb = ccb;
+
+    Status = PsCreateSystemThread(&send->thread, 0, NULL, NULL, NULL, send_thread, context);
+    if (!NT_SUCCESS(Status)) {
+        ERR("PsCreateSystemThread returned %08x\n", Status);
+        ccb->send = NULL;
+        ExFreePool(send);
+        ExFreePool(context->data);
+        ExFreePool(context);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return Status;
     }
 
-    ExReleaseResourceLite(&Vcb->send.load_lock);
+    ExReleaseResourceLite(&Vcb->send_load_lock);
 
     return STATUS_SUCCESS;
 }
 
-NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULONG_PTR* retlen) {
-    send_context* context = (send_context*)Vcb->send.context;
+NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen) {
+    ccb* ccb;
+    send_context* context;
 
-    // FIXME - check for volume privileges
+    ccb = FileObject ? FileObject->FsContext2 : NULL;
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
 
-    ExAcquireResourceExclusiveLite(&Vcb->send.load_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
 
-    if (!Vcb->send.thread) {
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+    if (!ccb->send) {
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_END_OF_FILE;
     }
+
+    context = (send_context*)ccb->send->context;
+
+    // FIXME - check for volume privileges
 
     KeWaitForSingleObject(&context->buffer_event, Executive, KernelMode, FALSE, NULL);
 
     if (datalen == 0) {
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_SUCCESS;
     }
 
@@ -3192,11 +3220,11 @@ NTSTATUS read_send_buffer(device_extension* Vcb, void* data, ULONG datalen, ULON
         *retlen = datalen;
         RtlMoveMemory(context->data, &context->data[datalen], context->datalen - datalen);
         context->datalen -= datalen;
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
     } else {
         *retlen = context->datalen;
         context->datalen = 0;
-        ExReleaseResourceLite(&Vcb->send.load_lock);
+        ExReleaseResourceLite(&Vcb->send_load_lock);
 
         KeClearEvent(&context->buffer_event);
         KeSetEvent(&context->cleared_event, 0, FALSE);
