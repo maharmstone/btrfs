@@ -1436,7 +1436,7 @@ static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, 
         }
     }
     
-    if (fileref->fcb == Vcb->dummy_fcb || (fileref->parent->fcb->subvol != related->fcb->subvol && fileref->fcb->subvol == fileref->parent->fcb->subvol)) {
+    if (fileref->parent->fcb->subvol != related->fcb->subvol && (fileref->fcb->subvol == fileref->parent->fcb->subvol || fileref->fcb == Vcb->dummy_fcb)) {
         Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08x\n", Status);
