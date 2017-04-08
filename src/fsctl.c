@@ -604,7 +604,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end3;
     }
     
-    Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, UserMode, (void**)&subvol_obj, NULL);
+    Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&subvol_obj, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
         goto end3;
