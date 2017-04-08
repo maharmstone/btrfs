@@ -929,22 +929,20 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me->dummyfileref->oldutf8 = me->fileref->oldutf8;
         me->dummyfileref->oldindex = me->fileref->dc->index;
         
-        if (le == move_list.Flink) {
-            if (me->fileref->dc->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length)
-                name_changed = TRUE;
+        if (le == move_list.Flink && (me->fileref->dc->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length))
+            name_changed = TRUE;
             
+        if ((le == move_list.Flink || me->fileref->fcb->inode == SUBVOL_ROOT_INODE) && !me->dummyfileref->oldutf8.Buffer) {
+            me->dummyfileref->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->dc->utf8.Length, ALLOC_TAG);
             if (!me->dummyfileref->oldutf8.Buffer) {
-                me->dummyfileref->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->dc->utf8.Length, ALLOC_TAG);
-                if (!me->dummyfileref->oldutf8.Buffer) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
-                }
-                
-                RtlCopyMemory(me->dummyfileref->oldutf8.Buffer, me->fileref->dc->utf8.Buffer, me->fileref->dc->utf8.Length);
-                
-                me->dummyfileref->oldutf8.Length = me->dummyfileref->oldutf8.MaximumLength = me->fileref->dc->utf8.Length;
+                ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
             }
+
+            RtlCopyMemory(me->dummyfileref->oldutf8.Buffer, me->fileref->dc->utf8.Buffer, me->fileref->dc->utf8.Length);
+
+            me->dummyfileref->oldutf8.Length = me->dummyfileref->oldutf8.MaximumLength = me->fileref->dc->utf8.Length;
         }
         
         me->dummyfileref->delete_on_close = me->fileref->delete_on_close;
@@ -1089,9 +1087,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 ExReleaseResourceLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock);
             }
         }
-
-        if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE)
-            me->fileref->fcb->subvol->root_item.num_references++;
 
         if (!me->dummyfileref->fcb->ads) {
             Status = delete_fileref(me->dummyfileref, NULL, Irp, rollback);
