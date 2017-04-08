@@ -1561,6 +1561,27 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
         // FIXME - use refcounts for fileref
         fileref = ccb->fileref;
         
+        if (Vcb->running_sends > 0) {
+            BOOL send_cancelled = FALSE;
+
+            ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
+
+            if (ccb->send) {
+                ccb->send->cancelling = TRUE;
+                send_cancelled = TRUE;
+                KeSetEvent(&ccb->send->cleared_event, 0, FALSE);
+            }
+
+            ExReleaseResourceLite(&Vcb->send_load_lock);
+
+            if (send_cancelled) {
+                while (ccb->send) {
+                    ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
+                    ExReleaseResourceLite(&Vcb->send_load_lock);
+                }
+            }
+        }
+
         ExFreePool(ccb);
     }
     

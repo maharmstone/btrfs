@@ -73,7 +73,7 @@ typedef struct {
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
     LIST_ENTRY pending_rmdirs;
-    KEVENT buffer_event, cleared_event;
+    KEVENT buffer_event;
     send_dir* root_dir;
     send_info* send;
 
@@ -1660,9 +1660,12 @@ static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, travers
 
     ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-    KeClearEvent(&context->cleared_event);
+    KeClearEvent(&context->send->cleared_event);
     KeSetEvent(&context->buffer_event, 0, TRUE);
-    KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+    if (context->send->cancelling)
+        return STATUS_SUCCESS;
 
     ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
@@ -1970,6 +1973,12 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                         if (se2) ExFreePool(se2);
                         return Status;
                     }
+
+                    if (context->send->cancelling) {
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return STATUS_SUCCESS;
+                    }
                 }
 
                 pos = context->datalen;
@@ -2010,6 +2019,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                         ExFreePool(se);
                         if (se2) ExFreePool(se2);
                         return Status;
+                    }
+
+                    if (context->send->cancelling) {
+                        ExFreePool(buf);
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return STATUS_SUCCESS;
                     }
                 }
 
@@ -2110,6 +2126,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                         if (se2) ExFreePool(se2);
                         return Status;
                     }
+
+                    if (context->send->cancelling) {
+                        ExFreePool(buf);
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return STATUS_SUCCESS;
+                    }
                 }
 
                 pos = context->datalen;
@@ -2155,6 +2178,9 @@ static NTSTATUS finish_inode(send_context* context, traverse_ptr* tp1, traverse_
                 ERR("flush_extents returned %08x\n", Status);
                 return Status;
             }
+
+            if (context->send->cancelling)
+                return STATUS_SUCCESS;
 
             send_truncate_command(context, context->lastinode.path, context->lastinode.size);
         }
@@ -2594,9 +2620,12 @@ static void send_thread(void* ctx) {
 
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-                KeClearEvent(&context->cleared_event);
+                KeClearEvent(&context->send->cleared_event);
                 KeSetEvent(&context->buffer_event, 0, TRUE);
-                KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+                KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+                if (context->send->cancelling)
+                    goto end;
 
                 ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
@@ -2638,6 +2667,11 @@ static void send_thread(void* ctx) {
                     Status = finish_inode(context, ended1 ? NULL : &tp, ended2 ? NULL : &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("finish_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    if (context->send->cancelling) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
@@ -2731,6 +2765,11 @@ static void send_thread(void* ctx) {
                             goto end;
                         }
 
+                        if (context->send->cancelling) {
+                            ExReleaseResourceLite(&context->Vcb->tree_lock);
+                            goto end;
+                        }
+
                         no_next2 = TRUE;
 
                         Status = send_inode(context, &tp, NULL);
@@ -2814,6 +2853,11 @@ static void send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
+
+                    if (context->send->cancelling) {
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
                 }
 
                 if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
@@ -2864,6 +2908,11 @@ static void send_thread(void* ctx) {
                     Status = finish_inode(context, ended1 ? NULL : &tp, ended2 ? NULL : &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("finish_inode returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    if (context->send->cancelling) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
@@ -2921,9 +2970,12 @@ static void send_thread(void* ctx) {
 
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-                KeClearEvent(&context->cleared_event);
+                KeClearEvent(&context->send->cleared_event);
                 KeSetEvent(&context->buffer_event, 0, TRUE);
-                KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+                KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
+
+                if (context->send->cancelling)
+                    goto end;
 
                 ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
@@ -2944,6 +2996,11 @@ static void send_thread(void* ctx) {
                 Status = finish_inode(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("finish_inode returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+
+                if (context->send->cancelling) {
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
@@ -3001,15 +3058,18 @@ static void send_thread(void* ctx) {
             ERR("finish_inode returned %08x\n", Status);
             goto end;
         }
+
+        if (context->send->cancelling)
+            goto end;
     }
 
     send_end_command(context);
 
 //     send_write_data(context, context->data, context->datalen);
 
-    KeClearEvent(&context->cleared_event);
+    KeClearEvent(&context->send->cleared_event);
     KeSetEvent(&context->buffer_event, 0, TRUE);
-    KeWaitForSingleObject(&context->cleared_event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
 
 end:
     ExAcquireResourceExclusiveLite(&context->Vcb->send_load_lock, TRUE);
@@ -3041,6 +3101,8 @@ end:
 
     ExFreePool(context->send);
     ExFreePool(context->data);
+
+    InterlockedDecrement(&context->Vcb->running_sends);
 
     ExReleaseResourceLite(&context->Vcb->send_load_lock);
 
@@ -3155,7 +3217,6 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     send_subvol_header(context, fcb->subvol, ccb->fileref); // FIXME - fileref needs some sort of lock here
 
     KeInitializeEvent(&context->buffer_event, NotificationEvent, FALSE);
-    KeInitializeEvent(&context->cleared_event, NotificationEvent, FALSE);
 
     send = ExAllocatePoolWithTag(NonPagedPool, sizeof(send_info), ALLOC_TAG);
     if (!send) {
@@ -3166,16 +3227,23 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    KeInitializeEvent(&send->cleared_event, NotificationEvent, FALSE);
+
     send->context = context;
     context->send = send;
 
     ccb->send = send;
     send->ccb = ccb;
 
+    send->cancelling = FALSE;
+
+    InterlockedIncrement(&Vcb->running_sends);
+
     Status = PsCreateSystemThread(&send->thread, 0, NULL, NULL, NULL, send_thread, context);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         ccb->send = NULL;
+        InterlockedDecrement(&Vcb->running_sends);
         ExFreePool(send);
         ExFreePool(context->data);
         ExFreePool(context);
@@ -3227,7 +3295,7 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
         ExReleaseResourceLite(&Vcb->send_load_lock);
 
         KeClearEvent(&context->buffer_event);
-        KeSetEvent(&context->cleared_event, 0, FALSE);
+        KeSetEvent(&ccb->send->cleared_event, 0, FALSE);
     }
 
     return STATUS_SUCCESS;
