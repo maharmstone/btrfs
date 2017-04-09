@@ -576,54 +576,30 @@ static void find_path(char* path, send_dir* parent, char* name, ULONG namelen) {
     }
 }
 
-static NTSTATUS send_add_tlv_path(send_context* context, UINT16 type, send_dir* parent, char* name, ULONG namelen) {
+static void send_add_tlv_path(send_context* context, UINT16 type, send_dir* parent, char* name, ULONG namelen) {
     ULONG len = find_path_len(parent, namelen);
-    char* path;
 
-    if (len > 0) {
-        path = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-        if (!path) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
+    send_add_tlv(context, type, NULL, len);
 
-        find_path(path, parent, name, namelen);
-        send_add_tlv(context, type, path, len);
-        ExFreePool(path);
-    } else
-        send_add_tlv(context, type, NULL, 0);
-
-    return STATUS_SUCCESS;
+    if (len > 0)
+        find_path((char*)&context->data[context->datalen - len], parent, name, namelen);
 }
 
 static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, ULONG namelen) {
-    NTSTATUS Status;
     ULONG pos = context->datalen;
 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
 
         send_command_finish(context, pos);
     } else {
         send_command(context, BTRFS_SEND_CMD_LINK);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, parent, name, namelen);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, parent, name, namelen);
 
         send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
 
@@ -670,25 +646,18 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_utimes_command_dir(send_context* context, send_dir* sd, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
-    NTSTATUS Status;
+static void send_utimes_command_dir(send_context* context, send_dir* sd, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
     ULONG pos = context->datalen;
 
     send_command(context, BTRFS_SEND_CMD_UTIMES);
 
-    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, sd->parent, sd->name, sd->namelen);
-    if (!NT_SUCCESS(Status)) {
-        ERR("send_add_tlv_path returned %08x\n", Status);
-        return Status;
-    }
+    send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, sd->parent, sd->name, sd->namelen);
 
     send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
     send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
     send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
 
     send_command_finish(context, pos);
-
-    return STATUS_SUCCESS;
 }
 
 static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generation, send_dir** psd, BOOL* added_dummy) {
@@ -840,11 +809,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
 
                 send_command(context, BTRFS_SEND_CMD_MKDIR);
 
-                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_add_tlv_path returned %08x\n", Status);
-                    return Status;
-                }
+                send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
 
                 send_add_tlv(context, BTRFS_SEND_TLV_INODE, &dir, sizeof(UINT64));
 
@@ -953,12 +918,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
 
                     send_command(context, BTRFS_SEND_CMD_MKDIR);
 
-                    Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("send_add_tlv_path returned %08x\n", Status);
-                        return Status;
-                    }
-
+                    send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
                     send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->dir, sizeof(UINT64));
 
                     send_command_finish(context, pos);
@@ -1239,11 +1199,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
         if (o2->inode == inode) {
             send_command(context, BTRFS_SEND_CMD_UNLINK);
 
-            Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-            if (!NT_SUCCESS(Status)) {
-                ERR("send_add_tlv_path returned %08x\n", Status);
-                return Status;
-            }
+            send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
 
             send_command_finish(context, pos);
 
@@ -1271,17 +1227,8 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
 
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
-
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
 
         send_command_finish(context, pos);
 
@@ -1300,17 +1247,9 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
     } else {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
 
-        Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
-        if (!NT_SUCCESS(Status)) {
-            ERR("send_add_tlv_path returned %08x\n", Status);
-            return Status;
-        }
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
 
         send_command_finish(context, pos);
     }
@@ -1385,13 +1324,8 @@ static NTSTATUS flush_refs(send_context* context) {
                     return Status;
                 }
 
-                if (!r->sd->dummy) {
-                    Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("send_utimes_command_dir returned %08x\n", Status);
-                        return Status;
-                    }
-                }
+                if (!r->sd->dummy)
+                    send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
             } else if (r->sd != or->sd || r->namelen != or->namelen || RtlCompareMemory(r->name, or->name, r->namelen) != r->namelen) { // moved or renamed
                 ULONG pos = context->datalen, len;
 
@@ -1399,21 +1333,12 @@ static NTSTATUS flush_refs(send_context* context) {
 
                 send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
 
-                Status = send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, r->name, r->namelen);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_add_tlv_path returned %08x\n", Status);
-                    return Status;
-                }
+                send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, r->name, r->namelen);
 
                 send_command_finish(context, pos);
 
-                if (!r->sd->dummy) {
-                    Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("send_utimes_command_dir returned %08x\n", Status);
-                        return Status;
-                    }
-                }
+                if (!r->sd->dummy)
+                    send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
 
                 if (context->lastinode.sd->name)
                     ExFreePool(context->lastinode.sd->name);
@@ -1447,13 +1372,8 @@ static NTSTATUS flush_refs(send_context* context) {
                 return Status;
             }
 
-            if (!r->sd->dummy) {
-                Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_utimes_command_dir returned %08x\n", Status);
-                    return Status;
-                }
-            }
+            if (!r->sd->dummy)
+                send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
         } else { // deleted
             char name[64];
             ULONG pos = context->datalen;
@@ -1575,13 +1495,8 @@ static NTSTATUS flush_refs(send_context* context) {
                 return Status;
             }
 
-            if (!r->sd->dummy) {
-                Status = send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("send_utimes_command_dir returned %08x\n", Status);
-                    return Status;
-                }
-            }
+            if (!r->sd->dummy)
+                send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
 
             if (nameref && !nameref2)
                 nameref2 = r;
@@ -1614,13 +1529,8 @@ static NTSTATUS flush_refs(send_context* context) {
                     return Status;
                 }
 
-                if (!or->sd->dummy) {
-                    NTSTATUS Status = send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("send_utimes_command_dir returned %08x\n", Status);
-                        return Status;
-                    }
-                }
+                if (!or->sd->dummy)
+                    send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
             }
 
             if (or == nameref && nameref2) {
