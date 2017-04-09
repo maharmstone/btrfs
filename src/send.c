@@ -3007,7 +3007,12 @@ static void send_thread(void* ctx) {
     KeSetEvent(&context->buffer_event, 0, TRUE);
     KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
 
+    Status = STATUS_SUCCESS;
+
 end:
+    if (!NT_SUCCESS(Status))
+        KeSetEvent(&context->buffer_event, 0, FALSE);
+
     ExAcquireResourceExclusiveLite(&context->Vcb->send_load_lock, TRUE);
 
     while (!IsListEmpty(&context->orphans)) {
@@ -3048,6 +3053,8 @@ end:
     ExReleaseResourceLite(&context->Vcb->send_load_lock);
 
     ExFreePool(context);
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
 NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp) {
