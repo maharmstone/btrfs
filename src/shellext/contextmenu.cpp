@@ -40,6 +40,8 @@
 #define REFLINK_VERBW L"reflink"
 #define RECV_VERBA "recvsubvol"
 #define RECV_VERBW L"recvsubvol"
+#define SEND_VERBA "sendsubvol"
+#define SEND_VERBW L"sendsubvol"
 
 typedef struct {
     ULONG  ReparseTag;
@@ -274,6 +276,47 @@ static HRESULT Create32BitHBITMAP(HDC hdc, const SIZE *psize, void **ppvBits, HB
     return !*phBmp ? E_OUTOFMEMORY : S_OK;
 }
 
+void BtrfsContextMenu::get_uac_icon() {
+    IWICImagingFactory* factory = NULL;
+    IWICBitmap* bitmap;
+    HRESULT hr;
+
+    hr = CoCreateInstance(CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+
+    if (SUCCEEDED(hr)) {
+        HANDLE icon;
+
+        // We can't use IDI_SHIELD, as that will only give us the full-size icon
+        icon = LoadImageW(GetModuleHandleW(L"user32.dll"), MAKEINTRESOURCEW(106)/* UAC shield */, IMAGE_ICON,
+                          GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+
+        hr = factory->CreateBitmapFromHICON((HICON)icon, &bitmap);
+        if (SUCCEEDED(hr)) {
+            UINT cx, cy;
+
+            hr = bitmap->GetSize(&cx, &cy);
+            if (SUCCEEDED(hr)) {
+                SIZE sz;
+                BYTE* buf;
+
+                sz.cx = (int)cx;
+                sz.cy = -(int)cy;
+
+                hr = Create32BitHBITMAP(NULL, &sz, (void**)&buf, &uacicon);
+                if (SUCCEEDED(hr)) {
+                    UINT stride = cx * sizeof(DWORD);
+                    UINT buflen = cy * stride;
+                    bitmap->CopyPixels(NULL, stride, buflen, buf);
+                }
+            }
+
+            bitmap->Release();
+        }
+
+        factory->Release();
+    }
+}
+
 HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags) {
     WCHAR str[256];
     ULONG entries = 0;
@@ -291,84 +334,69 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
             return E_FAIL;
 
-        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 1);
-    }
-    
-    if (LoadStringW(module, IDS_NEW_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
-        return E_FAIL;
+        entries = 1;
 
-    if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
-        return E_FAIL;
-    
-    entries = 1;
-    
-    if (idCmdFirst + 1 <= idCmdLast) {
-        MENUITEMINFOW mii;
-        IWICImagingFactory* factory = NULL;
-        IWICBitmap* bitmap;
-        HRESULT hr;
+        if (idCmdFirst + 1 <= idCmdLast) {
+            MENUITEMINFOW mii;
 
-        if (LoadStringW(module, IDS_RECV_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
-            return E_FAIL;
-        
-        if (!uacicon) {
-            hr = CoCreateInstance(CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            
-            if (SUCCEEDED(hr)) {
-                HANDLE icon;
+            if (LoadStringW(module, IDS_SEND_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
+                return E_FAIL;
 
-                // We can't use IDI_SHIELD, as that will only give us the full-size icon
-                icon = LoadImageW(GetModuleHandleW(L"user32.dll"), MAKEINTRESOURCEW(106)/* UAC shield */, IMAGE_ICON,
-                                  GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+            if (!uacicon)
+                get_uac_icon();
 
-                hr = factory->CreateBitmapFromHICON((HICON)icon, &bitmap);
-                if (SUCCEEDED(hr)) {
-                    UINT cx, cy;
+            memset(&mii, 0, sizeof(MENUITEMINFOW));
+            mii.cbSize = sizeof(MENUITEMINFOW);
+            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
+            mii.dwTypeData = str;
+            mii.wID = idCmdFirst + 1;
+            mii.hbmpItem = uacicon;
 
-                    hr = bitmap->GetSize(&cx, &cy);
-                    if (SUCCEEDED(hr)) {
-                        SIZE sz;
-                        BYTE* buf;
-                        
-                        sz.cx = (int)cx;
-                        sz.cy = -(int)cy;
+            if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
+                return E_FAIL;
 
-                        hr = Create32BitHBITMAP(NULL, &sz, (void**)&buf, &uacicon);
-                        if (SUCCEEDED(hr)) {
-                            UINT stride = cx * sizeof(DWORD);
-                            UINT buflen = cy * stride;
-                            bitmap->CopyPixels(NULL, stride, buflen, buf);
-                        }
-                    }
-
-                    bitmap->Release();
-                }
-                
-                factory->Release();
-            }
+            entries++;
         }
-        
-        memset(&mii, 0, sizeof(MENUITEMINFOW));
-        mii.cbSize = sizeof(MENUITEMINFOW);
-        mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
-        mii.dwTypeData = str;
-        mii.wID = idCmdFirst + 1;
-        mii.hbmpItem = uacicon;
-
-        if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
-            return E_FAIL;
-        
-        entries++;
-    }
-    
-    if (idCmdFirst + 2 <= idCmdLast && show_reflink_paste(path)) {
-        if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+    } else {
+        if (LoadStringW(module, IDS_NEW_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
             return E_FAIL;
 
-        if (!InsertMenuW(hmenu, indexMenu + 2, MF_BYPOSITION, idCmdFirst + 2, str))
+        if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
             return E_FAIL;
         
-        entries++;
+        entries = 1;
+
+        if (idCmdFirst + 1 <= idCmdLast) {
+            MENUITEMINFOW mii;
+
+            if (LoadStringW(module, IDS_RECV_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
+                return E_FAIL;
+
+            if (!uacicon)
+                get_uac_icon();
+
+            memset(&mii, 0, sizeof(MENUITEMINFOW));
+            mii.cbSize = sizeof(MENUITEMINFOW);
+            mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
+            mii.dwTypeData = str;
+            mii.wID = idCmdFirst + 1;
+            mii.hbmpItem = uacicon;
+
+            if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
+                return E_FAIL;
+
+            entries++;
+        }
+
+        if (idCmdFirst + 2 <= idCmdLast && show_reflink_paste(path)) {
+            if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+                return E_FAIL;
+
+            if (!InsertMenuW(hmenu, indexMenu + 2, MF_BYPOSITION, idCmdFirst + 2, str))
+                return E_FAIL;
+
+            entries++;
+        }
     }
 
     return MAKE_HRESULT(SEVERITY_SUCCESS, 0, entries);
@@ -966,7 +994,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         return E_INVALIDARG;
     
     if (!bg) {
-        if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || !strcmp(pici->lpVerb, SNAPSHOT_VERBA)) {
+        if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
             UINT num_files, i;
             WCHAR fn[MAX_PATH];
             
@@ -985,154 +1013,156 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             }
 
             return S_OK;
-        }
-        
-        return E_FAIL;
-    }
-    
-    if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
-        HANDLE h;
-        IO_STATUS_BLOCK iosb;
-        NTSTATUS Status;
-        ULONG pathlen, searchpathlen, pathend, bcslen;
-        WCHAR name[MAX_PATH], *searchpath;
-        btrfs_create_subvol* bcs;
-        HANDLE fff;
-        WIN32_FIND_DATAW wfd;
-        
-        if (!LoadStringW(module, IDS_NEW_SUBVOL_FILENAME, name, MAX_PATH)) {
-            ShowError(pici->hwnd, GetLastError());
-            return E_FAIL;
-        }
-        
-        h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowError(pici->hwnd, GetLastError());
-            return E_FAIL;
-        }
-        
-        pathlen = wcslen(path);
-        
-        searchpathlen = pathlen + wcslen(name) + 10;
-        searchpath = (WCHAR*)malloc(searchpathlen * sizeof(WCHAR));
-        
-        StringCchCopyW(searchpath, searchpathlen, path);
-        StringCchCatW(searchpath, searchpathlen, L"\\");
-        pathend = wcslen(searchpath);
-        
-        StringCchCatW(searchpath, searchpathlen, name);
-        
-        fff = FindFirstFileW(searchpath, &wfd);
-        
-        if (fff != INVALID_HANDLE_VALUE) {
-            ULONG i = wcslen(searchpath), num = 2;
-            
-            do {
-                FindClose(fff);
-                
-                searchpath[i] = 0;
-                if (StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-                    MessageBoxW(pici->hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
-                    CloseHandle(h);
-                    return E_FAIL;
-                }
+        } else if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
+            // FIXME
 
-                fff = FindFirstFileW(searchpath, &wfd);
-                num++;
-            } while (fff != INVALID_HANDLE_VALUE);
-        }
-        
-        bcslen = offsetof(btrfs_create_subvol, name[0]) + (wcslen(&searchpath[pathend]) * sizeof(WCHAR));
-        bcs = (btrfs_create_subvol*)malloc(bcslen);
-        
-        bcs->readonly = FALSE;
-        bcs->posix = FALSE;
-        bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
-        memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
-        
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
-        
-        free(searchpath);
-        free(bcs);
-        
-        if (!NT_SUCCESS(Status)) {
-            CloseHandle(h);
-            ShowNtStatusError(pici->hwnd, Status);
-            return E_FAIL;
-        }
-        
-        CloseHandle(h);
-        
-        return S_OK;
-    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
-        WCHAR dll[MAX_PATH];
-        std::wstring t;
-        SHELLEXECUTEINFOW sei;
-
-        GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
-
-        t = L"\"";
-        t += dll;
-        t += L"\",RecvSubvol ";
-        t += path;
-
-        RtlZeroMemory(&sei, sizeof(sei));
-
-        sei.cbSize = sizeof(sei);
-        sei.hwnd = pici->hwnd;
-        sei.lpVerb = L"runas";
-        sei.lpFile = L"rundll32.exe";
-        sei.lpParameters = t.c_str();
-        sei.nShow = SW_SHOW;
-        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-        if (!ShellExecuteExW(&sei)) {
-            ShowError(pici->hwnd, GetLastError());
-            return E_FAIL;
-        }
-
-        WaitForSingleObject(sei.hProcess, INFINITE);
-        CloseHandle(sei.hProcess);
-    } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
-        HDROP hdrop;
-
-        if (!IsClipboardFormatAvailable(CF_HDROP))
             return S_OK;
-        
-        if (!OpenClipboard(pici->hwnd)) {
-            ShowError(pici->hwnd, GetLastError());
-            return E_FAIL;
         }
+    } else {
+        if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
+            HANDLE h;
+            IO_STATUS_BLOCK iosb;
+            NTSTATUS Status;
+            ULONG pathlen, searchpathlen, pathend, bcslen;
+            WCHAR name[MAX_PATH], *searchpath;
+            btrfs_create_subvol* bcs;
+            HANDLE fff;
+            WIN32_FIND_DATAW wfd;
+
+            if (!LoadStringW(module, IDS_NEW_SUBVOL_FILENAME, name, MAX_PATH)) {
+                ShowError(pici->hwnd, GetLastError());
+                return E_FAIL;
+            }
+
+            h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         
-        hdrop = (HDROP)GetClipboardData(CF_HDROP);
-        
-        if (hdrop) {
-            HANDLE lh;
-            
-            lh = GlobalLock(hdrop);
-            
-            if (lh) {
-                ULONG num_files, i;
-                WCHAR fn[MAX_PATH];
+            if (h == INVALID_HANDLE_VALUE) {
+                ShowError(pici->hwnd, GetLastError());
+                return E_FAIL;
+            }
+
+            pathlen = wcslen(path);
+
+            searchpathlen = pathlen + wcslen(name) + 10;
+            searchpath = (WCHAR*)malloc(searchpathlen * sizeof(WCHAR));
+
+            StringCchCopyW(searchpath, searchpathlen, path);
+            StringCchCatW(searchpath, searchpathlen, L"\\");
+            pathend = wcslen(searchpath);
+
+            StringCchCatW(searchpath, searchpathlen, name);
+
+            fff = FindFirstFileW(searchpath, &wfd);
+
+            if (fff != INVALID_HANDLE_VALUE) {
+                ULONG i = wcslen(searchpath), num = 2;
+
+                do {
+                    FindClose(fff);
+
+                    searchpath[i] = 0;
+                    if (StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num) == STRSAFE_E_INSUFFICIENT_BUFFER) {
+                        MessageBoxW(pici->hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
+                        CloseHandle(h);
+                        return E_FAIL;
+                    }
+
+                    fff = FindFirstFileW(searchpath, &wfd);
+                    num++;
+                } while (fff != INVALID_HANDLE_VALUE);
+            }
+
+            bcslen = offsetof(btrfs_create_subvol, name[0]) + (wcslen(&searchpath[pathend]) * sizeof(WCHAR));
+            bcs = (btrfs_create_subvol*)malloc(bcslen);
+
+            bcs->readonly = FALSE;
+            bcs->posix = FALSE;
+            bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
+            memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
+
+            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+
+            free(searchpath);
+            free(bcs);
+
+            if (!NT_SUCCESS(Status)) {
+                CloseHandle(h);
+                ShowNtStatusError(pici->hwnd, Status);
+                return E_FAIL;
+            }
+
+            CloseHandle(h);
+
+            return S_OK;
+        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
+            WCHAR dll[MAX_PATH];
+            std::wstring t;
+            SHELLEXECUTEINFOW sei;
+
+            GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
+
+            t = L"\"";
+            t += dll;
+            t += L"\",RecvSubvol ";
+            t += path;
+
+            RtlZeroMemory(&sei, sizeof(sei));
+
+            sei.cbSize = sizeof(sei);
+            sei.hwnd = pici->hwnd;
+            sei.lpVerb = L"runas";
+            sei.lpFile = L"rundll32.exe";
+            sei.lpParameters = t.c_str();
+            sei.nShow = SW_SHOW;
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+            if (!ShellExecuteExW(&sei)) {
+                ShowError(pici->hwnd, GetLastError());
+                return E_FAIL;
+            }
+
+            WaitForSingleObject(sei.hProcess, INFINITE);
+            CloseHandle(sei.hProcess);
+        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
+            HDROP hdrop;
+
+            if (!IsClipboardFormatAvailable(CF_HDROP))
+                return S_OK;
+
+            if (!OpenClipboard(pici->hwnd)) {
+                ShowError(pici->hwnd, GetLastError());
+                return E_FAIL;
+            }
+
+            hdrop = (HDROP)GetClipboardData(CF_HDROP);
+
+            if (hdrop) {
+                HANDLE lh;
                 
-                num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+                lh = GlobalLock(hdrop);
                 
-                for (i = 0; i < num_files; i++) {
-                    if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                        if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
-                            GlobalUnlock(lh);
-                            CloseClipboard();
-                            return E_FAIL;
+                if (lh) {
+                    ULONG num_files, i;
+                    WCHAR fn[MAX_PATH];
+
+                    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+
+                    for (i = 0; i < num_files; i++) {
+                        if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                            if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
+                                GlobalUnlock(lh);
+                                CloseClipboard();
+                                return E_FAIL;
+                            }
                         }
                     }
+
+                    GlobalUnlock(lh);
                 }
-                
-                GlobalUnlock(lh);
             }
+
+            CloseClipboard();
         }
-        
-        CloseClipboard();
     }
     
     return E_FAIL;
@@ -1145,87 +1175,146 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     if (idCmd != 0)
         return E_INVALIDARG;
     
-    if (idCmd == 0) {
-        switch (uFlags) {
-            case GCS_HELPTEXTA:
-                if (LoadStringA(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
+    if (!bg) {
+        if (idCmd == 0) {
+            switch (uFlags) {
+                case GCS_HELPTEXTA:
+                    if (LoadStringA(module, IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_HELPTEXTW:
+                    if (LoadStringW(module, IDS_CREATE_SNAPSHOT_HELP_TEXT, (LPWSTR)pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_VALIDATEA:
+                case GCS_VALIDATEW:
                     return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_HELPTEXTW:
-                if (LoadStringW(module, bg ? IDS_NEW_SUBVOL_HELP_TEXT : IDS_CREATE_SNAPSHOT_HELP_TEXT, (LPWSTR)pszName, cchMax))
+
+                case GCS_VERBA:
+                    return StringCchCopyA(pszName, cchMax, SNAPSHOT_VERBA);
+
+                case GCS_VERBW:
+                    return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, SNAPSHOT_VERBW);
+
+                default:
+                    return E_INVALIDARG;
+            }
+        } else if (idCmd == 1) {
+            switch (uFlags) {
+                case GCS_HELPTEXTA:
+                    if (LoadStringA(module, IDS_SEND_SUBVOL_HELP, pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_HELPTEXTW:
+                    if (LoadStringW(module, IDS_SEND_SUBVOL_HELP, (LPWSTR)pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_VALIDATEA:
+                case GCS_VALIDATEW:
                     return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_VALIDATEA:
-            case GCS_VALIDATEW:
-                return S_OK;
-                
-            case GCS_VERBA:
-                return StringCchCopyA(pszName, cchMax, bg ? NEW_SUBVOL_VERBA : SNAPSHOT_VERBA);
-                
-            case GCS_VERBW:
-                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, bg ? NEW_SUBVOL_VERBW : SNAPSHOT_VERBW);
-                
-            default:
-                return E_INVALIDARG;
-        }
-    } else if (idCmd == 1 && bg) {
-        switch (uFlags) {
-            case GCS_HELPTEXTA:
-                if (LoadStringA(module, IDS_RECV_SUBVOL_HELP, pszName, cchMax))
+
+                case GCS_VERBA:
+                    return StringCchCopyA(pszName, cchMax, SEND_VERBA);
+
+                case GCS_VERBW:
+                    return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, SEND_VERBW);
+
+                default:
+                    return E_INVALIDARG;
+                }
+        } else
+            return E_INVALIDARG;
+    } else {
+        if (idCmd == 0) {
+            switch (uFlags) {
+                case GCS_HELPTEXTA:
+                    if (LoadStringA(module, IDS_NEW_SUBVOL_HELP_TEXT, pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_HELPTEXTW:
+                    if (LoadStringW(module, IDS_NEW_SUBVOL_HELP_TEXT, (LPWSTR)pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_VALIDATEA:
+                case GCS_VALIDATEW:
                     return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_HELPTEXTW:
-                if (LoadStringW(module, IDS_RECV_SUBVOL_HELP, (LPWSTR)pszName, cchMax))
+
+                case GCS_VERBA:
+                    return StringCchCopyA(pszName, cchMax, NEW_SUBVOL_VERBA);
+
+                case GCS_VERBW:
+                    return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, NEW_SUBVOL_VERBW);
+
+                default:
+                    return E_INVALIDARG;
+            }
+        } else if (idCmd == 1) {
+            switch (uFlags) {
+                case GCS_HELPTEXTA:
+                    if (LoadStringA(module, IDS_RECV_SUBVOL_HELP, pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_HELPTEXTW:
+                    if (LoadStringW(module, IDS_RECV_SUBVOL_HELP, (LPWSTR)pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_VALIDATEA:
+                case GCS_VALIDATEW:
                     return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_VALIDATEA:
-            case GCS_VALIDATEW:
-                return S_OK;
-                
-            case GCS_VERBA:
-                return StringCchCopyA(pszName, cchMax, RECV_VERBA);
-                
-            case GCS_VERBW:
-                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, RECV_VERBW);
-                
-            default:
-                return E_INVALIDARG;
-        }
-    } else if (idCmd == 2 && bg) {
-        switch (uFlags) {
-            case GCS_HELPTEXTA:
-                if (LoadStringA(module, IDS_REFLINK_PASTE_HELP, pszName, cchMax))
+
+                case GCS_VERBA:
+                    return StringCchCopyA(pszName, cchMax, RECV_VERBA);
+
+                case GCS_VERBW:
+                    return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, RECV_VERBW);
+
+                default:
+                    return E_INVALIDARG;
+            }
+        } else if (idCmd == 2) {
+            switch (uFlags) {
+                case GCS_HELPTEXTA:
+                    if (LoadStringA(module, IDS_REFLINK_PASTE_HELP, pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_HELPTEXTW:
+                    if (LoadStringW(module, IDS_REFLINK_PASTE_HELP, (LPWSTR)pszName, cchMax))
+                        return S_OK;
+                    else
+                        return E_FAIL;
+
+                case GCS_VALIDATEA:
+                case GCS_VALIDATEW:
                     return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_HELPTEXTW:
-                if (LoadStringW(module, IDS_REFLINK_PASTE_HELP, (LPWSTR)pszName, cchMax))
-                    return S_OK;
-                else
-                    return E_FAIL;
-                
-            case GCS_VALIDATEA:
-            case GCS_VALIDATEW:
-                return S_OK;
-                
-            case GCS_VERBA:
-                return StringCchCopyA(pszName, cchMax, REFLINK_VERBA);
-                
-            case GCS_VERBW:
-                return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, REFLINK_VERBW);
-                
-            default:
-                return E_INVALIDARG;
-        }
-    } else
-        return E_INVALIDARG;
+
+                case GCS_VERBA:
+                    return StringCchCopyA(pszName, cchMax, REFLINK_VERBA);
+
+                case GCS_VERBW:
+                    return StringCchCopyW((STRSAFE_LPWSTR)pszName, cchMax, REFLINK_VERBW);
+
+                default:
+                    return E_INVALIDARG;
+            }
+        } else
+            return E_INVALIDARG;
+    }
 }

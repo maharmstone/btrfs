@@ -7,7 +7,7 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include <winres.h>
+#include "winres.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -663,6 +663,8 @@ END
 STRINGTABLE 
 BEGIN
     IDS_RECV_SUCCESS_PLURAL "Received %u subvolumes successfully."
+    IDS_SEND_SUBVOL         "&Send subvolume..."
+    IDS_SEND_SUBVOL_HELP    "Exports a subvolume so that it can be recreated on another volume."
 END
 
 #endif    // English (U.K.) resources

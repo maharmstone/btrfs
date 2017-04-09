@@ -78,4 +78,5 @@ private:
     HBITMAP uacicon;
     
     BOOL reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
+    void get_uac_icon();
 };

@@ -170,6 +170,8 @@
 #define IDS_RECV_GETFILESIZEEX_FAILED   254
 #define IDS_RECV_DUPLICATE_EXTENTS_FAILED 255
 #define IDS_RECV_SUCCESS_PLURAL         256
+#define IDS_SEND_SUBVOL                 257
+#define IDS_SEND_SUBVOL_HELP            258
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
