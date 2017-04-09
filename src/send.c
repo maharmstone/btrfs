@@ -2675,20 +2675,6 @@ static void send_thread(void* ctx) {
                                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                                     goto end;
                                 }
-                            } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA) {
-                                Status = send_extent_data(context, NULL, &tp2);
-                                if (!NT_SUCCESS(Status)) {
-                                    ERR("send_extent_data returned %08x\n", Status);
-                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
-                                    goto end;
-                                }
-                            } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM) {
-                                Status = send_xattr(context, NULL, &tp2);
-                                if (!NT_SUCCESS(Status)) {
-                                    ERR("send_xattr returned %08x\n", Status);
-                                    ExReleaseResourceLite(&context->Vcb->tree_lock);
-                                    goto end;
-                                }
                             }
                         }
 
@@ -2873,14 +2859,14 @@ static void send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA) {
+                } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA && !context->lastinode.deleting) {
                     Status = send_extent_data(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08x\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM) {
+                } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM && !context->lastinode.deleting) {
                     Status = send_xattr(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08x\n", Status);
