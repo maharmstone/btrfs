@@ -55,6 +55,13 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
+
+    // don't allow readonly subvol to be made r/w if send operation running on it
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY &&
+        fcb->subvol->send_ops > 0) {
+        Status = STATUS_DEVICE_NOT_READY;
+        goto end;
+    }
     
     if (fbi->CreationTime.QuadPart == -1)
         ccb->user_set_creation_time = TRUE;

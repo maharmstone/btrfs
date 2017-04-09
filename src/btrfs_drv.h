@@ -362,6 +362,7 @@ typedef struct _root {
     BOOL received;
     PEPROCESS reserved;
     UINT64 parent;
+    LONG send_ops;
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;

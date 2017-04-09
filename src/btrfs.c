@@ -924,6 +924,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     r->received = FALSE;
     r->reserved = NULL;
     r->parent = 0;
+    r->send_ops = 0;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
     InitializeListHead(&r->fcbs);
@@ -2413,6 +2414,7 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
     r->treeholder.tree = NULL;
     r->treeholder.generation = generation;
     r->parent = 0;
+    r->send_ops = 0;
     InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);

@@ -2593,6 +2593,11 @@ static void send_thread(void* ctx) {
     KEY searchkey;
     traverse_ptr tp, tp2;
 
+    InterlockedIncrement(&context->root->send_ops);
+
+    if (context->parent)
+        InterlockedIncrement(&context->parent->send_ops);
+
     ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
     searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
@@ -3104,6 +3109,10 @@ end:
     ExFreePool(context->data);
 
     InterlockedDecrement(&context->Vcb->running_sends);
+    InterlockedDecrement(&context->root->send_ops);
+
+    if (context->parent)
+        InterlockedDecrement(&context->parent->send_ops);
 
     ExReleaseResourceLite(&context->Vcb->send_load_lock);
 
