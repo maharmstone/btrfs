@@ -1,4 +1,4 @@
-OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o devices.o balance.o scrub.o recv.o
+OBJS = main.o factory.o iconoverlay.o contextmenu.o propsheet.o volpropsheet.o devices.o balance.o scrub.o recv.o send.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
@@ -38,6 +38,9 @@ scrub.o: scrub.cpp scrub.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 recv.o: recv.cpp recv.h shellext.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+send.o: send.cpp send.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)

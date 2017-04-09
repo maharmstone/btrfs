@@ -434,6 +434,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\shellext\send.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\shellext\shellext.h"
 				>
 			</File>
@@ -479,6 +483,10 @@
 			</File>
 			<File
 				RelativePath=".\src\shellext\scrub.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\src\shellext\send.cpp"
 				>
 			</File>
 			<File

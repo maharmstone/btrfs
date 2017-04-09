@@ -85,6 +85,7 @@
 #define IDS_BALANCE_RUNNING_REMOVAL     170
 #define IDD_RECV_PROGRESS               170
 #define IDS_BALANCE_PAUSED_REMOVAL      171
+#define IDD_SEND_SUBVOL                 171
 #define IDS_BALANCE_CANCELLED_REMOVAL   172
 #define IDS_BALANCE_COMPLETE_REMOVAL    173
 #define IDS_PARTITION                   174
@@ -237,6 +238,7 @@
 #define IDC_DEVICE_ADD                  1044
 #define IDC_RESET_STATS                 1044
 #define IDC_OPEN_ADMIN                  1044
+#define IDC_BROWSE                      1044
 #define IDC_LIMIT_START                 1045
 #define IDC_BUTTON2                     1045
 #define IDC_METADATA_OPTIONS            1045
@@ -279,6 +281,8 @@
 #define IDC_READ_ERRS                   1065
 #define IDC_RECV_MSG                    1065
 #define IDC_FLUSH_ERRS                  1066
+#define IDC_EDIT1                       1066
+#define IDC_STREAM_DEST                 1066
 #define IDC_CORRUPTION_ERRS             1067
 #define IDC_GENERATION_ERRS             1068
 
@@ -286,9 +290,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        171
+#define _APS_NEXT_RESOURCE_VALUE        172
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1066
+#define _APS_NEXT_CONTROL_VALUE         1067
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

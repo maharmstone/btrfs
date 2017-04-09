@@ -13,4 +13,5 @@ EXPORTS
     ResetStatsW			PRIVATE
     ShowPropSheetW		PRIVATE
     RecvSubvolW			PRIVATE
+    SendSubvolW			PRIVATE
 

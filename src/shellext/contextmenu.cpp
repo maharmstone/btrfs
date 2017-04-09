@@ -1013,8 +1013,35 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             }
 
             return S_OK;
-        } else if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
-            // FIXME
+        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
+            WCHAR dll[MAX_PATH];
+            std::wstring t;
+            SHELLEXECUTEINFOW sei;
+
+            GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
+
+            t = L"\"";
+            t += dll;
+            t += L"\",SendSubvol ";
+            t += path;
+
+            RtlZeroMemory(&sei, sizeof(sei));
+
+            sei.cbSize = sizeof(sei);
+            sei.hwnd = pici->hwnd;
+            sei.lpVerb = L"runas";
+            sei.lpFile = L"rundll32.exe";
+            sei.lpParameters = t.c_str();
+            sei.nShow = SW_SHOW;
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+            if (!ShellExecuteExW(&sei)) {
+                ShowError(pici->hwnd, GetLastError());
+                return E_FAIL;
+            }
+
+            WaitForSingleObject(sei.hProcess, INFINITE);
+            CloseHandle(sei.hProcess);
 
             return S_OK;
         }
@@ -1123,6 +1150,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
             WaitForSingleObject(sei.hProcess, INFINITE);
             CloseHandle(sei.hProcess);
+
+            return S_OK;
         } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
             HDROP hdrop;
 
@@ -1162,6 +1191,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             }
 
             CloseClipboard();
+
+            return S_OK;
         }
     }
     
