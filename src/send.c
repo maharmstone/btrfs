@@ -3132,6 +3132,12 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     if (fcb->inode != SUBVOL_ROOT_INODE || fcb == Vcb->root_fileref->fcb)
         return STATUS_INVALID_PARAMETER;
 
+    if (!Vcb->readonly && !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+        return STATUS_INVALID_PARAMETER;
+
+    // FIXME - if subvol only just made readonly, check it has been flushed
+    // FIXME - make it so any relevant subvols can't be made read-write while this is running
+
     if (data) {
         btrfs_send_subvol* bss = (btrfs_send_subvol*)data;
 
@@ -3165,12 +3171,11 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
             parsubvol = parfcb->subvol;
             ObDereferenceObject(fileobj);
+
+            if (!Vcb->readonly && !(parsubvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+                return STATUS_INVALID_PARAMETER;
         }
     }
-
-    // FIXME - check subvol or FS is readonly
-    // FIXME - if subvol only just made readonly, check it has been flushed
-    // FIXME - make it so any relevant subvols can't be made read-write while this is running
 
     ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
 
