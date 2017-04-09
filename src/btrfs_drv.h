@@ -1086,6 +1086,7 @@ NTSTATUS STDCALL find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** sub
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type);
 void do_unlock_volume(device_extension* Vcb);
 void trim_whole_device(device* dev);
+void flush_subvol_fcbs(root* subvol);
 
 // in flushthread.c
 void STDCALL flush_thread(void* context);

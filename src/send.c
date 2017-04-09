@@ -2598,7 +2598,26 @@ static void send_thread(void* ctx) {
     if (context->parent)
         InterlockedIncrement(&context->parent->send_ops);
 
-    ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&context->Vcb->tree_lock, TRUE);
+
+    flush_subvol_fcbs(context->root);
+
+    if (context->parent)
+        flush_subvol_fcbs(context->parent);
+
+    if (context->Vcb->need_write)
+        Status = do_write(context->Vcb, NULL);
+    else
+        Status = STATUS_SUCCESS;
+
+    free_trees(context->Vcb);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        goto end;
+    }
+
+    ExConvertExclusiveToSharedLite(&context->Vcb->tree_lock);
 
     searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
 
@@ -3143,9 +3162,6 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
     if (!Vcb->readonly && !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY))
         return STATUS_INVALID_PARAMETER;
-
-    // FIXME - if subvol only just made readonly, check it has been flushed
-    // FIXME - make it so any relevant subvols can't be made read-write while this is running
 
     if (data) {
         btrfs_send_subvol* bss = (btrfs_send_subvol*)data;

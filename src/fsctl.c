@@ -231,7 +231,7 @@ end:
     return Status;
 }
 
-static void flush_subvol_fcbs(root* subvol) {
+void flush_subvol_fcbs(root* subvol) {
     LIST_ENTRY* le = subvol->fcbs.Flink;
     
     if (IsListEmpty(&subvol->fcbs))
