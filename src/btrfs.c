@@ -1823,6 +1823,11 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
         return STATUS_SUCCESS;
     }
     
+    if (fileref->fcb->subvol->send_ops > 0) {
+        ExReleaseResourceLite(fileref->fcb->Header.Resource);
+        return STATUS_ACCESS_DENIED;
+    }
+
     fileref->deleted = TRUE;
     mark_fileref_dirty(fileref);
     
