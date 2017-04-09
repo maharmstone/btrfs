@@ -1057,13 +1057,12 @@ static void send_rmdir_command(send_context* context, ULONG pathlen, char* path)
     send_command_finish(context, pos);
 }
 
-static NTSTATUS add_pending_rmdir(send_context* context) {
+static NTSTATUS get_dir_last_child(send_context* context, UINT64* last_inode) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 last_inode = 0;
-    pending_rmdir* pr;
-    LIST_ENTRY* le;
+
+    *last_inode = 0;
 
     searchkey.obj_id = context->lastinode.inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
@@ -1087,7 +1086,7 @@ static NTSTATUS add_pending_rmdir(send_context* context) {
             }
 
             if (di->key.obj_type == TYPE_INODE_ITEM)
-                last_inode = max(last_inode, di->key.obj_id);
+                *last_inode = max(*last_inode, di->key.obj_id);
         } else
             break;
 
@@ -1097,10 +1096,12 @@ static NTSTATUS add_pending_rmdir(send_context* context) {
             break;
     } while (TRUE);
 
-    if (last_inode <= context->lastinode.inode) {
-        send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
-        return STATUS_SUCCESS;
-    }
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_pending_rmdir(send_context* context, UINT64 last_inode) {
+    pending_rmdir* pr;
+    LIST_ENTRY* le;
 
     pr = ExAllocatePoolWithTag(PagedPool, sizeof(pending_rmdir), ALLOC_TAG);
     if (!pr) {
@@ -1375,40 +1376,55 @@ static NTSTATUS flush_refs(send_context* context) {
             if (!r->sd->dummy)
                 send_utimes_command_dir(context, r->sd, &r->sd->atime, &r->sd->mtime, &r->sd->ctime);
         } else { // deleted
-            char name[64];
-            ULONG pos = context->datalen;
+            UINT64 last_inode;
 
-            Status = get_orphan_name(context, context->lastinode.inode, context->lastinode.gen, name);
+            Status = get_dir_last_child(context, &last_inode);
             if (!NT_SUCCESS(Status)) {
-                ERR("get_orphan_name returned %08x\n", Status);
+                ERR("get_dir_last_child returned %08x\n", Status);
                 return Status;
             }
 
-            send_command(context, BTRFS_SEND_CMD_RENAME);
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, strlen(name));
-            send_command_finish(context, pos);
+            if (last_inode <= context->lastinode.inode) {
+                send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
 
-            if (context->lastinode.sd->name)
-                ExFreePool(context->lastinode.sd->name);
+                if (!or->sd->dummy)
+                    send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
+            } else {
+                char name[64];
+                ULONG pos = context->datalen;
 
-            context->lastinode.sd->name = ExAllocatePoolWithTag(PagedPool, strlen(name), ALLOC_TAG);
-            if (!context->lastinode.sd->name) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
+                Status = get_orphan_name(context, context->lastinode.inode, context->lastinode.gen, name);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("get_orphan_name returned %08x\n", Status);
+                    return Status;
+                }
 
-            RtlCopyMemory(context->lastinode.sd->name, name, strlen(name));
-            context->lastinode.sd->namelen = strlen(name);
-            context->lastinode.sd->dummy = TRUE;
-            context->lastinode.sd->parent = NULL;
+                send_command(context, BTRFS_SEND_CMD_RENAME);
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, strlen(name));
+                send_command_finish(context, pos);
 
-            send_utimes_command(context, NULL, &context->root_dir->atime, &context->root_dir->mtime, &context->root_dir->ctime);
+                if (context->lastinode.sd->name)
+                    ExFreePool(context->lastinode.sd->name);
 
-            Status = add_pending_rmdir(context);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_pending_rmdir returned %08x\n", Status);
-                return Status;
+                context->lastinode.sd->name = ExAllocatePoolWithTag(PagedPool, strlen(name), ALLOC_TAG);
+                if (!context->lastinode.sd->name) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                RtlCopyMemory(context->lastinode.sd->name, name, strlen(name));
+                context->lastinode.sd->namelen = strlen(name);
+                context->lastinode.sd->dummy = TRUE;
+                context->lastinode.sd->parent = NULL;
+
+                send_utimes_command(context, NULL, &context->root_dir->atime, &context->root_dir->mtime, &context->root_dir->ctime);
+
+                Status = add_pending_rmdir(context, last_inode);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_pending_rmdir returned %08x\n", Status);
+                    return Status;
+                }
             }
         }
 
