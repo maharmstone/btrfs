@@ -301,6 +301,7 @@ typedef struct _ccb {
     BOOL user_set_write_time;
     BOOL user_set_change_time;
     send_info* send;
+    NTSTATUS send_status;
 } ccb;
 
 struct _device_extension;

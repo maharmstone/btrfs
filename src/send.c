@@ -3010,8 +3010,12 @@ static void send_thread(void* ctx) {
     Status = STATUS_SUCCESS;
 
 end:
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
         KeSetEvent(&context->buffer_event, 0, FALSE);
+
+        if (context->send->ccb)
+            context->send->ccb->send_status = Status;
+    }
 
     ExAcquireResourceExclusiveLite(&context->Vcb->send_load_lock, TRUE);
 
@@ -3184,6 +3188,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
     ccb->send = send;
     send->ccb = ccb;
+    ccb->send_status = STATUS_SUCCESS;
 
     send->cancelling = FALSE;
 
@@ -3219,7 +3224,7 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
 
     if (!ccb->send) {
         ExReleaseResourceLite(&Vcb->send_load_lock);
-        return STATUS_END_OF_FILE;
+        return !NT_SUCCESS(ccb->send_status) ? ccb->send_status : STATUS_END_OF_FILE;
     }
 
     context = (send_context*)ccb->send->context;
