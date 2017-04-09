@@ -3099,6 +3099,7 @@ end:
     if (context->send->ccb)
         context->send->ccb->send = NULL;
 
+    RemoveEntryList(&context->send->list_entry);
     ExFreePool(context->send);
     ExFreePool(context->data);
 
@@ -3251,6 +3252,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
         return Status;
     }
 
+    InsertTailList(&Vcb->send_ops, &send->list_entry);
     ExReleaseResourceLite(&Vcb->send_load_lock);
 
     return STATUS_SUCCESS;

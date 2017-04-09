@@ -276,6 +276,7 @@ typedef struct {
     void* context;
     KEVENT cleared_event;
     BOOL cancelling;
+    LIST_ENTRY list_entry;
 } send_info;
 
 typedef struct _ccb {
@@ -693,6 +694,7 @@ typedef struct _device_extension {
     scrub_info scrub;
     ERESOURCE send_load_lock;
     LONG running_sends;
+    LIST_ENTRY send_ops;
     PFILE_OBJECT root_file;
     PAGED_LOOKASIDE_LIST tree_data_lookaside;
     PAGED_LOOKASIDE_LIST traverse_ptr_lookaside;

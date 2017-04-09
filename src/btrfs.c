@@ -1632,6 +1632,35 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
         KeWaitForSingleObject(&Vcb->scrub.finished, Executive, KernelMode, FALSE, NULL);
     }
     
+    if (Vcb->running_sends != 0) {
+        BOOL send_cancelled = FALSE;
+
+        ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
+
+        le = Vcb->send_ops.Flink;
+        while (le != &Vcb->send_ops) {
+            send_info* send = CONTAINING_RECORD(le, send_info, list_entry);
+
+            if (!send->cancelling) {
+                send->cancelling = TRUE;
+                send_cancelled = TRUE;
+                send->ccb = NULL;
+                KeSetEvent(&send->cleared_event, 0, FALSE);
+            }
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&Vcb->send_load_lock);
+
+        if (send_cancelled) {
+            while (Vcb->running_sends != 0) {
+                ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
+                ExReleaseResourceLite(&Vcb->send_load_lock);
+            }
+        }
+    }
+
     Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
     if (!NT_SUCCESS(Status) && Status != STATUS_TOO_LATE)
         WARN("registry_mark_volume_unmounted returned %08x\n", Status);
@@ -3896,6 +3925,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&Vcb->dirty_fcbs);
     InitializeListHead(&Vcb->dirty_filerefs);
     InitializeListHead(&Vcb->dirty_subvols);
+    InitializeListHead(&Vcb->send_ops);
     
     InitializeListHead(&Vcb->DirNotifyList);
     InitializeListHead(&Vcb->scrub.errors);
