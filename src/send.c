@@ -2763,7 +2763,7 @@ static void send_thread(void* ctx) {
                             ended2 = TRUE;
                     }
                 }
-            } else if (ended2 || keycmp(tp.item->key, tp2.item->key) == -1) {
+            } else if (ended2 || (!ended1 && !ended2 && keycmp(tp.item->key, tp2.item->key) == -1)) {
                 TRACE("A %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
                 if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
@@ -2821,7 +2821,7 @@ static void send_thread(void* ctx) {
                     tp = next_tp;
                 else
                     ended1 = TRUE;
-            } else if (ended1 || keycmp(tp.item->key, tp2.item->key) == 1) {
+            } else if (ended1 || (!ended1 && !ended2 && keycmp(tp.item->key, tp2.item->key) == 1)) {
                 TRACE("B %llx,%x,%llx\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
 
                 if (context->lastinode.inode != 0 && tp2.item->key.obj_id > context->lastinode.inode) {
