@@ -1491,17 +1491,19 @@ static NTSTATUS flush_refs(send_context* context) {
             UINT64 inode;
             BOOL dir;
 
-            Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode, &dir);
-            if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_COLLISION) {
-                ERR("look_for_collision returned %08x\n", Status);
-                return Status;
-            }
-
-            if (Status == STATUS_OBJECT_NAME_COLLISION && inode > context->lastinode.inode) {
-                Status = make_file_orphan(context, inode, dir, context->lastinode.gen, r);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("make_file_orphan returned %08x\n", Status);
+            if (context->parent) {
+                Status = look_for_collision(context, r->sd, r->name, r->namelen, &inode, &dir);
+                if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_COLLISION) {
+                    ERR("look_for_collision returned %08x\n", Status);
                     return Status;
+                }
+
+                if (Status == STATUS_OBJECT_NAME_COLLISION && inode > context->lastinode.inode) {
+                    Status = make_file_orphan(context, inode, dir, context->lastinode.gen, r);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("make_file_orphan returned %08x\n", Status);
+                        return Status;
+                    }
                 }
             }
 
