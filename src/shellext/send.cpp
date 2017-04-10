@@ -19,6 +19,37 @@
 #include "send.h"
 #include "resource.h"
 
+void BtrfsSend::StartSend(HWND hwnd) {
+    if (started)
+        return;
+
+    started = TRUE;
+
+    EnableWindow(GetDlgItem(hwnd, IDOK), FALSE);
+    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), FALSE);
+    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), FALSE);
+
+    // FIXME - create thread etc.
+}
+
+void BtrfsSend::Browse(HWND hwnd) {
+    OPENFILENAMEW ofn;
+
+    file[0] = 0;
+
+    memset(&ofn, 0, sizeof(OPENFILENAMEW));
+    ofn.lStructSize = sizeof(OPENFILENAMEW);
+    ofn.hwndOwner = hwnd;
+    ofn.hInstance = module;
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
+
+    if (!GetSaveFileNameW(&ofn))
+        return;
+
+    SetDlgItemTextW(hwnd, IDC_STREAM_DEST, file);
+}
+
 INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_COMMAND:
@@ -26,8 +57,15 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
+                            StartSend(hwndDlg);
+                        return TRUE;
+
                         case IDCANCEL:
                             EndDialog(hwndDlg, 1);
+                        return TRUE;
+
+                        case IDC_BROWSE:
+                            Browse(hwndDlg);
                         return TRUE;
                     }
                 break;
