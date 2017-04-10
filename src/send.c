@@ -1592,10 +1592,10 @@ static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, travers
     KeSetEvent(&context->buffer_event, 0, TRUE);
     KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);
 
+    ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
+
     if (context->send->cancelling)
         return STATUS_SUCCESS;
-
-    ExAcquireResourceSharedLite(&context->Vcb->tree_lock, TRUE);
 
     if (tp1) {
         Status = find_item(context->Vcb, context->root, tp1, &key1, FALSE, NULL);
