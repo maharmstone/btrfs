@@ -2988,18 +2988,20 @@ static void send_thread(void* ctx) {
         } while (TRUE);
     }
 
-    ExReleaseResourceLite(&context->Vcb->tree_lock);
-
     if (context->lastinode.inode != 0) {
         Status = finish_inode(context, NULL, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("finish_inode returned %08x\n", Status);
+            ExReleaseResourceLite(&context->Vcb->tree_lock);
             goto end;
         }
 
+        ExReleaseResourceLite(&context->Vcb->tree_lock);
+
         if (context->send->cancelling)
             goto end;
-    }
+    } else
+        ExReleaseResourceLite(&context->Vcb->tree_lock);
 
     send_end_command(context);
 
