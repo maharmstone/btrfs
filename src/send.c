@@ -3126,6 +3126,9 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
             if (!Vcb->readonly && !(parsubvol->root_item.flags & BTRFS_SUBVOL_READONLY))
                 return STATUS_INVALID_PARAMETER;
+
+            if (parsubvol == fcb->subvol)
+                return STATUS_INVALID_PARAMETER;
         }
     }
 
