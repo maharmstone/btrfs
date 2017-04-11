@@ -26,6 +26,7 @@ public:
         ignore = TRUE;
         stgm_set = FALSE;
         uacicon = NULL;
+        allow_snapshot = FALSE;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -70,7 +71,7 @@ public:
 
 private:
     LONG refcount;
-    BOOL ignore;
+    BOOL ignore, allow_snapshot;
     BOOL bg;
     WCHAR path[MAX_PATH];
     STGMEDIUM stgm;

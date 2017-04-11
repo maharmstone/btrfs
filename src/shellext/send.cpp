@@ -42,7 +42,6 @@ DWORD BtrfsSend::Thread() {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_send_subvol bss;
-    BY_HANDLE_FILE_INFORMATION fileinfo;
     BOOL success = FALSE;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -53,13 +52,25 @@ DWORD BtrfsSend::Thread() {
         goto end3;
     }
 
-    if (!GetFileInformationByHandle(dirh, &fileinfo)) {
-        ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        goto end2;
-    }
+    bss.parent = NULL;
 
-    if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
-        ShowSendError(IDS_SEND_NOT_READONLY);
+    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
+
+    if (!NT_SUCCESS(Status)) {
+        if (Status == (NTSTATUS)STATUS_INVALID_PARAMETER) {
+            BY_HANDLE_FILE_INFORMATION fileinfo;
+            if (!GetFileInformationByHandle(dirh, &fileinfo)) {
+                ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                goto end2;
+            }
+
+            if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
+                ShowSendError(IDS_SEND_NOT_READONLY);
+                goto end2;
+            }
+        }
+
+        ShowSendError(IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         goto end2;
     }
 
@@ -67,15 +78,6 @@ DWORD BtrfsSend::Thread() {
     if (stream == INVALID_HANDLE_VALUE) {
         ShowSendError(IDS_SEND_CANT_OPEN_FILE, file, GetLastError(), format_message(GetLastError()).c_str());
         goto end2;
-    }
-
-    bss.parent = NULL;
-
-    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
-
-    if (!NT_SUCCESS(Status)) {
-        ShowSendError(IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        goto end;
     }
 
     do {

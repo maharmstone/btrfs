@@ -115,16 +115,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                         
                         h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     
-                        if (h2 == INVALID_HANDLE_VALUE) {
-                            CloseHandle(h);
-                            GlobalUnlock(hdrop);
-                            return E_FAIL;
-                        }
-                        
+                        if (h2 != INVALID_HANDLE_VALUE)
+                            allow_snapshot = TRUE;
+
+                        CloseHandle(h2);
+
                         ignore = FALSE;
                         bg = FALSE;
-                        
-                        CloseHandle(h2);
+
                         CloseHandle(h);
                         GlobalUnlock(hdrop);
                         return S_OK;
@@ -328,15 +326,17 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         return S_OK;
     
     if (!bg) {
-        if (LoadStringW(module, IDS_CREATE_SNAPSHOT, str, sizeof(str) / sizeof(WCHAR)) == 0)
-            return E_FAIL;
+        if (allow_snapshot) {
+            if (LoadStringW(module, IDS_CREATE_SNAPSHOT, str, sizeof(str) / sizeof(WCHAR)) == 0)
+                return E_FAIL;
 
-        if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
-            return E_FAIL;
+            if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
+                return E_FAIL;
 
-        entries = 1;
+            entries = 1;
+        }
 
-        if (idCmdFirst + 1 <= idCmdLast) {
+        if (idCmdFirst + entries <= idCmdLast) {
             MENUITEMINFOW mii;
 
             if (LoadStringW(module, IDS_SEND_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
@@ -349,10 +349,10 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             mii.cbSize = sizeof(MENUITEMINFOW);
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
             mii.dwTypeData = str;
-            mii.wID = idCmdFirst + 1;
+            mii.wID = idCmdFirst + entries;
             mii.hbmpItem = uacicon;
 
-            if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
+            if (!InsertMenuItemW(hmenu, indexMenu + entries, TRUE, &mii))
                 return E_FAIL;
 
             entries++;
@@ -994,7 +994,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         return E_INVALIDARG;
     
     if (!bg) {
-        if ((IS_INTRESOURCE(pici->lpVerb) && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
+        if ((IS_INTRESOURCE(pici->lpVerb) && allow_snapshot && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
             UINT num_files, i;
             WCHAR fn[MAX_PATH];
             
@@ -1013,7 +1013,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             }
 
             return S_OK;
-        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
+        } else if ((IS_INTRESOURCE(pici->lpVerb) && ((allow_snapshot && (ULONG_PTR)pici->lpVerb == 1) || (!allow_snapshot && (ULONG_PTR)pici->lpVerb == 0))) ||
+                   (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
             UINT num_files, i;
             WCHAR dll[MAX_PATH], fn[MAX_PATH];
             std::wstring t;
