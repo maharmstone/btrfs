@@ -42,7 +42,6 @@ DWORD BtrfsSend::Thread() {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_send_subvol bss;
-    char* buf;
     BY_HANDLE_FILE_INFORMATION fileinfo;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -63,7 +62,7 @@ DWORD BtrfsSend::Thread() {
         goto end2;
     }
 
-    stream = CreateFileW(file, FILE_WRITE_DATA, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    stream = CreateFileW(file, FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (stream == INVALID_HANDLE_VALUE) {
         ShowSendError(IDS_SEND_CANT_OPEN_FILE, file, GetLastError(), format_message(GetLastError()).c_str());
         goto end2;
@@ -104,6 +103,7 @@ end2:
 
 end3:
     free(buf);
+    buf = NULL;
 
     started = FALSE;
 
@@ -174,7 +174,22 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                         return TRUE;
 
                         case IDCANCEL:
-                            // FIXME - cancel if running
+                            if (started) {
+                                TerminateThread(thread, 0);
+
+                                if (stream != INVALID_HANDLE_VALUE) {
+                                    FILE_DISPOSITION_INFO fdi;
+
+                                    fdi.DeleteFile = TRUE;
+
+                                    SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+                                    CloseHandle(stream);
+                                }
+
+                                if (dirh != INVALID_HANDLE_VALUE)
+                                    CloseHandle(dirh);
+                            }
+
                             EndDialog(hwndDlg, 1);
                         return TRUE;
 
