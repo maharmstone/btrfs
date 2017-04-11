@@ -53,9 +53,28 @@ DWORD BtrfsSend::Thread() {
         goto end3;
     }
 
-    bss.parent = NULL;
+    if (incremental) {
+        WCHAR parent[MAX_PATH];
+        HANDLE parenth;
+
+        parent[0] = 0;
+
+        GetDlgItemTextW(hwnd, IDC_PARENT_SUBVOL, parent, sizeof(parent) / sizeof(WCHAR));
+
+        parenth = CreateFileW(parent, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (parenth == INVALID_HANDLE_VALUE) {
+            ShowSendError(IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
+            goto end2;
+        }
+
+        bss.parent = parenth;
+    } else
+        bss.parent = NULL;
 
     Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
+
+    if (bss.parent)
+        CloseHandle(bss.parent);
 
     if (!NT_SUCCESS(Status)) {
         if (Status == (NTSTATUS)STATUS_INVALID_PARAMETER) {
@@ -141,6 +160,15 @@ void BtrfsSend::StartSend(HWND hwnd) {
 
     if (file[0] == 0)
         return;
+
+    if (incremental) {
+        WCHAR parent[MAX_PATH];
+
+        GetDlgItemTextW(hwnd, IDC_PARENT_SUBVOL, parent, sizeof(parent) / sizeof(WCHAR));
+
+        if (parent[0] == 0)
+            return;
+    }
 
     started = TRUE;
 
