@@ -43,6 +43,8 @@ DWORD BtrfsSend::Thread() {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_send_subvol bss;
+    btrfs_send_header header;
+    btrfs_send_command end;
     BOOL success = FALSE;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -100,6 +102,14 @@ DWORD BtrfsSend::Thread() {
         goto end2;
     }
 
+    memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(BTRFS_SEND_MAGIC));
+    header.version = 1;
+
+    if (!WriteFile(stream, &header, sizeof(header), NULL, NULL)) {
+        ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        goto end;
+    }
+
     do {
         Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, NULL, 0, buf, SEND_BUFFER_LEN);
 
@@ -111,6 +121,15 @@ DWORD BtrfsSend::Thread() {
 
     if (Status != STATUS_END_OF_FILE) {
         ShowSendError(IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED, Status, format_ntstatus(Status).c_str());
+        goto end;
+    }
+
+    end.length = 0;
+    end.cmd = BTRFS_SEND_CMD_END;
+    end.csum = 0x9dc96c50;
+
+    if (!WriteFile(stream, &end, sizeof(end), NULL, NULL)) {
+        ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         goto end;
     }
 
