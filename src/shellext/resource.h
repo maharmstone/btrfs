@@ -181,6 +181,10 @@
 #define IDS_SEND_WRITEFILE_FAILED       264
 #define IDS_SEND_GET_FILE_INFO_FAILED   265
 #define IDS_SEND_NOT_READONLY           266
+#define IDS_NOT_SUBVOL                  267
+#define IDS_GET_FILE_IDS_FAILED         268
+#define IDS_SHPARSEDISPLAYNAME_FAILED   269
+#define IDS_SHGETPATHFROMIDLIST_FAILED  270
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -251,6 +255,7 @@
 #define IDC_BUTTON2                     1045
 #define IDC_METADATA_OPTIONS            1045
 #define IDC_DEVICE_REFRESH              1045
+#define IDC_PARENT_BROWSE               1045
 #define IDC_VRANGE_END                  1046
 #define IDC_BUTTON3                     1046
 #define IDC_SYSTEM_OPTIONS              1046
@@ -284,6 +289,7 @@
 #define IDC_COMPRESS_TYPE               1061
 #define IDC_CHECK1                      1062
 #define IDC_SUBVOL_RO                   1062
+#define IDC_INCREMENTAL                 1062
 #define IDC_DEVICE_ID                   1063
 #define IDC_WRITE_ERRS                  1064
 #define IDC_READ_ERRS                   1065
@@ -293,6 +299,7 @@
 #define IDC_CORRUPTION_ERRS             1067
 #define IDC_SEND_STATUS                 1067
 #define IDC_GENERATION_ERRS             1068
+#define IDC_PARENT_SUBVOL               1068
 
 // Next default values for new objects
 // 
@@ -300,7 +307,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        172
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1068
+#define _APS_NEXT_CONTROL_VALUE         1069
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

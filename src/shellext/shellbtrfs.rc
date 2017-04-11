@@ -327,17 +327,20 @@ BEGIN
     LTEXT           "Receiving subvolume...",IDC_RECV_MSG,7,7,297,18
 END
 
-IDD_SEND_SUBVOL DIALOGEX 0, 0, 288, 87
+IDD_SEND_SUBVOL DIALOGEX 0, 0, 288, 99
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Send subvolume"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,83,66,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,156,66,50,14
+    DEFPUSHBUTTON   "OK",IDOK,83,78,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,156,78,50,14
     EDITTEXT        IDC_STREAM_DEST,57,7,166,14,ES_AUTOHSCROLL
-    LTEXT           "Stream:",IDC_STATIC,8,10,26,8
+    LTEXT           "Stream:",IDC_STATIC,7,11,26,8
     PUSHBUTTON      "&Browse...",IDC_BROWSE,231,7,50,14
-    LTEXT           "Select a destination for the subvolume stream.",IDC_SEND_STATUS,7,32,274,22
+    LTEXT           "Select a destination for the subvolume stream.",IDC_SEND_STATUS,7,49,274,22
+    CONTROL         "Incremental",IDC_INCREMENTAL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,32,54,10
+    EDITTEXT        IDC_PARENT_SUBVOL,69,29,154,14,ES_AUTOHSCROLL | WS_DISABLED
+    PUSHBUTTON      "&Browse...",IDC_PARENT_BROWSE,231,29,50,14,WS_DISABLED
 END
 
 
@@ -442,7 +445,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 281
         TOPMARGIN, 7
-        BOTTOMMARGIN, 80
+        BOTTOMMARGIN, 92
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -697,6 +700,10 @@ BEGIN
     IDS_SEND_GET_FILE_INFO_FAILED 
                             "GetFileInformationByHandle failed (error %u, %s)."
     IDS_SEND_NOT_READONLY   "Subvolume not readonly."
+    IDS_NOT_SUBVOL          "Directory was not a subvolume."
+    IDS_GET_FILE_IDS_FAILED "FSCTL_BTRFS_GET_FILE_IDS returned error %08x (%s)."
+    IDS_SHPARSEDISPLAYNAME_FAILED "SHParseDisplayName failed."
+    IDS_SHGETPATHFROMIDLIST_FAILED "SHGetPathFromIDList failed."
 END
 
 #endif    // English (U.K.) resources
