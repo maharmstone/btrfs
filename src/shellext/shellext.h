@@ -24,11 +24,13 @@
 
 #include <windows.h>
 #include <winternl.h>
+#include <string>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 
 #define STATUS_SUCCESS          (NTSTATUS)0x00000000
 #define STATUS_BUFFER_OVERFLOW  (NTSTATUS)0x80000005
+#define STATUS_END_OF_FILE      (NTSTATUS)0xc0000011
 #define STATUS_BUFFER_TOO_SMALL (NTSTATUS)0xc0000023
 #define STATUS_DEVICE_NOT_READY (NTSTATUS)0xc00000a3
 #define STATUS_CANNOT_DELETE    (NTSTATUS)0xc0000121
@@ -146,3 +148,5 @@ void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 void ShowStringError(HWND hwndDlg, int num, ...);
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
 void set_dpi_aware();
+std::wstring format_message(ULONG last_error);
+std::wstring format_ntstatus(NTSTATUS Status);

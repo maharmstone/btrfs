@@ -40,8 +40,6 @@
 
 BOOL have_sse42 = FALSE;
 
-typedef ULONG (WINAPI *_RtlNtStatusToDosError)(NTSTATUS Status);
-
 static const UINT32 crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
     0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
@@ -119,48 +117,6 @@ static UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen) {
 
         return rem;
     }
-}
-
-static std::wstring format_message(ULONG last_error) {
-    WCHAR* buf;
-    std::wstring s;
-
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                       last_error, 0, (WCHAR*)&buf, 0, NULL) == 0) {
-        return L"(error retrieving message)";
-    }
-
-    s = buf;
-
-    LocalFree(buf);
-
-    // remove trailing newline
-    while (s.length() > 0 && (s.substr(s.length() - 1, 1) == L"\r" || s.substr(s.length() - 1, 1) == L"\n"))
-        s = s.substr(0, s.length() - 1);
-
-    return s;
-}
-
-static std::wstring format_ntstatus(NTSTATUS Status) {
-    _RtlNtStatusToDosError RtlNtStatusToDosError;
-    std::wstring s;
-    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
-
-    if (!ntdll)
-        return L"(error loading ntdll.dll)";
-
-    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
-
-    if (!RtlNtStatusToDosError) {
-        FreeLibrary(ntdll);
-        return L"(error loading RtlNtStatusToDosError)";
-    }
-
-    s = format_message(RtlNtStatusToDosError(Status));
-
-    FreeLibrary(ntdll);
-
-    return s;
 }
 
 BOOL BtrfsRecv::find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {

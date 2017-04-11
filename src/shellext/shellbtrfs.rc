@@ -337,7 +337,7 @@ BEGIN
     EDITTEXT        IDC_STREAM_DEST,57,7,166,14,ES_AUTOHSCROLL
     LTEXT           "Stream:",IDC_STATIC,8,10,26,8
     PUSHBUTTON      "&Browse...",IDC_BROWSE,231,7,50,14
-    LTEXT           "Select a destination for the subvolume stream.",IDC_STATIC,7,32,274,22
+    LTEXT           "Select a destination for the subvolume stream.",IDC_SEND_STATUS,7,32,274,22
 END
 
 
@@ -686,6 +686,17 @@ BEGIN
     IDS_RECV_SUCCESS_PLURAL "Received %u subvolumes successfully."
     IDS_SEND_SUBVOL         "&Send subvolume..."
     IDS_SEND_SUBVOL_HELP    "Exports a subvolume so that it can be recreated on another volume."
+    IDS_SEND_CANT_OPEN_FILE "Error opening file %s (error %u, %s)."
+    IDS_SEND_CANT_OPEN_DIR  "Error opening directory %s (error %u, %s)."
+    IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED 
+                            "FSCTL_BTRFS_SEND_SUBVOL returned error %08x (%s)."
+    IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED 
+                            "FSCTL_BTRFS_READ_SEND_BUFFER returned error %08x (%s)."
+    IDS_SEND_SUCCESS        "Stream written successfully."
+    IDS_SEND_WRITEFILE_FAILED "Writing to file failed (error %u, %s)."
+    IDS_SEND_GET_FILE_INFO_FAILED 
+                            "GetFileInformationByHandle failed (error %u, %s)."
+    IDS_SEND_NOT_READONLY   "Subvolume not readonly."
 END
 
 #endif    // English (U.K.) resources

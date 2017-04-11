@@ -173,6 +173,14 @@
 #define IDS_RECV_SUCCESS_PLURAL         256
 #define IDS_SEND_SUBVOL                 257
 #define IDS_SEND_SUBVOL_HELP            258
+#define IDS_SEND_CANT_OPEN_FILE         259
+#define IDS_SEND_CANT_OPEN_DIR          260
+#define IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED 261
+#define IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED 262
+#define IDS_SEND_SUCCESS                263
+#define IDS_SEND_WRITEFILE_FAILED       264
+#define IDS_SEND_GET_FILE_INFO_FAILED   265
+#define IDS_SEND_NOT_READONLY           266
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -281,9 +289,9 @@
 #define IDC_READ_ERRS                   1065
 #define IDC_RECV_MSG                    1065
 #define IDC_FLUSH_ERRS                  1066
-#define IDC_EDIT1                       1066
 #define IDC_STREAM_DEST                 1066
 #define IDC_CORRUPTION_ERRS             1067
+#define IDC_SEND_STATUS                 1067
 #define IDC_GENERATION_ERRS             1068
 
 // Next default values for new objects
@@ -292,7 +300,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        172
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1067
+#define _APS_NEXT_CONTROL_VALUE         1068
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

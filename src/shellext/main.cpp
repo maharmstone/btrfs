@@ -232,6 +232,48 @@ void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
     }
 }
 
+std::wstring format_message(ULONG last_error) {
+    WCHAR* buf;
+    std::wstring s;
+
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+        last_error, 0, (WCHAR*)&buf, 0, NULL) == 0) {
+        return L"(error retrieving message)";
+    }
+
+    s = buf;
+
+    LocalFree(buf);
+
+    // remove trailing newline
+    while (s.length() > 0 && (s.substr(s.length() - 1, 1) == L"\r" || s.substr(s.length() - 1, 1) == L"\n"))
+        s = s.substr(0, s.length() - 1);
+
+    return s;
+}
+
+std::wstring format_ntstatus(NTSTATUS Status) {
+    _RtlNtStatusToDosError RtlNtStatusToDosError;
+    std::wstring s;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+
+    if (!ntdll)
+        return L"(error loading ntdll.dll)";
+
+    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+
+    if (!RtlNtStatusToDosError) {
+        FreeLibrary(ntdll);
+        return L"(error loading RtlNtStatusToDosError)";
+    }
+
+    s = format_message(RtlNtStatusToDosError(Status));
+
+    FreeLibrary(ntdll);
+
+    return s;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif

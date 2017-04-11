@@ -19,8 +19,114 @@
 #include "send.h"
 #include "resource.h"
 
+#define SEND_BUFFER_LEN 1048576
+
+void BtrfsSend::ShowSendError(UINT msg, ...) {
+    WCHAR s[1024], t[1024];
+    va_list ap;
+
+    if (!LoadStringW(module, msg, s, sizeof(s) / sizeof(WCHAR))) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    va_start(ap, msg);
+    vswprintf(t, sizeof(t) / sizeof(WCHAR), s, ap);
+
+    SetDlgItemTextW(hwnd, IDC_SEND_STATUS, t);
+
+    va_end(ap);
+}
+
+DWORD BtrfsSend::Thread() {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_send_subvol bss;
+    char* buf;
+    BY_HANDLE_FILE_INFORMATION fileinfo;
+
+    buf = (char*)malloc(SEND_BUFFER_LEN);
+
+    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (dirh == INVALID_HANDLE_VALUE) {
+        ShowSendError(IDS_SEND_CANT_OPEN_DIR, subvol.c_str(), GetLastError(), format_message(GetLastError()).c_str());
+        goto end3;
+    }
+
+    if (!GetFileInformationByHandle(dirh, &fileinfo)) {
+        ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        goto end2;
+    }
+
+    if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
+        ShowSendError(IDS_SEND_NOT_READONLY);
+        goto end2;
+    }
+
+    stream = CreateFileW(file, FILE_WRITE_DATA, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (stream == INVALID_HANDLE_VALUE) {
+        ShowSendError(IDS_SEND_CANT_OPEN_FILE, file, GetLastError(), format_message(GetLastError()).c_str());
+        goto end2;
+    }
+
+    bss.parent = NULL;
+
+    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
+
+    if (!NT_SUCCESS(Status)) {
+        ShowSendError(IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+        goto end;
+    }
+
+    do {
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, NULL, 0, buf, SEND_BUFFER_LEN);
+
+        if (NT_SUCCESS(Status)) {
+            if (!WriteFile(stream, buf, iosb.Information, NULL, NULL))
+                ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        }
+    } while (NT_SUCCESS(Status));
+
+    if (Status != STATUS_END_OF_FILE) {
+        ShowSendError(IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED, Status, format_ntstatus(Status).c_str());
+        goto end;
+    }
+
+    ShowSendError(IDS_SEND_SUCCESS);
+
+end:
+    CloseHandle(stream);
+    stream = INVALID_HANDLE_VALUE;
+
+end2:
+    CloseHandle(dirh);
+    dirh = INVALID_HANDLE_VALUE;
+
+end3:
+    free(buf);
+
+    started = FALSE;
+
+    EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
+    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), TRUE);
+    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), TRUE);
+
+    return 0;
+}
+
+static DWORD WINAPI send_thread(LPVOID lpParameter) {
+    BtrfsSend* bs = (BtrfsSend*)lpParameter;
+
+    return bs->Thread();
+}
+
 void BtrfsSend::StartSend(HWND hwnd) {
     if (started)
+        return;
+
+    GetDlgItemTextW(hwnd, IDC_STREAM_DEST, file, sizeof(file) / sizeof(WCHAR));
+
+    if (file[0] == 0)
         return;
 
     started = TRUE;
@@ -29,7 +135,10 @@ void BtrfsSend::StartSend(HWND hwnd) {
     EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), FALSE);
     EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), FALSE);
 
-    // FIXME - create thread etc.
+    thread = CreateThread(NULL, 0, send_thread, this, 0, NULL);
+
+    if (!thread)
+        ShowError(NULL, GetLastError());
 }
 
 void BtrfsSend::Browse(HWND hwnd) {
@@ -52,6 +161,10 @@ void BtrfsSend::Browse(HWND hwnd) {
 
 INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+        case WM_INITDIALOG:
+            this->hwnd = hwndDlg;
+        break;
+
         case WM_COMMAND:
             switch (HIWORD(wParam)) {
                 case BN_CLICKED:
@@ -61,6 +174,7 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                         return TRUE;
 
                         case IDCANCEL:
+                            // FIXME - cancel if running
                             EndDialog(hwndDlg, 1);
                         return TRUE;
 
@@ -92,6 +206,8 @@ static INT_PTR CALLBACK stub_SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 }
 
 void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
+    subvol = path;
+
     if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SEND_SUBVOL), hwnd, stub_SendDlgProc, (LPARAM)this) <= 0)
         ShowError(hwnd, GetLastError());
 }
