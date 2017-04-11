@@ -978,13 +978,6 @@ static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
     send_command_finish(context, pos);
 }
 
-static void send_end_command(send_context* context) {
-    ULONG pos = context->datalen;
-
-    send_command(context, BTRFS_SEND_CMD_END);
-    send_command_finish(context, pos);
-}
-
 static void send_chown_command(send_context* context, char* path, UINT64 uid, UINT64 gid) {
     ULONG pos = context->datalen;
 
@@ -3003,8 +2996,6 @@ static void send_thread(void* ctx) {
     } else
         ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-    send_end_command(context);
-
 //     send_write_data(context, context->data, context->datalen);
 
     KeClearEvent(&context->send->cleared_event);
@@ -3071,7 +3062,6 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     ccb* ccb;
     root* parsubvol = NULL;
     send_context* context;
-    btrfs_send_header* header;
     send_info* send;
     
     // FIXME - cloning
@@ -3169,11 +3159,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    header = (btrfs_send_header*)context->data;
-
-    RtlCopyMemory(header->magic, BTRFS_SEND_MAGIC, sizeof(BTRFS_SEND_MAGIC));
-    header->version = 1;
-    context->datalen = sizeof(btrfs_send_header);
+    context->datalen = 0;
 
     send_subvol_header(context, fcb->subvol, ccb->fileref); // FIXME - fileref needs some sort of lock here
 
