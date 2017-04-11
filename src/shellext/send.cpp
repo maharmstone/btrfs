@@ -43,6 +43,7 @@ DWORD BtrfsSend::Thread() {
     IO_STATUS_BLOCK iosb;
     btrfs_send_subvol bss;
     BY_HANDLE_FILE_INFORMATION fileinfo;
+    BOOL success = FALSE;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
@@ -92,8 +93,17 @@ DWORD BtrfsSend::Thread() {
     }
 
     ShowSendError(IDS_SEND_SUCCESS);
+    success = TRUE;
 
 end:
+    if (!success) {
+        FILE_DISPOSITION_INFO fdi;
+
+        fdi.DeleteFile = TRUE;
+
+        SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+    }
+
     CloseHandle(stream);
     stream = INVALID_HANDLE_VALUE;
 
