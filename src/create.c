@@ -1575,7 +1575,7 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, P
     
     dc->key.obj_id = inode;
     dc->key.obj_type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
-    dc->key.offset = 0;
+    dc->key.offset = subvol ? 0xffffffffffffffff : 0;
     dc->type = type;
     dc->fileref = NULL;
     
