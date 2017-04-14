@@ -56,7 +56,7 @@ PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT devobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
-LIST_ENTRY uid_map_list;
+LIST_ENTRY uid_map_list, gid_map_list;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
 UINT32 debug_log_level = 0;
@@ -275,6 +275,13 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
         ExFreePool(um);
     }
     
+    while (!IsListEmpty(&gid_map_list)) {
+        gid_map* gm = CONTAINING_RECORD(RemoveHeadList(&gid_map_list), gid_map, listentry);
+
+        ExFreePool(gm->sid);
+        ExFreePool(gm);
+    }
+
     // FIXME - free volumes and their devpaths
     
 #ifdef _DEBUG
@@ -4840,6 +4847,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     control_device_extension* cde;
     
     InitializeListHead(&uid_map_list);
+    InitializeListHead(&gid_map_list);
     
     log_device.Buffer = NULL;
     log_device.Length = log_device.MaximumLength = 0;

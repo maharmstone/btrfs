@@ -572,6 +572,95 @@ static void read_mappings(PUNICODE_STRING regpath) {
     ExFreePool(path);
 }
 
+static void read_group_mappings(PUNICODE_STRING regpath) {
+    WCHAR* path;
+    UNICODE_STRING us;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    ULONG dispos;
+    NTSTATUS Status;
+
+    const WCHAR mappings[] = L"\\GroupMappings";
+
+    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
+    if (!path) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    RtlCopyMemory(path, regpath->Buffer, regpath->Length);
+    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, wcslen(mappings) * sizeof(WCHAR));
+
+    us.Buffer = path;
+    us.Length = us.MaximumLength = regpath->Length + ((USHORT)wcslen(mappings) * sizeof(WCHAR));
+
+    InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    // FIXME - keep open and do notify for changes
+    Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwCreateKey returned %08x\n", Status);
+        ExFreePool(path);
+        return;
+    }
+
+    ExFreePool(path);
+
+    if (dispos == REG_OPENED_EXISTING_KEY) {
+        KEY_VALUE_FULL_INFORMATION* kvfi;
+        ULONG kvfilen, retlen, i;
+
+        kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) + 256;
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+
+        if (!kvfi) {
+            ERR("out of memory\n");
+            ZwClose(h);
+            return;
+        }
+
+        i = 0;
+        do {
+            Status = ZwEnumerateValueKey(h, i, KeyValueFullInformation, kvfi, kvfilen, &retlen);
+
+            if (NT_SUCCESS(Status) && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                UINT32 val = 0;
+
+                RtlCopyMemory(&val, (UINT8*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(UINT32)));
+
+                TRACE("entry %u = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
+
+                add_group_mapping(kvfi->Name, kvfi->NameLength / sizeof(WCHAR), val);
+            }
+
+            i = i + 1;
+        } while (Status != STATUS_NO_MORE_ENTRIES);
+    } else if (dispos == REG_CREATED_NEW_KEY) {
+        WCHAR* builtin_users = L"S-1-5-32-545";
+        UNICODE_STRING us2;
+        DWORD val;
+
+        // If we're creating the key for the first time, we add a default mapping of
+        // BUILTIN\Users to gid 100, which ought to correspond to the "users" group on Linux.
+
+        us2.Buffer = builtin_users;
+        us2.Length = us2.MaximumLength = wcslen(builtin_users) * sizeof(WCHAR);
+
+        val = 100;
+        Status = ZwSetValueKey(h, &us2, 0, REG_DWORD, &val, sizeof(DWORD));
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwSetValueKey returned %08x\n", Status);
+            ZwClose(h);
+            return;
+        }
+
+        add_group_mapping(us2.Buffer, us2.Length / sizeof(WCHAR), val);
+    }
+
+    ZwClose(h);
+}
+
 static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, ULONG size) {
     ULONG kvfilen;
     KEY_VALUE_FULL_INFORMATION* kvfi;
@@ -635,6 +724,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
     
     read_mappings(regpath);
+    read_group_mappings(regpath);
     
     InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
