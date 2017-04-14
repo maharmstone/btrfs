@@ -1224,12 +1224,12 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
     
-    if (bsii->mode_changed && !(ccb->access & WRITE_DAC)) {
+    if ((bsii->mode_changed || bsii->gid_changed) && !(ccb->access & WRITE_DAC)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
     
-    if ((bsii->uid_changed || bsii->gid_changed) && !(ccb->access & WRITE_OWNER)) {
+    if (bsii->uid_changed && !(ccb->access & WRITE_OWNER)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
