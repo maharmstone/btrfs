@@ -347,6 +347,78 @@ static __inline tree_data* next_item(tree* t, tree_data* td) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
+static NTSTATUS next_item2(device_extension* Vcb, tree* t, tree_data* td, traverse_ptr* tp) {
+    tree_data* td2 = next_item(t, td);
+    tree* t2;
+
+    if (td2) {
+        tp->tree = t;
+        tp->item = td2;
+        return STATUS_SUCCESS;
+    }
+
+    t2 = t;
+
+    do {
+        td2 = t2->paritem;
+        t2 = t2->parent;
+    } while (td2 && !next_item(t2, td2));
+
+    if (!td2)
+        return STATUS_NOT_FOUND;
+
+    td2 = next_item(t2, td2);
+
+    return find_item_to_level(Vcb, t2->root, tp, &td2->key, FALSE, t->header.level, NULL);
+}
+
+NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, BOOL* ended1, BOOL* ended2) {
+    NTSTATUS Status;
+    tree *t1, *t2;
+    tree_data *td1, *td2;
+    traverse_ptr tp3;
+
+    t1 = tp->tree;
+    t2 = tp2->tree;
+
+    while (t1 && t2 && t1->header.address == t2->header.address) {
+        td1 = t1->paritem;
+        td2 = t2->paritem;
+        t1 = t1->parent;
+        t2 = t2->parent;
+    }
+
+    Status = next_item2(Vcb, t1, td1, &tp3);
+    if (Status == STATUS_NOT_FOUND)
+        *ended1 = TRUE;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("next_item2 returned %08x\n", Status);
+        return Status;
+    } else {
+        Status = find_item(Vcb, t1->root, tp, &tp3.item->key, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    Status = next_item2(Vcb, t2, td2, &tp3);
+    if (Status == STATUS_NOT_FOUND)
+        *ended2 = TRUE;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("next_item2 returned %08x\n", Status);
+        return Status;
+    } else {
+        Status = find_item(Vcb, t2->root, tp2, &tp3.item->key, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     int cmp;
     tree_data *td, *lasttd;

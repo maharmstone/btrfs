@@ -2556,7 +2556,6 @@ static void send_thread(void* ctx) {
             goto end;
         }
 
-        // FIXME - skip blocks entirely if they are reflinked to the same place on disk
         do {
             traverse_ptr next_tp;
 
@@ -2600,6 +2599,14 @@ static void send_thread(void* ctx) {
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
+                }
+            }
+
+            while (!ended1 && !ended2 && tp.tree->header.address == tp2.tree->header.address) {
+                Status = skip_to_difference(context->Vcb, &tp, &tp2, &ended1, &ended2);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("skip_to_difference returned %08x\n", Status);
+                    goto end;
                 }
             }
 
