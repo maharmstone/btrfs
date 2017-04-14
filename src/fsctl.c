@@ -902,7 +902,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->inode_item.generation = Vcb->superblock.generation;
     rootfcb->inode_item.transid = Vcb->superblock.generation;
     rootfcb->inode_item.st_nlink = 1;
-    rootfcb->inode_item.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
+    rootfcb->inode_item.st_mode = __S_IFDIR | inherit_mode(fileref->fcb, TRUE);
     rootfcb->inode_item.st_atime = rootfcb->inode_item.st_ctime = rootfcb->inode_item.st_mtime = rootfcb->inode_item.otime = now;
     rootfcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     
@@ -3705,7 +3705,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.st_nlink = 1;
     fcb->inode_item.st_uid = UID_NOBODY;
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
-    fcb->inode_item.st_mode = parfcb->inode_item.st_mode & ~S_IFDIR; // use parent's permissions by default
+    fcb->inode_item.st_mode = inherit_mode(parfcb, bmn->type == BTRFS_TYPE_DIRECTORY);
 
     if (bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV)
         fcb->inode_item.st_rdev = (minor(bmn->st_rdev) & 0xFFFFF) | ((major(bmn->st_rdev) & 0xFFFFFFFFFFF) << 20);

@@ -1618,6 +1618,22 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, P
     return STATUS_SUCCESS;
 }
 
+UINT32 inherit_mode(fcb* parfcb, BOOL is_dir) {
+    UINT32 mode;
+
+    if (!parfcb)
+        return 0755;
+
+    mode = parfcb->inode_item.st_mode & ~S_IFDIR;
+    mode &= ~S_ISVTX; // clear sticky bit
+    mode &= ~S_ISUID; // clear setuid bit
+
+    if (!is_dir)
+        mode &= ~S_ISGID; // if not directory, clear setgid bit
+
+    return mode;
+}
+
 static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options,
                                      FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -1723,7 +1739,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->inode_item.st_nlink = 1;
 //     fcb->inode_item.st_uid = UID_NOBODY; // FIXME?
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
-    fcb->inode_item.st_mode = parfileref->fcb ? (parfileref->fcb->inode_item.st_mode & ~S_IFDIR) : 0755; // use parent's permissions by default
+    fcb->inode_item.st_mode = inherit_mode(parfileref->fcb, type == BTRFS_TYPE_DIRECTORY); // use parent's permissions by default
     fcb->inode_item.st_rdev = 0;
     fcb->inode_item.flags = 0;
     fcb->inode_item.sequence = 1;

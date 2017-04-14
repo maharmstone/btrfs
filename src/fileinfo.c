@@ -600,7 +600,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.st_nlink = 1;
-    fcb->inode_item.st_mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
+    fcb->inode_item.st_mode = __S_IFDIR | inherit_mode(parfcb, TRUE);
     fcb->inode_item.st_atime = fcb->inode_item.st_ctime = fcb->inode_item.st_mtime = fcb->inode_item.otime = now;
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
 
