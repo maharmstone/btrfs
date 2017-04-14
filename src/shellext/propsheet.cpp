@@ -654,6 +654,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     perms_changed = FALSE;
     uid_changed = FALSE;
     gid_changed = FALSE;
+    ro_changed = FALSE;
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
