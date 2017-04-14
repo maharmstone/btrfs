@@ -2960,7 +2960,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                     le = le->Flink;
                 }
                 
-                if (!done) {
+                if (!done && Vcb->vde) {
                     volume_device_extension* vde = Vcb->vde;
                     
                     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
