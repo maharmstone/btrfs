@@ -3613,6 +3613,11 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         return STATUS_ACCESS_DENIED;
     }
 
+    if (bmn->inode != 0) {
+        if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
+            return STATUS_PRIVILEGE_NOT_HELD;
+    }
+
     for (i = 0; i < bmn->namelen / sizeof(WCHAR); i++) {
         if (bmn->name[i] == 0 || bmn->name[i] == '/')
             return STATUS_OBJECT_NAME_INVALID;
