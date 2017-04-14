@@ -602,7 +602,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     fcb->inode_item.st_nlink = 1;
     fcb->inode_item.st_mode = __S_IFDIR | inherit_mode(parfcb, TRUE);
     fcb->inode_item.st_atime = fcb->inode_item.st_ctime = fcb->inode_item.st_mtime = fcb->inode_item.otime = now;
-    fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+    fcb->inode_item.st_gid = GID_NOBODY;
 
     fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, FALSE, TRUE, NULL);
 
@@ -629,6 +629,8 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
         fcb->inode_item.st_uid = sid_to_uid(owner);
         fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
     }
+
+    find_gid(fcb, parfcb, &subjcont);
 
     fcb->inode_item_changed = TRUE;
 
