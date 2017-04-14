@@ -115,7 +115,7 @@ static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObjec
             }
             
             DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
-            add_volume_device(sb, mountmgr, devpath, length, disk_num, part_num, devpath);
+            add_volume_device(sb, mountmgr, devpath, length, disk_num, part_num);
         }
     }
     

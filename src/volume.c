@@ -842,8 +842,7 @@ NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
     return STATUS_SUCCESS;
 }
 
-void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num,
-                       ULONG part_num, PUNICODE_STRING partname) {
+void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num, ULONG part_num) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UNICODE_STRING volname;
@@ -1039,7 +1038,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     
     if (vde->num_children == vde->children_loaded) {
         if (vde->num_children == 1) {
-            Status = remove_drive_letter(mountmgr, partname);
+            Status = remove_drive_letter(mountmgr, devpath);
             if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
                 WARN("remove_drive_letter returned %08x\n", Status);
             
