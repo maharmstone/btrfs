@@ -75,26 +75,42 @@ DWORD BtrfsSend::Thread() {
 
     Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
 
-    if (bss.parent)
-        CloseHandle(bss.parent);
-
     if (!NT_SUCCESS(Status)) {
         if (Status == (NTSTATUS)STATUS_INVALID_PARAMETER) {
             BY_HANDLE_FILE_INFORMATION fileinfo;
             if (!GetFileInformationByHandle(dirh, &fileinfo)) {
                 ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                if (bss.parent) CloseHandle(bss.parent);
                 goto end2;
             }
 
             if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
                 ShowSendError(IDS_SEND_NOT_READONLY);
+                if (bss.parent) CloseHandle(bss.parent);
                 goto end2;
+            }
+
+            if (bss.parent) {
+                if (!GetFileInformationByHandle(bss.parent, &fileinfo)) {
+                    ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                    CloseHandle(bss.parent);
+                    goto end2;
+                }
+
+                if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
+                    ShowSendError(IDS_SEND_PARENT_NOT_READONLY);
+                    CloseHandle(bss.parent);
+                    goto end2;
+                }
             }
         }
 
         ShowSendError(IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+        if (bss.parent) CloseHandle(bss.parent);
         goto end2;
     }
+
+    if (bss.parent) CloseHandle(bss.parent);
 
     stream = CreateFileW(file, FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (stream == INVALID_HANDLE_VALUE) {

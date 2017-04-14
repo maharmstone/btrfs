@@ -704,6 +704,7 @@ BEGIN
     IDS_GET_FILE_IDS_FAILED "FSCTL_BTRFS_GET_FILE_IDS returned error %08x (%s)."
     IDS_SHPARSEDISPLAYNAME_FAILED "SHParseDisplayName failed."
     IDS_SHGETPATHFROMIDLIST_FAILED "SHGetPathFromIDList failed."
+    IDS_SEND_PARENT_NOT_READONLY "Parent subvolume not readonly."
 END
 
 #endif    // English (U.K.) resources

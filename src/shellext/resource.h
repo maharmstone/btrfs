@@ -185,6 +185,7 @@
 #define IDS_GET_FILE_IDS_FAILED         268
 #define IDS_SHPARSEDISPLAYNAME_FAILED   269
 #define IDS_SHGETPATHFROMIDLIST_FAILED  270
+#define IDS_SEND_PARENT_NOT_READONLY    271
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
