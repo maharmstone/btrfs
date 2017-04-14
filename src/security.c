@@ -1058,6 +1058,74 @@ end:
     return Status;
 }
 
+static BOOL search_for_gid(fcb* fcb, PSID sid) {
+    LIST_ENTRY* le;
+
+    le = gid_map_list.Flink;
+    while (le != &gid_map_list) {
+        gid_map* gm = CONTAINING_RECORD(le, gid_map, listentry);
+
+        if (RtlEqualSid(sid, gm->sid)) {
+            fcb->inode_item.st_gid = gm->gid;
+            return TRUE;
+        }
+
+        le = le->Flink;
+    }
+
+    return FALSE;
+}
+
+static void find_gid(fcb* fcb, ACCESS_STATE* as) {
+    NTSTATUS Status;
+    TOKEN_OWNER* to;
+    TOKEN_PRIMARY_GROUP* tpg;
+    TOKEN_GROUPS* tg;
+
+    if (!as->SubjectSecurityContext.PrimaryToken)
+        return;
+
+    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenOwner, (void**)&to);
+    if (!NT_SUCCESS(Status))
+        ERR("SeQueryInformationToken returned %08x\n", Status);
+    else {
+        if (search_for_gid(fcb, to->Owner)) {
+            ExFreePool(to);
+            return;
+        }
+
+        ExFreePool(to);
+    }
+
+    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenPrimaryGroup, (void**)&tpg);
+    if (!NT_SUCCESS(Status))
+        ERR("SeQueryInformationToken returned %08x\n", Status);
+    else {
+        if (search_for_gid(fcb, tpg->PrimaryGroup)) {
+            ExFreePool(tpg);
+            return;
+        }
+
+        ExFreePool(tpg);
+    }
+
+    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenGroups, (void**)&tg);
+    if (!NT_SUCCESS(Status))
+        ERR("SeQueryInformationToken returned %08x\n", Status);
+    else {
+        ULONG i;
+
+        for (i = 0; i < tg->GroupCount; i++) {
+            if (search_for_gid(fcb, tg->Groups[i].Sid)) {
+                ExFreePool(tg);
+                return;
+            }
+        }
+
+        ExFreePool(tg);
+    }
+}
+
 NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
     NTSTATUS Status;
     PSID owner;
@@ -1079,5 +1147,8 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
+    if (!IsListEmpty(&gid_map_list))
+        find_gid(fcb, as);
+
     return STATUS_SUCCESS;
 }
