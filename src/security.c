@@ -1076,7 +1076,7 @@ static BOOL search_for_gid(fcb* fcb, PSID sid) {
     return FALSE;
 }
 
-static void find_gid(struct _fcb* fcb, struct _fcb* parfcb, ACCESS_STATE* as) {
+void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT subjcont) {
     NTSTATUS Status;
     TOKEN_OWNER* to;
     TOKEN_PRIMARY_GROUP* tpg;
@@ -1087,10 +1087,10 @@ static void find_gid(struct _fcb* fcb, struct _fcb* parfcb, ACCESS_STATE* as) {
         return;
     }
 
-    if (!as->SubjectSecurityContext.PrimaryToken || IsListEmpty(&gid_map_list))
+    if (!subjcont || !subjcont->PrimaryToken || IsListEmpty(&gid_map_list))
         return;
 
-    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenOwner, (void**)&to);
+    Status = SeQueryInformationToken(subjcont->PrimaryToken, TokenOwner, (void**)&to);
     if (!NT_SUCCESS(Status))
         ERR("SeQueryInformationToken returned %08x\n", Status);
     else {
@@ -1102,7 +1102,7 @@ static void find_gid(struct _fcb* fcb, struct _fcb* parfcb, ACCESS_STATE* as) {
         ExFreePool(to);
     }
 
-    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenPrimaryGroup, (void**)&tpg);
+    Status = SeQueryInformationToken(subjcont->PrimaryToken, TokenPrimaryGroup, (void**)&tpg);
     if (!NT_SUCCESS(Status))
         ERR("SeQueryInformationToken returned %08x\n", Status);
     else {
@@ -1114,7 +1114,7 @@ static void find_gid(struct _fcb* fcb, struct _fcb* parfcb, ACCESS_STATE* as) {
         ExFreePool(tpg);
     }
 
-    Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenGroups, (void**)&tg);
+    Status = SeQueryInformationToken(subjcont->PrimaryToken, TokenGroups, (void**)&tg);
     if (!NT_SUCCESS(Status))
         ERR("SeQueryInformationToken returned %08x\n", Status);
     else {
@@ -1152,7 +1152,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
-    find_gid(fcb, parfileref ? parfileref->fcb : NULL, as);
+    find_gid(fcb, parfileref ? parfileref->fcb : NULL, &as->SubjectSecurityContext);
 
     return STATUS_SUCCESS;
 }

@@ -904,7 +904,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->inode_item.st_nlink = 1;
     rootfcb->inode_item.st_mode = __S_IFDIR | inherit_mode(fileref->fcb, TRUE);
     rootfcb->inode_item.st_atime = rootfcb->inode_item.st_ctime = rootfcb->inode_item.st_mtime = rootfcb->inode_item.otime = now;
-    rootfcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+    rootfcb->inode_item.st_gid = GID_NOBODY;
     
     rootfcb->atts = get_file_attributes(Vcb, rootfcb->subvol, rootfcb->inode, rootfcb->type, FALSE, TRUE, Irp);
     
@@ -935,6 +935,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         rootfcb->inode_item.st_uid = sid_to_uid(owner);
         rootfcb->sd_dirty = rootfcb->inode_item.st_uid == UID_NOBODY;
     }
+
+    find_gid(rootfcb, fileref->fcb, &subjcont);
 
     rootfcb->inode_item_changed = TRUE;
 
