@@ -1203,16 +1203,18 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
     }
     
-    Status = reduce_tree_extent(Vcb, t->header.address, t, t->parent ? t->parent->header.tree_id : t->header.tree_id, t->header.level, Irp, rollback);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("reduce_tree_extent returned %08x\n", Status);
-        return Status;
+    if (rc > 1 || t->header.tree_id == t->root->id) {
+        Status = reduce_tree_extent(Vcb, t->header.address, t, t->parent ? t->parent->header.tree_id : t->header.tree_id, t->header.level, Irp, rollback);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("reduce_tree_extent returned %08x\n", Status);
+            return Status;
+        }
     }
     
     t->has_address = FALSE;
     
-    if (rc > 1 && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
+    if ((rc > 1 || t->header.tree_id != t->root->id) && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
         if (t->header.tree_id == t->root->id) {
             flags |= EXTENT_ITEM_SHARED_BACKREFS;
             update_extent_flags(Vcb, t->header.address, flags, Irp);
