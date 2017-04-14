@@ -133,6 +133,8 @@ DWORD BtrfsSend::Thread() {
         goto end;
     }
 
+    SetEndOfFile(stream);
+
     ShowSendError(IDS_SEND_SUCCESS);
     success = TRUE;
 
