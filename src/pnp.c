@@ -255,10 +255,9 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
-        volume_device_extension* vde;
-        
-        vde = Vcb->vde;
-        vde->mounted_device = NULL;
+        if (Vcb->vde)
+            Vcb->vde->mounted_device = NULL;
+
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;
         Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
