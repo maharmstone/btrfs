@@ -3706,7 +3706,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.block_group = 0;
     fcb->inode_item.st_nlink = 1;
     fcb->inode_item.st_uid = UID_NOBODY;
-    fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
+    fcb->inode_item.st_gid = GID_NOBODY;
     fcb->inode_item.st_mode = inherit_mode(parfcb, bmn->type == BTRFS_TYPE_DIRECTORY);
 
     if (bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV)
@@ -3794,6 +3794,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fcb->inode_item.st_uid = sid_to_uid(owner);
         fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
     }
+
+    find_gid(fcb, parfcb, &subjcont);
 
     fileref = create_fileref(Vcb);
     if (!fileref) {
