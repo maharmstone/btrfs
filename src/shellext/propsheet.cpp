@@ -541,7 +541,10 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
     
     if (uid_changed)
         perms |= WRITE_OWNER;
-    
+
+    if (mode_set & S_ISUID && (((min_mode & S_ISUID) != (max_mode & S_ISUID)) || ((min_mode & S_ISUID) != (mode & S_ISUID))))
+        perms |= WRITE_OWNER;
+
     h = CreateFileW(fn.c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 
@@ -975,8 +978,10 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     if (!can_change_nocow)
         EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
     
-    if (!can_change_owner)
+    if (!can_change_owner) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SETUID), 0);
+    }
     
     if (!can_change_perms) {
         i = 0;
