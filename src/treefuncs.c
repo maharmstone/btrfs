@@ -376,7 +376,6 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
     NTSTATUS Status;
     tree *t1, *t2;
     tree_data *td1, *td2;
-    traverse_ptr tp3;
 
     t1 = tp->tree;
     t2 = tp2->tree;
@@ -388,35 +387,64 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
         t2 = t2->parent;
     }
 
-    Status = next_item2(Vcb, t1, td1, &tp3);
-    if (Status == STATUS_NOT_FOUND)
-        *ended1 = TRUE;
-    else if (!NT_SUCCESS(Status)) {
-        ERR("next_item2 returned %08x\n", Status);
-        return Status;
-    } else {
-        Status = find_item(Vcb, t1->root, tp, &tp3.item->key, FALSE, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
+    while (TRUE) {
+        traverse_ptr tp3, tp4;
+
+        Status = next_item2(Vcb, t1, td1, &tp3);
+        if (Status == STATUS_NOT_FOUND)
+            *ended1 = TRUE;
+        else if (!NT_SUCCESS(Status)) {
+            ERR("next_item2 returned %08x\n", Status);
             return Status;
         }
-    }
 
-    Status = next_item2(Vcb, t2, td2, &tp3);
-    if (Status == STATUS_NOT_FOUND)
-        *ended2 = TRUE;
-    else if (!NT_SUCCESS(Status)) {
-        ERR("next_item2 returned %08x\n", Status);
-        return Status;
-    } else {
-        Status = find_item(Vcb, t2->root, tp2, &tp3.item->key, FALSE, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
+        Status = next_item2(Vcb, t2, td2, &tp4);
+        if (Status == STATUS_NOT_FOUND)
+            *ended2 = TRUE;
+        else if (!NT_SUCCESS(Status)) {
+            ERR("next_item2 returned %08x\n", Status);
             return Status;
         }
-    }
 
-    return STATUS_SUCCESS;
+        if (*ended1 || *ended2) {
+            if (!*ended1) {
+                Status = find_item(Vcb, t1->root, tp, &tp3.item->key, FALSE, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    return Status;
+                }
+            } else if (!*ended2) {
+                Status = find_item(Vcb, t2->root, tp2, &tp4.item->key, FALSE, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("find_item returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            return STATUS_SUCCESS;
+        }
+
+        if (tp3.tree->header.address != tp4.tree->header.address) {
+            Status = find_item(Vcb, t1->root, tp, &tp3.item->key, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                return Status;
+            }
+
+            Status = find_item(Vcb, t2->root, tp2, &tp4.item->key, FALSE, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                return Status;
+            }
+
+            return STATUS_SUCCESS;
+        }
+
+        t1 = tp3.tree;
+        td1 = tp3.item;
+        t2 = tp4.tree;
+        td2 = tp4.item;
+    }
 }
 
 static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
