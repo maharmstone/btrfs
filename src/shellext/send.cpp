@@ -359,13 +359,37 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
 }
 
 void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {   
+    HANDLE token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
     BtrfsSend* bs;
 
     set_dpi_aware();
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
 
     bs = new BtrfsSend;
 
     bs->Open(hwnd, lpszCmdLine);
 
     delete bs;
+
+    CloseHandle(token);
 }
