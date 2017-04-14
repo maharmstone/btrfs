@@ -1076,13 +1076,18 @@ static BOOL search_for_gid(fcb* fcb, PSID sid) {
     return FALSE;
 }
 
-static void find_gid(fcb* fcb, ACCESS_STATE* as) {
+static void find_gid(struct _fcb* fcb, struct _fcb* parfcb, ACCESS_STATE* as) {
     NTSTATUS Status;
     TOKEN_OWNER* to;
     TOKEN_PRIMARY_GROUP* tpg;
     TOKEN_GROUPS* tg;
 
-    if (!as->SubjectSecurityContext.PrimaryToken)
+    if (parfcb && parfcb->inode_item.st_mode & S_ISGID) {
+        fcb->inode_item.st_gid = parfcb->inode_item.st_gid;
+        return;
+    }
+
+    if (!as->SubjectSecurityContext.PrimaryToken || IsListEmpty(&gid_map_list))
         return;
 
     Status = SeQueryInformationToken(as->SubjectSecurityContext.PrimaryToken, TokenOwner, (void**)&to);
@@ -1147,8 +1152,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
         fcb->inode_item.st_uid = sid_to_uid(owner);
     }
     
-    if (!IsListEmpty(&gid_map_list))
-        find_gid(fcb, as);
+    find_gid(fcb, parfileref ? parfileref->fcb : NULL, as);
 
     return STATUS_SUCCESS;
 }
