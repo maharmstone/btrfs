@@ -6766,18 +6766,21 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
     }
     
     vde = Vcb->vde;
-    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
-        
-    le = vde->children.Flink;
-    
-    while (le != &vde->children) {
-        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
-        
-        vc->generation = Vcb->superblock.generation;
-        le = le->Flink;
+
+    if (vde) {
+        ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+
+        le = vde->children.Flink;
+
+        while (le != &vde->children) {
+            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+
+            vc->generation = Vcb->superblock.generation;
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&vde->child_lock);
     }
-    
-    ExReleaseResourceLite(&vde->child_lock);
     
     clean_space_cache(Vcb);
     

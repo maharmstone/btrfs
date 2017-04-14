@@ -3630,7 +3630,7 @@ NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_na
     return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject) {
+static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -3665,18 +3665,23 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject) {
         goto end;
     }
     
+    pnp_name.Buffer = NULL;
+
     Status = get_device_pnp_name(DeviceObject, &pnp_name, &guid);
     if (!NT_SUCCESS(Status)) {
-        ERR("get_device_pnp_name returned %08x\n", Status);
-        goto end;
+        WARN("get_device_pnp_name returned %08x\n", Status);
+        pnp_name.Length = 0;
     }
-    
+
     if (pnp_name.Length == 0)
-        goto end;
-    
-    volume_arrival(drvobj, &pnp_name);
-    
-    ExFreePool(pnp_name.Buffer);
+        *no_pnp = TRUE;
+    else
+        volume_arrival(drvobj, &pnp_name);
+
+    if (pnp_name.Buffer)
+        ExFreePool(pnp_name.Buffer);
+
+    Status = STATUS_SUCCESS;
 
 end:
     ExFreePool(sb);
@@ -3727,7 +3732,7 @@ static BOOL still_has_superblock(PDEVICE_OBJECT device) {
 static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
-    PDEVICE_OBJECT DeviceToMount;
+    PDEVICE_OBJECT DeviceToMount, readobj;
     NTSTATUS Status;
     device_extension* Vcb = NULL;
     LIST_ENTRY *le, batchlist;
@@ -3739,6 +3744,8 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device* dev;
     volume_device_extension* vde;
     volume_child* vc;
+    BOOL no_pnp = FALSE;
+    UINT64 readobjsize;
     
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
@@ -3751,61 +3758,85 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
     
     if (!is_btrfs_volume(DeviceToMount)) {
-        Status = check_mount_device(DeviceToMount);
+        Status = check_mount_device(DeviceToMount, &no_pnp);
         if (!NT_SUCCESS(Status))
             WARN("check_mount_device returned %08x\n", Status);
 
-        Status = STATUS_UNRECOGNIZED_VOLUME;
-        goto exit2;
+        if (!no_pnp) {
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+            goto exit2;
+        }
+
+        vde = NULL;
+    } else {
+        vde = DeviceToMount->DeviceExtension;
+
+        if (!vde || vde->type != VCB_TYPE_VOLUME) {
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+            goto exit2;
+        }
     }
-    
-    vde = DeviceToMount->DeviceExtension;
-    
-    if (!vde || vde->type != VCB_TYPE_VOLUME) {
-        Status = STATUS_UNRECOGNIZED_VOLUME;
-        goto exit2;
-    }
-    
-    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
-    
-    le = vde->children.Flink;
-    while (le != &vde->children) {
-        LIST_ENTRY* le2 = le->Flink;
+
+    if (vde) {
+        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
         
+        le = vde->children.Flink;
+        while (le != &vde->children) {
+            LIST_ENTRY* le2 = le->Flink;
+            
+            vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+            
+            if (!still_has_superblock(vc->devobj)) {
+                remove_volume_child(vde, vc, TRUE);
+
+                if (vde->num_children == 0) {
+                    ERR("error - number of devices is zero\n");
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto exit2;
+                }
+
+                if (vde->children_loaded == 0) { // just removed last device
+                    Status = STATUS_DEVICE_NOT_READY;
+                    goto exit2;
+                }
+            }
+
+            le = le2;
+        }
+
+        if (vde->children_loaded < vde->num_children) { // devices missing
+            Status = STATUS_DEVICE_NOT_READY;
+            goto exit;
+        }
+
+        if (vde->num_children == 0) {
+            ERR("error - number of devices is zero\n");
+            Status = STATUS_INTERNAL_ERROR;
+            goto exit;
+        }
+
+        ExConvertExclusiveToSharedLite(&vde->child_lock);
+
         vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
-        
-        if (!still_has_superblock(vc->devobj)) {
-            remove_volume_child(vde, vc, TRUE);
-            
-            if (vde->num_children == 0) {
-                ERR("error - number of devices is zero\n");
-                Status = STATUS_INTERNAL_ERROR;
-                goto exit2;
-            }
-            
-            if (vde->children_loaded == 0) { // just removed last device
-                Status = STATUS_DEVICE_NOT_READY;
-                goto exit2;
-            }
+
+        readobj = vc->devobj;
+        readobjsize = vc->size;
+    } else {
+        GET_LENGTH_INFORMATION gli;
+
+        vc = NULL;
+        readobj = DeviceToMount;
+
+        Status = dev_ioctl(readobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                           &gli, sizeof(gli), TRUE, NULL);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("error reading length information: %08x\n", Status);
+            goto exit;
         }
         
-        le = le2;
+        readobjsize = gli.Length.QuadPart;
     }
-    
-    if (vde->children_loaded < vde->num_children) { // devices missing
-        Status = STATUS_DEVICE_NOT_READY;
-        goto exit;
-    }
-    
-    if (vde->num_children == 0) {
-        ERR("error - number of devices is zero\n");
-        Status = STATUS_INTERNAL_ERROR;
-        goto exit;
-    }
-    
-    ExConvertExclusiveToSharedLite(&vde->child_lock);
-    
-    vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
 
     Status = IoCreateDevice(drvobj, sizeof(device_extension), NULL, FILE_DEVICE_DISK_FILE_SYSTEM, 0, FALSE, &NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
@@ -3841,8 +3872,14 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     DeviceToMount->Flags |= DO_DIRECT_IO;
 
-    Status = read_superblock(Vcb, vc->devobj, vc->size);
+    Status = read_superblock(Vcb, readobj, readobjsize);
     if (!NT_SUCCESS(Status)) {
+        Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit;
+    }
+
+    if (!vde && Vcb->superblock.num_devices > 1) {
+        ERR("cannot mount multi-device FS with non-PNP device\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
@@ -3885,14 +3922,14 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
     
-    dev->devobj = vc->devobj;
+    dev->devobj = readobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
     
-    if (dev->devitem.num_bytes > vc->size) {
+    if (dev->devitem.num_bytes > readobjsize) {
         WARN("device %llx: DEV_ITEM says %llx bytes, but Windows only reports %llx\n", dev->devitem.dev_id,
-                dev->devitem.num_bytes, vc->size);
+                dev->devitem.num_bytes, readobjsize);
 
-        dev->devitem.num_bytes = vc->size;
+        dev->devitem.num_bytes = readobjsize;
     }
     
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
@@ -4225,12 +4262,14 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     
     Status = STATUS_SUCCESS;
     
-    vde->mounted_device = NewDeviceObject;
+    if (vde)
+        vde->mounted_device = NewDeviceObject;
     
     ExInitializeResourceLite(&Vcb->send_load_lock);
 
 exit:
-    ExReleaseResourceLite(&vde->child_lock);
+    if (vde)
+        ExReleaseResourceLite(&vde->child_lock);
 
 exit2:
     if (Vcb) {
