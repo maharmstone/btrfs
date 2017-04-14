@@ -230,15 +230,14 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
     }
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
-        volume_device_extension* vde;
-        
         Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
         if (!NT_SUCCESS(Status)) {
             WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
         }
-        
-        vde = Vcb->vde;
-        vde->mounted_device = NULL;
+
+        if (Vcb->vde)
+            Vcb->vde->mounted_device = NULL;
+
         Vcb->removing = TRUE;
         Vcb->Vpb->Flags &= ~VPB_MOUNTED;
         Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
