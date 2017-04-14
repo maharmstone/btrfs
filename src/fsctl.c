@@ -5075,7 +5075,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
 
         case FSCTL_BTRFS_READ_SEND_BUFFER:
             Status = read_send_buffer(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength,
-                                      &Irp->IoStatus.Information);
+                                      &Irp->IoStatus.Information, Irp->RequestorMode);
         break;
 
         default:

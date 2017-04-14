@@ -1228,7 +1228,7 @@ NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 
 // in send.c
 NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp);
-NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen);
+NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((UINT64)((minor) & ~0xFF)) << 12) | (((UINT64)((major) & ~0xFFF)) << 32))

@@ -3213,13 +3213,16 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     return STATUS_SUCCESS;
 }
 
-NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen) {
+NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode) {
     ccb* ccb;
     send_context* context;
 
     ccb = FileObject ? FileObject->FsContext2 : NULL;
     if (!ccb)
         return STATUS_INVALID_PARAMETER;
+
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
+        return STATUS_PRIVILEGE_NOT_HELD;
 
     ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
 
@@ -3229,8 +3232,6 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
     }
 
     context = (send_context*)ccb->send->context;
-
-    // FIXME - check for volume privileges
 
     KeWaitForSingleObject(&context->buffer_event, Executive, KernelMode, FALSE, NULL);
 
