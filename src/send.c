@@ -3076,7 +3076,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
 
-    // FIXME - check user has volume privilege
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
+        return STATUS_PRIVILEGE_NOT_HELD;
 
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
