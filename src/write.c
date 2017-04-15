@@ -2951,11 +2951,9 @@ NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsiz
     while (le != &fcb->extents) {
         extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
         
-        if (!oldext->ignore) {
-            if (oldext->offset > offset) {
-                InsertHeadList(le->Blink, &ext->list_entry);
-                goto end;
-            }
+        if (oldext->offset >= offset) {
+            InsertHeadList(le->Blink, &ext->list_entry);
+            goto end;
         }
         
         le = le->Flink;
