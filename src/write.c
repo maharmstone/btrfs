@@ -3788,7 +3788,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
         newext2->csum = NULL;
-        InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+        add_extent(fcb, newext1, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -3883,7 +3883,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
-        InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+        add_extent(fcb, newext1, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -3993,7 +3993,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
-        InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+        add_extent(fcb, newext1, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -4003,7 +4003,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->ignore = FALSE;
         newext3->inserted = TRUE;
         newext3->csum = NULL;
-        InsertHeadList(&newext2->list_entry, &newext3->list_entry);
+        add_extent(fcb, newext2, newext3);
         
         add_insert_extent_rollback(rollback, fcb, newext3);
         
