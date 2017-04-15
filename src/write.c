@@ -2456,6 +2456,23 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
 }
 
+static void add_extent(fcb* fcb, extent* prevext, extent* newext) {
+    LIST_ENTRY* le = prevext->list_entry.Flink;
+
+    while (le != &fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+        if (ext->offset >= newext->offset) {
+            InsertHeadList(ext->list_entry.Blink, &newext->list_entry);
+            return;
+        }
+
+        le = le->Flink;
+    }
+
+    InsertTailList(&fcb->extents, &newext->list_entry);
+}
+
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 end_data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2510,7 +2527,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         newext->inserted = TRUE;
                         newext->csum = NULL;
-                        InsertHeadList(&ext->list_entry, &newext->list_entry);
+                        add_extent(fcb, ext, newext);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                         
@@ -2606,7 +2623,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext2->csum = NULL;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                        InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                        add_extent(fcb, newext1, newext2);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                         
@@ -2697,7 +2714,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         } else
                             newext->csum = NULL;
                         
-                        InsertHeadList(&ext->list_entry, &newext->list_entry);
+                        add_extent(fcb, ext, newext);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
@@ -2893,7 +2910,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         }
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                        InsertHeadList(&newext1->list_entry, &newext2->list_entry);
+                        add_extent(fcb, newext1, newext2);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                     }
