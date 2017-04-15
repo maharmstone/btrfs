@@ -5200,7 +5200,10 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     Status = STATUS_SUCCESS;
     
 end:
-    fcb->dirty = FALSE;
+    if (fcb->dirty) {
+        fcb->dirty = FALSE;
+        RemoveEntryList(&fcb->list_entry_dirty);
+    }
     
     return Status;
 }
@@ -6513,8 +6516,6 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         LIST_ENTRY* le2 = le->Flink;
         
         if (fcb->deleted) {
-            RemoveEntryList(le);
-            
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
             Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(fcb->Header.Resource);
@@ -6546,8 +6547,6 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         LIST_ENTRY* le2 = le->Flink;
         
         if (fcb->subvol != Vcb->root_root) {
-            RemoveEntryList(le);
-            
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
             Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(fcb->Header.Resource);
