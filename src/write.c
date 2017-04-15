@@ -2456,8 +2456,8 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
 }
 
-static void add_extent(fcb* fcb, extent* prevext, extent* newext) {
-    LIST_ENTRY* le = prevext->list_entry.Flink;
+void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext) {
+    LIST_ENTRY* le = prevextle->Flink;
 
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -2527,7 +2527,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext->ignore = FALSE;
                         newext->inserted = TRUE;
                         newext->csum = NULL;
-                        add_extent(fcb, ext, newext);
+                        add_extent(fcb, &ext->list_entry, newext);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                         
@@ -2623,7 +2623,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         newext2->csum = NULL;
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                        add_extent(fcb, newext1, newext2);
+                        add_extent(fcb, &newext1->list_entry, newext2);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                         
@@ -2714,7 +2714,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         } else
                             newext->csum = NULL;
                         
-                        add_extent(fcb, ext, newext);
+                        add_extent(fcb, &ext->list_entry, newext);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
@@ -2910,7 +2910,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                         }
                         
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
-                        add_extent(fcb, newext1, newext2);
+                        add_extent(fcb, &newext1->list_entry, newext2);
                         
                         remove_fcb_extent(fcb, ext, rollback);
                     }
@@ -3788,7 +3788,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
         newext2->csum = NULL;
-        add_extent(fcb, newext1, newext2);
+        add_extent(fcb, &newext1->list_entry, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -3883,7 +3883,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
-        add_extent(fcb, newext1, newext2);
+        add_extent(fcb, &newext1->list_entry, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -3993,7 +3993,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext2->unique = ext->unique;
         newext2->ignore = FALSE;
         newext2->inserted = TRUE;
-        add_extent(fcb, newext1, newext2);
+        add_extent(fcb, &newext1->list_entry, newext2);
         
         add_insert_extent_rollback(rollback, fcb, newext2);
         
@@ -4003,7 +4003,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext3->ignore = FALSE;
         newext3->inserted = TRUE;
         newext3->csum = NULL;
-        add_extent(fcb, newext2, newext3);
+        add_extent(fcb, &newext2->list_entry, newext3);
         
         add_insert_extent_rollback(rollback, fcb, newext3);
         

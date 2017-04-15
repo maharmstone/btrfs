@@ -3278,6 +3278,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         
         ExFreePool(data);
     } else {
+        LIST_ENTRY* lastextle;
+
         le = sourcefcb->extents.Flink;
         while (le != &sourcefcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -3472,28 +3474,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             le = le->Flink;
         }
         
-        if (!IsListEmpty(&newexts)) {
-            LIST_ENTRY* lastextle = NULL;
-            
-            le = fcb->extents.Flink;
-            while (le != &fcb->extents) {
-                extent* oldext = CONTAINING_RECORD(le, extent, list_entry);
-                
-                if (oldext->offset > ded->TargetFileOffset.QuadPart) {
-                    lastextle = oldext->list_entry.Blink;
-                    break;
-                }
-                
-                le = le->Flink;
-            }
-            
-            if (!lastextle)
-                lastextle = fcb->extents.Blink;
-            
-            newexts.Blink->Flink = lastextle->Flink;
-            lastextle->Flink->Blink = newexts.Blink;
-            newexts.Flink->Blink = lastextle;
-            lastextle->Flink = newexts.Flink;
+        lastextle = &fcb->extents;
+        while (!IsListEmpty(&newexts)) {
+            extent* ext = CONTAINING_RECORD(RemoveHeadList(&newexts), extent, list_entry);
+
+            add_extent(fcb, lastextle, ext);
+            lastextle = &ext->list_entry;
         }
     }
 
