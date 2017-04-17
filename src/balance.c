@@ -2683,6 +2683,17 @@ static void balance_thread(void* context) {
             Vcb->balance.total_chunks++;
         }
         
+        if (!c->cache_loaded) {
+            Status = load_cache_chunk(Vcb, c, NULL);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("load_cache_chunk returned %08x\n", Status);
+                Vcb->balance.status = Status;
+                ExReleaseResourceLite(&c->lock);
+                goto end;
+            }
+        }
+
         ExReleaseResourceLite(&c->lock);
         
         le = le->Flink;
@@ -2701,21 +2712,6 @@ static void balance_thread(void* context) {
         if (c->chunk_item->type & BLOCK_FLAG_DATA) {
             NTSTATUS Status;
             BOOL changed;
-            
-            if (!c->cache_loaded) {
-                ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-                
-                Status = load_cache_chunk(Vcb, c, NULL);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("load_cache_chunk returned %08x\n", Status);
-                    Vcb->balance.status = Status;
-                    ExReleaseResourceLite(&c->lock);
-                    goto end;
-                }
-                
-                ExReleaseResourceLite(&c->lock);
-            }
             
             do {
                 changed = FALSE;
@@ -2773,21 +2769,6 @@ static void balance_thread(void* context) {
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         
         if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
-            if (!c->cache_loaded) {
-                ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-                
-                Status = load_cache_chunk(Vcb, c, NULL);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("load_cache_chunk returned %08x\n", Status);
-                    Vcb->balance.status = Status;
-                    ExReleaseResourceLite(&c->lock);
-                    goto end;
-                }
-                
-                ExReleaseResourceLite(&c->lock);
-            }
-            
             do {
                 FsRtlEnterFileSystem();
                 
