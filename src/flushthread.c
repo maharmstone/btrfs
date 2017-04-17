@@ -1363,6 +1363,28 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
         if (t->write && !t->has_new_address) {
             chunk* c;
             
+            if (t->has_address) {
+                c = get_chunk_from_address(Vcb, t->header.address);
+
+                if (c) {
+                    if (!c->cache_loaded) {
+                        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+                        if (!c->cache_loaded) {
+                            Status = load_cache_chunk(Vcb, c, NULL);
+
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("load_cache_chunk returned %08x\n", Status);
+                                ExReleaseResourceLite(&c->lock);
+                                return Status;
+                            }
+                        }
+
+                        ExReleaseResourceLite(&c->lock);
+                    }
+                }
+            }
+
             Status = get_tree_new_address(Vcb, t, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("get_tree_new_address returned %08x\n", Status);
