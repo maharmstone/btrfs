@@ -221,6 +221,44 @@ static NTSTATUS add_tree_block_extent_ref(LIST_ENTRY* extent_refs, UINT64 root) 
     return STATUS_SUCCESS;
 }
 
+static void sort_extent_refs(LIST_ENTRY* extent_refs) {
+    LIST_ENTRY newlist;
+
+    if (IsListEmpty(extent_refs))
+        return;
+
+    // insertion sort
+
+    InitializeListHead(&newlist);
+
+    while (!IsListEmpty(extent_refs)) {
+        extent_ref* er = CONTAINING_RECORD(RemoveHeadList(extent_refs), extent_ref, list_entry);
+        LIST_ENTRY* le;
+        BOOL inserted = FALSE;
+
+        le = newlist.Flink;
+        while (le != &newlist) {
+            extent_ref* er2 = CONTAINING_RECORD(le, extent_ref, list_entry);
+
+            if (er->type < er2->type || (er->type == er2->type && er->hash > er2->hash)) {
+                InsertHeadList(le->Blink, &er->list_entry);
+                inserted = TRUE;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        if (!inserted)
+            InsertTailList(&newlist, &er->list_entry);
+    }
+
+    newlist.Flink->Blink = extent_refs;
+    newlist.Blink->Flink = extent_refs;
+    extent_refs->Flink = newlist.Flink;
+    extent_refs->Blink = newlist.Blink;
+}
+
 static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 flags, LIST_ENTRY* extent_refs,
                                       KEY* firstitem, UINT8 level, PIRP Irp) {
     NTSTATUS Status;
@@ -306,7 +344,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
     } else
         siptr = (UINT8*)&ei[1];
     
-    // Do we need to sort the inline extent refs? The Linux driver doesn't seem to bother.
+    sort_extent_refs(extent_refs);
     
     le = extent_refs->Flink;
     while (le != extent_refs) {
