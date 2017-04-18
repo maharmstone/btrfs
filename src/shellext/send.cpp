@@ -73,6 +73,8 @@ DWORD BtrfsSend::Thread() {
     } else
         bss.parent = NULL;
 
+    bss.num_clones = 0;
+
     Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
 
     if (!NT_SUCCESS(Status)) {
