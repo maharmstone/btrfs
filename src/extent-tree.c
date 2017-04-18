@@ -693,6 +693,9 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             ptr += sizeof(EXTENT_ITEM2);
         }
 
+        // Confusingly, it appears that references are sorted forward by type (i.e. EXTENT_DATA_REFs before
+        // SHARED_DATA_REFs), but then backwards by hash...
+
         while (len > 0) {
             UINT8 secttype = *ptr;
             ULONG sectlen = get_extent_data_len(secttype);
