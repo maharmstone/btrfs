@@ -2195,13 +2195,9 @@ UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, U
         return 0;
     }
     
-    if (!keycmp(searchkey, tp.item->key)) {    
-        if (tp.item->size < sizeof(SHARED_BLOCK_REF))
-            ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(SHARED_BLOCK_REF));
-        else
-            return 1;
-    }
-    
+    if (!keycmp(searchkey, tp.item->key))
+        return 1;
+
     return 0;
 }
 
