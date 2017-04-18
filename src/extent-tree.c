@@ -377,20 +377,35 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
         
         while (le != extent_refs) {
             extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-            ULONG len = get_extent_data_len(er->type);
+            ULONG len;
             UINT8* data;
             
-            if (len > 0) {
+            if (er->type == TYPE_EXTENT_DATA_REF) {
+                len = sizeof(EXTENT_DATA_REF);
+
                 data = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-                
+
                 if (!data) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-                
+
                 RtlCopyMemory(data, &er->edr, len);
-            } else
+            } else if (er->type == TYPE_SHARED_DATA_REF) {
+                len = sizeof(UINT32);
+
+                data = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
+
+                if (!data) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                *((UINT32*)data) = er->sdr.count;
+            } else {
+                len = 0;
                 data = NULL;
+            }
             
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, er->type, er->hash, data, len, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
