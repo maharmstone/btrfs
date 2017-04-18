@@ -3203,6 +3203,11 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
                 return Status;
             }
 
+            if (fileobj->DeviceObject != FileObject->DeviceObject) {
+                ObDereferenceObject(fileobj);
+                return STATUS_INVALID_PARAMETER;
+            }
+
             parfcb = fileobj->FsContext;
 
             if (!parfcb || parfcb == Vcb->root_fileref->fcb || parfcb == Vcb->volume_fcb || parfcb->inode != SUBVOL_ROOT_INODE) {
@@ -3253,18 +3258,27 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
                         return Status;
                     }
 
+                    if (fileobj->DeviceObject != FileObject->DeviceObject) {
+                        ObDereferenceObject(fileobj);
+                        ExFreePool(clones);
+                        return STATUS_INVALID_PARAMETER;
+                    }
+
                     clonefcb = fileobj->FsContext;
 
                     if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != SUBVOL_ROOT_INODE) {
                         ObDereferenceObject(fileobj);
+                        ExFreePool(clones);
                         return STATUS_INVALID_PARAMETER;
                     }
 
                     clones[i] = clonefcb->subvol;
                     ObDereferenceObject(fileobj);
 
-                    if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY))
+                    if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+                        ExFreePool(clones);
                         return STATUS_INVALID_PARAMETER;
+                    }
                 }
             }
         }
