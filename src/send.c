@@ -70,6 +70,8 @@ typedef struct {
     root* parent;
     UINT8* data;
     ULONG datalen;
+    ULONG num_clones;
+    root** clones;
     LIST_ENTRY orphans;
     LIST_ENTRY dirs;
     LIST_ENTRY pending_rmdirs;
@@ -2588,6 +2590,14 @@ static void send_thread(void* ctx) {
     if (context->parent)
         InterlockedIncrement(&context->parent->send_ops);
 
+    if (context->clones) {
+        ULONG i;
+
+        for (i = 0; i < context->num_clones; i++) {
+            InterlockedIncrement(&context->clones[i]->send_ops);
+        }
+    }
+
     ExAcquireResourceExclusiveLite(&context->Vcb->tree_lock, TRUE);
 
     flush_subvol_fcbs(context->root);
@@ -3127,6 +3137,16 @@ end:
 
     ExReleaseResourceLite(&context->Vcb->send_load_lock);
 
+    if (context->clones) {
+        ULONG i;
+
+        for (i = 0; i < context->num_clones; i++) {
+            InterlockedDecrement(&context->clones[i]->send_ops);
+        }
+
+        ExFreePool(context->clones);
+    }
+
     ExFreePool(context);
 
     PsTerminateSystemThread(STATUS_SUCCESS);
@@ -3139,6 +3159,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     root* parsubvol = NULL;
     send_context* context;
     send_info* send;
+    ULONG num_clones = 0;
+    root** clones = NULL;
     
     // FIXME - cloning
 
@@ -3160,7 +3182,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     if (data) {
         btrfs_send_subvol* bss = (btrfs_send_subvol*)data;
 
-        if (datalen < sizeof(btrfs_send_subvol))
+        if (datalen < offsetof(btrfs_send_subvol, num_clones))
             return STATUS_INVALID_PARAMETER;
 
         if (bss->parent) {
@@ -3197,6 +3219,55 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
             if (parsubvol == fcb->subvol)
                 return STATUS_INVALID_PARAMETER;
         }
+
+        if (datalen >= offsetof(btrfs_send_subvol, clones[0])) {
+            ULONG i;
+
+            if (datalen < offsetof(btrfs_send_subvol, clones[0]) + (bss->num_clones * sizeof(HANDLE)))
+                return STATUS_INVALID_PARAMETER;
+
+            num_clones = bss->num_clones;
+
+            if (num_clones > 0) {
+                clones = ExAllocatePoolWithTag(PagedPool, sizeof(root*) * num_clones, ALLOC_TAG);
+                if (!clones) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                for (i = 0; i < num_clones; i++) {
+                    HANDLE h;
+                    PFILE_OBJECT fileobj;
+                    struct _fcb* clonefcb;
+
+#if defined(_WIN64)
+                    if (IoIs32bitProcess(Irp))
+                        h = (HANDLE)LongToHandle(*(PUINT32)&bss->parent);
+                    else
+#endif
+                        h = bss->parent;
+
+                    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+                        return Status;
+                    }
+
+                    clonefcb = fileobj->FsContext;
+
+                    if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != SUBVOL_ROOT_INODE) {
+                        ObDereferenceObject(fileobj);
+                        return STATUS_INVALID_PARAMETER;
+                    }
+
+                    clones[i] = clonefcb->subvol;
+                    ObDereferenceObject(fileobj);
+
+                    if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY))
+                        return STATUS_INVALID_PARAMETER;
+                }
+            }
+        }
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
@@ -3224,6 +3295,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context->lastinode.path = NULL;
     context->lastinode.sd = NULL;
     context->root_dir = NULL;
+    context->num_clones = num_clones;
+    context->clones = clones;
     InitializeListHead(&context->lastinode.refs);
     InitializeListHead(&context->lastinode.oldrefs);
     InitializeListHead(&context->lastinode.exts);

@@ -244,6 +244,8 @@ typedef struct {
 
 typedef struct {
     HANDLE parent;
+    ULONG num_clones;
+    HANDLE clones[1];
 } btrfs_send_subvol;
 
 #endif
