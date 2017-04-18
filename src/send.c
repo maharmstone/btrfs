@@ -1813,27 +1813,189 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
     return STATUS_SUCCESS;
 }
 
-static BOOL try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
-    BOOL root_okay = FALSE;
+static BOOL send_add_tlv_clone_path(send_context* context, root* r, UINT64 inode) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    ULONG len = 0;
+    UINT64 num;
+    UINT8* ptr;
 
-    if (context->parent && edr->root == context->parent->id)
-        root_okay = TRUE;
+    num = inode;
 
-    if (!root_okay && context->num_clones > 0) {
-        ULONG i;
+    while (num != SUBVOL_ROOT_INODE) {
+        searchkey.obj_id = num;
+        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.offset = 0xffffffffffffffff;
 
-        for (i = 0; i < context->num_clones; i++) {
-            if (context->clones[i]->id == edr->root && context->clones[i] != context->root)
-                root_okay = TRUE;
+        Status = find_item(context->Vcb, r, &tp, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return FALSE;
+        }
+
+        if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_INODE_REF && tp.item->key.obj_type != TYPE_INODE_EXTREF)) {
+            ERR("could not find INODE_REF for inode %llx\n", searchkey.obj_id);
+            return FALSE;
+        }
+
+        if (len > 0)
+            len++;
+
+        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+            INODE_REF* ir = (INODE_REF*)tp.item->data;
+
+            if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                return FALSE;
+            }
+
+            len += ir->n;
+            num = tp.item->key.offset;
+        } else {
+            INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+
+            if (tp.item->size < sizeof(INODE_EXTREF) || tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+                ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                return FALSE;
+            }
+
+            len += ier->n;
+            num = ier->dir;
         }
     }
 
-    if (!root_okay)
+    send_add_tlv(context, BTRFS_SEND_TLV_CLONE_PATH, NULL, len);
+    ptr = &context->data[context->datalen];
+
+    num = inode;
+
+    while (num != SUBVOL_ROOT_INODE) {
+        searchkey.obj_id = num;
+        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.offset = 0xffffffffffffffff;
+
+        Status = find_item(context->Vcb, r, &tp, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return FALSE;
+        }
+
+        if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_INODE_REF && tp.item->key.obj_type != TYPE_INODE_EXTREF)) {
+            ERR("could not find INODE_REF for inode %llx\n", searchkey.obj_id);
+            return FALSE;
+        }
+
+        if (num != inode) {
+            ptr--;
+            *ptr = '/';
+        }
+
+        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+            INODE_REF* ir = (INODE_REF*)tp.item->data;
+
+            RtlCopyMemory(ptr - ir->n, ir->name, ir->n);
+            ptr -= ir->n;
+            num = tp.item->key.offset;
+        } else {
+            INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+
+            RtlCopyMemory(ptr - ier->n, ier->name, ier->n);
+            ptr -= ier->n;
+            num = ier->dir;
+        }
+    }
+
+    return TRUE;
+}
+
+static BOOL try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
+    NTSTATUS Status;
+    root* r = NULL;
+    KEY searchkey;
+    traverse_ptr tp;
+    EXTENT_DATA2* seed2 = (EXTENT_DATA2*)se->data.data;
+
+    if (context->parent && edr->root == context->parent->id)
+        r = context->parent;
+
+    if (!r && context->num_clones > 0) {
+        ULONG i;
+
+        for (i = 0; i < context->num_clones; i++) {
+            if (context->clones[i]->id == edr->root && context->clones[i] != context->root) {
+                r = context->clones[i];
+                break;
+            }
+        }
+    }
+
+    if (!r)
         return FALSE;
 
-    ERR("root=%llx, objid=%llx, offset=%llx, count=%x\n", edr->root, edr->objid, edr->offset, edr->count);
+    searchkey.obj_id = edr->objid;
+    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.offset = 0;
 
-    // FIXME
+    Status = find_item(context->Vcb, r, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return FALSE;
+    }
+
+    while (TRUE) {
+        traverse_ptr next_tp;
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            if (tp.item->size < sizeof(EXTENT_DATA))
+                ERR("(%llx,%x,%llx) has size %u, not at least %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            else {
+                EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+
+                if (ed->type == EXTENT_TYPE_REGULAR) {
+                    if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2))
+                        ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                            tp.item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+                    else {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
+                        if (ed2->address == seed2->address && ed2->size == seed2->size && seed2->offset <= ed2->offset && seed2->offset + seed2->num_bytes >= ed2->offset + ed2->num_bytes) {
+                            UINT64 clone_offset = tp.item->key.offset + ed2->offset - seed2->offset;
+                            UINT64 clone_len = min(context->lastinode.size - se->offset, ed2->num_bytes);
+
+                            if (clone_offset % context->Vcb->superblock.sector_size == 0 && clone_len % context->Vcb->superblock.sector_size == 0) {
+                                ULONG pos = context->datalen;
+
+                                send_command(context, BTRFS_SEND_CMD_CLONE);
+
+                                send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &se->offset, sizeof(UINT64));
+                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_LENGTH, &clone_len, sizeof(UINT64));
+                                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, sizeof(BTRFS_UUID));
+                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_CTRANSID, &r->root_item.ctransid, sizeof(UINT64));
+
+                                if (!send_add_tlv_clone_path(context, r, tp.item->key.obj_id))
+                                    context->datalen = pos;
+                                else {
+                                    send_add_tlv(context, BTRFS_SEND_TLV_CLONE_OFFSET, &clone_offset, sizeof(UINT64));
+
+                                    send_command_finish(context, pos);
+
+                                    return TRUE;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+            break;
+
+        if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+            tp = next_tp;
+        else
+            break;
+    }
 
     return FALSE;
 }
