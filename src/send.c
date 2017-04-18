@@ -89,6 +89,7 @@ typedef struct {
         UINT64 mode;
         UINT64 oldmode;
         UINT64 size;
+        UINT64 flags;
         BTRFS_TIME atime;
         BTRFS_TIME mtime;
         BTRFS_TIME ctime;
@@ -292,6 +293,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         context->lastinode.deleting = TRUE;
         context->lastinode.gen = ii2->generation;
         context->lastinode.mode = ii2->st_mode;
+        context->lastinode.flags = ii2->flags;
         context->lastinode.o = NULL;
         context->lastinode.sd = NULL;
 
@@ -316,6 +318,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     context->lastinode.atime = ii->st_atime;
     context->lastinode.mtime = ii->st_mtime;
     context->lastinode.ctime = ii->st_ctime;
+    context->lastinode.flags = ii->flags;
     context->lastinode.file = FALSE;
     context->lastinode.o = NULL;
     context->lastinode.sd = NULL;
@@ -1931,6 +1934,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
                 ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), skip_start;
                 UINT64 addr = ed2->address + off;
+                UINT32* csum;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -1953,15 +1957,46 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 skip_start = addr % context->Vcb->superblock.sector_size;
                 addr -= skip_start;
 
+                if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
+                    csum = NULL;
+                else {
+                    UINT64 len;
+
+                    len = sector_align(length + skip_start, context->Vcb->superblock.sector_size) / context->Vcb->superblock.sector_size;
+
+                    csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(UINT32), ALLOC_TAG);
+                    if (!csum) {
+                        ERR("out of memory\n");
+                        ExFreePool(buf);
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    Status = load_csum(context->Vcb, csum, addr, len, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("load_csum returned %08x\n", Status);
+                        ExFreePool(csum);
+                        ExFreePool(buf);
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                }
+
                 Status = read_data(context->Vcb, addr, sector_align(length + skip_start, context->Vcb->superblock.sector_size),
-                                   NULL, FALSE, buf, NULL, NULL, NULL, 0, FALSE);
+                                   csum, FALSE, buf, NULL, NULL, NULL, 0, FALSE);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08x\n", Status);
                     ExFreePool(buf);
                     ExFreePool(se);
                     if (se2) ExFreePool(se2);
+                    if (csum) ExFreePool(csum);
                     return Status;
                 }
+
+                if (csum)
+                    ExFreePool(csum);
 
                 pos = context->datalen;
 
@@ -1982,6 +2017,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         } else {
             UINT8 *buf, *compbuf;
             UINT64 off;
+            UINT32* csum;
 
             buf = ExAllocatePoolWithTag(PagedPool, se->data.decoded_size, ALLOC_TAG);
             if (!buf) {
@@ -2000,15 +2036,48 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            Status = read_data(context->Vcb, ed2->address, ed2->size, NULL, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE);
+            if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
+                csum = NULL;
+            else {
+                UINT64 len;
+
+                len = ed2->size / context->Vcb->superblock.sector_size;
+
+                csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(UINT32), ALLOC_TAG);
+                if (!csum) {
+                    ERR("out of memory\n");
+                    ExFreePool(compbuf);
+                    ExFreePool(buf);
+                    ExFreePool(se);
+                    if (se2) ExFreePool(se2);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                Status = load_csum(context->Vcb, csum, ed2->address, len, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("load_csum returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(compbuf);
+                    ExFreePool(buf);
+                    ExFreePool(se);
+                    if (se2) ExFreePool(se2);
+                    return Status;
+                }
+            }
+
+            Status = read_data(context->Vcb, ed2->address, ed2->size, csum, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
                 ExFreePool(compbuf);
                 ExFreePool(buf);
                 ExFreePool(se);
                 if (se2) ExFreePool(se2);
+                if (csum) ExFreePool(csum);
                 return Status;
             }
+
+            if (csum)
+                ExFreePool(csum);
 
             if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
                 Status = zlib_decompress(compbuf, ed2->size, buf, se->data.decoded_size);
