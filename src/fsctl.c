@@ -610,6 +610,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end3;
     }
     
+    if (subvol_obj->DeviceObject != FileObject->DeviceObject) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
     subvol_fcb = subvol_obj->FsContext;
     if (!subvol_fcb) {
         Status = STATUS_INVALID_PARAMETER;
