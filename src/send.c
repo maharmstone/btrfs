@@ -1814,6 +1814,23 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
 }
 
 static BOOL try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
+    BOOL root_okay = FALSE;
+
+    if (context->parent && edr->root == context->parent->id)
+        root_okay = TRUE;
+
+    if (!root_okay && context->num_clones > 0) {
+        ULONG i;
+
+        for (i = 0; i < context->num_clones; i++) {
+            if (context->clones[i]->id == edr->root && context->clones[i] != context->root)
+                root_okay = TRUE;
+        }
+    }
+
+    if (!root_okay)
+        return FALSE;
+
     ERR("root=%llx, objid=%llx, offset=%llx, count=%x\n", edr->root, edr->objid, edr->offset, edr->count);
 
     // FIXME
