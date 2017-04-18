@@ -176,6 +176,7 @@ end3:
 
     started = FALSE;
 
+    SetDlgItemTextW(hwnd, IDCANCEL, closetext);
     EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
     EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), TRUE);
     EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), TRUE);
@@ -190,6 +191,8 @@ static DWORD WINAPI send_thread(LPVOID lpParameter) {
 }
 
 void BtrfsSend::StartSend(HWND hwnd) {
+    WCHAR s[255];
+
     if (started)
         return;
 
@@ -208,6 +211,9 @@ void BtrfsSend::StartSend(HWND hwnd) {
     }
 
     started = TRUE;
+
+    LoadStringW(module, IDS_SEND_CANCEL, s, sizeof(s) / sizeof(WCHAR));
+    SetDlgItemTextW(hwnd, IDCANCEL, s);
 
     EnableWindow(GetDlgItem(hwnd, IDOK), FALSE);
     EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), FALSE);
@@ -301,6 +307,8 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
     switch (uMsg) {
         case WM_INITDIALOG:
             this->hwnd = hwndDlg;
+
+            GetDlgItemTextW(hwndDlg, IDCANCEL, closetext, sizeof(closetext) / sizeof(WCHAR));
         break;
 
         case WM_COMMAND:
@@ -326,9 +334,16 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 
                                 if (dirh != INVALID_HANDLE_VALUE)
                                     CloseHandle(dirh);
-                            }
 
-                            EndDialog(hwndDlg, 1);
+                                started = FALSE;
+
+                                SetDlgItemTextW(hwndDlg, IDCANCEL, closetext);
+
+                                EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
+                                EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), TRUE);
+                                EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), TRUE);
+                            } else
+                                EndDialog(hwndDlg, 1);
                         return TRUE;
 
                         case IDC_BROWSE:
