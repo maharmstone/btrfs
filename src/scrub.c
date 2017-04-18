@@ -577,19 +577,9 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
                 break;
             
             if (tp.item->key.obj_id == address) {
-                if (tp.item->key.obj_type == TYPE_TREE_BLOCK_REF) {
-                    TREE_BLOCK_REF* tbr;
-                    
-                    if (tp.item->size < sizeof(TREE_BLOCK_REF)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                                                                          tp.item->size, sizeof(TREE_BLOCK_REF));
-                        break;
-                    }
-                    
-                    tbr = (TREE_BLOCK_REF*)tp.item->data;
-                    
-                    log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
-                } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA_REF) {
+                if (tp.item->key.obj_type == TYPE_TREE_BLOCK_REF)
+                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+                else if (tp.item->key.obj_type == TYPE_EXTENT_DATA_REF) {
                     EXTENT_DATA_REF* edr;
                     
                     if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
@@ -601,19 +591,9 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
                     edr = (EXTENT_DATA_REF*)tp.item->data;
                     
                     log_file_checksum_error(Vcb, address, devid, edr->root, edr->objid, edr->offset + address - tp.item->key.obj_id);
-                } else if (tp.item->key.obj_type == TYPE_SHARED_BLOCK_REF) {
-                    SHARED_BLOCK_REF* sbr;
-                    
-                    if (tp.item->size < sizeof(SHARED_BLOCK_REF)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                                                                          tp.item->size, sizeof(SHARED_BLOCK_REF));
-                        break;
-                    }
-                    
-                    sbr = (SHARED_BLOCK_REF*)tp.item->data;
-                    
-                    log_tree_checksum_error_shared(Vcb, sbr->offset, address, devid);
-                } else if (tp.item->key.obj_type == TYPE_SHARED_DATA_REF)
+                } else if (tp.item->key.obj_type == TYPE_SHARED_BLOCK_REF)
+                    log_tree_checksum_error_shared(Vcb, tp.item->key.offset, address, devid);
+                else if (tp.item->key.obj_type == TYPE_SHARED_DATA_REF)
                     log_file_checksum_error_shared(Vcb, tp.item->key.offset, address, devid, tp.item->key.obj_id);
             } else
                 break;
