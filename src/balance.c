@@ -1401,7 +1401,7 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
                         ERR("delete_tree_item returned %08x\n", Status);
                         return Status;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(SHARED_DATA_REF)) {
+                } else if (tp2.item->key.obj_type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(UINT32)) {
                     metadata_reloc* mr;
                     data_reloc_ref* ref;
 
@@ -1412,7 +1412,8 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
                     }
                     
                     ref->type = TYPE_SHARED_DATA_REF;
-                    RtlCopyMemory(&ref->sdr, tp2.item->data, sizeof(SHARED_DATA_REF));
+                    ref->sdr.offset = tp2.item->key.offset;
+                    ref->sdr.count = *((UINT32*)tp2.item->data);
                     
                     Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->sdr.offset, &mr, rollback);
                     if (!NT_SUCCESS(Status)) {
