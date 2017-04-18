@@ -524,13 +524,10 @@ sub dump_item {
 				} else {
 					printf("unknown %x (length %u)", $irt, length($s));
 				}
-				# FIXME - SHARED_BLOCK_REF
 			}
 		}
 	} elsif ($type == 0xb0) { # TREE_BLOCK_REF
-		@b=unpack("Q",$s);
-		$s=substr($s,8);
-		printf("tree_block_ref root=%x ",@b);
+		printf("tree_block_ref ");
 	} elsif ($type == 0xb2) { # EXTENT_DATA_REF
 		@b=unpack("QQQv",$s);
 		$s=substr($s,28);
@@ -541,10 +538,7 @@ sub dump_item {
 		
 		printf("extent_ref_v0 root=%x gen=%x objid=%x count=%x",@b);
 	} elsif ($type == 0xb6) { # SHARED_BLOCK_REF
-		@b=unpack("Q",$s);
-		$s=substr($s,8);
-		
-		printf("shared_block_ref offset=%x",$b[0]);
+		printf("shared_block_ref ");
 	} elsif ($type == 0xb8) { # SHARED_DATA_REF
 		@b=unpack("v",$s);
 		$s=substr($s,4);
