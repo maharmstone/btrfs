@@ -1547,18 +1547,17 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
                     return Status;
                 }
             } else if (ref->type == TYPE_SHARED_DATA_REF) {
-                SHARED_DATA_REF* sdr;
+                UINT32* sdr;
                 
-                sdr = ExAllocatePoolWithTag(PagedPool, sizeof(SHARED_DATA_REF), ALLOC_TAG);
+                sdr = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32), ALLOC_TAG);
                 if (!sdr) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                sdr->offset = ref->parent->new_address;
-                sdr->count = ref->sdr.count;
+                *sdr = ref->sdr.count;
                 
-                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, sdr->offset, sdr, sizeof(SHARED_DATA_REF), NULL, NULL);
+                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, ref->parent->new_address, sdr, sizeof(UINT32), NULL, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     return Status;
