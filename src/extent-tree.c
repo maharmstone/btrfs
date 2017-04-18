@@ -755,7 +755,10 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         }
         
         if (!keycmp(tp2.item->key, searchkey)) {
-            if (tp2.item->size < datalen) {
+            if (type == TYPE_SHARED_DATA_REF && tp2.item->size < sizeof(UINT32)) {
+                ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(UINT32));
+                return STATUS_INTERNAL_ERROR;
+            } else if (type != TYPE_SHARED_DATA_REF && tp2.item->size < datalen) {
                 ERR("(%llx,%x,%llx) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -773,9 +776,9 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             } else if (type == TYPE_SHARED_BLOCK_REF)
                 return STATUS_SUCCESS;
             else if (type == TYPE_SHARED_DATA_REF) {
-                SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data2;
+                UINT32* sdr = (UINT32*)data2;
                 
-                sdr->count += get_extent_data_refcount(type, data);
+                *sdr += get_extent_data_refcount(type, data);
             } else {
                 ERR("unhandled extent type %x\n", type);
                 return STATUS_INTERNAL_ERROR;
@@ -816,8 +819,27 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     
     // Otherwise, add new non-inline entry
     
-    data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
-    RtlCopyMemory(data2, data, datalen);
+    if (type == TYPE_SHARED_DATA_REF) {
+        SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
+
+        data2 = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32), ALLOC_TAG);
+        if (!data2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        datalen = sizeof(UINT32);
+
+        *((UINT32*)data2) = sdr->count;
+    } else {
+        data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        if (!data2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(data2, data, datalen);
+    }
     
     Status = insert_tree_item(Vcb, Vcb->extent_root, address, type, offset, data2, datalen, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -826,6 +848,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     }
     
     newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+    if (!newei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     RtlCopyMemory(newei, tp.item->data, tp.item->size);
     
     newei->refcount += get_extent_data_refcount(type, data);
