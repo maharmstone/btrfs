@@ -171,7 +171,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
             tp2 = next_tp;
             
             if (tp2.item->key.obj_id == tp->item->key.obj_id) {
-                if (tp2.item->key.obj_type == TYPE_TREE_BLOCK_REF && tp2.item->size >= sizeof(TREE_BLOCK_REF)) {
+                if (tp2.item->key.obj_type == TYPE_TREE_BLOCK_REF) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
@@ -179,7 +179,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     }
                     
                     ref->type = TYPE_TREE_BLOCK_REF;
-                    RtlCopyMemory(&ref->tbr, tp2.item->data, sizeof(TREE_BLOCK_REF));
+                    ref->tbr.offset = tp2.item->key.offset;
                     ref->parent = NULL;
                     ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
@@ -189,7 +189,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                         ERR("delete_tree_item returned %08x\n", Status);
                         return Status;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_SHARED_BLOCK_REF && tp2.item->size >= sizeof(SHARED_BLOCK_REF)) {
+                } else if (tp2.item->key.obj_type == TYPE_SHARED_BLOCK_REF) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
@@ -197,7 +197,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
                     }
                     
                     ref->type = TYPE_SHARED_BLOCK_REF;
-                    RtlCopyMemory(&ref->sbr, tp2.item->data, sizeof(SHARED_BLOCK_REF));
+                    ref->sbr.offset = tp2.item->key.offset;
                     ref->parent = NULL;
                     ref->top = FALSE;
                     InsertTailList(&mr->refs, &ref->list_entry);
