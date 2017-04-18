@@ -31,59 +31,6 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_ref;
 
-static __inline ULONG get_extent_data_len(UINT8 type) {
-    switch (type) {
-        case TYPE_TREE_BLOCK_REF:
-            return sizeof(TREE_BLOCK_REF);
-            
-        case TYPE_EXTENT_DATA_REF:
-            return sizeof(EXTENT_DATA_REF);
-            
-        case TYPE_EXTENT_REF_V0:
-            return sizeof(EXTENT_REF_V0);
-            
-        case TYPE_SHARED_BLOCK_REF:
-            return sizeof(SHARED_BLOCK_REF);
-            
-        case TYPE_SHARED_DATA_REF:
-            return sizeof(SHARED_DATA_REF);
-            
-        default:
-            return 0;
-    }
-}
-
-static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
-    switch (type) {
-        case TYPE_TREE_BLOCK_REF:
-            return 1;
-            
-        case TYPE_EXTENT_DATA_REF:
-        {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
-            return edr->count;
-        }
-        
-        case TYPE_EXTENT_REF_V0:
-        {
-            EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)data;
-            return erv0->count;
-        }
-        
-        case TYPE_SHARED_BLOCK_REF:
-            return 1;
-        
-        case TYPE_SHARED_DATA_REF:
-        {
-            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-            return sdr->count;
-        }
-            
-        default:
-            return 0;
-    }
-}
-
 UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset) {
     UINT32 high_crc = 0xffffffff, low_crc = 0xffffffff;
 

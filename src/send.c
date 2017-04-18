@@ -1813,6 +1813,113 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
     return STATUS_SUCCESS;
 }
 
+static BOOL try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
+    ERR("root=%llx, objid=%llx, offset=%llx, count=%x\n", edr->root, edr->objid, edr->offset, edr->count);
+
+    // FIXME
+
+    return FALSE;
+}
+
+static BOOL try_clone(send_context* context, send_ext* se) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp;
+    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)se->data.data;
+    EXTENT_ITEM* ei;
+    UINT64 rc = 0;
+
+    searchkey.obj_id = ed2->address;
+    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.offset = ed2->size;
+
+    Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return FALSE;
+    }
+
+    if (keycmp(tp.item->key, searchkey)) {
+        ERR("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return FALSE;
+    }
+
+    if (tp.item->size < sizeof(EXTENT_ITEM)) {
+        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        return FALSE;
+    }
+
+    ei = (EXTENT_ITEM*)tp.item->data;
+
+    if (tp.item->size > sizeof(EXTENT_ITEM)) {
+        UINT32 len = tp.item->size - sizeof(EXTENT_ITEM);
+        UINT8* ptr = (UINT8*)&ei[1];
+
+        while (len > 0) {
+            UINT8 secttype = *ptr;
+            ULONG sectlen = get_extent_data_len(secttype);
+            UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+
+            len--;
+
+            if (sectlen > len) {
+                ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                return FALSE;
+            }
+
+            if (sectlen == 0) {
+                ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+                return FALSE;
+            }
+
+            rc += sectcount;
+
+            if (secttype == TYPE_EXTENT_DATA_REF) {
+                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(UINT8));
+
+                if (try_clone_edr(context, se, sectedr))
+                    return TRUE;
+            }
+
+            len -= sectlen;
+            ptr += sizeof(UINT8) + sectlen;
+        }
+    }
+
+    if (rc >= ei->refcount)
+        return FALSE;
+
+    searchkey.obj_type = TYPE_EXTENT_DATA_REF;
+    searchkey.offset = 0;
+
+    Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return FALSE;
+    }
+
+    while (TRUE) {
+        traverse_ptr next_tp;
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            if (tp.item->size < sizeof(EXTENT_DATA_REF))
+                ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+            else {
+                if (try_clone_edr(context, se, (EXTENT_DATA_REF*)tp.item->data))
+                    return TRUE;
+            }
+        } else if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+            break;
+
+        if (find_next_item(context->Vcb, &tp, &next_tp, FALSE, NULL))
+            tp = next_tp;
+        else
+            break;
+    }
+
+    return FALSE;
+}
+
 static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
     NTSTATUS Status;
 
@@ -1884,6 +1991,14 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         }
 
         ed2 = (EXTENT_DATA2*)se->data.data;
+
+        if (ed2->size != 0 && (context->parent || context->num_clones > 0)) {
+            if (try_clone(context, se)) {
+                ExFreePool(se);
+                if (se2) ExFreePool(se2);
+                continue;
+            }
+        }
 
         if (ed2->size == 0) { // write sparse
             UINT64 off, offset;
@@ -3161,8 +3276,6 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     send_info* send;
     ULONG num_clones = 0;
     root** clones = NULL;
-    
-    // FIXME - cloning
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
