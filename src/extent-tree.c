@@ -834,6 +834,9 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
         datalen = sizeof(UINT32);
 
         *((UINT32*)data2) = sdr->count;
+    } else if (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF) {
+        data2 = NULL;
+        datalen = 0;
     } else {
         data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
         if (!data2) {
