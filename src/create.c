@@ -2173,10 +2173,18 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
 // LXSS programs can be distinguished by the fact they have a NULL PEB.
 #ifdef _AMD64_
 static __inline BOOL called_from_lxss() {
-    UINT8* proc = (UINT8*)PsGetCurrentProcess();
-    ULONG_PTR* peb = (ULONG_PTR*)&proc[0x3f8];
+    NTSTATUS Status;
+    PROCESS_BASIC_INFORMATION pbi;
+    ULONG retlen;
 
-    return !*peb;
+    Status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessBasicInformation, &pbi, sizeof(pbi), &retlen);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwQueryInformationProcess returned %08x\n", Status);
+        return FALSE;
+    }
+
+    return !pbi.PebBaseAddress;
 }
 #else
 #define called_from_lxss() FALSE
