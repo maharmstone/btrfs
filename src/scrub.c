@@ -613,19 +613,8 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
                     sbr = (SHARED_BLOCK_REF*)tp.item->data;
                     
                     log_tree_checksum_error_shared(Vcb, sbr->offset, address, devid);
-                } else if (tp.item->key.obj_type == TYPE_SHARED_DATA_REF) {
-                    SHARED_DATA_REF* sdr;
-                    
-                    if (tp.item->size < sizeof(SHARED_DATA_REF)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                                                                          tp.item->size, sizeof(SHARED_DATA_REF));
-                        break;
-                    }
-                    
-                    sdr = (SHARED_DATA_REF*)tp.item->data;
-                    
-                    log_file_checksum_error_shared(Vcb, sdr->offset, address, devid, tp.item->key.obj_id);
-                }
+                } else if (tp.item->key.obj_type == TYPE_SHARED_DATA_REF)
+                    log_file_checksum_error_shared(Vcb, tp.item->key.offset, address, devid, tp.item->key.obj_id);
             } else
                 break;
         } while (TRUE);
