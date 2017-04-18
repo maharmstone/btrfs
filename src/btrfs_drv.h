@@ -300,6 +300,7 @@ typedef struct _ccb {
     BOOL user_set_access_time;
     BOOL user_set_write_time;
     BOOL user_set_change_time;
+    BOOL lxss;
     send_info* send;
     NTSTATUS send_status;
 } ccb;
@@ -1048,7 +1049,7 @@ void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext);
 
 // in dirctrl.c
 NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, PIRP Irp);
+ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp);
 
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -1376,18 +1377,6 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 
 #ifndef S_ISVTX
 #define S_ISVTX 0001000
-#endif
-
-// LXSS programs can be distinguished by the fact they have a NULL PEB.
-#ifdef _AMD64_
-    static __inline BOOL called_from_lxss() {
-        UINT8* proc = (UINT8*)PsGetCurrentProcess();
-        ULONG_PTR* peb = (ULONG_PTR*)&proc[0x3f8];
-        
-        return !*peb;
-    }
-#else
-#define called_from_lxss() FALSE
 #endif
 
 typedef BOOLEAN (*tPsIsDiskCountersEnabled)();

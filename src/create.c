@@ -2170,6 +2170,18 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     return STATUS_SUCCESS;
 }
 
+// LXSS programs can be distinguished by the fact they have a NULL PEB.
+#ifdef _AMD64_
+static __inline BOOL called_from_lxss() {
+    UINT8* proc = (UINT8*)PsGetCurrentProcess();
+    ULONG_PTR* peb = (ULONG_PTR*)&proc[0x3f8];
+
+    return !*peb;
+}
+#else
+#define called_from_lxss() FALSE
+#endif
+
 static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related,
                                     PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -2325,6 +2337,7 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     ccb->access = access_state->OriginalDesiredAccess;
     ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
     ccb->reserving = FALSE;
+    ccb->lxss = called_from_lxss();
     
 #ifdef DEBUG_FCB_REFCOUNTS
     oc = InterlockedIncrement(&fileref->open_count);
@@ -3293,6 +3306,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         ccb->access = granted_access;
         ccb->case_sensitive = Stack->Flags & SL_CASE_SENSITIVE;
         ccb->reserving = FALSE;
+        ccb->lxss = called_from_lxss();
         
         ccb->fileref = fileref;
         
@@ -3617,6 +3631,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ccb->manage_volume_privilege = has_manage_volume_privilege(IrpSp->Parameters.Create.SecurityContext->AccessState,
                                                                    IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode);
         ccb->reserving = FALSE;
+        ccb->lxss = called_from_lxss();
 
 #ifdef DEBUG_FCB_REFCOUNTS
         rc = InterlockedIncrement(&Vcb->volume_fcb->refcount);

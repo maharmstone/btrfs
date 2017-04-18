@@ -2888,23 +2888,23 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, file_ref* fileref, PIRP Irp, LONG* length) {
+static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
     *length -= sizeof(FILE_ATTRIBUTE_TAG_INFORMATION);
     
     if (fcb->ads) {
-        if (!fileref || !fileref->parent) {
+        if (!ccb->fileref || !ccb->fileref->parent) {
             ERR("no fileref for stream\n");
             return STATUS_INTERNAL_ERROR;
         }
         
-        ati->FileAttributes = fileref->parent->fcb->atts;
+        ati->FileAttributes = ccb->fileref->parent->fcb->atts;
     } else
         ati->FileAttributes = fcb->atts;
     
     if (!(ati->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         ati->ReparseTag = 0;
     else
-        ati->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts, Irp);
+        ati->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts, ccb->lxss, Irp);
     
     return STATUS_SUCCESS;
 }
@@ -3576,7 +3576,7 @@ static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObjec
             }
             
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-            Status = fill_in_file_attribute_information(ati, fcb, fileref, Irp, &length);
+            Status = fill_in_file_attribute_information(ati, fcb, ccb, Irp, &length);
             ExReleaseResourceLite(&Vcb->tree_lock);
             
             break;

@@ -23,16 +23,20 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     DWORD reqlen;
     REPARSE_DATA_BUFFER* rdb = buffer;
     fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
     char* data;
     NTSTATUS Status;
     
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
-    
+
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
+
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
     
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
-        if (called_from_lxss()) {
+        if (ccb->lxss) {
             reqlen = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(UINT32);
             
             if (buflen < reqlen) {

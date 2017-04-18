@@ -31,13 +31,13 @@ typedef struct {
     dir_child* dc;
 } dir_entry;
 
-ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, PIRP Irp) {
+ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp) {
     fcb* fcb;
     ULONG tag = 0, br;
     NTSTATUS Status;
     
     if (type == BTRFS_TYPE_SYMLINK) {
-        if (called_from_lxss())
+        if (lxss)
             return IO_REPARSE_TAG_LXSS_SYMLINK;
         else
             return IO_REPARSE_TAG_SYMLINK;
@@ -118,13 +118,14 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP 
         return 0;
 }
 
-static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
+static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     UINT32 needed;
     UINT64 inode;
     INODE_ITEM ii;
     NTSTATUS Status;
     ULONG atts, ealen;
+    file_ref* fileref = ccb->fileref;
     
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -271,7 +272,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fbdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = de->name.Length;
-            fbdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fbdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             fbdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             
@@ -336,7 +337,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             ffdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = de->name.Length;
-            ffdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            ffdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             
             RtlCopyMemory(ffdi->FileName, de->name.Buffer, de->name.Length);
             
@@ -371,7 +372,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fibdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = de->name.Length;
-            fibdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fibdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             fibdi->ShortNameLength = 0;
 //             fibdi->ShortName[12];
             fibdi->FileId.QuadPart = r ? make_file_id(r, inode) : make_file_id(fcb->Vcb->dummy_fcb->subvol, fcb->Vcb->dummy_fcb->inode);
@@ -409,7 +410,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, file_ref* fileref, void* buf, L
             fifdi->AllocationSize.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_blocks;
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = de->name.Length;
-            fifdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, Irp) : ealen;
+            fifdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             fifdi->FileId.QuadPart = r ? make_file_id(r, inode) : make_file_id(fcb->Vcb->dummy_fcb->subvol, fcb->Vcb->dummy_fcb->inode);
             
             RtlCopyMemory(fifdi->FileName, de->name.Buffer, de->name.Length);
@@ -801,7 +802,7 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
     TRACE("file(0) = %.*S\n", de.name.Length / sizeof(WCHAR), de.name.Buffer);
     TRACE("offset = %u\n", ccb->query_dir_offset - 1);
 
-    Status = query_dir_item(fcb, fileref, buf, &length, Irp, &de, fcb->subvol);
+    Status = query_dir_item(fcb, ccb, buf, &length, Irp, &de, fcb->subvol);
 
     count = 0;
     if (NT_SUCCESS(Status) && !(IrpSp->Flags & SL_RETURN_SINGLE_ENTRY) && !specific_file) {
@@ -837,7 +838,7 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
                         TRACE("file(%u) %u = %.*S\n", count, curitem - (UINT8*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
                         TRACE("offset = %u\n", ccb->query_dir_offset - 1);
                         
-                        status2 = query_dir_item(fcb, fileref, curitem, &length, Irp, &de, fcb->subvol);
+                        status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);
                         
                         if (NT_SUCCESS(status2)) {
                             ULONG* lastoffset = (ULONG*)lastitem;
