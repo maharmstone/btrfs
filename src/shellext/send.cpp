@@ -18,6 +18,7 @@
 #include "shellext.h"
 #include "send.h"
 #include "resource.h"
+#include <stddef.h>
 #include <shlobj.h>
 
 #define SEND_BUFFER_LEN 1048576
@@ -42,10 +43,11 @@ void BtrfsSend::ShowSendError(UINT msg, ...) {
 DWORD BtrfsSend::Thread() {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
-    btrfs_send_subvol bss;
+    btrfs_send_subvol* bss;
     btrfs_send_header header;
     btrfs_send_command end;
     BOOL success = FALSE;
+    ULONG bss_size, i;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
@@ -54,6 +56,10 @@ DWORD BtrfsSend::Thread() {
         ShowSendError(IDS_SEND_CANT_OPEN_DIR, subvol.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         goto end3;
     }
+
+    bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
+    bss = (btrfs_send_subvol*)malloc(bss_size);
+    memset(bss, 0, bss_size);
 
     if (incremental) {
         WCHAR parent[MAX_PATH];
@@ -69,50 +75,74 @@ DWORD BtrfsSend::Thread() {
             goto end2;
         }
 
-        bss.parent = parenth;
+        bss->parent = parenth;
     } else
-        bss.parent = NULL;
+        bss->parent = NULL;
 
-    bss.num_clones = 0;
+    bss->num_clones = clones.size();
 
-    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, &bss, sizeof(btrfs_send_subvol), NULL, 0);
+    for (i = 0; i < bss->num_clones; i++) {
+        HANDLE h;
+
+        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ULONG j;
+
+            ShowSendError(IDS_SEND_CANT_OPEN_DIR, clones[i].c_str(), GetLastError(), format_message(GetLastError()).c_str());
+
+            for (j = 0; j < i; j++) {
+                CloseHandle(bss->clones[j]);
+            }
+
+            if (bss->parent) CloseHandle(bss->parent);
+            goto end2;
+        }
+
+        bss->clones[i] = h;
+    }
+
+    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, NULL, 0);
+
+    for (i = 0; i < bss->num_clones; i++) {
+        CloseHandle(bss->clones[i]);
+    }
 
     if (!NT_SUCCESS(Status)) {
         if (Status == (NTSTATUS)STATUS_INVALID_PARAMETER) {
             BY_HANDLE_FILE_INFORMATION fileinfo;
             if (!GetFileInformationByHandle(dirh, &fileinfo)) {
                 ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                if (bss.parent) CloseHandle(bss.parent);
+                if (bss->parent) CloseHandle(bss->parent);
                 goto end2;
             }
 
             if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
                 ShowSendError(IDS_SEND_NOT_READONLY);
-                if (bss.parent) CloseHandle(bss.parent);
+                if (bss->parent) CloseHandle(bss->parent);
                 goto end2;
             }
 
-            if (bss.parent) {
-                if (!GetFileInformationByHandle(bss.parent, &fileinfo)) {
+            if (bss->parent) {
+                if (!GetFileInformationByHandle(bss->parent, &fileinfo)) {
                     ShowSendError(IDS_SEND_GET_FILE_INFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                    CloseHandle(bss.parent);
+                    CloseHandle(bss->parent);
                     goto end2;
                 }
 
                 if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY)) {
                     ShowSendError(IDS_SEND_PARENT_NOT_READONLY);
-                    CloseHandle(bss.parent);
+                    CloseHandle(bss->parent);
                     goto end2;
                 }
             }
         }
 
         ShowSendError(IDS_SEND_FSCTL_BTRFS_SEND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        if (bss.parent) CloseHandle(bss.parent);
+        if (bss->parent) CloseHandle(bss->parent);
         goto end2;
     }
 
-    if (bss.parent) CloseHandle(bss.parent);
+    if (bss->parent) CloseHandle(bss->parent);
 
     stream = CreateFileW(file, FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (stream == INVALID_HANDLE_VALUE) {
@@ -194,6 +224,8 @@ static DWORD WINAPI send_thread(LPVOID lpParameter) {
 
 void BtrfsSend::StartSend(HWND hwnd) {
     WCHAR s[255];
+    HWND cl;
+    ULONG num_clones;
 
     if (started)
         return;
@@ -220,6 +252,29 @@ void BtrfsSend::StartSend(HWND hwnd) {
     EnableWindow(GetDlgItem(hwnd, IDOK), FALSE);
     EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), FALSE);
     EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), FALSE);
+
+    clones.clear();
+
+    cl = GetDlgItem(hwnd, IDC_CLONE_LIST);
+    num_clones = SendMessageW(cl, LB_GETCOUNT, 0, 0);
+
+    if ((LRESULT)num_clones != LB_ERR) {
+        ULONG i;
+
+        for (i = 0; i < num_clones; i++) {
+            WCHAR* s;
+            ULONG len;
+
+            len = SendMessageW(cl, LB_GETTEXTLEN, i, 0);
+            s = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
+
+            SendMessageW(cl, LB_GETTEXT, i, (LPARAM)s);
+
+            clones.push_back(s);
+
+            free(s);
+        }
+    }
 
     thread = CreateThread(NULL, 0, send_thread, this, 0, NULL);
 
@@ -362,21 +417,21 @@ void BtrfsSend::AddClone(HWND hwnd) {
         return;
     }
 
-    SendMessageW(GetDlgItem(hwnd, IDC_CLONE_LIST), LB_ADDSTRING, NULL, (LPARAM)path);
+    SendMessageW(GetDlgItem(hwnd, IDC_CLONE_LIST), LB_ADDSTRING, 0, (LPARAM)path);
 }
 
 void BtrfsSend::RemoveClone(HWND hwnd) {
     LRESULT sel;
     HWND cl = GetDlgItem(hwnd, IDC_CLONE_LIST);
 
-    sel = SendMessageW(cl, LB_GETCURSEL, NULL, NULL);
+    sel = SendMessageW(cl, LB_GETCURSEL, 0, 0);
 
     if (sel == LB_ERR)
         return;
 
-    SendMessageW(cl, LB_DELETESTRING, sel, NULL);
+    SendMessageW(cl, LB_DELETESTRING, sel, 0);
 
-    if (SendMessageW(cl, LB_GETCURSEL, NULL, NULL) == LB_ERR)
+    if (SendMessageW(cl, LB_GETCURSEL, 0, 0) == LB_ERR)
         EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), FALSE);
 }
 
