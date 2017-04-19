@@ -2948,24 +2948,26 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         if (fileref->fcb != Vcb->dummy_fcb) {
-            SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+            if (Stack->Parameters.Create.SecurityContext->DesiredAccess != 0) {
+                SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-            if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
-                            &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                            FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
-                            IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
-                            &granted_access, &Status)) {
+                if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
+                                &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                                FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                                IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                                &granted_access, &Status)) {
+                    SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+                    TRACE("SeAccessCheck failed, returning %08x\n", Status);
+
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fileref(Vcb, fileref);
+                    ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                    goto exit;
+                }
+
                 SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-                TRACE("SeAccessCheck failed, returning %08x\n", Status);
-
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(Vcb, fileref);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-
-                goto exit;
             }
-
-            SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
             // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
             if (is_subvol_readonly(fileref->fcb->subvol, Irp) && granted_access &
