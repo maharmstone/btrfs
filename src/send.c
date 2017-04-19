@@ -2940,6 +2940,7 @@ static void send_thread(void* ctx) {
 
     if (!NT_SUCCESS(Status)) {
         ERR("do_write returned %08x\n", Status);
+        ExReleaseResourceLite(&context->Vcb->tree_lock);
         goto end;
     }
 
@@ -2950,6 +2951,7 @@ static void send_thread(void* ctx) {
     Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
+        ExReleaseResourceLite(&context->Vcb->tree_lock);
         goto end;
     }
 
@@ -2958,6 +2960,7 @@ static void send_thread(void* ctx) {
         Status = find_item(context->Vcb, context->parent, &tp2, &searchkey, FALSE, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
+            ExReleaseResourceLite(&context->Vcb->tree_lock);
             goto end;
         }
 
@@ -2982,11 +2985,13 @@ static void send_thread(void* ctx) {
                     Status = find_item(context->Vcb, context->root, &tp, &key1, FALSE, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("find_item returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
 
                     if (keycmp(tp.item->key, key1)) {
                         ERR("readonly subvolume changed\n");
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
@@ -2996,11 +3001,13 @@ static void send_thread(void* ctx) {
                     Status = find_item(context->Vcb, context->parent, &tp2, &key2, FALSE, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("find_item returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
 
                     if (keycmp(tp2.item->key, key2)) {
                         ERR("readonly subvolume changed\n");
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
@@ -3011,6 +3018,7 @@ static void send_thread(void* ctx) {
                 Status = skip_to_difference(context->Vcb, &tp, &tp2, &ended1, &ended2);
                 if (!NT_SUCCESS(Status)) {
                     ERR("skip_to_difference returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
             }
@@ -3355,11 +3363,13 @@ static void send_thread(void* ctx) {
                 Status = find_item(context->Vcb, context->root, &tp, &key, FALSE, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("find_item returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
 
                 if (keycmp(tp.item->key, key)) {
                     ERR("readonly subvolume changed\n");
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
                     Status = STATUS_INTERNAL_ERROR;
                     goto end;
                 }
