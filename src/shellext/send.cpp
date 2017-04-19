@@ -245,6 +245,7 @@ void BtrfsSend::StartSend(HWND hwnd) {
     }
 
     started = TRUE;
+    ShowSendError(IDS_SEND_WRITING);
 
     LoadStringW(module, IDS_SEND_CANCEL, s, sizeof(s) / sizeof(WCHAR));
     SetDlgItemTextW(hwnd, IDCANCEL, s);
