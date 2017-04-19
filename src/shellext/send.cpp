@@ -305,6 +305,81 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
     SetDlgItemTextW(hwnd, IDC_PARENT_SUBVOL, parent);
 }
 
+void BtrfsSend::AddClone(HWND hwnd) {
+    BROWSEINFOW bi;
+    PIDLIST_ABSOLUTE root, pidl;
+    HRESULT hr;
+    WCHAR path[MAX_PATH], volpathw[MAX_PATH];
+    HANDLE h;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_get_file_ids bgfi;
+
+    if (!GetVolumePathNameW(subvol.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
+        ShowStringError(hwnd, IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        return;
+    }
+
+    hr = SHParseDisplayName(volpathw, 0, &root, 0, 0);
+    if (FAILED(hr)) {
+        ShowStringError(hwnd, IDS_SHPARSEDISPLAYNAME_FAILED);
+        return;
+    }
+
+    memset(&bi, 0, sizeof(BROWSEINFOW));
+
+    bi.hwndOwner = hwnd;
+    bi.pidlRoot = root;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI | BIF_NONEWFOLDERBUTTON;
+
+    pidl = SHBrowseForFolderW(&bi);
+
+    if (!pidl)
+        return;
+
+    if (!SHGetPathFromIDListW(pidl, path)) {
+        ShowStringError(hwnd, IDS_SHGETPATHFROMIDLIST_FAILED);
+        return;
+    }
+
+    h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
+        return;
+    }
+
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+    if (!NT_SUCCESS(Status)) {
+        ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
+        CloseHandle(h);
+        return;
+    }
+
+    CloseHandle(h);
+
+    if (bgfi.inode != 0x100 || bgfi.top) {
+        ShowStringError(hwnd, IDS_NOT_SUBVOL);
+        return;
+    }
+
+    SendMessageW(GetDlgItem(hwnd, IDC_CLONE_LIST), LB_ADDSTRING, NULL, (LPARAM)path);
+}
+
+void BtrfsSend::RemoveClone(HWND hwnd) {
+    LRESULT sel;
+    HWND cl = GetDlgItem(hwnd, IDC_CLONE_LIST);
+
+    sel = SendMessageW(cl, LB_GETCURSEL, NULL, NULL);
+
+    if (sel == LB_ERR)
+        return;
+
+    SendMessageW(cl, LB_DELETESTRING, sel, NULL);
+
+    if (SendMessageW(cl, LB_GETCURSEL, NULL, NULL) == LB_ERR)
+        EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), FALSE);
+}
+
 INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -361,6 +436,22 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 
                         case IDC_PARENT_BROWSE:
                             BrowseParent(hwndDlg);
+                        return TRUE;
+
+                        case IDC_CLONE_ADD:
+                            AddClone(hwndDlg);
+                        return TRUE;
+
+                        case IDC_CLONE_REMOVE:
+                            RemoveClone(hwndDlg);
+                        return TRUE;
+                    }
+                break;
+
+                case LBN_SELCHANGE:
+                    switch (LOWORD(wParam)) {
+                        case IDC_CLONE_LIST:
+                            EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), TRUE);
                         return TRUE;
                     }
                 break;

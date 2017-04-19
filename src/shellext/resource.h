@@ -262,9 +262,11 @@
 #define IDC_BUTTON3                     1046
 #define IDC_SYSTEM_OPTIONS              1046
 #define IDC_DEVICE_REMOVE               1046
+#define IDC_CLONE_ADD                   1046
 #define IDC_VRANGE_START                1047
 #define IDC_BALANCE_STATUS              1047
 #define IDC_DEVICE_SHOW_STATS           1047
+#define IDC_CLONE_REMOVE                1047
 #define IDC_LIMIT_END_SPINNER           1048
 #define IDC_START_BALANCE               1048
 #define IDC_LIMIT_END                   1049
@@ -302,6 +304,7 @@
 #define IDC_SEND_STATUS                 1067
 #define IDC_GENERATION_ERRS             1068
 #define IDC_PARENT_SUBVOL               1068
+#define IDC_CLONE_LIST                  1069
 
 // Next default values for new objects
 // 
@@ -309,7 +312,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        172
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1069
+#define _APS_NEXT_CONTROL_VALUE         1070
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
