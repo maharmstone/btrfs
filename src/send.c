@@ -110,6 +110,7 @@ typedef struct {
 #define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
 static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generation, send_dir** psd, BOOL* added_dummy);
+static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2);
 
 static void send_command(send_context* context, UINT16 cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
@@ -1268,7 +1269,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_refs(send_context* context) {
+static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     ref *nameref = NULL, *nameref2 = NULL;
@@ -1505,6 +1506,17 @@ static NTSTATUS flush_refs(send_context* context) {
                 }
             }
 
+            if (context->datalen > SEND_BUFFER_LENGTH) {
+                Status = wait_for_flush(context, tp1, tp2);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("wait_for_flush returned %08x\n", Status);
+                    return Status;
+                }
+
+                if (context->send->cancelling)
+                    return STATUS_SUCCESS;
+            }
+
             Status = found_path(context, r->sd, r->name, r->namelen);
             if (!NT_SUCCESS(Status)) {
                 ERR("found_path returned %08x\n", Status);
@@ -1539,6 +1551,17 @@ static NTSTATUS flush_refs(send_context* context) {
             }
 
             if (!deleted) {
+                if (context->datalen > SEND_BUFFER_LENGTH) {
+                    Status = wait_for_flush(context, tp1, tp2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("wait_for_flush returned %08x\n", Status);
+                        return Status;
+                    }
+
+                    if (context->send->cancelling)
+                        return STATUS_SUCCESS;
+                }
+
                 Status = send_unlink_command(context, or->sd, or->namelen, or->name);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_unlink_command returned %08x\n", Status);
@@ -2450,11 +2473,14 @@ static NTSTATUS finish_inode(send_context* context, traverse_ptr* tp1, traverse_
     LIST_ENTRY* le;
 
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
-        NTSTATUS Status = flush_refs(context);
+        NTSTATUS Status = flush_refs(context, tp1, tp2);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
             return Status;
         }
+
+        if (context->send->cancelling)
+            return STATUS_SUCCESS;
     }
 
     if (!context->lastinode.deleting) {
@@ -2537,11 +2563,14 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         return STATUS_SUCCESS;
 
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
-        Status = flush_refs(context);
+        Status = flush_refs(context, tp, tp2);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
             return Status;
         }
+
+        if (context->send->cancelling)
+            return STATUS_SUCCESS;
     }
 
     if ((context->lastinode.mode & __S_IFLNK) == __S_IFLNK)
@@ -2681,11 +2710,14 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
         return STATUS_SUCCESS;
 
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
-        NTSTATUS Status = flush_refs(context);
+        NTSTATUS Status = flush_refs(context, tp, tp2);
         if (!NT_SUCCESS(Status)) {
             ERR("flush_refs returned %08x\n", Status);
             return Status;
         }
+
+        if (context->send->cancelling)
+            return STATUS_SUCCESS;
     }
 
     if (tp && tp->item->size < sizeof(DIR_ITEM)) {
@@ -3132,10 +3164,20 @@ static void send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
+
+                    if (context->send->cancelling) {
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
                 } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
                     Status = send_xattr(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    if (context->send->cancelling) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
@@ -3199,10 +3241,20 @@ static void send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
+
+                    if (context->send->cancelling) {
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
                 } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
                     Status = send_xattr(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    if (context->send->cancelling) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
@@ -3257,10 +3309,20 @@ static void send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
+
+                    if (context->send->cancelling) {
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
                 } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM && !context->lastinode.deleting) {
                     Status = send_xattr(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08x\n", Status);
+                        ExReleaseResourceLite(&context->Vcb->tree_lock);
+                        goto end;
+                    }
+
+                    if (context->send->cancelling) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
@@ -3345,10 +3407,20 @@ static void send_thread(void* ctx) {
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
+
+                if (context->send->cancelling) {
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
             } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
                 Status = send_xattr(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_xattr returned %08x\n", Status);
+                    ExReleaseResourceLite(&context->Vcb->tree_lock);
+                    goto end;
+                }
+
+                if (context->send->cancelling) {
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
