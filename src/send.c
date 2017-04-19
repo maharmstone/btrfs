@@ -3539,10 +3539,10 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
 #if defined(_WIN64)
                     if (IoIs32bitProcess(Irp))
-                        h = (HANDLE)LongToHandle(*(PUINT32)&bss->parent);
+                        h = (HANDLE)LongToHandle(*(PUINT32)&bss->clones[i]);
                     else
 #endif
-                        h = bss->parent;
+                        h = bss->clones[i];
 
                     Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
                     if (!NT_SUCCESS(Status)) {
