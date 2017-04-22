@@ -2562,7 +2562,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                 case EXTENT_TYPE_INLINE:
                 {
                     UINT64 off = start + bytes_read - ext->offset;
-                    UINT64 read = len - off;
+                    UINT64 read = min(len, ext->datalen) - off;
                     
                     if (read > length) read = length;
                     
