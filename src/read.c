@@ -2562,16 +2562,54 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                 case EXTENT_TYPE_INLINE:
                 {
                     UINT64 off = start + bytes_read - ext->offset;
-                    UINT64 read = min(len, ext->datalen) - off;
+                    UINT64 read;
                     
-                    if (read > length) read = length;
-                    
-                    RtlCopyMemory(data + bytes_read, &ed->data[off], read);
-                    
-                    // FIXME - can we have compressed inline extents?
-                    
+                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                        read = min(min(len, ext->datalen) - off, length);
+
+                        RtlCopyMemory(data + bytes_read, &ed->data[off], read);
+                    } else {
+                        UINT8* decomp;
+                        BOOL decomp_alloc;
+
+                        read = min(ed->decoded_size - off, length);
+
+                        if (off > 0) {
+                            decomp = ExAllocatePoolWithTag(NonPagedPool, ed->decoded_size, ALLOC_TAG);
+                            if (!decomp) {
+                                ERR("out of memory\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+
+                            decomp_alloc = TRUE;
+                        } else {
+                            decomp = data + bytes_read;
+                            decomp_alloc = FALSE;
+                        }
+
+                        if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
+                            Status = zlib_decompress(ed->data, ext->datalen - offsetof(EXTENT_DATA, data[0]), decomp, read + off);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("zlib_decompress returned %08x\n", Status);
+                                if (decomp_alloc) ExFreePool(decomp);
+                                goto exit;
+                            }
+
+                            if (decomp_alloc) {
+                                RtlCopyMemory(data + bytes_read, decomp + off, read);
+                                ExFreePool(decomp);
+                            }
+                        } else {
+                            ERR("unhandled compression type %x\n", ed->compression);
+                            Status = STATUS_NOT_IMPLEMENTED;
+                            goto exit;
+                        }
+                    }
+
                     bytes_read += read;
                     length -= read;
+
                     break;
                 }
                 
