@@ -2568,7 +2568,7 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         read = min(min(len, ext->datalen) - off, length);
 
                         RtlCopyMemory(data + bytes_read, &ed->data[off], read);
-                    } else {
+                    } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO) {
                         UINT8* decomp;
                         BOOL decomp_alloc;
 
@@ -2595,16 +2595,33 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                                 if (decomp_alloc) ExFreePool(decomp);
                                 goto exit;
                             }
+                        } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
+                            ULONG inlen = ext->datalen - offsetof(EXTENT_DATA, data[0]);
 
-                            if (decomp_alloc) {
-                                RtlCopyMemory(data + bytes_read, decomp + off, read);
-                                ExFreePool(decomp);
+                            if (inlen < sizeof(UINT32)) {
+                                ERR("extent data was truncated\n");
+                                Status = STATUS_INTERNAL_ERROR;
+                                if (decomp_alloc) ExFreePool(decomp);
+                                goto exit;
+                            } else
+                                inlen -= sizeof(UINT32);
+
+                            Status = lzo_decompress(ed->data + sizeof(UINT32), inlen, decomp, read + off, sizeof(UINT32));
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("lzo_decompress returned %08x\n", Status);
+                                if (decomp_alloc) ExFreePool(decomp);
+                                goto exit;
                             }
-                        } else {
-                            ERR("unhandled compression type %x\n", ed->compression);
-                            Status = STATUS_NOT_IMPLEMENTED;
-                            goto exit;
                         }
+
+                        if (decomp_alloc) {
+                            RtlCopyMemory(data + bytes_read, decomp + off, read);
+                            ExFreePool(decomp);
+                        }
+                    } else {
+                        ERR("unhandled compression type %x\n", ed->compression);
+                        Status = STATUS_NOT_IMPLEMENTED;
+                        goto exit;
                     }
 
                     bytes_read += read;
