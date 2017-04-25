@@ -31,7 +31,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIS
         return Status;
     }
     
-    fcb->dirty = TRUE;
+    mark_fcb_dirty(fcb);
     
     if (fcb->inode_item.st_size > 0) {
         Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
