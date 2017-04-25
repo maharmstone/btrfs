@@ -3525,8 +3525,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
             if (cur_inline && end > fcb->Vcb->options.max_inline) {
                 UINT64 origlength, length;
                 UINT8* data;
-                UINT64 offset = ext->offset;
-                
+
                 TRACE("giving inline file proper extents\n");
                 
                 origlength = ed->decoded_size;
@@ -3541,33 +3540,29 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 
-                if (length > origlength)
-                    RtlZeroMemory(data + origlength, length - origlength);
-                
-                RtlCopyMemory(data, ed->data, origlength);
-                
-                fcb->inode_item.st_blocks -= origlength;
-                fcb->inode_item_changed = TRUE;
-                mark_fcb_dirty(fcb);
-                
-                remove_fcb_extent(fcb, ext, rollback);
-                
-                if (write_fcb_compressed(fcb)) {
-                    Status = write_compressed(fcb, offset, offset + length, data, Irp, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("write_compressed returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
-                } else {
-                    Status = insert_extent(fcb->Vcb, fcb, offset, length, data, Irp, FALSE, 0, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_extent returned %08x\n", Status);
-                        ExFreePool(data);
-                        return Status;
-                    }
+                Status = read_file(fcb, data, 0, origlength, NULL, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_file returned %08x\n", Status);
+                    ExFreePool(data);
+                    return Status;
                 }
-                
+
+                RtlZeroMemory(data + origlength, length - origlength);
+
+                Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("excise_extents returned %08x\n", Status);
+                    ExFreePool(data);
+                    return Status;
+                }
+
+                Status = do_write_file(fcb, 0, length, data, Irp, FALSE, 0, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("do_write_file returned %08x\n", Status);
+                    ExFreePool(data);
+                    return Status;
+                }
+
                 oldalloc = ext->offset + length;
                 
                 ExFreePool(data);
@@ -3577,7 +3572,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 ULONG edsize;
                 
                 if (end > oldalloc) {
-                    edsize = sizeof(EXTENT_DATA) - 1 + end - ext->offset;
+                    edsize = offsetof(EXTENT_DATA, data[0]) + end - ext->offset;
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
                     
                     if (!ed) {
@@ -3585,11 +3580,22 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
                     
-                    RtlZeroMemory(ed, edsize);
-                    RtlCopyMemory(ed, &ext->extent_data, ext->datalen);
-                    
+                    ed->generation = fcb->Vcb->superblock.generation;
                     ed->decoded_size = end - ext->offset;
+                    ed->compression = BTRFS_COMPRESSION_NONE;
+                    ed->encryption = BTRFS_ENCRYPTION_NONE;
+                    ed->encoding = BTRFS_ENCODING_NONE;
+                    ed->type = EXTENT_TYPE_INLINE;
                     
+                    Status = read_file(fcb, ed->data, ext->offset, oldalloc, NULL, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_file returned %08x\n", Status);
+                        ExFreePool(ed);
+                        return Status;
+                    }
+
+                    RtlZeroMemory(ed->data + oldalloc - ext->offset, end - oldalloc);
+
                     remove_fcb_extent(fcb, ext, rollback);
                     
                     Status = add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback);
