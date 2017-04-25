@@ -4424,7 +4424,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (newlength > fcb->Header.AllocationSize.QuadPart) {
             if (!tree_lock) {
                 // We need to acquire the tree lock if we don't have it already - 
-                // we can't give an inline file proper extents at the same as we're
+                // we can't give an inline file proper extents at the same time as we're
                 // doing a flush.
                 if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
                     Status = STATUS_PENDING;
