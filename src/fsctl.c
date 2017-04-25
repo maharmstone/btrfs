@@ -3044,7 +3044,7 @@ static NTSTATUS set_integrity_information(PFILE_OBJECT FileObject, void* data, U
     return STATUS_SUCCESS;
 }
 
-static BOOL fcb_is_inline(fcb* fcb) {
+BOOL fcb_is_inline(fcb* fcb) {
     LIST_ENTRY* le;
     
     le = fcb->extents.Flink;

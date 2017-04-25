@@ -3411,10 +3411,67 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
     
     // FIXME - convert into inline extent if short enough
     
+    if (end > 0 && fcb_is_inline(fcb)) {
+        UINT8* buf;
+        BOOL make_inline = end <= fcb->Vcb->options.max_inline;
+
+        buf = ExAllocatePoolWithTag(PagedPool, make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sector_size), ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Status = read_file(fcb, make_inline ? (buf + offsetof(EXTENT_DATA, data[0])) : buf, 0, end, NULL, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            ExFreePool(buf);
+            return Status;
+        }
+
+        Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            ExFreePool(buf);
+            return Status;
+        }
+
+        if (!make_inline) {
+            RtlZeroMemory(buf + end, sector_align(end, fcb->Vcb->superblock.sector_size) - end);
+
+            Status = do_write_file(fcb, 0, sector_align(end, fcb->Vcb->superblock.sector_size), buf, Irp, FALSE, 0, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_write_file returned %08x\n", Status);
+                ExFreePool(buf);
+                return Status;
+            }
+        } else {
+            EXTENT_DATA* ed = (EXTENT_DATA*)buf;
+
+            ed->generation = fcb->Vcb->superblock.generation;
+            ed->decoded_size = end;
+            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encoding = BTRFS_ENCODING_NONE;
+            ed->type = EXTENT_TYPE_INLINE;
+
+            Status = add_extent_to_fcb(fcb, 0, ed, offsetof(EXTENT_DATA, data[0]) + end, FALSE, NULL, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_extent_to_fcb returned %08x\n", Status);
+                ExFreePool(buf);
+                return Status;
+            }
+
+            fcb->inode_item.st_blocks += end;
+        }
+
+        ExFreePool(buf);
+        return STATUS_SUCCESS;
+    }
+
     Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sector_size),
                             sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - excise_extents failed\n");
+        ERR("excise_extents returned %08x\n", Status);
         return Status;
     }
     
