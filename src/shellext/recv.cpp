@@ -34,7 +34,7 @@
 
 #define EA_NTACL "security.NTACL"
 #define EA_DOSATTRIB "user.DOSATTRIB"
-#define EA_REPARSE "system.reparse"
+#define EA_REPARSE "user.reparse"
 #define EA_EA "user.EA"
 #define XATTR_USER "user."
 
@@ -767,7 +767,8 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
     if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER)) &&
         (xattrnamelen != strlen(EA_DOSATTRIB) || memcmp(xattrname, EA_DOSATTRIB, xattrnamelen)) &&
-        (xattrnamelen != strlen(EA_EA) || memcmp(xattrname, EA_EA, xattrnamelen))) {
+        (xattrnamelen != strlen(EA_EA) || memcmp(xattrname, EA_EA, xattrnamelen)) &&
+        (xattrnamelen != strlen(EA_REPARSE) || memcmp(xattrname, EA_REPARSE, xattrnamelen))) {
         HANDLE h;
         std::wstring streamname;
 
