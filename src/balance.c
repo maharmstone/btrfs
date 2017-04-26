@@ -2715,17 +2715,10 @@ static void balance_thread(void* context) {
             if (!c->list_entry_changed.Flink)
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
         }
-            
-        if (Vcb->balance.stopping) {
-            while (le != &chunks) {
-                c = CONTAINING_RECORD(le, chunk, list_entry_balance);
-                c->reloc = FALSE;
-                
-                le = le->Flink;
-            }
+
+        if (Vcb->balance.stopping)
             goto end;
-        }
-        
+
         if (c->chunk_item->type & BLOCK_FLAG_DATA &&
             (!(Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) || !(c->chunk_item->type & BLOCK_FLAG_METADATA))) {
             RemoveEntryList(&c->list_entry_balance);
@@ -2770,17 +2763,9 @@ static void balance_thread(void* context) {
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
         }
         
-        if (Vcb->balance.stopping) {
-            while (le != &chunks) {
-                c = CONTAINING_RECORD(le, chunk, list_entry_balance);
-                c->reloc = FALSE;
-                
-                le = le->Flink;
-                c->list_entry_balance.Flink = NULL;
-            }
+        if (Vcb->balance.stopping)
             break;
-        }
-        
+
         c->list_entry_balance.Flink = NULL;
         
         Vcb->balance.chunks_left--;
@@ -2788,6 +2773,16 @@ static void balance_thread(void* context) {
     
 end:
     if (!Vcb->readonly) {
+        if (Vcb->balance.stopping || !NT_SUCCESS(Vcb->balance.status)) {
+            while (le != &chunks) {
+                chunk* c = CONTAINING_RECORD(le, chunk, list_entry_balance);
+                c->reloc = FALSE;
+
+                le = le->Flink;
+                c->list_entry_balance.Flink = NULL;
+            }
+        }
+
         if (!Vcb->balance.removing) {
             FsRtlEnterFileSystem();
             Status = remove_balance_item(Vcb);
