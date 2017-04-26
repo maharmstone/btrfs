@@ -2572,7 +2572,7 @@ static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
-    UINT64 num_chunks[3];
+    UINT64 num_chunks[3], okay_metadata_chunks = 0, okay_data_chunks = 0, okay_system_chunks = 0;
     NTSTATUS Status;
     
     Vcb->balance.stopping = FALSE;
@@ -2659,8 +2659,13 @@ static void balance_thread(void* context) {
             
             num_chunks[sort]++;
             Vcb->balance.total_chunks++;
-        }
-        
+        } else if (sort == BALANCE_OPTS_METADATA)
+            okay_metadata_chunks++;
+        else if (sort == BALANCE_OPTS_DATA)
+            okay_data_chunks++;
+        else if (sort == BALANCE_OPTS_SYSTEM)
+            okay_system_chunks++;
+
         if (!c->cache_loaded) {
             Status = load_cache_chunk(Vcb, c, NULL);
 
@@ -2677,6 +2682,43 @@ static void balance_thread(void* context) {
         le = le->Flink;
     }
     
+    // If we're doing a full balance, try and allocate a new chunk now, before we mess things up
+    if (okay_metadata_chunks == 0) {
+        chunk* c;
+
+        Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c);
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            Vcb->balance.status = Status;
+            goto end;
+        }
+    }
+
+    if (okay_data_chunks == 0) {
+        chunk* c;
+
+        Status = alloc_chunk(Vcb, Vcb->data_flags, &c);
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            Vcb->balance.status = Status;
+            goto end;
+        }
+    }
+
+    if (okay_system_chunks == 0) {
+        chunk* c;
+
+        Status = alloc_chunk(Vcb, Vcb->system_flags, &c);
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            Vcb->balance.status = Status;
+            goto end;
+        }
+    }
+
     ExReleaseResourceLite(&Vcb->chunk_lock);
     
     Vcb->balance.chunks_left = Vcb->balance.total_chunks;
@@ -2774,6 +2816,7 @@ static void balance_thread(void* context) {
 end:
     if (!Vcb->readonly) {
         if (Vcb->balance.stopping || !NT_SUCCESS(Vcb->balance.status)) {
+            le = chunks.Flink;
             while (le != &chunks) {
                 chunk* c = CONTAINING_RECORD(le, chunk, list_entry_balance);
                 c->reloc = FALSE;
