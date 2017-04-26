@@ -65,8 +65,8 @@
 #define EA_DOSATTRIB "user.DOSATTRIB"
 #define EA_DOSATTRIB_HASH 0x914f9939
 
-#define EA_REPARSE "system.reparse"
-#define EA_REPARSE_HASH 0x786f6167
+#define EA_REPARSE "user.reparse"
+#define EA_REPARSE_HASH 0xfabad1fe
 
 #define EA_EA "user.EA"
 #define EA_EA_HASH 0x8270dd43
