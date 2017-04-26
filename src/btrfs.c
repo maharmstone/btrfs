@@ -1878,8 +1878,20 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                     ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
                     ccfs.FileSize = fileref->fcb->Header.FileSize;
                     ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
+
+                    Status = STATUS_SUCCESS;
+
+                    try {
+                        CcSetFileSizes(FileObject, &ccfs);
+                    } except (EXCEPTION_EXECUTE_HANDLER) {
+                        Status = GetExceptionCode();
+                    }
                     
-                    CcSetFileSizes(FileObject, &ccfs);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("CcSetFileSizes threw exception %08x\n", Status);
+                        ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                        return Status;
+                    }
                 }
             }
             
