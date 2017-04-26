@@ -2953,7 +2953,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     t->header.num_items = numitems;
     nt->write = TRUE;
     
-    InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &nt->list_entry);
     
 // //     // TESTING
@@ -3068,7 +3067,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     
 //     ExInitializeResourceLite(&pt->nonpaged->load_tree_lock);
     
-    InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &pt->list_entry);
     
     td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);

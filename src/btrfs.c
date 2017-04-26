@@ -3863,7 +3863,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     Vcb->vde = vde;
     
     ExInitializeResourceLite(&Vcb->tree_lock);
-    Vcb->open_trees = 0;
     Vcb->need_write = FALSE;
 
     ExInitializeResourceLite(&Vcb->fcb_lock);

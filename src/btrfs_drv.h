@@ -659,7 +659,6 @@ typedef struct _device_extension {
     ERESOURCE tree_lock;
     PNOTIFY_SYNC NotifySync;
     LIST_ENTRY DirNotifyList;
-    LONG open_trees;
     BOOL need_write;
     BOOL stats_changed;
     UINT64 data_flags;

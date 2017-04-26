@@ -147,7 +147,6 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
         ExFreePool(buf);
     }
     
-    InterlockedIncrement(&Vcb->open_trees);
     InsertTailList(&Vcb->trees, &t->list_entry);
     
     h = t->hash >> 24;
@@ -236,7 +235,6 @@ static tree* free_tree2(tree* t) {
         ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
     }
     
-    InterlockedDecrement(&t->Vcb->open_trees);
     RemoveEntryList(&t->list_entry);
     
     if (r) {
