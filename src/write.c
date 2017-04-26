@@ -3074,7 +3074,8 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ExReleaseResourceLite(&c->lock);
       
     if (data) {
-        Status = write_data_complete(Vcb, address, data, length, Irp, NULL, file_write, irp_offset, NormalPagePriority);
+        Status = write_data_complete(Vcb, address, data, length, Irp, NULL, file_write, irp_offset,
+                                     fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         if (!NT_SUCCESS(Status))
             ERR("write_data_complete returned %08x\n", Status);
     }
